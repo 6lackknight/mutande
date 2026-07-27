@@ -625,7 +625,7 @@ impl DaemonState {
                     envelope: None,
                     open_error: None,
                 },
-                Err(err) if is_blob => {
+                Err(_err) if is_blob => {
                     // Raw artifact bytes in R2 — summarize without embedding content.
                     OpenedThreadMessage {
                         id: msg.id,
