@@ -77,15 +77,21 @@ class CoreSidecar {
 
   /// Ensure daemon is up. Spawns sidecar if health check fails.
   Future<CoreSidecarStartResult> start() async {
+    final path = (resolvePath ?? defaultResolvePath)();
+    resolvedPath = path;
+
     final health = await _daemon.pingHealth();
     if (health.connected) {
+      // Still persist path when we know it — Connect AI needs an absolute binary.
+      if (path != null) {
+        await _persistCorePath(path);
+      }
       return CoreSidecarStartResult(
         alreadyRunning: true,
-        path: resolvedPath ?? defaultResolvePath(),
+        path: path,
       );
     }
 
-    final path = (resolvePath ?? defaultResolvePath)();
     if (path == null) {
       return CoreSidecarStartResult(
         alreadyRunning: false,
@@ -93,7 +99,6 @@ class CoreSidecar {
             '(set MUTANDE_CORE_PATH or bundle Resources/mutande-core)',
       );
     }
-    resolvedPath = path;
 
     try {
       final spawn = spawnServe ?? _defaultSpawn;
@@ -117,18 +122,20 @@ class CoreSidecar {
       );
     }
 
-    // Persist absolute path so Connect AI / MCP configs resolve the sidecar.
+    await _persistCorePath(path);
+    return CoreSidecarStartResult(alreadyRunning: false, path: path);
+  }
+
+  Future<void> _persistCorePath(String path) async {
     try {
       await _daemon.setCorePath(path);
     } catch (_) {
       // Non-fatal — connect_host still has MUTANDE_CORE_PATH / which fallbacks.
     }
-
-    return CoreSidecarStartResult(alreadyRunning: false, path: path);
   }
 
-  Future<Process> _defaultSpawn(String corePath) {
-    return Process.start(
+  Future<Process> _defaultSpawn(String corePath) async {
+    final process = await Process.start(
       corePath,
       const ['serve'],
       environment: {
@@ -137,6 +144,10 @@ class CoreSidecar {
       },
       mode: ProcessStartMode.normal,
     );
+    // Prevent pipe-buffer deadlock if the daemon logs heavily.
+    unawaited(process.stdout.drain<void>());
+    unawaited(process.stderr.drain<void>());
+    return process;
   }
 
   Future<bool> _waitHealthy() async {

@@ -11,13 +11,28 @@ import 'package:app/services/daemon_client.dart';
 void main() {
   test('start skips spawn when daemon already healthy', () async {
     var healthCalls = 0;
+    var setPathCalls = 0;
     final daemon = DaemonClient(
       httpClient: MockClient((request) async {
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        final method = body['method'] as String?;
+        if (method == 'set_core_path') {
+          setPathCalls++;
+          return http.Response(
+            jsonEncode({
+              'jsonrpc': '2.0',
+              'id': body['id'],
+              'result': {'ok': true, 'path': '/tmp/fake-mutande-core'},
+            }),
+            200,
+            headers: {'Content-Type': 'application/json'},
+          );
+        }
         healthCalls++;
         return http.Response(
           jsonEncode({
             'jsonrpc': '2.0',
-            'id': 1,
+            'id': body['id'],
             'result': {'ok': true, 'service': 'mutande-core'},
           }),
           200,
@@ -42,6 +57,7 @@ void main() {
     expect(result.alreadyRunning, isTrue);
     expect(spawned, isFalse);
     expect(healthCalls, greaterThan(0));
+    expect(setPathCalls, 1);
     await sidecar.stop();
   });
 

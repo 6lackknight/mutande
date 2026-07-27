@@ -322,7 +322,8 @@ class DaemonErrorScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Start mutande-core serve, then retry.\n'
+                  'The app starts mutande-core automatically; if this persists, '
+                  'set MUTANDE_CORE_PATH or build core/target/release/mutande-core.\n'
                   'HTTP: $endpoint',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: const Color(0xFF78716C),

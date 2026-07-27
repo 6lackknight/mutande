@@ -599,6 +599,7 @@ impl DaemonState {
         msg: ThreadMessage,
         plain: Result<Vec<u8>>,
     ) -> OpenedThreadMessage {
+        let is_blob = msg.envelope.blob_id.is_some();
         let meta = |open_error: Option<String>| OpenedThreadMessage {
             id: msg.id.clone(),
             thread_id: msg.thread_id.clone(),
@@ -612,12 +613,28 @@ impl DaemonState {
         };
 
         match plain {
-            Ok(plain) => {
-                let bundle = match serde_json::from_slice::<MutandeBundle>(&plain) {
-                    Ok(bundle) => bundle,
-                    Err(_) => {
-                        // Opaque blob artifact (raw sealed bytes) — summarize without embedding.
-                        MutandeBundle {
+            Ok(plain) => match serde_json::from_slice::<MutandeBundle>(&plain) {
+                Ok(bundle) => OpenedThreadMessage {
+                    id: msg.id,
+                    thread_id: msg.thread_id,
+                    from_user_id: msg.from_user_id,
+                    from_handle: msg.from_handle,
+                    created_at: msg.created_at,
+                    sender_only: msg.sender_only,
+                    bundle: Some(bundle),
+                    envelope: None,
+                    open_error: None,
+                },
+                Err(err) if is_blob => {
+                    // Raw artifact bytes in R2 — summarize without embedding content.
+                    OpenedThreadMessage {
+                        id: msg.id,
+                        thread_id: msg.thread_id,
+                        from_user_id: msg.from_user_id,
+                        from_handle: msg.from_handle,
+                        created_at: msg.created_at,
+                        sender_only: msg.sender_only,
+                        bundle: Some(MutandeBundle {
                             subject: Some("blob artifact".into()),
                             notes: Some(format!(
                                 "Opened encrypted blob ({} bytes); content not inlined.",
@@ -629,21 +646,13 @@ impl DaemonState {
                                 content: None,
                             }],
                             ..Default::default()
-                        }
+                        }),
+                        envelope: None,
+                        open_error: None,
                     }
-                };
-                OpenedThreadMessage {
-                    id: msg.id,
-                    thread_id: msg.thread_id,
-                    from_user_id: msg.from_user_id,
-                    from_handle: msg.from_handle,
-                    created_at: msg.created_at,
-                    sender_only: msg.sender_only,
-                    bundle: Some(bundle),
-                    envelope: None,
-                    open_error: None,
                 }
-            }
+                Err(err) => meta(Some(format!("decode bundle: {err}"))),
+            },
             Err(err) => meta(Some(err.to_string())),
         }
     }
@@ -1062,6 +1071,48 @@ mod tests {
         assert_eq!(a.fingerprint, b.fingerprint);
         assert!(a.uri.starts_with("mutande:safety:"));
         assert_eq!(a.fingerprint.split_whitespace().count(), 12);
+    }
+
+    #[test]
+    fn inline_non_bundle_plaintext_surfaces_decode_error() {
+        let state = DaemonState::new_in_memory_for_test().unwrap();
+        let env = state.seal_to_self(b"not-json-bundle").unwrap();
+        assert!(env.blob_id.is_none());
+        let detail = ThreadDetail {
+            thread: ThreadMeta {
+                id: "t-bad".into(),
+                kind: ThreadKind::Direct,
+                status: ThreadStatus::Open,
+                from: "alice@acme".into(),
+                from_user_id: "u1".into(),
+                audience: "bob@acme".into(),
+                org_id: "o1".into(),
+                participant_count: 2,
+                reply_count: 0,
+                your_status: None,
+                created_at: "2026-01-01T00:00:00Z".into(),
+                updated_at: "2026-01-01T00:00:00Z".into(),
+            },
+            messages: vec![ThreadMessage {
+                id: "m-bad".into(),
+                thread_id: "t-bad".into(),
+                from_user_id: "u1".into(),
+                from_handle: "alice@acme".into(),
+                envelope: env,
+                created_at: "2026-01-01T00:00:00Z".into(),
+                sender_only: None,
+            }],
+        };
+        let opened = state.open_thread_detail(detail);
+        let msg = &opened.messages[0];
+        assert!(msg.bundle.is_none());
+        assert!(
+            msg.open_error
+                .as_deref()
+                .is_some_and(|e| e.contains("decode bundle")),
+            "inline garbage must not be treated as blob artifact: {:?}",
+            msg.open_error
+        );
     }
 
     #[tokio::test]
