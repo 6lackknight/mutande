@@ -2,7 +2,10 @@
 
 Flutter menu-bar client (v1). Runs as a macOS accessory (no Dock icon) with a status-item tray menu. Window stays usable via **Open Mutande**; closing the window hides it instead of quitting.
 
-Talks to `mutande-core serve` over local IPC. Bundles `mutande-core` binary in app resources (future).
+Talks to `mutande-core serve` over local IPC. On launch, `CoreSidecar` starts
+bundled `Contents/Resources/mutande-core` (or `MUTANDE_CORE_PATH` / dev
+`core/target/{release,debug}`) and stops it on Quit when the app spawned it.
+Xcode Run Script: `macos/Runner/Scripts/bundle_mutande_core.sh`.
 
 ## Structure
 
@@ -13,7 +16,10 @@ Talks to `mutande-core serve` over local IPC. Bundles `mutande-core` binary in a
 | `lib/services/tray_controller.dart` | Status item + tray menu |
 | `lib/app.dart` | Theme + onboarding/home shell |
 | `lib/config/app_config.dart` | Hub URL and runtime defines |
-| `lib/services/daemon_client.dart` | JSON-RPC stub (HTTP dev bridge → Unix socket) |
+| `lib/services/daemon_client.dart` | JSON-RPC client (HTTP bridge + bearer token) |
+| `lib/services/core_sidecar.dart` | Start/stop bundled `mutande-core serve` |
+| `lib/screens/threads_screen.dart` | Thread list / open / reply |
+| `lib/screens/verify_screen.dart` | Safety-number fingerprint + QR payload stub |
 
 ## Tray menu
 
@@ -40,24 +46,25 @@ Optional hub override:
 flutter run -d macos --dart-define=MUTANDE_HUB_URL=https://your-hub.deno.dev
 ```
 
-## Daemon check
+## Daemon / sidecar
 
-The home screen **Check daemon** button calls JSON-RPC `health` on `http://127.0.0.1:3847/rpc` with `Authorization: Bearer` from `~/.mutande/daemon_http_token` (written by `mutande-core serve`). Production uses `~/.mutande/daemon.sock` (see `daemon_client.dart` for the full method table from the PRD).
-
-Start the core daemon:
+The app starts `mutande-core serve` automatically when the daemon is down.
+Manual start (dev):
 
 ```bash
-cd ../core && cargo run -- serve
+cd ../core && cargo build --release && cargo run --release -- serve
 ```
 
-Start the hub locally for URL display sanity:
+Home UI tabs: **Threads** (list/open/reply), **Verify** (safety numbers),
+**Session** (Check daemon / Connect AI hosts). HTTP bridge:
+`http://127.0.0.1:3847/rpc` + bearer token from `~/.mutande/daemon_http_token`.
+
+Hub (optional for onboarding):
 
 ```bash
 cd ../hub && deno task dev
 curl http://localhost:8000/health
 ```
-
-With `mutande-core serve` running, **Check daemon** should report connected.
 
 ## Test
 

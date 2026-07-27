@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import 'config/app_config.dart';
+import 'screens/threads_screen.dart';
+import 'screens/verify_screen.dart';
 import 'services/app_actions.dart';
 import 'services/daemon_client.dart';
 
@@ -543,6 +545,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   bool _checking = false;
   DaemonHealthResult? _health;
+  int _tab = 0; // 0 threads · 1 verify · 2 session
 
   @override
   void initState() {
@@ -575,124 +578,63 @@ class _HomeScreenState extends State<HomeScreen> {
         : const Color(0xFF991B1B);
     final hubDisplay = widget.status.hubUrl ?? widget.config.hubUrl;
     final handle = widget.status.handle;
-    final endpoint = _health?.endpoint ?? widget.daemon.httpBaseUrl;
-    final transport = _health?.transport ?? 'http';
 
     return Scaffold(
       appBar: AppBar(title: const Text('Mutande')),
       body: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 480),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                'Agent-to-agent mail',
+                handle ?? 'Agent-to-agent mail',
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   color: const Color(0xFF78716C),
                 ),
               ),
-              if (widget.statusError != null) ...[
-                const SizedBox(height: 12),
-                Text(
-                  'Status refresh failed — showing last known session.',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: const Color(0xFF92400E),
-                  ),
+              const SizedBox(height: 4),
+              Text(
+                'Daemon $statusLabel · $hubDisplay',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: statusColor,
                 ),
+              ),
+              if (widget.statusError != null) ...[
+                const SizedBox(height: 8),
                 TextButton(
                   onPressed: widget.onRetryStatus,
                   child: const Text('Retry status'),
                 ),
               ],
-              const SizedBox(height: 24),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _StatusRow(
-                        label: 'Daemon',
-                        value: statusLabel,
-                        valueColor: statusColor,
-                      ),
-                      if (handle != null) ...[
-                        const SizedBox(height: 12),
-                        _StatusRow(label: 'Handle', value: handle),
-                      ],
-                      const SizedBox(height: 12),
-                      _StatusRow(label: 'Hub', value: hubDisplay),
-                      if (_health?.service != null) ...[
-                        const SizedBox(height: 12),
-                        _StatusRow(
-                          label: 'Service',
-                          value: _health!.service!,
-                        ),
-                      ],
-                      if (_health?.error != null) ...[
-                        const SizedBox(height: 12),
-                        Text(
-                          _health!.error!,
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(color: const Color(0xFF991B1B)),
-                        ),
-                      ],
-                      const SizedBox(height: 8),
-                      Text(
-                        'Transport: $transport · $endpoint',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: const Color(0xFFA8A29E),
-                        ),
-                      ),
-                      Text(
-                        'Daemon socket (native): ${DaemonClient.defaultSocketPath}',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: const Color(0xFFA8A29E),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+              const SizedBox(height: 12),
+              SegmentedButton<int>(
+                segments: const [
+                  ButtonSegment(value: 0, label: Text('Threads')),
+                  ButtonSegment(value: 1, label: Text('Verify')),
+                  ButtonSegment(value: 2, label: Text('Session')),
+                ],
+                selected: {_tab},
+                onSelectionChanged: (s) => setState(() => _tab = s.first),
               ),
               const SizedBox(height: 16),
-              FilledButton.icon(
-                onPressed: _checking ? null : _checkDaemon,
-                icon: _checking
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.refresh),
-                label: Text(_checking ? 'Checking…' : 'Check daemon'),
-              ),
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                onPressed: widget.connecting ? null : widget.onConnectHosts,
-                icon: widget.connecting
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.link),
-                label: Text(
-                  widget.connecting ? 'Connecting…' : 'Connect AI hosts',
+              Expanded(
+                child: SingleChildScrollView(
+                  child: _tab == 0
+                      ? ThreadsPanel(daemon: widget.daemon)
+                      : _tab == 1
+                      ? VerifyContactPanel(daemon: widget.daemon)
+                      : _SessionPanel(
+                          checking: _checking,
+                          connecting: widget.connecting,
+                          connectMessage: widget.connectMessage,
+                          connectIsWarning: widget.connectIsWarning,
+                          onCheckDaemon: _checkDaemon,
+                          onConnectHosts: widget.onConnectHosts,
+                        ),
                 ),
               ),
-              if (widget.connectMessage != null) ...[
-                const SizedBox(height: 12),
-                Text(
-                  widget.connectMessage!,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: widget.connectIsWarning
-                        ? const Color(0xFF92400E)
-                        : const Color(0xFF44403C),
-                  ),
-                ),
-              ],
             ],
           ),
         ),
@@ -701,40 +643,70 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-class _StatusRow extends StatelessWidget {
-  const _StatusRow({
-    required this.label,
-    required this.value,
-    this.valueColor,
+class _SessionPanel extends StatelessWidget {
+  const _SessionPanel({
+    required this.checking,
+    required this.connecting,
+    this.connectMessage,
+    this.connectIsWarning = false,
+    required this.onCheckDaemon,
+    required this.onConnectHosts,
   });
 
-  final String label;
-  final String value;
-  final Color? valueColor;
+  final bool checking;
+  final bool connecting;
+  final String? connectMessage;
+  final bool connectIsWarning;
+  final VoidCallback onCheckDaemon;
+  final VoidCallback onConnectHosts;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SizedBox(
-          width: 72,
-          child: Text(
-            label,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: const Color(0xFF78716C),
-              fontWeight: FontWeight.w500,
-            ),
+        Text(
+          'Session',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            color: const Color(0xFF292524),
+            fontWeight: FontWeight.w600,
           ),
         ),
-        Expanded(
-          child: Text(
-            value,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: valueColor ?? const Color(0xFF292524),
+        const SizedBox(height: 12),
+        FilledButton.icon(
+          onPressed: checking ? null : onCheckDaemon,
+          icon: checking
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.refresh),
+          label: Text(checking ? 'Checking…' : 'Check daemon'),
+        ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: connecting ? null : onConnectHosts,
+          icon: connecting
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.link),
+          label: Text(connecting ? 'Connecting…' : 'Connect AI hosts'),
+        ),
+        if (connectMessage != null) ...[
+          const SizedBox(height: 12),
+          Text(
+            connectMessage!,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: connectIsWarning
+                  ? const Color(0xFF92400E)
+                  : const Color(0xFF44403C),
             ),
           ),
-        ),
+        ],
       ],
     );
   }

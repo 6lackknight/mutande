@@ -122,6 +122,92 @@ class DaemonClient {
     );
   }
 
+  /// List threads via JSON-RPC `list_threads`.
+  Future<List<ThreadSummary>> listThreads({String? filter}) async {
+    final result = await _call(
+      'list_threads',
+      filter == null ? null : {'filter': filter},
+    );
+    final map = result as Map<String, dynamic>? ?? {};
+    final raw = map['threads'] as List<dynamic>? ?? const [];
+    return raw.map((e) {
+      final m = e as Map<String, dynamic>;
+      return ThreadSummary(
+        id: m['id'] as String? ?? '',
+        kind: m['kind'] as String? ?? '',
+        status: m['status'] as String? ?? '',
+        from: m['from'] as String? ?? '',
+        audience: m['audience'] as String? ?? '',
+        yourStatus: m['your_status'] as String?,
+        replyCount: (m['reply_count'] as num?)?.toInt() ?? 0,
+      );
+    }).toList();
+  }
+
+  /// Open + decrypt thread via JSON-RPC `get_thread`.
+  Future<ThreadDetailResult> getThread(String threadId) async {
+    final result = await _call('get_thread', {'thread_id': threadId});
+    final map = result as Map<String, dynamic>? ?? {};
+    final thread = map['thread'] as Map<String, dynamic>? ?? {};
+    final messagesRaw = map['messages'] as List<dynamic>? ?? const [];
+    return ThreadDetailResult(
+      id: thread['id'] as String? ?? threadId,
+      kind: thread['kind'] as String? ?? '',
+      status: thread['status'] as String? ?? '',
+      from: thread['from'] as String? ?? '',
+      yourStatus: thread['your_status'] as String?,
+      messages: messagesRaw.map((e) {
+        final m = e as Map<String, dynamic>;
+        final bundle = m['bundle'] as Map<String, dynamic>?;
+        return ThreadMessageView(
+          id: m['id'] as String? ?? '',
+          fromHandle: m['from_handle'] as String? ?? '',
+          createdAt: m['created_at'] as String? ?? '',
+          bundleSubject: bundle?['subject'] as String?,
+          bundleNotes: bundle?['notes'] as String? ?? bundle?['context'] as String?,
+          openError: m['open_error'] as String?,
+        );
+      }).toList(),
+    );
+  }
+
+  /// Reply with a notes-only bundle via JSON-RPC `reply_to_thread`.
+  Future<void> replyToThread({
+    required String threadId,
+    required String notes,
+  }) async {
+    await _call('reply_to_thread', {
+      'thread_id': threadId,
+      'bundle': {'notes': notes},
+    });
+  }
+
+  Future<SafetyNumberResult> getSafetyNumber() async {
+    final result = await _call('get_safety_number');
+    return SafetyNumberResult.fromJson(result as Map<String, dynamic>? ?? {});
+  }
+
+  Future<SafetyNumberResult> contactSafetyNumber(String handle) async {
+    final result = await _call('contact_safety_number', {'handle': handle});
+    return SafetyNumberResult.fromJson(result as Map<String, dynamic>? ?? {});
+  }
+
+  Future<SafetyNumberResult> verifyContact({
+    required String handle,
+    required String fingerprint,
+  }) async {
+    final result = await _call('verify_contact', {
+      'handle': handle,
+      'fingerprint': fingerprint,
+    });
+    return SafetyNumberResult.fromJson(result as Map<String, dynamic>? ?? {});
+  }
+
+  /// Persist absolute mutande-core path for Connect AI MCP configs.
+  Future<void> setCorePath(String path) async {
+    await _call('set_core_path', {'path': path});
+  }
+
   /// Ping daemon liveness via JSON-RPC `health`.
   Future<DaemonHealthResult> pingHealth() async {
     try {
@@ -320,6 +406,85 @@ class DaemonException implements Exception {
 
   @override
   String toString() => 'DaemonException: $message';
+}
+
+class ThreadSummary {
+  const ThreadSummary({
+    required this.id,
+    required this.kind,
+    required this.status,
+    required this.from,
+    required this.audience,
+    this.yourStatus,
+    this.replyCount = 0,
+  });
+
+  final String id;
+  final String kind;
+  final String status;
+  final String from;
+  final String audience;
+  final String? yourStatus;
+  final int replyCount;
+}
+
+class ThreadDetailResult {
+  const ThreadDetailResult({
+    required this.id,
+    required this.kind,
+    required this.status,
+    required this.from,
+    this.yourStatus,
+    required this.messages,
+  });
+
+  final String id;
+  final String kind;
+  final String status;
+  final String from;
+  final String? yourStatus;
+  final List<ThreadMessageView> messages;
+}
+
+class ThreadMessageView {
+  const ThreadMessageView({
+    required this.id,
+    required this.fromHandle,
+    required this.createdAt,
+    this.bundleSubject,
+    this.bundleNotes,
+    this.openError,
+  });
+
+  final String id;
+  final String fromHandle;
+  final String createdAt;
+  final String? bundleSubject;
+  final String? bundleNotes;
+  final String? openError;
+}
+
+class SafetyNumberResult {
+  const SafetyNumberResult({
+    required this.handle,
+    required this.fingerprint,
+    required this.uri,
+    this.verified,
+  });
+
+  factory SafetyNumberResult.fromJson(Map<String, dynamic> map) {
+    return SafetyNumberResult(
+      handle: map['handle'] as String? ?? '',
+      fingerprint: map['fingerprint'] as String? ?? '',
+      uri: map['uri'] as String? ?? '',
+      verified: map['verified'] as bool?,
+    );
+  }
+
+  final String handle;
+  final String fingerprint;
+  final String uri;
+  final bool? verified;
 }
 
 /// Light client-side checks before calling register RPC.

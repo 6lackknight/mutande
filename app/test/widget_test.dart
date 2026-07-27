@@ -27,9 +27,25 @@ http.Response _rpcOk(Object? id, Map<String, dynamic> result) {
 }
 
 void main() {
-  testWidgets('home shell smoke test', (WidgetTester tester) async {
+  testWidgets('home shell shows threads tab', (WidgetTester tester) async {
     final daemon = _mockDaemon((request) async {
       final body = jsonDecode(request.body) as Map<String, dynamic>;
+      final method = body['method'] as String?;
+      if (method == 'list_threads') {
+        return _rpcOk(body['id'], {
+          'threads': [
+            {
+              'id': 't1',
+              'kind': 'direct',
+              'status': 'open',
+              'from': 'bob@acme',
+              'audience': 'alice@acme',
+              'your_status': 'pending',
+              'reply_count': 0,
+            },
+          ],
+        });
+      }
       return _rpcOk(body['id'], {
         'ok': true,
         'service': 'mutande-core',
@@ -51,14 +67,82 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Mutande'), findsOneWidget);
-    expect(find.text('Check daemon'), findsOneWidget);
-    expect(find.text('http://localhost:8000'), findsOneWidget);
     expect(find.text('alice@acme'), findsOneWidget);
-    expect(find.text('Connected'), findsOneWidget);
-    expect(
-      find.textContaining('Transport: http · http://127.0.0.1:3847'),
-      findsOneWidget,
+    expect(find.textContaining('Connected'), findsOneWidget);
+    expect(find.textContaining('http://localhost:8000'), findsOneWidget);
+    expect(find.text('Threads'), findsWidgets);
+    expect(find.text('bob@acme'), findsOneWidget);
+    expect(find.textContaining('pending'), findsOneWidget);
+  });
+
+  testWidgets('session tab still has Check daemon', (WidgetTester tester) async {
+    final daemon = _mockDaemon((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      final method = body['method'] as String?;
+      if (method == 'list_threads') {
+        return _rpcOk(body['id'], {'threads': []});
+      }
+      return _rpcOk(body['id'], {
+        'ok': true,
+        'service': 'mutande-core',
+        'version': '0.0.0',
+      });
+    });
+
+    await tester.pumpWidget(
+      MutandeApp(
+        config: const AppConfig(hubUrl: 'http://localhost:8000'),
+        daemon: daemon,
+        seedStatus: const DaemonStatusResult(
+          configured: true,
+          hubUrl: 'http://localhost:8000',
+          handle: 'alice@acme',
+        ),
+      ),
     );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Session'));
+    await tester.pumpAndSettle();
+    expect(find.text('Check daemon'), findsOneWidget);
+    expect(find.text('Connect AI hosts'), findsOneWidget);
+  });
+
+  testWidgets('verify tab shows safety UI', (WidgetTester tester) async {
+    final daemon = _mockDaemon((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      final method = body['method'] as String?;
+      if (method == 'list_threads') {
+        return _rpcOk(body['id'], {'threads': []});
+      }
+      if (method == 'get_safety_number') {
+        return _rpcOk(body['id'], {
+          'handle': 'me',
+          'fingerprint': '11111 22222 33333 44444 55555 66666 77777 88888 99999 00000 12345 67890',
+          'uri': 'mutande:safety:me:11111 22222',
+        });
+      }
+      return _rpcOk(body['id'], {'ok': true});
+    });
+
+    await tester.pumpWidget(
+      MutandeApp(
+        config: const AppConfig(hubUrl: 'http://localhost:8000'),
+        daemon: daemon,
+        seedStatus: const DaemonStatusResult(
+          configured: true,
+          hubUrl: 'http://localhost:8000',
+          handle: 'alice@acme',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Verify'));
+    await tester.pumpAndSettle();
+    expect(find.text('Verify contact'), findsOneWidget);
+    expect(find.text('Your number'), findsOneWidget);
+    expect(find.text('Compare'), findsOneWidget);
   });
 
   testWidgets('onboarding form smoke test', (WidgetTester tester) async {

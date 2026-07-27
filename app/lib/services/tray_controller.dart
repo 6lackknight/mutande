@@ -6,6 +6,7 @@ import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'app_actions.dart';
+import 'core_sidecar.dart';
 import 'daemon_client.dart';
 
 /// macOS menu-bar (status item) controller.
@@ -23,9 +24,15 @@ class TrayController with TrayListener, WindowListener {
   final DaemonClient _daemon;
   final Duration healthPollInterval;
 
+  CoreSidecar? _sidecar;
   Timer? _healthTimer;
   bool? _daemonUp;
   bool _started = false;
+
+  /// Optional sidecar lifecycle — stopped on Quit when the app spawned it.
+  void attachSidecar(CoreSidecar sidecar) {
+    _sidecar = sidecar;
+  }
 
   Future<void> start() async {
     if (_started || kIsWeb || !Platform.isMacOS) return;
@@ -91,6 +98,7 @@ class TrayController with TrayListener, WindowListener {
 
   Future<void> _quit() async {
     _healthTimer?.cancel();
+    await _sidecar?.stop();
     await windowManager.setPreventClose(false);
     await trayManager.destroy();
     await windowManager.destroy();
