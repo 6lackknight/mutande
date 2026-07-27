@@ -1,0 +1,41 @@
+import type { Context, Next } from "hono";
+import { HubError, unauthorized } from "../store/errors.ts";
+import type { HubStore } from "../store/store.ts";
+import type { AuthContext } from "../store/types.ts";
+
+export type HubVariables = {
+  auth: AuthContext;
+};
+
+export type HubEnv = {
+  Variables: HubVariables;
+};
+
+export function authMiddleware(store: HubStore) {
+  return async (c: Context<HubEnv>, next: Next) => {
+    const header = c.req.header("Authorization");
+    if (!header?.startsWith("Bearer ")) {
+      throw unauthorized("Missing Bearer token");
+    }
+    const token = header.slice("Bearer ".length);
+    try {
+      const auth = await store.verifyAccessToken(token);
+      c.set("auth", auth);
+      await next();
+    } catch (e) {
+      if (e instanceof HubError) throw e;
+      throw unauthorized("Invalid or expired token");
+    }
+  };
+}
+
+export function handleHubError(err: unknown): Response {
+  if (err instanceof HubError) {
+    return Response.json(
+      { error: err.code, message: err.message },
+      { status: err.status },
+    );
+  }
+  console.error(err);
+  return Response.json({ error: "internal", message: "Internal server error" }, { status: 500 });
+}

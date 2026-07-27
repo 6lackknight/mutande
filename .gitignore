@@ -1,0 +1,30 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+
+# Rust
+/core/target/
+
+# Flutter
+/app/.dart_tool/
+/app/.flutter-plugins
+/app/.flutter-plugins-dependencies
+/app/.packages
+/app/build/
+/app/**/ephemeral/
+/app/**/Flutter/ephemeral/
+
+# Deno
+/hub/.deno/
+
+# Mutande local
+.mutande/
+
+# IDE
+.idea/
+*.iml

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mutande.app/schemas/human-decision/v1",
+  "title": "HumanDecision",
+  "description": "Platform-agnostic payload for AskQuestion (Cursor) or structured chat fallback.",
+  "type": "object",
+  "required": ["kind", "prompt"],
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": ["question", "confirm_forward", "verify_contact"]
+    },
+    "title": { "type": "string" },
+    "prompt": { "type": "string" },
+    "options": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "label"],
+        "properties": {
+          "id": { "type": "string" },
+          "label": { "type": "string" }
+        }
+      }
+    },
+    "allow_multiple": { "type": "boolean", "default": false }
+  }
+}

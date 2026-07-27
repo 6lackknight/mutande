@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mutande.app/schemas/thread-meta/v1",
+  "title": "ThreadMeta",
+  "description": "Hub-visible thread metadata (never includes plaintext content).",
+  "type": "object",
+  "required": ["id", "kind", "status", "from", "audience", "created_at", "updated_at"],
+  "properties": {
+    "id": { "type": "string", "format": "uuid" },
+    "kind": { "type": "string", "enum": ["direct", "broadcast"] },
+    "status": { "type": "string", "enum": ["open", "closed"] },
+    "from": { "type": "string" },
+    "audience": { "type": "string", "description": "handle or @all@org" },
+    "participant_count": { "type": "integer" },
+    "reply_count": { "type": "integer" },
+    "your_status": { "type": "string", "enum": ["pending", "replied"] }
+  }
+}

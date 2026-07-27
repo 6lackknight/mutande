@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mutande.app/schemas/envelope/v1",
+  "title": "Envelope",
+  "description": "Hub-visible wire unit: one content ciphertext + per-device wraps.",
+  "type": "object",
+  "required": ["version", "content_nonce", "ciphertext", "wraps"],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 255,
+      "description": "Envelope format version (currently 1)."
+    },
+    "content_nonce": {
+      "type": "array",
+      "description": "12-byte nonce for ChaCha20-Poly1305 content AEAD.",
+      "items": { "type": "integer", "minimum": 0, "maximum": 255 },
+      "minItems": 12,
+      "maxItems": 12
+    },
+    "ciphertext": {
+      "type": "array",
+      "description": "AEAD-encrypted plaintext bundle bytes.",
+      "items": { "type": "integer", "minimum": 0, "maximum": 255 }
+    },
+    "wraps": {
+      "type": "array",
+      "description": "Per-recipient device content-key wraps.",
+      "items": { "$ref": "#/$defs/Wrap" },
+      "minItems": 1
+    },
+    "blob_id": {
+      "type": "string",
+      "description": "R2 object id when ciphertext is stored as a blob (inline ciphertext empty)."
+    },
+    "sha256": {
+      "type": "string",
+      "description": "Hex SHA-256 of the blob ciphertext bytes."
+    }
+  },
+  "$defs": {
+    "DevicePubKey": {
+      "type": "array",
+      "description": "32-byte X25519 public key for one registered device.",
+      "items": { "type": "integer", "minimum": 0, "maximum": 255 },
+      "minItems": 32,
+      "maxItems": 32
+    },
+    "Wrap": {
+      "type": "object",
+      "required": ["recipient", "ephemeral_public", "boxed_cek"],
+      "properties": {
+        "recipient": { "$ref": "#/$defs/DevicePubKey" },
+        "ephemeral_public": {
+          "$ref": "#/$defs/DevicePubKey",
+          "description": "Ephemeral sender public key used for this crypto_box wrap."
+        },
+        "boxed_cek": {
+          "type": "array",
+          "description": "crypto_box-wrapped content encryption key.",
+          "items": { "type": "integer", "minimum": 0, "maximum": 255 }
+        }
+      }
+    }
+  }
+}
