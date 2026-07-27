@@ -29,3 +29,11 @@ v1.5 iOS companion.
 - Flutter Unix-socket transport (still HTTP bridge + token)
 - ChatGPT MCP config path confirmation across desktop builds
 - Widget tests beyond smoke; full host MCP QA on real macOS
+- Own safety-number URI uses handle `me` until hub `/me` is wired into that RPC
+- Verify UI shows QR *payload* stub (copyable URI), not a rendered QR bitmap
+
+## Last code review
+
+**Verdict: no Critical/High remaining** (post-fix: blob opaque-decode gated on
+`blob_id`; sidecar persists core path even when daemon already up; stdout/stderr
+drained to avoid pipe deadlock).
