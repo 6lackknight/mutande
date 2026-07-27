@@ -44,6 +44,25 @@ const READ_TOOLS: &[(&str, &str, ValueFn)] = &[
         "Get current encrypted draft (decrypted locally). Read-only.",
         || json!({ "type": "object", "properties": {}, "additionalProperties": false }),
     ),
+    (
+        "get_safety_number",
+        "Get this device's safety-number fingerprint and compare/QR URI. Read-only.",
+        || json!({ "type": "object", "properties": {}, "additionalProperties": false }),
+    ),
+    (
+        "contact_safety_number",
+        "Get a contact's safety-number fingerprint for out-of-band compare. Read-only.",
+        || {
+            json!({
+                "type": "object",
+                "required": ["handle"],
+                "properties": {
+                    "handle": { "type": "string" }
+                },
+                "additionalProperties": false
+            })
+        },
+    ),
 ];
 
 /// Send / mutate tools — require host allow now/always.
@@ -137,6 +156,38 @@ const SEND_TOOLS: &[(&str, &str, ValueFn)] = &[
             })
         },
     ),
+    (
+        "forward_blob",
+        "Encrypt a large artifact, upload via hub presign PUT, and open a thread with blob_id envelope. Provide content_base64 or path. Requires user confirmation.",
+        || {
+            json!({
+                "type": "object",
+                "required": ["recipient"],
+                "properties": {
+                    "recipient": { "type": "string", "description": "handle or @all@org" },
+                    "content_base64": { "type": "string" },
+                    "path": { "type": "string", "description": "local file path to seal and upload" },
+                    "subject": { "type": "string" }
+                },
+                "additionalProperties": false
+            })
+        },
+    ),
+    (
+        "verify_contact",
+        "Compare a safety-number fingerprint or mutande:safety URI against a contact pubkey.",
+        || {
+            json!({
+                "type": "object",
+                "required": ["handle", "fingerprint"],
+                "properties": {
+                    "handle": { "type": "string" },
+                    "fingerprint": { "type": "string", "description": "fingerprint digits or mutande:safety URI" }
+                },
+                "additionalProperties": false
+            })
+        },
+    ),
 ];
 
 type ValueFn = fn() -> serde_json::Value;
@@ -159,12 +210,16 @@ pub fn daemon_method_for_tool(name: &str) -> Option<&'static str> {
         "list_threads" => Some("list_threads"),
         "get_thread" => Some("get_thread"),
         "get_draft" => Some("get_draft"),
+        "get_safety_number" => Some("get_safety_number"),
+        "contact_safety_number" => Some("contact_safety_number"),
         "draft_add_question" => Some("draft_add_question"),
         "draft_add_resource" => Some("draft_add_resource"),
         "forward_draft" => Some("forward_draft"),
+        "forward_blob" => Some("forward_blob"),
         "reply_to_thread" => Some("reply_to_thread"),
         "close_thread" => Some("close_thread"),
         "mark_processed" => Some("mark_processed"),
+        "verify_contact" => Some("verify_contact"),
         _ => None,
     }
 }

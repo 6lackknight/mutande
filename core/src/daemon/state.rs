@@ -9,7 +9,9 @@ use crypto_box::SecretKey;
 use serde::{Deserialize, Serialize};
 
 use crate::crypto::{
-    DevicePubKey, DeviceSecretKey, Envelope, IdentityStore, MemoryStore, StoreError, open, seal,
+    DevicePubKey, DeviceSecretKey, Envelope, IdentityStore, MemoryStore, StoreError,
+    fingerprints_match, open, open_from_bytes, safety_number, safety_uri, seal, seal_to_temp,
+    with_blob_id,
 };
 
 #[cfg(target_os = "macos")]
@@ -265,6 +267,17 @@ pub struct StatusResult {
     pub org_id: Option<String>,
 }
 
+/// Safety-number compare result (no raw pubkey in agent/MCP responses).
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SafetyNumberResult {
+    pub handle: String,
+    pub fingerprint: String,
+    pub uri: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verified: Option<bool>,
+}
+
+
 pub struct DaemonState {
     config: Arc<Mutex<DaemonConfig>>,
     /// Override config.json path (tests); `None` → `~/.mutande/config.json`.
@@ -277,6 +290,9 @@ pub struct DaemonState {
 }
 
 impl DaemonState {
+    /// Inline envelope comfort zone (~40KB plaintext). Larger → R2 blob path.
+    pub const INLINE_COMFORT_ZONE: usize = 40 * 1024;
+
     pub fn bootstrap() -> Result<Self> {
         let loaded = load_config().unwrap_or_default();
         let identity = bootstrap_identity()?;
@@ -292,7 +308,7 @@ impl DaemonState {
             _ => None,
         };
 
-        Ok(Self {
+        let state = Self {
             config,
             config_path: None,
             identity,
@@ -300,7 +316,40 @@ impl DaemonState {
             draft: Mutex::new(MutandeBundle::default()),
             draft_id: Mutex::new(None),
             processed_threads: Mutex::new(HashSet::new()),
-        })
+        };
+        // So Connect AI / MCP host configs resolve the bundled sidecar absolute path.
+        let _ = state.persist_own_exe_path();
+        Ok(state)
+    }
+
+    /// Record absolute path of this `mutande-core` binary in config.json.
+    pub fn persist_own_exe_path(&self) -> Result<()> {
+        let exe = std::env::current_exe().context("current_exe")?;
+        let abs = exe
+            .canonicalize()
+            .unwrap_or(exe)
+            .to_string_lossy()
+            .into_owned();
+        self.set_mutande_core_path(&abs)
+    }
+
+    pub fn set_mutande_core_path(&self, path: &str) -> Result<()> {
+        let path = path.trim();
+        if path.is_empty() {
+            bail!("mutande_core_path empty");
+        }
+        let mut cfg = self.config.lock().unwrap();
+        if cfg.mutande_core_path.as_deref() == Some(path) {
+            return Ok(());
+        }
+        cfg.mutande_core_path = Some(path.to_string());
+        let to_save = cfg.clone();
+        drop(cfg);
+        let dest = self
+            .config_path
+            .clone()
+            .unwrap_or_else(config_path);
+        save_config_at(&dest, &to_save)
     }
 
     #[cfg(test)]
@@ -328,6 +377,11 @@ impl DaemonState {
             draft_id: Mutex::new(None),
             processed_threads: Mutex::new(HashSet::new()),
         })
+    }
+
+    #[cfg(test)]
+    pub fn attach_hub_for_test(&self, hub: HubClient) {
+        *self.hub.lock().unwrap() = Some(hub);
     }
 
     fn hub_client(&self) -> Option<HubClient> {
@@ -502,7 +556,7 @@ impl DaemonState {
             bail!("hub not configured");
         };
         let detail = hub.get_thread(thread_id).await?;
-        Ok(self.open_thread_detail(detail))
+        Ok(self.open_thread_detail_async(detail).await)
     }
 
     /// Attempt to open each message envelope; succeed with `bundle`, else `open_error` + meta only
@@ -511,7 +565,7 @@ impl DaemonState {
         let messages = detail
             .messages
             .into_iter()
-            .map(|msg| self.open_thread_message(msg))
+            .map(|msg| self.open_thread_message_sync(msg))
             .collect();
         OpenedThreadDetail {
             thread: detail.thread,
@@ -519,7 +573,32 @@ impl DaemonState {
         }
     }
 
-    fn open_thread_message(&self, msg: ThreadMessage) -> OpenedThreadMessage {
+    async fn open_thread_detail_async(&self, detail: ThreadDetail) -> OpenedThreadDetail {
+        let mut messages = Vec::with_capacity(detail.messages.len());
+        for msg in detail.messages {
+            messages.push(self.open_thread_message_async(msg).await);
+        }
+        OpenedThreadDetail {
+            thread: detail.thread,
+            messages,
+        }
+    }
+
+    fn open_thread_message_sync(&self, msg: ThreadMessage) -> OpenedThreadMessage {
+        let plain = self.open_envelope(&msg.envelope);
+        self.finish_opened_message(msg, plain)
+    }
+
+    async fn open_thread_message_async(&self, msg: ThreadMessage) -> OpenedThreadMessage {
+        let plain = self.open_envelope_maybe_blob(&msg.envelope).await;
+        self.finish_opened_message(msg, plain)
+    }
+
+    fn finish_opened_message(
+        &self,
+        msg: ThreadMessage,
+        plain: Result<Vec<u8>>,
+    ) -> OpenedThreadMessage {
         let meta = |open_error: Option<String>| OpenedThreadMessage {
             id: msg.id.clone(),
             thread_id: msg.thread_id.clone(),
@@ -532,9 +611,28 @@ impl DaemonState {
             open_error,
         };
 
-        match self.open_envelope(&msg.envelope) {
-            Ok(plain) => match serde_json::from_slice::<MutandeBundle>(&plain) {
-                Ok(bundle) => OpenedThreadMessage {
+        match plain {
+            Ok(plain) => {
+                let bundle = match serde_json::from_slice::<MutandeBundle>(&plain) {
+                    Ok(bundle) => bundle,
+                    Err(_) => {
+                        // Opaque blob artifact (raw sealed bytes) — summarize without embedding.
+                        MutandeBundle {
+                            subject: Some("blob artifact".into()),
+                            notes: Some(format!(
+                                "Opened encrypted blob ({} bytes); content not inlined.",
+                                plain.len()
+                            )),
+                            resources: vec![BundleResource {
+                                name: "artifact.bin".into(),
+                                mime: "application/octet-stream".into(),
+                                content: None,
+                            }],
+                            ..Default::default()
+                        }
+                    }
+                };
+                OpenedThreadMessage {
                     id: msg.id,
                     thread_id: msg.thread_id,
                     from_user_id: msg.from_user_id,
@@ -544,11 +642,47 @@ impl DaemonState {
                     bundle: Some(bundle),
                     envelope: None,
                     open_error: None,
-                },
-                Err(err) => meta(Some(format!("decode bundle: {err}"))),
-            },
+                }
+            }
             Err(err) => meta(Some(err.to_string())),
         }
+    }
+
+    /// Open inline envelope, or download R2 ciphertext when `blob_id` is set.
+    pub async fn open_envelope_maybe_blob(&self, envelope: &Envelope) -> Result<Vec<u8>> {
+        if let Some(blob_id) = envelope.blob_id.as_deref() {
+            let Some(hub) = self.hub_client() else {
+                bail!("hub not configured (needed for blob download)");
+            };
+            let dl = hub.blob_download_url(blob_id).await?;
+            let ciphertext = hub.get_presigned(&dl.download_url).await?;
+            let sk = self.load_secret()?;
+            return open_from_bytes(envelope, &ciphertext, &sk)
+                .map_err(|e| anyhow::anyhow!("{e}"));
+        }
+        self.open_envelope(envelope)
+    }
+
+    /// Seal plaintext to temp → hub upload-url → PUT → envelope with blob_id.
+    pub async fn seal_and_upload_blob(
+        &self,
+        plaintext: &[u8],
+        recipients: &[DevicePubKey],
+    ) -> Result<Envelope> {
+        let Some(hub) = self.hub_client() else {
+            bail!("hub not configured");
+        };
+        let sealed =
+            seal_to_temp(plaintext, recipients).map_err(|e| anyhow::anyhow!("{e}"))?;
+        let upload = hub
+            .blob_upload_url(sealed.size_bytes, Some("application/octet-stream"))
+            .await?;
+        let bytes = fs::read(&sealed.ciphertext_path)
+            .with_context(|| format!("read {}", sealed.ciphertext_path.display()))?;
+        hub.put_presigned(&upload.upload_url, &bytes).await?;
+        let env = with_blob_id(sealed.envelope, upload.blob_id);
+        let _ = fs::remove_file(&sealed.ciphertext_path);
+        Ok(env)
     }
 
     pub async fn forward_draft(&self, recipient: &str) -> Result<String> {
@@ -564,7 +698,7 @@ impl DaemonState {
 
         let plain = serde_json::to_vec(&bundle)?;
         let recipients = self.resolve_recipient_pubkeys(recipient).await?;
-        let env = seal(&plain, &recipients).map_err(|e| anyhow::anyhow!("{e}"))?;
+        let env = self.seal_inline_or_blob(&plain, &recipients).await?;
 
         let thread_id = if let Some(hub) = self.hub_client() {
             let resp = hub.create_thread(recipient, &env).await?;
@@ -584,16 +718,128 @@ impl DaemonState {
         Ok(thread_id)
     }
 
+    /// Explicit blob send: seal bytes → upload → create thread with blob envelope.
+    ///
+    /// Seals raw `plaintext` (artifact bytes). Recipient `get_thread` opens and
+    /// surfaces a summary bundle (size/name) without inlining ciphertext.
+    pub async fn forward_blob(
+        &self,
+        recipient: &str,
+        plaintext: &[u8],
+        _subject: Option<&str>,
+    ) -> Result<String> {
+        if plaintext.is_empty() {
+            bail!("blob plaintext empty");
+        }
+        let recipients = self.resolve_recipient_pubkeys(recipient).await?;
+        let env = self.seal_and_upload_blob(plaintext, &recipients).await?;
+
+        if let Some(hub) = self.hub_client() {
+            let resp = hub.create_thread(recipient, &env).await?;
+            Ok(resp.thread.id)
+        } else {
+            Ok(uuid::Uuid::new_v4().to_string())
+        }
+    }
+
+    async fn seal_inline_or_blob(
+        &self,
+        plain: &[u8],
+        recipients: &[DevicePubKey],
+    ) -> Result<Envelope> {
+        if plain.len() > Self::INLINE_COMFORT_ZONE && self.hub_client().is_some() {
+            self.seal_and_upload_blob(plain, recipients).await
+        } else {
+            seal(plain, recipients).map_err(|e| anyhow::anyhow!("{e}"))
+        }
+    }
+
     pub async fn reply_to_thread(&self, thread_id: &str, bundle: MutandeBundle) -> Result<()> {
         let plain = serde_json::to_vec(&bundle)?;
         let detail = self.get_thread(thread_id).await?;
         let recipients = self.resolve_reply_recipients(&detail).await?;
-        let env = seal(&plain, &recipients).map_err(|e| anyhow::anyhow!("{e}"))?;
+        let env = self.seal_inline_or_blob(&plain, &recipients).await?;
 
         if let Some(hub) = self.hub_client() {
             hub.reply_to_thread(thread_id, &env).await?;
         }
         Ok(())
+    }
+
+    /// Own device safety number + QR/compare URI.
+    pub fn own_safety_number(&self) -> Result<SafetyNumberResult> {
+        let pk = self.device_public()?;
+        let fingerprint = safety_number(&pk);
+        let uri = safety_uri("me", &pk);
+        Ok(SafetyNumberResult {
+            handle: "me".into(),
+            fingerprint,
+            uri,
+            verified: None,
+        })
+    }
+
+    /// Lookup contact pubkey → safety number for compare / QR stub.
+    pub async fn contact_safety_number(&self, handle: &str) -> Result<SafetyNumberResult> {
+        let handle = handle.trim();
+        if handle.is_empty() {
+            bail!("missing param: handle");
+        }
+        let contacts = self.list_contacts().await?;
+        for c in &contacts {
+            if c.handle == handle {
+                let Some(pk) = c.pubkey.as_deref().and_then(pubkey_from_hub_string) else {
+                    bail!("contact {handle} has no pubkey");
+                };
+                let fingerprint = safety_number(&pk);
+                return Ok(SafetyNumberResult {
+                    handle: handle.to_string(),
+                    fingerprint: fingerprint.clone(),
+                    uri: safety_uri(handle, &pk),
+                    verified: None,
+                });
+            }
+        }
+        if let Some(hub) = self.hub_client() {
+            if let Ok(me) = hub.me().await {
+                if me.handle == handle {
+                    if let Some(pk) = pubkey_from_hub_string(&me.pubkey) {
+                        return Ok(SafetyNumberResult {
+                            handle: handle.to_string(),
+                            fingerprint: safety_number(&pk),
+                            uri: safety_uri(handle, &pk),
+                            verified: None,
+                        });
+                    }
+                }
+            }
+        }
+        bail!("unknown contact {handle}");
+    }
+
+    /// Compare a pasted/scanned fingerprint or URI against a contact.
+    pub async fn verify_contact(
+        &self,
+        handle: &str,
+        fingerprint_or_uri: &str,
+    ) -> Result<SafetyNumberResult> {
+        let expected = self.contact_safety_number(handle).await?;
+        let candidate = fingerprint_or_uri.trim();
+        let candidate_fp = if let Some((uri_handle, fp)) =
+            crate::crypto::parse_safety_uri(candidate)
+        {
+            if uri_handle != handle {
+                bail!("URI handle {uri_handle} does not match {handle}");
+            }
+            fp
+        } else {
+            candidate.to_string()
+        };
+        let verified = fingerprints_match(&expected.fingerprint, &candidate_fp);
+        Ok(SafetyNumberResult {
+            verified: Some(verified),
+            ..expected
+        })
     }
 
     pub async fn close_thread(&self, thread_id: &str) -> Result<()> {
@@ -806,5 +1052,134 @@ mod tests {
             "expected open_error, got {:?}",
             msg.open_error
         );
+    }
+
+    #[test]
+    fn own_safety_number_is_stable() {
+        let state = DaemonState::new_in_memory_for_test().unwrap();
+        let a = state.own_safety_number().unwrap();
+        let b = state.own_safety_number().unwrap();
+        assert_eq!(a.fingerprint, b.fingerprint);
+        assert!(a.uri.starts_with("mutande:safety:"));
+        assert_eq!(a.fingerprint.split_whitespace().count(), 12);
+    }
+
+    #[tokio::test]
+    async fn blob_seal_upload_download_open_e2e() {
+        use crate::hub_client::{pubkey_to_hub_string, HubConfig};
+        use std::sync::Mutex as StdMutex;
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, Request, ResponseTemplate};
+
+        let state = DaemonState::new_in_memory_for_test().unwrap();
+        let own_pk = state.device_public().unwrap();
+        let pk_hub = pubkey_to_hub_string(&own_pk);
+
+        let server = MockServer::start().await;
+        let blob_store: Arc<StdMutex<Option<Vec<u8>>>> = Arc::new(StdMutex::new(None));
+        let blob_store_put = Arc::clone(&blob_store);
+        let blob_store_get = Arc::clone(&blob_store);
+
+        Mock::given(method("GET"))
+            .and(path("/v1/contacts"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                "contacts": [
+                    { "handle": "bob@acme", "pubkey": pk_hub }
+                ]
+            })))
+            .mount(&server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/blobs/upload-url"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                "blob_id": "blob-e2e-1",
+                "upload_url": format!("{}/mock-r2/blob-e2e-1?upload=1", server.uri()),
+                "expires_at": "2099-01-01T00:00:00Z"
+            })))
+            .mount(&server)
+            .await;
+
+        Mock::given(method("PUT"))
+            .and(path("/mock-r2/blob-e2e-1"))
+            .respond_with(move |req: &Request| {
+                *blob_store_put.lock().unwrap() = Some(req.body.clone());
+                ResponseTemplate::new(200)
+            })
+            .mount(&server)
+            .await;
+
+        let captured_env: Arc<StdMutex<Option<serde_json::Value>>> =
+            Arc::new(StdMutex::new(None));
+        let captured_env_write = Arc::clone(&captured_env);
+        Mock::given(method("POST"))
+            .and(path("/v1/threads"))
+            .respond_with(move |req: &Request| {
+                let body: serde_json::Value = serde_json::from_slice(&req.body).unwrap();
+                *captured_env_write.lock().unwrap() = Some(body["envelope"].clone());
+                ResponseTemplate::new(201).set_body_json(&serde_json::json!({
+                    "thread": {
+                        "id": "thread-blob-1",
+                        "kind": "direct",
+                        "status": "open",
+                        "from": "alice@acme",
+                        "from_user_id": "u-alice",
+                        "audience": "bob@acme",
+                        "org_id": "org-1",
+                        "participant_count": 2,
+                        "reply_count": 0,
+                        "created_at": "2026-01-01T00:00:00Z",
+                        "updated_at": "2026-01-01T00:00:00Z"
+                    },
+                    "message_id": "msg-blob-1"
+                }))
+            })
+            .mount(&server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/blobs/blob-e2e-1/download-url"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                "download_url": format!("{}/mock-r2/blob-e2e-1", server.uri()),
+                "expires_at": "2099-01-01T00:00:00Z",
+                "meta": {
+                    "id": "blob-e2e-1",
+                    "org_id": "org-1",
+                    "owner_user_id": "u-alice",
+                    "size_bytes": 1,
+                    "created_at": "2026-01-01T00:00:00Z"
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/mock-r2/blob-e2e-1"))
+            .respond_with(move |_req: &Request| {
+                let bytes = blob_store_get.lock().unwrap().clone().unwrap_or_default();
+                ResponseTemplate::new(200).set_body_bytes(bytes)
+            })
+            .mount(&server)
+            .await;
+
+        let hub = HubClient::new(HubConfig::new(server.uri(), "test-jwt")).unwrap();
+        state.attach_hub_for_test(hub);
+
+        let artifact = b"large codebase tarball bytes for e2e";
+        let thread_id = state
+            .forward_blob("bob@acme", artifact, Some("code drop"))
+            .await
+            .unwrap();
+        assert_eq!(thread_id, "thread-blob-1");
+
+        let env_json = captured_env.lock().unwrap().clone().unwrap();
+        assert_eq!(env_json["blob_id"], "blob-e2e-1");
+        assert!(env_json["ciphertext"].as_array().unwrap().is_empty());
+        assert!(env_json["sha256"].as_str().unwrap().len() == 64);
+        assert!(blob_store.lock().unwrap().as_ref().unwrap().len() > 0);
+
+        let env: Envelope = serde_json::from_value(env_json).unwrap();
+        let opened = state.open_envelope_maybe_blob(&env).await.unwrap();
+        assert_eq!(opened, artifact);
     }
 }

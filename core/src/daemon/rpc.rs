@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -155,8 +155,90 @@ async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Resu
             let result = super::connect_host::connect_host(&host, None)?;
             Ok(serde_json::to_value(result)?)
         }
+        "get_safety_number" | "own_safety_number" => {
+            let result = state.own_safety_number()?;
+            Ok(serde_json::to_value(result)?)
+        }
+        "contact_safety_number" => {
+            let handle = param_str(&params, "handle")?;
+            let result = state.contact_safety_number(&handle).await?;
+            Ok(serde_json::to_value(result)?)
+        }
+        "verify_contact" => {
+            let handle = param_str(&params, "handle")?;
+            let fingerprint = params
+                .get("fingerprint")
+                .or_else(|| params.get("fingerprint_or_uri"))
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow::anyhow!("missing param: fingerprint"))?;
+            let result = state.verify_contact(&handle, fingerprint).await?;
+            Ok(serde_json::to_value(result)?)
+        }
+        "forward_blob" => {
+            let recipient = param_str(&params, "recipient")?;
+            let subject = params
+                .get("subject")
+                .and_then(|v| v.as_str())
+                .map(str::to_string);
+            let plaintext = if let Some(b64) = params.get("content_base64").and_then(|v| v.as_str())
+            {
+                decode_base64(b64)?
+            } else if let Some(path) = params.get("path").and_then(|v| v.as_str()) {
+                std::fs::read(path)
+                    .with_context(|| format!("read blob path {path}"))?
+            } else {
+                anyhow::bail!("missing param: content_base64 or path");
+            };
+            let thread_id = state
+                .forward_blob(&recipient, &plaintext, subject.as_deref())
+                .await?;
+            Ok(serde_json::json!({ "thread_id": thread_id }))
+        }
+        "set_core_path" => {
+            let path = param_str(&params, "path")?;
+            state.set_mutande_core_path(&path)?;
+            Ok(serde_json::json!({ "ok": true, "path": path }))
+        }
         _ => anyhow::bail!("unknown method: {method}"),
     }
+}
+
+fn decode_base64(input: &str) -> Result<Vec<u8>> {
+    // Standard base64 decode without extra crate dependency.
+    fn val(c: u8) -> Option<u8> {
+        match c {
+            b'A'..=b'Z' => Some(c - b'A'),
+            b'a'..=b'z' => Some(c - b'a' + 26),
+            b'0'..=b'9' => Some(c - b'0' + 52),
+            b'+' => Some(62),
+            b'/' => Some(63),
+            _ => None,
+        }
+    }
+    let cleaned: Vec<u8> = input
+        .bytes()
+        .filter(|b| !b.is_ascii_whitespace())
+        .collect();
+    if cleaned.len() % 4 != 0 {
+        anyhow::bail!("invalid base64 length");
+    }
+    let mut out = Vec::with_capacity(cleaned.len() / 4 * 3);
+    for chunk in cleaned.chunks_exact(4) {
+        let (a, b, c, d) = (chunk[0], chunk[1], chunk[2], chunk[3]);
+        let av = val(a).context("invalid base64")?;
+        let bv = val(b).context("invalid base64")?;
+        let cv = if c == b'=' { 0 } else { val(c).context("invalid base64")? };
+        let dv = if d == b'=' { 0 } else { val(d).context("invalid base64")? };
+        let n = ((av as u32) << 18) | ((bv as u32) << 12) | ((cv as u32) << 6) | (dv as u32);
+        out.push(((n >> 16) & 0xff) as u8);
+        if c != b'=' {
+            out.push(((n >> 8) & 0xff) as u8);
+        }
+        if d != b'=' {
+            out.push((n & 0xff) as u8);
+        }
+    }
+    Ok(out)
 }
 
 fn param_str(params: &Value, key: &str) -> Result<String> {

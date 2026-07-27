@@ -285,6 +285,47 @@ impl HubClient {
         .await
     }
 
+    /// PUT ciphertext bytes to a hub-issued presigned (or mock) upload URL.
+    pub async fn put_presigned(&self, upload_url: &str, body: &[u8]) -> Result<()> {
+        let resp = self
+            .client
+            .put(upload_url)
+            .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
+            .body(body.to_vec())
+            .send()
+            .await
+            .context("PUT presigned blob")?;
+        if resp.status().is_success() {
+            Ok(())
+        } else {
+            Err(hub_error(
+                resp.status(),
+                resp.text().await.unwrap_or_default(),
+            ))
+        }
+    }
+
+    /// GET ciphertext bytes from a hub-issued presigned (or mock) download URL.
+    pub async fn get_presigned(&self, download_url: &str) -> Result<Vec<u8>> {
+        let resp = self
+            .client
+            .get(download_url)
+            .send()
+            .await
+            .context("GET presigned blob")?;
+        if resp.status().is_success() {
+            resp.bytes()
+                .await
+                .map(|b| b.to_vec())
+                .context("read presigned blob body")
+        } else {
+            Err(hub_error(
+                resp.status(),
+                resp.text().await.unwrap_or_default(),
+            ))
+        }
+    }
+
     fn url(&self, path: &str) -> String {
         format!("{}{}", self.hub_url, path)
     }

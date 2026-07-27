@@ -1,9 +1,8 @@
 //! Satellite crypto helpers — seal large payloads to a temp ciphertext file for R2 upload.
 //! Shares CEK/wrap path with inline `seal`/`open`; blob ciphertext is not stored in the envelope.
 //!
-//! **Not exposed via daemon RPC or MCP yet.** Callers use `seal_to_temp` + hub
-//! `blob_upload_url` / PUT themselves. Do not add half-wired upload tools until
-//! the full encrypt → presign → PUT → envelope path is ready.
+//! Wired via daemon `forward_blob` / auto blob path in `forward_draft` when payload
+//! exceeds the inline comfort zone: seal_to_temp → hub upload-url → PUT → envelope.blob_id.
 
 use std::fs;
 use std::io::Write;
