@@ -429,6 +429,8 @@ class _HomeScreenState extends State<HomeScreen> {
   int _tab = 0; // 0 threads · 1 agents · 2 contacts
   VoidCallback? _reloadThreads;
   VoidCallback? _reloadAgents;
+  VoidCallback? _reloadContacts;
+  String? _composeRecipient;
 
   void _registerAgentsReload(VoidCallback? reload) {
     _reloadAgents = reload;
@@ -436,6 +438,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _registerThreadsReload(VoidCallback? reload) {
     _reloadThreads = reload;
+  }
+
+  void _registerContactsReload(VoidCallback? reload) {
+    _reloadContacts = reload;
   }
 
   @override
@@ -498,7 +504,10 @@ class _HomeScreenState extends State<HomeScreen> {
             _HomeHeader(
               handle: handle,
               tab: _tab,
-              onTab: (i) => setState(() => _tab = i),
+              onTab: (i) {
+                setState(() => _tab = i);
+                if (i == 2) _reloadContacts?.call();
+              },
               onSettings: _openSettings,
             ),
             if (widget.statusError != null)
@@ -525,7 +534,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: _tab == 0
                     ? ThreadsPanel(
                         daemon: widget.daemon,
+                        myHandle: widget.status.handle,
                         onReloadReady: _registerThreadsReload,
+                        composeRecipient: _composeRecipient,
+                        onComposeRecipientHandled: () {
+                          if (_composeRecipient != null) {
+                            setState(() => _composeRecipient = null);
+                          }
+                        },
                       )
                     : _tab == 1
                         ? AgentsPanel(
@@ -535,11 +551,18 @@ class _HomeScreenState extends State<HomeScreen> {
                             hostLinkStore: widget.hostLinkStore,
                             onReloadReady: _registerAgentsReload,
                           )
-                        : SingleChildScrollView(
-                            child: ContactsPanel(
-                              handle: widget.status.handle,
-                            ),
-                          ),
+                            : ContactsPanel(
+                                daemon: widget.daemon,
+                                handle: widget.status.handle,
+                                inviteWebUrl: widget.config.webAppUrl,
+                                onReloadReady: _registerContactsReload,
+                                onStartThread: (handle) {
+                                  setState(() {
+                                    _tab = 0;
+                                    _composeRecipient = handle;
+                                  });
+                                },
+                              ),
               ),
             ),
           ],
@@ -549,6 +572,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
+/// Segmented primary nav — quiet brand whisper, capsule tabs, utilities right.
 class _HomeHeader extends StatelessWidget {
   const _HomeHeader({
     required this.handle,
@@ -569,59 +593,43 @@ class _HomeHeader extends StatelessWidget {
         : 'M';
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 12, 6),
+      padding: const EdgeInsets.fromLTRB(16, 10, 12, 10),
       child: Row(
         children: [
-          SizedBox(
-            width: 96,
-            child: Text(
-              'mutande',
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    color: const Color(0xFF292524),
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: -0.3,
-                  ),
+          Tooltip(
+            message: 'mutande',
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.asset(
+                'assets/tray_icon.png',
+                width: 32,
+                height: 32,
+                filterQuality: FilterQuality.medium,
+                semanticLabel: 'mutande',
+              ),
             ),
           ),
-          Expanded(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _NavTab(
-                  label: 'Threads',
-                  selected: tab == 0,
-                  onTap: () => onTab(0),
-                ),
-                _NavTab(
-                  label: 'Agents',
-                  selected: tab == 1,
-                  onTap: () => onTab(1),
-                ),
-                _NavTab(
-                  label: 'Contacts',
-                  selected: tab == 2,
-                  onTap: () => onTab(2),
-                ),
-              ],
-            ),
-          ),
+          const SizedBox(width: 12),
+          _SegmentedTabs(tab: tab, onTab: onTab),
+          const Spacer(),
           IconButton(
             tooltip: 'Settings',
             onPressed: onSettings,
-            icon: const Icon(Icons.settings_outlined, size: 20),
-            color: const Color(0xFF57534E),
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.settings_outlined, size: 18),
+            color: const Color(0xFF78716C),
           ),
           Tooltip(
             message: handle,
             child: CircleAvatar(
-              radius: 14,
+              radius: 12,
               backgroundColor: const Color(0xFFE7E5E4),
               child: Text(
                 initial,
                 style: const TextStyle(
                   color: Color(0xFF57534E),
                   fontWeight: FontWeight.w700,
-                  fontSize: 12,
+                  fontSize: 11,
                 ),
               ),
             ),
@@ -632,48 +640,61 @@ class _HomeHeader extends StatelessWidget {
   }
 }
 
-class _NavTab extends StatelessWidget {
-  const _NavTab({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
+class _SegmentedTabs extends StatelessWidget {
+  const _SegmentedTabs({required this.tab, required this.onTab});
 
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
+  final int tab;
+  final ValueChanged<int> onTab;
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(6),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              label,
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: selected
-                        ? const Color(0xFF92400E)
-                        : const Color(0xFF78716C),
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                  ),
-            ),
-            const SizedBox(height: 4),
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 160),
-              height: 2,
-              width: selected ? 22 : 0,
-              decoration: BoxDecoration(
-                color: const Color(0xFF92400E),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ],
+    Widget seg(String label, int i) {
+      final selected = tab == i;
+      return InkWell(
+        onTap: () => onTab(i),
+        borderRadius: BorderRadius.circular(7),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: selected ? const Color(0xFFFAFAF9) : Colors.transparent,
+            borderRadius: BorderRadius.circular(7),
+            boxShadow: selected
+                ? const [
+                    BoxShadow(
+                      color: Color(0x14000000),
+                      blurRadius: 2,
+                      offset: Offset(0, 1),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Text(
+            label,
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  color: selected
+                      ? const Color(0xFF292524)
+                      : const Color(0xFF78716C),
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                ),
+          ),
         ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE7E5E4),
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          seg('Threads', 0),
+          seg('Agents', 1),
+          seg('Contacts', 2),
+        ],
       ),
     );
   }

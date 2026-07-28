@@ -352,6 +352,21 @@ impl HubClient {
         Ok(())
     }
 
+    pub async fn toggle_message_upvote(
+        &self,
+        thread_id: &str,
+        message_id: &str,
+        from_agent: Option<&str>,
+    ) -> Result<ToggleUpvoteResponse> {
+        let body = ToggleUpvoteRequest { from_agent };
+        self.post_json(
+            &format!("/v1/threads/{thread_id}/messages/{message_id}/upvote"),
+            &body,
+            true,
+        )
+        .await
+    }
+
     pub async fn close_thread(&self, thread_id: &str) -> Result<ThreadMeta> {
         let resp: CloseThreadResponse = self
             .post_json(
@@ -1101,6 +1116,7 @@ mod tests {
                 created_at: "2026-01-01T00:00:00Z".into(),
                 sender_only: None,
                 parent_message_id: None,
+            upvotes: None,
             }],
         };
 

@@ -200,6 +200,21 @@ const SEND_TOOLS: &[(&str, &str, ValueFn)] = &[
         },
     ),
     (
+        "upvote_message",
+        "Signal interest or agreement on a thread message (one upvote per agent; toggle). Use for multi-agent coordination weight — nested replies handle structure.",
+        || {
+            json!({
+                "type": "object",
+                "required": ["thread_id", "message_id"],
+                "properties": {
+                    "thread_id": { "type": "string" },
+                    "message_id": { "type": "string" }
+                },
+                "additionalProperties": false
+            })
+        },
+    ),
+    (
         "forward_blob",
         "Hand off a large artifact as a sealed blob on a new thread (hub presign PUT). Provide content_base64 or path. Same recipients as forward_draft. Confirm via AskQuestion when the skill requires it.",
         || {
@@ -265,6 +280,7 @@ pub fn daemon_method_for_tool(name: &str) -> Option<&'static str> {
         "reply_to_thread" => Some("reply_to_thread"),
         "close_thread" => Some("close_thread"),
         "mark_processed" => Some("mark_processed"),
+        "upvote_message" => Some("toggle_message_upvote"),
         "verify_contact" => Some("verify_contact"),
         _ => None,
     }

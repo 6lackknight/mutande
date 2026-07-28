@@ -207,6 +207,15 @@ async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Resu
             state.mark_processed(&thread_id);
             Ok(serde_json::json!({ "ok": true }))
         }
+        "toggle_message_upvote" => {
+            let thread_id = param_str(&params, "thread_id")?;
+            let message_id = param_str(&params, "message_id")?;
+            let agent_slug = optional_str(&params, "agent_slug");
+            let result = state
+                .toggle_message_upvote(&thread_id, &message_id, agent_slug.as_deref())
+                .await?;
+            Ok(serde_json::to_value(result)?)
+        }
         "connect_host" => {
             let host = param_str(&params, "host")?;
             let result = super::connect_host::connect_host(&host, None)?;

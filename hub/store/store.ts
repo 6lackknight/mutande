@@ -27,6 +27,10 @@ import type {
   Org,
   RegisterDeviceInput,
   ReplyInput,
+  ToggleUpvoteInput,
+  ToggleUpvoteResult,
+  MessageUpvote,
+  MessageUpvoteSummary,
   Agent,
   SetDefaultAgentInput,
   RegisterAgentInput,
@@ -122,6 +126,12 @@ export class HubStore {
   private inboxPrefix(userId: string) { return ["inbox", userId]; }
   private messageKey(threadId: string, messageId: string) { return ["messages", threadId, messageId]; }
   private messagesPrefix(threadId: string) { return ["messages", threadId]; }
+  private messageUpvoteKey(threadId: string, messageId: string, agentId: string) {
+    return ["message_upvotes", threadId, messageId, agentId];
+  }
+  private messageUpvotesPrefix(threadId: string, messageId: string) {
+    return ["message_upvotes", threadId, messageId];
+  }
   private draftKey(userId: string, draftId: string) { return ["drafts", userId, draftId]; }
   private draftsPrefix(userId: string) { return ["drafts", userId]; }
   private blobKey(id: string) { return ["blobs", id]; }
@@ -715,10 +725,109 @@ export class HubStore {
     }
     messages.sort((a, b) => a.created_at.localeCompare(b.created_at));
 
+    const enriched = await Promise.all(
+      messages.map(async (msg) => ({
+        ...msg,
+        upvotes: await this.getMessageUpvoteSummary(auth, threadId, msg.id),
+      })),
+    );
+
     return {
       thread: { ...thread, your_status: inbox.your_status },
-      messages,
+      messages: enriched,
     };
+  }
+
+  async toggleMessageUpvote(
+    auth: AuthContext,
+    threadId: string,
+    messageId: string,
+    input: ToggleUpvoteInput,
+  ): Promise<ToggleUpvoteResult> {
+    const inbox = await this.getInboxEntry(auth.userId, threadId);
+    if (!inbox) throw forbidden("Not a thread participant");
+
+    const threadRes = await this.kv.get<ThreadMeta>(this.threadKey(threadId));
+    const thread = threadRes.value;
+    if (!thread || thread.org_id !== auth.orgId) throw notFound("Thread");
+
+    const msgRes = await this.kv.get<ThreadMessage>(this.messageKey(threadId, messageId));
+    const msg = msgRes.value;
+    if (!msg || msg.thread_id !== threadId) throw notFound("Message");
+    if (!this.canViewMessage(auth, thread, inbox, msg)) {
+      throw forbidden("Cannot upvote this message");
+    }
+
+    const user = await this.getUser(auth.userId);
+    if (!user?.handle) throw notFound("User");
+
+    const userParts = parseUserHandle(user.handle);
+    const fromAgent = await this.resolveAgentForUser(auth.userId, input.from_agent);
+    const fromDisplay = formatDisplayAddress(userParts.local, userParts.orgSlug, fromAgent.slug);
+
+    const voteKey = this.messageUpvoteKey(threadId, messageId, fromAgent.id);
+    const existing = await this.kv.get(voteKey);
+    if (existing.value) {
+      await this.kv.delete(voteKey);
+    } else {
+      await this.kv.set(voteKey, {
+        thread_id: threadId,
+        message_id: messageId,
+        agent_id: fromAgent.id,
+        from_user_id: user.id,
+        from_handle: fromDisplay,
+        created_at: nowIso(),
+      });
+    }
+
+    const upvotes = await this.getMessageUpvoteSummary(auth, threadId, messageId);
+    const upvoted = upvotes.your_upvotes?.includes(fromAgent.id) ?? false;
+    return { upvoted, upvotes };
+  }
+
+  private async getMessageUpvoteSummary(
+    auth: AuthContext,
+    threadId: string,
+    messageId: string,
+  ): Promise<MessageUpvoteSummary> {
+    const upvotes: MessageUpvote[] = [];
+    const yourUpvotes: string[] = [];
+    const userAgentIds = new Set(await this.listAgentIdsForUser(auth.userId));
+
+    const iter = this.kv.list<{
+      agent_id: string;
+      from_user_id: string;
+      from_handle: string;
+      created_at: string;
+    }>({ prefix: this.messageUpvotesPrefix(threadId, messageId) });
+
+    for await (const entry of iter) {
+      const v = entry.value;
+      upvotes.push({
+        agent_id: v.agent_id,
+        from_handle: v.from_handle,
+        created_at: v.created_at,
+      });
+      if (v.from_user_id === auth.userId && userAgentIds.has(v.agent_id)) {
+        yourUpvotes.push(v.agent_id);
+      }
+    }
+
+    upvotes.sort((a, b) => a.created_at.localeCompare(b.created_at));
+    return {
+      count: upvotes.length,
+      upvotes,
+      ...(yourUpvotes.length > 0 ? { your_upvotes: yourUpvotes } : {}),
+    };
+  }
+
+  private async listAgentIdsForUser(userId: string): Promise<string[]> {
+    const ids: string[] = [];
+    const iter = this.kv.list<string>({ prefix: this.userAgentsPrefix(userId) });
+    for await (const entry of iter) {
+      if (entry.value) ids.push(entry.value);
+    }
+    return ids;
   }
 
   async postReply(

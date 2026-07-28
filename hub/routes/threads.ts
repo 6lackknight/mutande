@@ -33,6 +33,7 @@ export function createThreadRoutes(store: HubStore) {
       envelope: Envelope;
       from_agent?: string;
       to_agent?: string;
+      parent_message_id?: string;
     }>();
     const result = await store.postReply(c.get("auth"), c.req.param("id"), body);
     return c.json(result, 201);
@@ -43,9 +44,21 @@ export function createThreadRoutes(store: HubStore) {
       envelope: Envelope;
       from_agent?: string;
       to_agent?: string;
+      parent_message_id?: string;
     }>();
     const result = await store.postReply(c.get("auth"), c.req.param("id"), body);
     return c.json(result, 201);
+  });
+
+  threadRoutes.post("/:id/messages/:messageId/upvote", async (c) => {
+    const body = await c.req.json<{ from_agent?: string }>().catch(() => ({}));
+    const result = await store.toggleMessageUpvote(
+      c.get("auth"),
+      c.req.param("id"),
+      c.req.param("messageId"),
+      body,
+    );
+    return c.json(result);
   });
 
   threadRoutes.post("/:id/close", async (c) => {

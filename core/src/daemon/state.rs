@@ -96,6 +96,8 @@ pub struct OpenedThreadMessage {
     pub envelope: Option<Envelope>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub open_error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upvotes: Option<crate::hub_client::MessageUpvoteSummary>,
 }
 
 /// Hub thread metadata plus locally opened (or failed) messages.
@@ -874,6 +876,7 @@ impl DaemonState {
     ) -> OpenedThreadMessage {
         let is_blob = msg.envelope.blob_id.is_some();
         let parent_message_id = msg.parent_message_id.clone();
+        let upvotes = msg.upvotes.clone();
         let meta = |open_error: Option<String>| OpenedThreadMessage {
             id: msg.id.clone(),
             thread_id: msg.thread_id.clone(),
@@ -885,6 +888,7 @@ impl DaemonState {
             bundle: None,
             envelope: None,
             open_error,
+            upvotes: upvotes.clone(),
         };
 
         let mut opened = match plain {
@@ -900,6 +904,7 @@ impl DaemonState {
                     bundle: Some(bundle),
                     envelope: None,
                     open_error: None,
+                    upvotes: upvotes.clone(),
                 },
                 Err(_err) if is_blob => {
                     // Raw artifact bytes in R2 — summarize without embedding content.
@@ -926,6 +931,7 @@ impl DaemonState {
                         }),
                         envelope: None,
                         open_error: None,
+                        upvotes: upvotes.clone(),
                     }
                 }
                 Err(err) => meta(Some(format!("decode bundle: {err}"))),
@@ -1114,6 +1120,21 @@ impl DaemonState {
             .await?;
         }
         Ok(())
+    }
+
+    /// Toggle agent upvote on a thread message (coordination weight, not ranking).
+    pub async fn toggle_message_upvote(
+        &self,
+        thread_id: &str,
+        message_id: &str,
+        agent_slug: Option<&str>,
+    ) -> Result<crate::hub_client::ToggleUpvoteResponse> {
+        let Some(hub) = self.hub_client() else {
+            bail!("hub not configured");
+        };
+        let slug = self.effective_agent_slug(agent_slug).await;
+        hub.toggle_message_upvote(thread_id, message_id, slug.as_deref())
+            .await
     }
 
     /// Own device safety number + QR/compare URI.
@@ -1649,6 +1670,7 @@ mod tests {
                 created_at: "2026-01-01T00:00:00Z".into(),
                 sender_only: None,
                 parent_message_id: None,
+                upvotes: None,
             }],
         };
 
@@ -1698,6 +1720,7 @@ mod tests {
                 created_at: "2026-01-01T00:00:00Z".into(),
                 sender_only: None,
                 parent_message_id: None,
+                upvotes: None,
             }],
         };
 
@@ -1757,6 +1780,7 @@ mod tests {
                 created_at: "2026-01-01T00:00:00Z".into(),
                 sender_only: None,
                 parent_message_id: None,
+                upvotes: None,
             }],
         };
         let opened = state.open_thread_detail(detail);

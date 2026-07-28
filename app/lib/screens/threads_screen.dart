@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../services/daemon_client.dart';
+import '../util/address_display.dart';
+import '../widgets/ai_host_icon.dart';
 import '../widgets/thinking_orb.dart';
 import '../widgets/thread_message_tree.dart';
 import 'threads_spatial_view.dart';
@@ -11,10 +13,18 @@ class ThreadsPanel extends StatefulWidget {
     super.key,
     required this.daemon,
     this.onReloadReady,
+    this.myHandle,
+    this.composeRecipient,
+    this.onComposeRecipientHandled,
   });
 
   final DaemonClient daemon;
   final ValueChanged<VoidCallback?>? onReloadReady;
+  /// Current user handle (`alice@acme`) for self-shorthand display.
+  final String? myHandle;
+  /// When set, opens compose addressed to this handle.
+  final String? composeRecipient;
+  final VoidCallback? onComposeRecipientHandled;
 
   @override
   State<ThreadsPanel> createState() => _ThreadsPanelState();
@@ -29,6 +39,7 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
   AgentListResult? _agents;
   String? _openId;
   bool _composeOpen = false;
+  String? _composePrefillRecipient;
   String _query = '';
 
   @override
@@ -43,6 +54,15 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.onReloadReady != widget.onReloadReady) {
       widget.onReloadReady?.call(_reload);
+    }
+    final next = widget.composeRecipient?.trim();
+    final prev = oldWidget.composeRecipient?.trim();
+    if (next != null && next.isNotEmpty && next != prev) {
+      setState(() {
+        _composeOpen = true;
+        _composePrefillRecipient = next;
+      });
+      widget.onComposeRecipientHandled?.call();
     }
   }
 
@@ -103,6 +123,7 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
       return ThreadDetailPanel(
         daemon: widget.daemon,
         threadId: _openId!,
+        myHandle: widget.myHandle,
         onBack: () {
           setState(() => _openId = null);
           _reload();
@@ -113,34 +134,44 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _FilterBar(
+        _ThreadsToolbar(
           filter: _filter,
           spatial: _spatial,
+          query: _query,
+          onFilterChanged: (v) {
+            setState(() => _filter = v);
+            _reload();
+          },
           onSpatialChanged: (v) {
             setState(() => _spatial = v);
             _reload();
           },
-          onChanged: (v) {
-            setState(() => _filter = v);
-            _reload();
-          },
+          onQueryChanged: (v) => setState(() => _query = v),
         ),
         if (_composeOpen) ...[
           const SizedBox(height: 8),
           _ComposePanel(
             daemon: widget.daemon,
+            initialRecipient: _composePrefillRecipient,
             onSent: () {
-              setState(() => _composeOpen = false);
+              setState(() {
+                _composeOpen = false;
+                _composePrefillRecipient = null;
+              });
               _reload();
             },
-            onCancel: () => setState(() => _composeOpen = false),
+            onCancel: () => setState(() {
+              _composeOpen = false;
+              _composePrefillRecipient = null;
+            }),
           ),
         ],
-        const SizedBox(height: 4),
         Expanded(
           child: _loading
               ? const Center(
-                  child: MutandeOrb.standard(semanticLabel: 'Loading threads…'),
+                  child: MutandeOrb.standard(
+                    semanticLabel: 'Loading threads…',
+                  ),
                 )
               : _error != null
                   ? Center(
@@ -183,183 +214,337 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
                           ? ThreadsSpatialView(
                               threads: _visible,
                               agents: _agents,
+                              myHandle: widget.myHandle,
                               onOpenThread: (id) =>
                                   setState(() => _openId = id),
                             )
-                          : ListView.separated(
-                          padding: const EdgeInsets.only(top: 4, bottom: 8),
-                          itemCount: _visible.length,
-                          separatorBuilder: (_, _) => const Divider(
-                            height: 1,
-                            thickness: 1,
-                            color: Color(0xFFE7E5E4),
-                          ),
-                          itemBuilder: (context, i) {
-                            final t = _visible[i];
-                            return _ThreadRow(
-                              thread: t,
-                              onTap: () => setState(() => _openId = t.id),
-                            );
-                          },
-                        ),
+                          : Align(
+                              alignment: Alignment.topCenter,
+                              child: ConstrainedBox(
+                                constraints:
+                                    const BoxConstraints(maxWidth: 720),
+                                child: ListView.separated(
+                                  padding: EdgeInsets.zero,
+                                  itemCount: _visible.length,
+                                  separatorBuilder: (_, _) => const Divider(
+                                    height: 1,
+                                    thickness: 1,
+                                    color: Color(0xFFE7E5E4),
+                                  ),
+                                  itemBuilder: (context, i) {
+                                    final t = _visible[i];
+                                    return _ThreadRow(
+                                      thread: t,
+                                      myHandle: widget.myHandle,
+                                      onTap: () =>
+                                          setState(() => _openId = t.id),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ),
         ),
-        _ThreadsFooter(
-          query: _query,
-          onQueryChanged: (v) => setState(() => _query = v),
-          onNewThread: () => setState(() => _composeOpen = true),
+        Align(
+          alignment: Alignment.center,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: _ThreadsFooter(
+              onNewThread: () => setState(() => _composeOpen = true),
+            ),
+          ),
         ),
       ],
     );
   }
 }
 
-class _FilterBar extends StatelessWidget {
-  const _FilterBar({
+/// Search-first toolbar: query field with filter scope + view menu.
+class _ThreadsToolbar extends StatefulWidget {
+  const _ThreadsToolbar({
     required this.filter,
     required this.spatial,
+    required this.query,
+    required this.onFilterChanged,
     required this.onSpatialChanged,
-    required this.onChanged,
+    required this.onQueryChanged,
   });
 
   final String filter;
   final bool spatial;
+  final String query;
+  final ValueChanged<String> onFilterChanged;
   final ValueChanged<bool> onSpatialChanged;
-  final ValueChanged<String> onChanged;
+  final ValueChanged<String> onQueryChanged;
+
+  @override
+  State<_ThreadsToolbar> createState() => _ThreadsToolbarState();
+}
+
+class _ThreadsToolbarState extends State<_ThreadsToolbar> {
+  late final TextEditingController _controller =
+      TextEditingController(text: widget.query);
+
+  @override
+  void didUpdateWidget(covariant _ThreadsToolbar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.query != _controller.text) {
+      _controller.text = widget.query;
+      _controller.selection =
+          TextSelection.collapsed(offset: widget.query.length);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  String get _filterLabel => switch (widget.filter) {
+        'open' => 'Open',
+        'closed' => 'Closed',
+        _ => 'Needs you',
+      };
 
   @override
   Widget build(BuildContext context) {
-    Widget pill(String value, String label) {
-      final selected = filter == value;
-      return Padding(
-        padding: const EdgeInsets.only(right: 8),
-        child: Material(
-          color: selected ? const Color(0xFFE7E5E4) : Colors.transparent,
-          borderRadius: BorderRadius.circular(999),
-          child: InkWell(
-            onTap: () => onChanged(value),
-            borderRadius: BorderRadius.circular(999),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-              child: Text(
-                label,
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      color: selected
-                          ? const Color(0xFF292524)
-                          : const Color(0xFF78716C),
-                      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+    return Padding(
+      padding: const EdgeInsets.only(top: 2, bottom: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Container(
+              height: 44,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFAFAF9),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFE7E5E4)),
+              ),
+              child: Row(
+                children: [
+                  const SizedBox(width: 12),
+                  const Icon(Icons.search, size: 18, color: Color(0xFFA8A29E)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: _controller,
+                      onChanged: widget.onQueryChanged,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: const Color(0xFF292524),
+                          ),
+                      decoration: const InputDecoration(
+                        hintText: 'Search threads…',
+                        isDense: true,
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.symmetric(vertical: 12),
+                      ),
                     ),
+                  ),
+                  Container(
+                    width: 1,
+                    height: 22,
+                    color: const Color(0xFFE7E5E4),
+                  ),
+                  PopupMenuButton<String>(
+                    tooltip: 'Filter scope',
+                    onSelected: widget.onFilterChanged,
+                    itemBuilder: (context) => const [
+                      PopupMenuItem(
+                        value: 'needs_action',
+                        child: Text('Needs you'),
+                      ),
+                      PopupMenuItem(value: 'open', child: Text('Open')),
+                      PopupMenuItem(value: 'closed', child: Text('Closed')),
+                    ],
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 10,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _filterLabel,
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelMedium
+                                ?.copyWith(
+                                  color: const Color(0xFF57534E),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                          ),
+                          const Icon(
+                            Icons.expand_more,
+                            size: 16,
+                            color: Color(0xFF78716C),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          PopupMenuButton<bool>(
+            tooltip: 'View',
+            onSelected: widget.onSpatialChanged,
+            itemBuilder: (context) => [
+              CheckedPopupMenuItem(
+                value: false,
+                checked: !widget.spatial,
+                child: const Text('List'),
+              ),
+              CheckedPopupMenuItem(
+                value: true,
+                checked: widget.spatial,
+                child: const Text('Spatial'),
+              ),
+            ],
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    widget.spatial
+                        ? Icons.hub_outlined
+                        : Icons.view_agenda_outlined,
+                    size: 18,
+                    color: const Color(0xFF78716C),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    widget.spatial ? 'Spatial' : 'List',
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                          color: const Color(0xFF78716C),
+                          fontWeight: FontWeight.w500,
+                        ),
+                  ),
+                  const Icon(
+                    Icons.expand_more,
+                    size: 16,
+                    color: Color(0xFFA8A29E),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ThreadsFooter extends StatelessWidget {
+  const _ThreadsFooter({required this.onNewThread});
+
+  final VoidCallback onNewThread;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Divider(
+          height: 1,
+          thickness: 1,
+          color: Color(0xFFE7E5E4),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(top: 10),
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: OutlinedButton.icon(
+              onPressed: onNewThread,
+              icon: const Icon(Icons.add, size: 16),
+              label: const Text('New Thread'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF57534E),
+                side: const BorderSide(color: Color(0xFFD6D3D1)),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
               ),
             ),
           ),
         ),
-      );
-    }
-
-    Widget viewChip(String label, bool selected, VoidCallback onTap) {
-      return InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(6),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          decoration: BoxDecoration(
-            color: selected ? const Color(0xFFE7E5E4) : Colors.transparent,
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: Text(
-            label,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: selected
-                      ? const Color(0xFF292524)
-                      : const Color(0xFF78716C),
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                ),
-          ),
-        ),
-      );
-    }
-
-    return Row(
-      children: [
-        pill('needs_action', 'Needs you'),
-        pill('open', 'Open'),
-        pill('closed', 'Closed'),
-        const Spacer(),
-        viewChip('List', !spatial, () => onSpatialChanged(false)),
-        const SizedBox(width: 4),
-        viewChip('Spatial', spatial, () => onSpatialChanged(true)),
       ],
     );
   }
 }
 
 class _ThreadRow extends StatelessWidget {
-  const _ThreadRow({required this.thread, required this.onTap});
+  const _ThreadRow({
+    required this.thread,
+    required this.onTap,
+    this.myHandle,
+  });
 
   final ThreadSummary thread;
   final VoidCallback onTap;
+  final String? myHandle;
 
   @override
   Widget build(BuildContext context) {
-    final badge = _badgeFor(thread);
-    // Self-collab: list by target agent (audience). Otherwise show sender.
-    final title = _selfCollabTitle(thread) ?? thread.from;
-    final snippet = [
-      if (_selfCollabTitle(thread) != null) 'from ${thread.from}',
-      if (thread.agentBadge != null) '/${thread.agentBadge}',
-      thread.kind,
-      if (thread.replyCount > 0) '${thread.replyCount} replies',
-    ].where((s) => s.isNotEmpty).join(' · ');
+    final title = _rowTitle(thread, myHandle: myHandle);
+    final meta = _rowMeta(thread);
+    final status = _quietStatus(thread);
 
     return InkWell(
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12),
+        padding: const EdgeInsets.symmetric(vertical: 8),
         child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            _Avatar(kind: thread.kind, pending: thread.yourStatus == 'pending'),
-            const SizedBox(width: 12),
+            _ThreadMark(thread: thread, label: title),
+            const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: const Color(0xFF292524),
                           fontWeight: FontWeight.w600,
                         ),
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    snippet.isEmpty ? 'Thread' : snippet,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: const Color(0xFF78716C),
-                        ),
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      _StatusBadge(badge: badge),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          badge.detail,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: const Color(0xFFA8A29E),
-                                fontStyle: FontStyle.italic,
-                              ),
-                        ),
-                      ),
-                    ],
-                  ),
+                  if (meta.isNotEmpty) ...[
+                    const SizedBox(height: 1),
+                    Text(
+                      meta,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: const Color(0xFF78716C),
+                          ),
+                    ),
+                  ],
                 ],
               ),
             ),
+            if (status.isNotEmpty) ...[
+              const SizedBox(width: 12),
+              Text(
+                status,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: thread.yourStatus == 'pending'
+                          ? const Color(0xFFB45309)
+                          : const Color(0xFFA8A29E),
+                      fontWeight: thread.yourStatus == 'pending'
+                          ? FontWeight.w500
+                          : FontWeight.w400,
+                    ),
+              ),
+            ],
           ],
         ),
       ),
@@ -367,49 +552,95 @@ class _ThreadRow extends StatelessWidget {
   }
 }
 
-class _Avatar extends StatelessWidget {
-  const _Avatar({required this.kind, required this.pending});
+class _ThreadMark extends StatelessWidget {
+  const _ThreadMark({required this.thread, required this.label});
 
-  final String kind;
-  final bool pending;
+  final ThreadSummary thread;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
-    final broadcast = kind == 'broadcast';
+    final host = _hostSlug(thread.agentBadge);
+    final pending = thread.yourStatus == 'pending';
+    final plate = pending
+        ? const Color(0xFFFDE68A).withValues(alpha: 0.35)
+        : const Color(0xFFF5F5F4);
+    final border = pending
+        ? const Color(0xFFFDE68A).withValues(alpha: 0.6)
+        : const Color(0xFFE7E5E4);
+
+    Widget mark;
+    if (host != null) {
+      mark = AiHostIcon(host, size: 28, showPlate: false);
+    } else {
+      final initials = _initialsFor(label);
+      mark = Text(
+        initials,
+        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              color: const Color(0xFF78716C),
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.2,
+            ),
+      );
+    }
+
     return Container(
-      width: 36,
-      height: 36,
+      width: 32,
+      height: 32,
+      alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: pending
-            ? const Color(0xFFFEF3C7)
-            : const Color(0xFFF5F5F4),
+        color: plate,
         borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: border),
       ),
-      child: Icon(
-        broadcast ? Icons.account_tree_outlined : Icons.person_outline,
-        size: 18,
-        color: pending
-            ? const Color(0xFFB45309)
-            : const Color(0xFF57534E),
-      ),
+      child: mark,
     );
   }
 }
 
-class _BadgeInfo {
-  const _BadgeInfo({
-    required this.label,
-    required this.detail,
-    required this.dot,
-    required this.bg,
-    required this.fg,
-  });
+/// Quiet status for the right column — no shouty chips.
+String _quietStatus(ThreadSummary t) {
+  if (t.yourStatus == 'pending') return 'needs you';
+  if (t.status == 'closed') return 'closed';
+  if (t.yourStatus == 'replied') return 'waiting';
+  return 'open';
+}
 
-  final String label;
-  final String detail;
-  final Color dot;
-  final Color bg;
-  final Color fg;
+String _rowTitle(ThreadSummary t, {String? myHandle}) {
+  final self = _selfCollabTitle(t);
+  return formatMailAddress(self ?? t.from, myHandle: myHandle);
+}
+
+/// One meta line: `via cursor · 2 replies` — no kind / from /default noise.
+String _rowMeta(ThreadSummary t) {
+  final parts = <String>[];
+  final via = _agentSlug(t.agentBadge);
+  if (via != null) parts.add('via $via');
+  if (t.replyCount > 0) {
+    parts.add(t.replyCount == 1 ? '1 reply' : '${t.replyCount} replies');
+  }
+  return parts.join(' · ');
+}
+
+String? _agentSlug(String? badge) {
+  if (badge == null || badge.isEmpty || badge == 'default') return null;
+  return badge;
+}
+
+String? _hostSlug(String? badge) {
+  final slug = _agentSlug(badge);
+  if (slug == null) return null;
+  if (AiHostIcon.assetFor(slug) != null) return slug.toLowerCase();
+  return null;
+}
+
+String _initialsFor(String label) {
+  final bare = label.split('/').first;
+  final local = bare.contains('@') ? bare.split('@').first : bare;
+  final cleaned = local.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
+  if (cleaned.isEmpty) return '?';
+  if (cleaned.length == 1) return cleaned.toUpperCase();
+  return cleaned.substring(0, 2).toUpperCase();
 }
 
 /// Same-user agent handoff: title the row by audience (target agent).
@@ -421,149 +652,16 @@ String? _selfCollabTitle(ThreadSummary t) {
   return t.audience;
 }
 
-_BadgeInfo _badgeFor(ThreadSummary t) {
-  if (t.yourStatus == 'pending') {
-    return const _BadgeInfo(
-      label: 'ACTION REQUIRED',
-      detail: 'Awaiting your response',
-      dot: Color(0xFFB45309),
-      bg: Color(0xFFFEF3C7),
-      fg: Color(0xFF92400E),
-    );
-  }
-  if (t.status == 'closed') {
-    return const _BadgeInfo(
-      label: 'CLOSED',
-      detail: 'Resolved',
-      dot: Color(0xFF78716C),
-      bg: Color(0xFFF5F5F4),
-      fg: Color(0xFF57534E),
-    );
-  }
-  if (t.yourStatus == 'replied') {
-    return const _BadgeInfo(
-      label: 'PENDING',
-      detail: 'Waiting on them',
-      dot: Color(0xFFD97706),
-      bg: Color(0xFFFFFBEB),
-      fg: Color(0xFFB45309),
-    );
-  }
-  return const _BadgeInfo(
-    label: 'OPEN',
-    detail: 'Active thread',
-    dot: Color(0xFF166534),
-    bg: Color(0xFFECFDF5),
-    fg: Color(0xFF166534),
-  );
-}
-
-class _StatusBadge extends StatelessWidget {
-  const _StatusBadge({required this.badge});
-
-  final _BadgeInfo badge;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: badge.bg,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 6,
-            height: 6,
-            decoration: BoxDecoration(
-              color: badge.dot,
-              shape: BoxShape.circle,
-            ),
-          ),
-          const SizedBox(width: 5),
-          Text(
-            badge.label,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: badge.fg,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 10,
-                  letterSpacing: 0.3,
-                ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ThreadsFooter extends StatelessWidget {
-  const _ThreadsFooter({
-    required this.query,
-    required this.onQueryChanged,
-    required this.onNewThread,
-  });
-
-  final String query;
-  final ValueChanged<String> onQueryChanged;
-  final VoidCallback onNewThread;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              onChanged: onQueryChanged,
-              decoration: InputDecoration(
-                hintText: 'Search threads…',
-                prefixIcon: const Icon(Icons.search, size: 18),
-                isDense: true,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
-                ),
-                filled: true,
-                fillColor: const Color(0xFFFAFAF9),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: Color(0xFFE7E5E4)),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: Color(0xFFE7E5E4)),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          OutlinedButton.icon(
-            onPressed: onNewThread,
-            icon: const Icon(Icons.add, size: 16),
-            label: const Text('New Thread'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: const Color(0xFF92400E),
-              side: const BorderSide(color: Color(0xFF92400E)),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _ComposePanel extends StatefulWidget {
   const _ComposePanel({
     required this.daemon,
+    this.initialRecipient,
     required this.onSent,
     required this.onCancel,
   });
 
   final DaemonClient daemon;
+  final String? initialRecipient;
   final VoidCallback onSent;
   final VoidCallback onCancel;
 
@@ -576,6 +674,7 @@ class _ComposePanelState extends State<_ComposePanel> {
   final _notes = TextEditingController();
   bool _sending = false;
   String? _error;
+  bool _seededRecipient = false;
 
   @override
   void dispose() {
@@ -666,6 +765,11 @@ class _ComposePanelState extends State<_ComposePanel> {
             onSelected: (value) => _recipientController?.text = value,
             fieldViewBuilder: (context, controller, focusNode, onSubmit) {
               _recipientController = controller;
+              final seed = widget.initialRecipient?.trim();
+              if (!_seededRecipient && seed != null && seed.isNotEmpty) {
+                _seededRecipient = true;
+                if (controller.text.isEmpty) controller.text = seed;
+              }
               return TextField(
                 controller: controller,
                 focusNode: focusNode,
@@ -724,11 +828,13 @@ class ThreadDetailPanel extends StatefulWidget {
     required this.daemon,
     required this.threadId,
     required this.onBack,
+    this.myHandle,
   });
 
   final DaemonClient daemon;
   final String threadId;
   final VoidCallback onBack;
+  final String? myHandle;
 
   @override
   State<ThreadDetailPanel> createState() => _ThreadDetailPanelState();
@@ -742,6 +848,40 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
   bool _sending = false;
   String? _replyToMessageId;
   String? _replyToHandle;
+  String? _upvotingMessageId;
+
+  Future<void> _toggleUpvote(ThreadMessageView message) async {
+    if (_upvotingMessageId != null) return;
+    setState(() => _upvotingMessageId = message.id);
+    try {
+      final summary = await widget.daemon.toggleMessageUpvote(
+        threadId: widget.threadId,
+        messageId: message.id,
+      );
+      if (!mounted) return;
+      setState(() {
+        _detail = ThreadDetailResult(
+          id: _detail!.id,
+          kind: _detail!.kind,
+          status: _detail!.status,
+          from: _detail!.from,
+          audience: _detail!.audience,
+          yourStatus: _detail!.yourStatus,
+          messages: _detail!.messages
+              .map((m) =>
+                  m.id == message.id ? m.copyWithUpvotes(summary) : m)
+              .toList(),
+        );
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not update upvote: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _upvotingMessageId = null);
+    }
+  }
 
   void _startReplyTo(ThreadMessageView message) {
     setState(() {
@@ -844,10 +984,13 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
           )
         else ...[
           Text(
-            _detail!.audience.isNotEmpty &&
-                    _detail!.audience != _detail!.from
-                ? _detail!.audience
-                : _detail!.from,
+            formatMailAddress(
+              _detail!.audience.isNotEmpty &&
+                      _detail!.audience != _detail!.from
+                  ? _detail!.audience
+                  : _detail!.from,
+              myHandle: widget.myHandle,
+            ),
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   color: const Color(0xFF292524),
                   fontWeight: FontWeight.w600,
@@ -857,7 +1000,7 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
             [
               if (_detail!.audience.isNotEmpty &&
                   _detail!.audience != _detail!.from)
-                'from ${_detail!.from}',
+                'from ${formatMailAddress(_detail!.from, myHandle: widget.myHandle)}',
               _detail!.kind,
               _detail!.status,
               if (_detail!.yourStatus != null) _detail!.yourStatus!,
@@ -882,9 +1025,14 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
                 for (final node in flattenThreadMessages(_detail!.messages))
                   _ThreadMessageTile(
                     node: node,
+                    myHandle: widget.myHandle,
                     onReply: _detail!.status == 'closed'
                         ? null
                         : () => _startReplyTo(node.message),
+                    onUpvote: _detail!.status == 'closed'
+                        ? null
+                        : () => _toggleUpvote(node.message),
+                    upvoting: _upvotingMessageId == node.message.id,
                   ),
               ],
             ),
@@ -901,7 +1049,7 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
                   children: [
                     Expanded(
                       child: Text(
-                        'Replying to $_replyToHandle',
+                        'Replying to ${formatMailAddress(_replyToHandle!, myHandle: widget.myHandle)}',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                               color: const Color(0xFF57534E),
                             ),
@@ -941,17 +1089,26 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
 class _ThreadMessageTile extends StatelessWidget {
   const _ThreadMessageTile({
     required this.node,
+    this.myHandle,
     this.onReply,
+    this.onUpvote,
+    this.upvoting = false,
   });
 
   final ThreadMessageNode node;
+  final String? myHandle;
   final VoidCallback? onReply;
+  final VoidCallback? onUpvote;
+  final bool upvoting;
 
   @override
   Widget build(BuildContext context) {
     final m = node.message;
     final body = m.displayBody;
     final indent = 12.0 + (node.depth * 20.0);
+    final upvotes = m.upvotes;
+    final count = upvotes?.count ?? 0;
+    final youUpvoted = upvotes?.youUpvoted ?? false;
 
     return Padding(
       padding: EdgeInsets.only(left: indent, bottom: 12, right: 4),
@@ -969,7 +1126,7 @@ class _ThreadMessageTile extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                m.fromHandle,
+                formatMailAddress(m.fromHandle, myHandle: myHandle),
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: const Color(0xFF78716C),
                       fontWeight: FontWeight.w500,
@@ -984,8 +1141,83 @@ class _ThreadMessageTile extends StatelessWidget {
                           : const Color(0xFF292524),
                     ),
               ),
+              if (onUpvote != null || count > 0) ...[
+                const SizedBox(height: 6),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (onUpvote != null)
+                      TextButton.icon(
+                        onPressed: upvoting ? null : onUpvote,
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          minimumSize: const Size(44, 32),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          foregroundColor: youUpvoted
+                              ? const Color(0xFF44403C)
+                              : const Color(0xFF78716C),
+                        ),
+                        icon: Icon(
+                          youUpvoted
+                              ? Icons.arrow_upward
+                              : Icons.arrow_upward_outlined,
+                          size: 16,
+                        ),
+                        label: Text(count > 0 ? '$count' : 'Upvote'),
+                      )
+                    else if (count > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          '$count',
+                          style:
+                              Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: const Color(0xFF78716C),
+                                  ),
+                        ),
+                      ),
+                    if (upvotes != null && upvotes.upvotes.isNotEmpty) ...[
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Wrap(
+                          spacing: 4,
+                          runSpacing: 4,
+                          children: [
+                            for (final vote in upvotes.upvotes)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF5F5F4),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  formatMailAddress(
+                                    vote.fromHandle,
+                                    myHandle: myHandle,
+                                  ),
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .labelSmall
+                                      ?.copyWith(
+                                        color: const Color(0xFF57534E),
+                                      ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
               if (onReply != null) ...[
-                const SizedBox(height: 4),
+                const SizedBox(height: 2),
                 TextButton(
                   onPressed: onReply,
                   style: TextButton.styleFrom(

@@ -170,6 +170,20 @@ class DaemonClient {
     );
   }
 
+  /// Org members + synthetic `@all@org` via JSON-RPC `list_contacts`.
+  Future<List<ContactView>> listContacts() async {
+    final result = await _callWithTimeout(
+      'list_contacts',
+      null,
+      requestTimeout,
+    );
+    final map = result as Map<String, dynamic>? ?? {};
+    final raw = map['contacts'] as List<dynamic>? ?? const [];
+    return raw
+        .map((e) => ContactView.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   /// List threads via JSON-RPC `list_threads`.
   Future<List<ThreadSummary>> listThreads({String? filter}) async {
     final result = await _callWithTimeout(
@@ -239,6 +253,9 @@ class DaemonClient {
           questionPrompts: questions,
           resourceRequests: resources,
           openError: m['open_error'] as String?,
+          upvotes: MessageUpvoteSummaryView.fromJson(
+            m['upvotes'] as Map<String, dynamic>?,
+          ),
         );
       }).toList(),
     );
@@ -259,6 +276,23 @@ class DaemonClient {
       },
       if (toAgent != null) 'to_agent': toAgent,
     });
+  }
+
+  /// Toggle agent upvote on a message (coordination weight).
+  Future<MessageUpvoteSummaryView> toggleMessageUpvote({
+    required String threadId,
+    required String messageId,
+    String? agentSlug,
+  }) async {
+    final result = await _call('toggle_message_upvote', {
+      'thread_id': threadId,
+      'message_id': messageId,
+      if (agentSlug != null) 'agent_slug': agentSlug,
+    });
+    final map = result as Map<String, dynamic>? ?? {};
+    return MessageUpvoteSummaryView.fromJson(
+      map['upvotes'] as Map<String, dynamic>?,
+    );
   }
 
   Future<AgentListResult> listAgents({String? handle}) async {
@@ -702,6 +736,41 @@ String? _agentBadgeFromThread(Map<String, dynamic> m) {
   return null;
 }
 
+class ContactView {
+  const ContactView({required this.handle, this.pubkey, this.devices = const []});
+
+  factory ContactView.fromJson(Map<String, dynamic> map) {
+    final devicesRaw = map['devices'] as List<dynamic>? ?? const [];
+    return ContactView(
+      handle: map['handle'] as String? ?? '',
+      pubkey: map['pubkey'] as String?,
+      devices: devicesRaw
+          .map((e) => ContactDeviceView.fromJson(e as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+
+  final String handle;
+  final String? pubkey;
+  final List<ContactDeviceView> devices;
+
+  bool get isBroadcast => handle.startsWith('@all@');
+}
+
+class ContactDeviceView {
+  const ContactDeviceView({required this.pubkey, this.platform});
+
+  factory ContactDeviceView.fromJson(Map<String, dynamic> map) {
+    return ContactDeviceView(
+      pubkey: map['pubkey'] as String? ?? '',
+      platform: map['platform'] as String?,
+    );
+  }
+
+  final String pubkey;
+  final String? platform;
+}
+
 class ThreadDetailResult {
   const ThreadDetailResult({
     required this.id,
@@ -734,6 +803,7 @@ class ThreadMessageView {
     this.questionPrompts = const [],
     this.resourceRequests = const [],
     this.openError,
+    this.upvotes,
   });
 
   final String id;
@@ -746,6 +816,23 @@ class ThreadMessageView {
   final List<String> questionPrompts;
   final List<String> resourceRequests;
   final String? openError;
+  final MessageUpvoteSummaryView? upvotes;
+
+  ThreadMessageView copyWithUpvotes(MessageUpvoteSummaryView? upvotes) {
+    return ThreadMessageView(
+      id: id,
+      fromHandle: fromHandle,
+      createdAt: createdAt,
+      parentMessageId: parentMessageId,
+      inReplyTo: inReplyTo,
+      bundleSubject: bundleSubject,
+      bundleNotes: bundleNotes,
+      questionPrompts: questionPrompts,
+      resourceRequests: resourceRequests,
+      openError: openError,
+      upvotes: upvotes,
+    );
+  }
 
   /// Resolved parent for tree layout (hub metadata preferred).
   String? get replyParentId => parentMessageId ?? inReplyTo;
@@ -766,6 +853,62 @@ class ThreadMessageView {
     if (parts.isEmpty) return '(empty handoff)';
     return parts.join('\n\n');
   }
+}
+
+class MessageUpvoteView {
+  const MessageUpvoteView({
+    required this.agentId,
+    required this.fromHandle,
+    required this.createdAt,
+  });
+
+  factory MessageUpvoteView.fromJson(Map<String, dynamic> map) {
+    return MessageUpvoteView(
+      agentId: map['agent_id'] as String? ?? '',
+      fromHandle: map['from_handle'] as String? ?? '',
+      createdAt: map['created_at'] as String? ?? '',
+    );
+  }
+
+  final String agentId;
+  final String fromHandle;
+  final String createdAt;
+
+  /// Short label for chips — prefer agent suffix after `/`.
+  String get chipLabel {
+    final slash = fromHandle.indexOf('/');
+    if (slash >= 0 && slash < fromHandle.length - 1) {
+      return fromHandle.substring(slash + 1);
+    }
+    return fromHandle;
+  }
+}
+
+class MessageUpvoteSummaryView {
+  const MessageUpvoteSummaryView({
+    required this.count,
+    this.upvotes = const [],
+    this.yourUpvotes = const [],
+  });
+
+  factory MessageUpvoteSummaryView.fromJson(Map<String, dynamic>? map) {
+    if (map == null) return const MessageUpvoteSummaryView(count: 0);
+    final raw = map['upvotes'] as List<dynamic>? ?? const [];
+    final yours = map['your_upvotes'] as List<dynamic>? ?? const [];
+    return MessageUpvoteSummaryView(
+      count: map['count'] as int? ?? raw.length,
+      upvotes: raw
+          .map((e) => MessageUpvoteView.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      yourUpvotes: yours.map((e) => e as String).toList(),
+    );
+  }
+
+  final int count;
+  final List<MessageUpvoteView> upvotes;
+  final List<String> yourUpvotes;
+
+  bool get youUpvoted => yourUpvotes.isNotEmpty;
 }
 
 class SafetyNumberResult {

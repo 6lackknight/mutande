@@ -66,6 +66,35 @@ pub struct ThreadMessage {
     pub sender_only: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent_message_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upvotes: Option<MessageUpvoteSummary>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MessageUpvote {
+    pub agent_id: String,
+    pub from_handle: String,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MessageUpvoteSummary {
+    pub count: u32,
+    pub upvotes: Vec<MessageUpvote>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub your_upvotes: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ToggleUpvoteRequest<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from_agent: Option<&'a str>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ToggleUpvoteResponse {
+    pub upvoted: bool,
+    pub upvotes: MessageUpvoteSummary,
 }
 
 /// Org member or synthetic broadcast handle (`@all@org`).

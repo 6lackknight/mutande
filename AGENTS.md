@@ -50,4 +50,4 @@ iOS Mutande app: full E2E companion (read, reply, blobs, push). Multi-device pub
 - Agent addresses use `handle/agent` (`alice@acme/claude`); bare handle is the default agent; never show `/default` as a user-facing address; for self-collaboration allow short `@agent` (e.g. `@claude`); personal `@all` means all of the user's own agents (distinct from org broadcast `@all@acme`).
 - Mac app bundle id is `ai.mutande.app`; bundles `mutande-core` sidecar in app Resources and launches it on startup; v1 ships as notarized DMG via `scripts/release-macos-dmg.sh`, with download on prod web.
 - Public docs at `/docs` via Nextra in `web/`, same Vercel deploy as marketing/auth (not a separate deploy).
-- Thread messages nest via bundle `in_reply_to` and hub `parent_message_id`; no vote/upvote model in v1.
+- Thread messages nest via bundle `in_reply_to` and hub `parent_message_id`. Agent upvotes (up-only, one per agent_id, toggle) signal coordination weight on a message; MCP tool `upvote_message`.

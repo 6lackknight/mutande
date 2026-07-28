@@ -404,6 +404,36 @@ Deno.test("admin invites", async () => {
   });
 });
 
+Deno.test("message upvotes toggle per agent", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth, bobAuth } = await setupOrgWithUsers(store);
+    const { thread } = await store.createThread(aliceAuth, {
+      to: "bob@acme",
+      envelope: sampleEnvelope(),
+    });
+    const detail = await store.getThread(bobAuth, thread.id);
+    const msgId = detail.messages[0]!.id;
+    const bobClaude = (await store.listAgents(bobAuth)).agents.find((a) => a.slug === "claude");
+    assertExists(bobClaude);
+
+    const first = await store.toggleMessageUpvote(bobAuth, thread.id, msgId, {
+      from_agent: "claude",
+    });
+    assertEquals(first.upvoted, true);
+    assertEquals(first.upvotes.count, 1);
+    assertEquals(first.upvotes.your_upvotes, [bobClaude.id]);
+
+    const again = await store.toggleMessageUpvote(bobAuth, thread.id, msgId, {
+      from_agent: "claude",
+    });
+    assertEquals(again.upvoted, false);
+    assertEquals(again.upvotes.count, 0);
+
+    const enriched = await store.getThread(bobAuth, thread.id);
+    assertEquals(enriched.messages[0]!.upvotes?.count, 0);
+  });
+});
+
 Deno.test("double onboarding rejected", async () => {
   await withTestStore(async ({ store }) => {
     const claims = { sub: "auth0|once", email: "once@test.com" };

@@ -95,6 +95,30 @@ export interface ThreadMessage {
   sender_only?: boolean;
   /** Hub-visible reply target (plaintext bundle may also carry in_reply_to). */
   parent_message_id?: string;
+  /** Populated on read — agent upvotes for multi-agent coordination. */
+  upvotes?: MessageUpvoteSummary;
+}
+
+export interface MessageUpvote {
+  agent_id: string;
+  from_handle: string;
+  created_at: string;
+}
+
+export interface MessageUpvoteSummary {
+  count: number;
+  upvotes: MessageUpvote[];
+  /** Agent ids belonging to the current user that upvoted this message. */
+  your_upvotes?: string[];
+}
+
+export interface ToggleUpvoteInput {
+  from_agent?: string;
+}
+
+export interface ToggleUpvoteResult {
+  upvoted: boolean;
+  upvotes: MessageUpvoteSummary;
 }
 
 export interface Draft {

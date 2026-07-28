@@ -7,10 +7,14 @@ class AppConfig {
     this.auth0Domain = defaultAuth0Domain,
     this.auth0NativeClientId = defaultAuth0NativeClientId,
     this.auth0Audience = defaultAuth0Audience,
+    this.webAppUrl = defaultWebAppUrl,
   });
 
   /// Deployed hub (Deno Deploy).
   static const defaultHubUrl = 'https://mutande.6lackknight.deno.net';
+
+  /// Prod web (signup, invites). Override with `--dart-define=MUTANDE_WEB_APP_URL=…`.
+  static const defaultWebAppUrl = 'https://mutande.vercel.app';
 
   /// Auth0 tenant host (no scheme). Matches core `auth0_defaults`.
   static const defaultAuth0Domain = 'chevrondigital.auth0.com';
@@ -47,11 +51,16 @@ class AppConfig {
       'AUTH0_AUDIENCE',
       defaultValue: defaultAuth0Audience,
     );
+    const webAppUrl = String.fromEnvironment(
+      'MUTANDE_WEB_APP_URL',
+      defaultValue: defaultWebAppUrl,
+    );
     return AppConfig(
       hubUrl: hubUrl,
       auth0Domain: auth0Domain,
       auth0NativeClientId: auth0NativeClientId,
       auth0Audience: auth0Audience,
+      webAppUrl: webAppUrl,
     );
   }
 
@@ -59,4 +68,5 @@ class AppConfig {
   final String? auth0Domain;
   final String? auth0NativeClientId;
   final String? auth0Audience;
+  final String webAppUrl;
 }

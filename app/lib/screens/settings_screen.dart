@@ -442,14 +442,17 @@ class _HostsCard extends StatelessWidget {
       );
     }
 
-    return Column(
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         for (var i = 0; i < AiHostCatalog.hosts.length; i++) ...[
-          if (i > 0) const SizedBox(height: 8),
-          _HostRow(
-            host: AiHostCatalog.hosts[i].$1,
-            label: AiHostCatalog.hosts[i].$2,
-            link: links[AiHostCatalog.hosts[i].$1],
+          if (i > 0) const SizedBox(width: 8),
+          Expanded(
+            child: _HostTile(
+              host: AiHostCatalog.hosts[i].$1,
+              label: AiHostCatalog.hosts[i].$2,
+              link: links[AiHostCatalog.hosts[i].$1],
+            ),
           ),
         ],
       ],
@@ -457,8 +460,8 @@ class _HostsCard extends StatelessWidget {
   }
 }
 
-class _HostRow extends StatelessWidget {
-  const _HostRow({
+class _HostTile extends StatelessWidget {
+  const _HostTile({
     required this.host,
     required this.label,
     required this.link,
@@ -468,28 +471,45 @@ class _HostRow extends StatelessWidget {
   final String label;
   final HostLinkRecord? link;
 
+  String get _compactLabel {
+    switch (host) {
+      case 'claude':
+        return 'Claude';
+      default:
+        return label;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final linked = link?.ok == true;
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE7E5E4)),
+        border: Border.all(
+          color: linked ? const Color(0xFFBBF7D0) : const Color(0xFFE7E5E4),
+        ),
       ),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          AiHostIcon(host, size: 36),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              label,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: const Color(0xFF292524),
-                    fontWeight: FontWeight.w500,
-                  ),
-            ),
+          AiHostIcon(host, size: 40),
+          const SizedBox(height: 10),
+          Text(
+            _compactLabel,
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: const Color(0xFF292524),
+                  fontWeight: FontWeight.w600,
+                  height: 1.25,
+                ),
           ),
+          const SizedBox(height: 8),
           HostLinkStatusBadge(link: link, style: HostLinkStatusStyle.settings),
         ],
       ),

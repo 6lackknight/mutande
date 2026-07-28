@@ -74,13 +74,14 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('mutande'), findsOneWidget);
+    expect(find.bySemanticsLabel('mutande'), findsOneWidget);
     expect(find.text('Threads'), findsWidgets);
     expect(find.text('Agents'), findsOneWidget);
     expect(find.text('Contacts'), findsOneWidget);
     expect(find.text('bob@acme'), findsOneWidget);
     expect(find.byTooltip('alice@acme'), findsOneWidget);
-    expect(find.textContaining('ACTION REQUIRED'), findsOneWidget);
+    expect(find.text('needs you'), findsOneWidget);
+    expect(find.textContaining('ACTION REQUIRED'), findsNothing);
   });
 
   testWidgets('threads timeout shows friendly retry', (WidgetTester tester) async {
@@ -806,5 +807,52 @@ test('validateHandle and validateHubUrl', () {
     expect(find.text('Set as default'), findsNothing);
     expect(find.text('Linked'), findsWidgets);
     expect(find.text('Connect host'), findsNothing);
+  });
+
+  testWidgets('contacts tab loads hub list and solo invite', (
+    WidgetTester tester,
+  ) async {
+    final daemon = _mockDaemon((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      final method = body['method'] as String?;
+      if (method == 'list_threads') {
+        return _rpcOk(body['id'], {'threads': []});
+      }
+      if (method == 'list_contacts') {
+        return _rpcOk(body['id'], {
+          'contacts': [
+            {'handle': '@all@acme', 'pubkey': null, 'devices': []},
+          ],
+        });
+      }
+      return _rpcOk(body['id'], {
+        'ok': true,
+        'service': 'mutande-core',
+        'version': '0.0.0',
+      });
+    });
+
+    await tester.pumpWidget(
+      MutandeApp(
+        config: const AppConfig(hubUrl: 'http://localhost:8000'),
+        daemon: daemon,
+        seedStatus: const DaemonStatusResult(
+          configured: true,
+          hubUrl: 'http://localhost:8000',
+          handle: 'alice@acme',
+        ),
+        welcomeDuration: Duration.zero,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Contacts'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Your handle'), findsOneWidget);
+    expect(find.text('alice@acme'), findsWidgets);
+    expect(find.text('@all@acme'), findsOneWidget);
+    expect(find.text('Broadcast to each member’s default agent'), findsOneWidget);
+    expect(find.text('You’re the only member of acme'), findsOneWidget);
+    expect(find.text('Invite teammates'), findsOneWidget);
   });
 }

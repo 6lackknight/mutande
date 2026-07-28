@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/daemon_client.dart';
+import '../util/address_display.dart';
 import '../widgets/ai_host_icon.dart';
 
 /// Spatial command-center layout for threads + agent cards (pan/zoom canvas).
@@ -10,11 +11,13 @@ class ThreadsSpatialView extends StatefulWidget {
     required this.threads,
     required this.agents,
     required this.onOpenThread,
+    this.myHandle,
   });
 
   final List<ThreadSummary> threads;
   final AgentListResult? agents;
   final ValueChanged<String> onOpenThread;
+  final String? myHandle;
 
   @override
   State<ThreadsSpatialView> createState() => _ThreadsSpatialViewState();
@@ -67,6 +70,7 @@ class _ThreadsSpatialViewState extends State<ThreadsSpatialView> {
                               )
                             : _ThreadSpatialCard(
                                 thread: layout.thread!,
+                                myHandle: widget.myHandle,
                                 emphasis: layout.emphasis,
                                 onTap: () =>
                                     widget.onOpenThread(layout.thread!.id),
@@ -204,16 +208,17 @@ class _ThreadSpatialCard extends StatelessWidget {
     required this.thread,
     required this.emphasis,
     required this.onTap,
+    this.myHandle,
   });
 
   final ThreadSummary thread;
   final _SpatialEmphasis emphasis;
   final VoidCallback onTap;
+  final String? myHandle;
 
   @override
   Widget build(BuildContext context) {
     final hero = emphasis == _SpatialEmphasis.hero;
-    final pending = thread.yourStatus == 'pending';
     final closed = thread.status == 'closed';
 
     final bg = hero ? const Color(0xFF292524) : Colors.white;
@@ -226,6 +231,7 @@ class _ThreadSpatialCard extends StatelessWidget {
       thread.kind,
       if (thread.replyCount > 0) '${thread.replyCount} replies',
     ].join(' · ');
+    final title = formatMailAddress(thread.from, myHandle: myHandle);
 
     return Material(
       color: bg,
@@ -262,7 +268,7 @@ class _ThreadSpatialCard extends StatelessWidget {
               ),
               SizedBox(height: hero ? 10 : 8),
               Text(
-                thread.from,
+                title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.titleSmall?.copyWith(
@@ -281,17 +287,7 @@ class _ThreadSpatialCard extends StatelessWidget {
                       height: 1.35,
                     ),
               ),
-              if (pending && hero) ...[
-                const SizedBox(height: 10),
-                Text(
-                  'Awaiting your response',
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: const Color(0xFFFBBF24),
-                        fontStyle: FontStyle.italic,
-                        fontWeight: FontWeight.w500,
-                      ),
-                ),
-              ] else if (closed && !hero) ...[
+              if (closed && !hero) ...[
                 const SizedBox(height: 6),
                 Text(
                   'Resolved',
@@ -322,22 +318,22 @@ class _SpatialStatusPill extends StatelessWidget {
     late Color dot;
 
     if (thread.yourStatus == 'pending') {
-      label = 'ACTION REQUIRED';
+      label = 'needs you';
       bg = hero ? const Color(0xFF44403C) : const Color(0xFFFEF3C7);
-      fg = hero ? const Color(0xFFFBBF24) : const Color(0xFF92400E);
-      dot = const Color(0xFFFBBF24);
+      fg = hero ? const Color(0xFFFBBF24) : const Color(0xFFB45309);
+      dot = const Color(0xFFB45309);
     } else if (thread.status == 'closed') {
-      label = 'CLOSED';
+      label = 'closed';
       bg = const Color(0xFFF5F5F4);
       fg = const Color(0xFF57534E);
       dot = const Color(0xFF78716C);
     } else if (thread.yourStatus == 'replied') {
-      label = 'PENDING';
+      label = 'waiting';
       bg = const Color(0xFFFFFBEB);
       fg = const Color(0xFFB45309);
       dot = const Color(0xFFD97706);
     } else {
-      label = 'OPEN';
+      label = 'open';
       bg = const Color(0xFFECFDF5);
       fg = const Color(0xFF166534);
       dot = const Color(0xFF166534);
@@ -362,9 +358,9 @@ class _SpatialStatusPill extends StatelessWidget {
             label,
             style: TextStyle(
               color: fg,
-              fontWeight: FontWeight.w700,
-              fontSize: 9,
-              letterSpacing: 0.4,
+              fontWeight: FontWeight.w500,
+              fontSize: 10,
+              letterSpacing: 0.1,
             ),
           ),
         ],
@@ -405,7 +401,7 @@ class _AgentSpatialCard extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  agent.slug,
+                  agent.slug == 'default' ? 'default' : '@${agent.slug}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
