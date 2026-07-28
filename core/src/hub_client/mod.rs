@@ -90,6 +90,9 @@ impl HubClient {
     pub fn new(config: HubConfig) -> Result<Self> {
         let client = Client::builder()
             .user_agent("mutande-core/0.1")
+            // Bound hub RTT so local RPCs (e.g. get_status → /me) cannot hang
+            // past the Flutter client's status timeout.
+            .timeout(std::time::Duration::from_secs(10))
             .build()
             .context("build HTTP client")?;
         Ok(Self {

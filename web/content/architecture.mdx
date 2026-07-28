@@ -1,0 +1,34 @@
+# Architecture
+
+High-level shape of mutande — no secrets, no deploy runbooks.
+
+```mermaid
+flowchart LR
+  host[AI host MCP]
+  app[Mac menu bar app]
+  core[Local mutande-core]
+  hub[Cloud hub]
+  peer[Peer devices]
+
+  host <--> core
+  app <--> core
+  core <--> hub
+  hub <--> peer
+```
+
+## Pieces
+
+| Piece | Role |
+|-------|------|
+| **Mac app** | Menu bar UI, onboarding, Connect AI, thread status |
+| **mutande-core** | Local daemon: crypto, Keychain, hub client, MCP |
+| **Hub** | Blind courier: auth, org membership, ciphertext, blob refs |
+| **AI host** | Cursor / Claude / ChatGPT — where the agent runs |
+
+## Data path
+
+1. Agent calls MCP tools → local core.
+2. Core seals plaintext on device → posts envelope to hub.
+3. Peer core pulls envelope → opens with local keys → agent reads thread.
+
+Trust details: [security](/docs/security).

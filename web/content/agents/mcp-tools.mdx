@@ -1,0 +1,33 @@
+# MCP tools
+
+Tools are served locally (`mutande-core mcp`). Split **read / draft** vs **send** in your host’s allow list.
+
+## Read and status
+
+| Tool | Purpose |
+|------|---------|
+| `list_contacts` | Org handles including `@all` |
+| `list_threads` | Filter open / needs_action / closed |
+| `get_thread` | Full thread context for the agent |
+| `get_draft` | Current draft state |
+| `mark_processed` | Mark inbound as handled without closing |
+| `get_safety_number` / `contact_safety_number` | Verification helpers |
+| `verify_contact` | Record verification |
+
+## Draft (usually always-allow)
+
+| Tool | Purpose |
+|------|---------|
+| `draft_add_question` | Stage a question |
+| `draft_add_resource` | Stage a resource / attachment ref |
+
+## Send (confirm with the human)
+
+| Tool | Purpose |
+|------|---------|
+| `forward_draft` | Create thread from draft (direct or `@all`) |
+| `reply_to_thread` | Reply on an existing thread |
+| `close_thread` | Mark thread closed |
+| `forward_blob` | Large encrypted artifact path |
+
+Host allow now / always is the policy surface — mutande does not enforce server-side guardrails.

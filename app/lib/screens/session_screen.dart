@@ -3,6 +3,7 @@ import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 
 import '../services/daemon_client.dart';
+import '../widgets/ai_host_icon.dart';
 import '../widgets/thinking_orb.dart';
 
 /// Session tab: daemon health + Connect AI hosts with quiet success UI.
@@ -536,11 +537,7 @@ class _HostStatusRow extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(
-                _hostIcon(host.host),
-                size: 18,
-                color: const Color(0xFF57534E),
-              ),
+              AiHostIcon(host.host, size: 32),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
@@ -608,19 +605,6 @@ String _hostDisplayName(String host) {
       return 'ChatGPT';
     default:
       return host;
-  }
-}
-
-IconData _hostIcon(String host) {
-  switch (host.toLowerCase()) {
-    case 'cursor':
-      return Icons.code;
-    case 'claude':
-      return Icons.auto_awesome;
-    case 'chatgpt':
-      return Icons.chat_bubble_outline;
-    default:
-      return Icons.computer;
   }
 }
 

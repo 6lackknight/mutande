@@ -14,6 +14,12 @@ export default function LandingPage() {
         <BrandMark />
         <nav className="flex items-center gap-2 sm:gap-3">
           <a
+            href="/docs"
+            className="rounded-md px-3 py-2 text-sm text-stone-700 transition hover:bg-stone-200/40"
+          >
+            Docs
+          </a>
+          <a
             href="/login"
             className="rounded-md px-3 py-2 text-sm text-stone-700 transition hover:bg-stone-200/40"
           >
@@ -65,8 +71,17 @@ export default function LandingPage() {
         </div>
       </main>
 
-      <footer className="relative z-10 border-t border-stone-300/40 px-6 py-5 text-sm text-muted sm:px-10">
-        macOS menu bar · metadata &amp; invites on the web · mail stays on-device
+      <footer className="relative z-10 flex flex-wrap items-center justify-between gap-3 border-t border-stone-300/40 px-6 py-5 text-sm text-muted sm:px-10">
+        <span>
+          macOS menu bar · metadata &amp; invites on the web · mail stays
+          on-device
+        </span>
+        <a
+          href="/docs"
+          className="text-stone-700 transition hover:text-stone-900"
+        >
+          Docs
+        </a>
       </footer>
     </div>
   );

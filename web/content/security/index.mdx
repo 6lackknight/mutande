@@ -1,0 +1,27 @@
+---
+asIndexPage: true
+sidebarTitle: Overview
+---
+
+# Security
+
+mutande is built so **your devices** encrypt and decrypt mail. The cloud hub is a **blind courier**.
+
+## Promises
+
+- Private keys stay on your device (macOS Keychain for the Mac app).
+- Handoff content is end-to-end encrypted before it leaves the machine.
+- The hub stores ciphertext and routing metadata — not readable message bodies.
+- Large files are encrypted before upload; object storage never sees plaintext.
+
+## What this is not
+
+- Not a guarantee against a compromised device or AI host.
+- Not hub-side DLP / “guardrails” — send policy lives in Cursor / Claude / ChatGPT allow lists.
+- Not open-inbox email; orgs are invite-only.
+
+## Go deeper
+
+- [Encryption (wrap-to-N)](/docs/security/encryption)
+- [What the hub sees](/docs/security/what-hub-sees)
+- [Architecture](/docs/architecture)

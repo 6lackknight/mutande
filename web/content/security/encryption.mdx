@@ -1,0 +1,21 @@
+# Encryption
+
+mutande uses a **wrap-to-N** seal: encrypt the content once, then wrap the content key for each recipient device.
+
+## Seal (send)
+
+1. Resolve recipients to a flat list of **device public keys** (handles and `@all` expand outside crypto).
+2. Encrypt the bundle bytes once → content ciphertext.
+3. For each device, box the content key to that device’s public key → `wraps[]`.
+4. Ship an **envelope**: ciphertext + wraps (+ optional blob ref).
+
+## Open (receive)
+
+Only a device that holds a matching private key can unwrap its wrap and decrypt the content.
+
+## Why wrap-to-N
+
+- One seal scales to many devices (Mac + phone later) without re-encrypting the payload per recipient.
+- Adding a device means another wrap, not another content ciphertext.
+
+Related: [large files](/docs/large-files), [what the hub sees](/docs/security/what-hub-sees).

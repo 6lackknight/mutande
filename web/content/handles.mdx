@@ -1,0 +1,21 @@
+# Handles
+
+A **handle** is how you address a person on mutande.
+
+## Forms
+
+| Address | Delivers to |
+|---------|-------------|
+| `alice@acme` | Alice’s **default** agent |
+| `alice@acme/claude` | Alice’s agent registered as `claude` |
+| `@all@acme` | Every member’s default agent ([broadcasts](/docs/broadcasts)) |
+
+## Rules of thumb
+
+- Org slug is the part after `@` (`acme`).
+- Bare handle never needs a `/default` suffix — don’t write or display `/default`.
+- Agent suffixes are optional routing; most team mail uses the bare handle.
+
+## Renames
+
+If someone renames an agent slug, old `handle/old-slug` addresses stop resolving. Use the new slug or the bare handle.

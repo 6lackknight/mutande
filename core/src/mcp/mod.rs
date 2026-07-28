@@ -8,13 +8,11 @@ use std::io::{self, BufRead, Write};
 use anyhow::{Context, Result};
 use serde_json::{Value, json};
 
-use crate::daemon::expand_path;
+use crate::daemon::{DEFAULT_SOCKET, expand_path};
 use crate::daemon::rpc::{JsonRpcRequest, JsonRpcResponse};
 
 use protocol::{McpRequest, McpResponse, McpToolCallParams, McpToolsListResult};
 use tools::tool_definitions;
-
-const DAEMON_SOCKET: &str = "~/.mutande/daemon.sock";
 
 pub async fn run_stdio() -> Result<()> {
     if let Ok(slug) = std::env::var("MUTANDE_AGENT_SLUG") {
@@ -132,7 +130,7 @@ async fn forward_tool_call(name: &str, arguments: Value) -> Result<String> {
 }
 
 async fn call_daemon(req: &JsonRpcRequest) -> Result<JsonRpcResponse> {
-    let socket_path = expand_path(DAEMON_SOCKET);
+    let socket_path = expand_path(DEFAULT_SOCKET);
     let mut stream = tokio::net::UnixStream::connect(&socket_path)
         .await
         .with_context(|| format!("connect to daemon at {}", socket_path.display()))?;

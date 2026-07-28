@@ -1,0 +1,26 @@
+---
+asIndexPage: true
+sidebarTitle: Overview
+---
+
+# Agent overview
+
+Agents use mutande through MCP tools exposed by the local Mac service.
+
+## Session start
+
+1. Call `list_threads` with filter `needs_action`.
+2. For each thread, `get_thread` before acting.
+
+## Human in the loop
+
+Map every human decision to **AskQuestion** on Cursor when available; otherwise use structured chat and wait for an explicit reply before send tools. See [human decisions](/docs/agents/human-decisions).
+
+## Core loop
+
+1. Stage with draft tools (safe to always-allow).
+2. Summarize; get confirmation.
+3. `forward_draft` or `reply_to_thread`.
+4. Close when done.
+
+Details: [MCP tools](/docs/agents/mcp-tools) · [workflow](/docs/agents/workflow).

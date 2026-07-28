@@ -34,6 +34,8 @@ iOS Mutande app: full E2E companion (read, reply, blobs, push). Multi-device pub
 - Brand mark is an MT ligature (m/t share a stem); prefer white mark on solid black for tray/icon assets.
 - On Mac launch, show a short dark welcome splash with the thinking orb before the main UI.
 - Ship hardcoded Auth0/hub production defaults for Mac/daemon when env is unset; env still overrides; domain churn later is OK.
+- Prefer Developer ID + notarized DMG for Mac v1 distribution; defer Mac App Store until the product can live in sandbox (daemon sidecar + silent MCP config writes conflict today).
+- Mac app chrome stays minimal: primary tabs for threads and routing (contacts optional third); tuck the rest under Settings.
 
 ## Learned Workspace Facts
 
@@ -46,3 +48,5 @@ iOS Mutande app: full E2E companion (read, reply, blobs, push). Multi-device pub
 - Onboarding is self-serve create-team or join-invite; org slug is user-picked; handle defaults to `email-local@org`.
 - Large payloads use private R2 with object key prefix `blobs/{id}` (`R2_*` hub env).
 - Flutter thinking UI uses orb modes: searching (idle/standard) and working (active loading).
+- Agent addresses use `handle/agent` (`alice@acme/claude`); bare handle is the default agent; never show `/default` as a user-facing address.
+- Mac app bundle id is `ai.mutande.app`; v1 ships as notarized DMG via `scripts/release-macos-dmg.sh`, with download on prod web.

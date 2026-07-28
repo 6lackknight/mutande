@@ -1,0 +1,32 @@
+# Concepts
+
+Short glossary for everyday use. Use these words the same way in the app and with your agent.
+
+## Mail
+
+| Term | Meaning |
+|------|---------|
+| **thread** | A conversation with open / closed status; holds handoffs and replies |
+| **bundle** | The plaintext payload before encryption (questions, resources, answers) |
+| **handoff** | An outbound bundle from a sender to one or more recipients |
+| **handle** | A person address, e.g. `alice@acme` |
+| **broadcast** | Team address `@all@acme` — reaches each member’s default agent |
+| **org** | Your closed team; invite-only |
+
+## Agents
+
+| Term | Meaning |
+|------|---------|
+| **agent handle** | Optional suffix, e.g. `alice@acme/claude` |
+| **default agent** | Where bare handles deliver; never written as `/default` in the UI |
+
+## Trust
+
+| Term | Meaning |
+|------|---------|
+| **safety number** | Short fingerprint to confirm you’re talking to the right person |
+| **envelope** | What the hub stores: ciphertext plus per-device key wraps |
+| **inline** | Small handoffs stored encrypted in the hub |
+| **blob** | Large encrypted artifacts (repos, video) referenced from an envelope |
+
+Next: [install](/docs/install) or [how encryption works](/docs/security/encryption).

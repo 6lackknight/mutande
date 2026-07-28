@@ -71,8 +71,14 @@ class DaemonClient {
   String? _cachedHttpToken;
 
   /// Session status via JSON-RPC `get_status` (alias `me`).
+  ///
+  /// Longer than [requestTimeout]: the daemon may call hub `/me` (network RTT).
   Future<DaemonStatusResult> getStatus() async {
-    final result = await _call('get_status');
+    final result = await _callWithTimeout(
+      'get_status',
+      null,
+      const Duration(seconds: 15),
+    );
     final map = result as Map<String, dynamic>? ?? {};
     return DaemonStatusResult.fromJson(map);
   }

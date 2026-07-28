@@ -15,7 +15,7 @@ struct Cli {
 enum Commands {
     /// Run background daemon (keys, crypto, hub API)
     Serve {
-        #[arg(long, default_value = "~/.mutande/daemon.sock")]
+        #[arg(long, default_value = daemon::DEFAULT_SOCKET)]
         socket: String,
         /// HTTP JSON-RPC bridge for Flutter dev (POST /rpc). Empty string disables.
         #[arg(long, default_value = "127.0.0.1:3847")]

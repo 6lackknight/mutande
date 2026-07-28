@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../services/daemon_client.dart';
+import '../widgets/ai_host_icon.dart';
 import '../widgets/thinking_orb.dart';
 
 /// Plumbing + trust — pushed from the home gear (Stitch Settings hub).
@@ -393,9 +394,9 @@ class _HostsCard extends StatelessWidget {
   final ConnectHostResult? result;
 
   static const _hosts = [
-    ('cursor', 'Cursor', Icons.code),
-    ('claude', 'Claude (Anthropic)', Icons.auto_awesome),
-    ('chatgpt', 'ChatGPT', Icons.chat_bubble_outline),
+    ('cursor', 'Cursor'),
+    ('claude', 'Claude (Anthropic)'),
+    ('chatgpt', 'ChatGPT'),
   ];
 
   @override
@@ -417,8 +418,8 @@ class _HostsCard extends StatelessWidget {
             if (i > 0)
               const Divider(height: 1, color: Color(0xFFE7E5E4)),
             _HostRow(
+              host: _hosts[i].$1,
               label: _hosts[i].$2,
-              icon: _hosts[i].$3,
               write: byHost[_hosts[i].$1],
               hasResult: result != null,
             ),
@@ -431,14 +432,14 @@ class _HostsCard extends StatelessWidget {
 
 class _HostRow extends StatelessWidget {
   const _HostRow({
+    required this.host,
     required this.label,
-    required this.icon,
     required this.write,
     required this.hasResult,
   });
 
+  final String host;
   final String label;
-  final IconData icon;
   final HostWriteResult? write;
   final bool hasResult;
 
@@ -450,7 +451,7 @@ class _HostRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       child: Row(
         children: [
-          Icon(icon, size: 20, color: const Color(0xFF57534E)),
+          AiHostIcon(host, size: 36),
           const SizedBox(width: 12),
           Expanded(
             child: Text(

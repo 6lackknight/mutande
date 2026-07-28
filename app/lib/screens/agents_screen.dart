@@ -4,7 +4,77 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../services/daemon_client.dart';
+import '../widgets/ai_host_icon.dart';
 import '../widgets/thinking_orb.dart';
+
+/// Agent slug rules match hub `assertValidAgentSlug` (`[a-z0-9-]{1,32}`).
+String? validateAgentSlug(String slug, {Set<String> taken = const {}}) {
+  final s = slug.trim().toLowerCase();
+  if (s.isEmpty) return 'Enter a slug.';
+  if (s.length > 32) return 'Use at most 32 characters.';
+  if (!RegExp(r'^[a-z0-9-]+$').hasMatch(s)) {
+    return 'Use lowercase letters, digits, or hyphens.';
+  }
+  if (s == 'default' || s == 'all') {
+    return '"$s" is reserved.';
+  }
+  if (taken.contains(s)) {
+    return 'That slug is already in use.';
+  }
+  return null;
+}
+
+String agentHostLabel(String slug) {
+  switch (slug.trim().toLowerCase()) {
+    case 'claude':
+      return 'Claude Desktop';
+    case 'cursor':
+      return 'Cursor';
+    case 'chatgpt':
+      return 'ChatGPT';
+    case '':
+      return 'Unknown host';
+    default:
+      return slug.trim();
+  }
+}
+
+/// Hub/timeout errors should not read like a dead local daemon.
+String friendlyAgentsError(Object error) {
+  var msg = error.toString();
+  if (msg.startsWith('DaemonException: ')) {
+    msg = msg.substring('DaemonException: '.length);
+  }
+  if (msg.startsWith('Exception: ')) {
+    msg = msg.substring('Exception: '.length);
+  }
+  final lower = msg.toLowerCase();
+  if (lower.contains('timeout') || lower.contains('timed out')) {
+    return 'The hub took too long to respond. Your agents may still be fine — try again.';
+  }
+  if (lower.contains('404') || lower.contains('not found')) {
+    return "Couldn't load agents from the hub. Check you're signed in, then retry.";
+  }
+  if (lower.contains('401') ||
+      lower.contains('unauthorized') ||
+      lower.contains('missing http token') ||
+      lower.contains('connection refused') ||
+      lower.contains('failed host lookup') ||
+      lower.contains('socketexception')) {
+    return "Can't reach the local mutande daemon. Open Settings and tap Check daemon.";
+  }
+  if (lower.contains('500') ||
+      lower.contains('502') ||
+      lower.contains('503') ||
+      lower.contains('hub')) {
+    return "Couldn't load agents from the hub. Try again in a moment.";
+  }
+  return msg;
+}
+
+Duration _agentsMotion(BuildContext context, Duration duration) {
+  return MediaQuery.disableAnimationsOf(context) ? Duration.zero : duration;
+}
 
 /// Handle → primary (default) → sub-agents. Graph (Stitch) + list toggle.
 class AgentsPanel extends StatefulWidget {
@@ -13,11 +83,13 @@ class AgentsPanel extends StatefulWidget {
     required this.daemon,
     this.handle,
     this.appVersion = '1.0.0',
+    this.onViewThreads,
   });
 
   final DaemonClient daemon;
   final String? handle;
   final String appVersion;
+  final VoidCallback? onViewThreads;
 
   @override
   State<AgentsPanel> createState() => _AgentsPanelState();
@@ -25,9 +97,17 @@ class AgentsPanel extends StatefulWidget {
 
 class _AgentsPanelState extends State<AgentsPanel> {
   bool _loading = true;
+  bool _adding = false;
   String? _error;
   AgentListResult? _list;
   bool _graph = true;
+
+  /// Same host catalog as Settings → AI hosts.
+  static const _hosts = <(String, String)>[
+    ('cursor', 'Cursor'),
+    ('claude', 'Claude (Anthropic)'),
+    ('chatgpt', 'ChatGPT'),
+  ];
 
   @override
   void initState() {
@@ -62,82 +142,133 @@ class _AgentsPanelState extends State<AgentsPanel> {
       await _reload();
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = e.toString());
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(friendlyAgentsError(e))));
     }
   }
 
-  Future<void> _rename(AgentInfo agent) async {
-    final controller = TextEditingController(text: agent.slug);
-    final next = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Rename slug'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'claude'),
-          inputFormatters: [
-            FilteringTextInputFormatter.allow(RegExp(r'[a-z0-9-]')),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-    if (next == null || next.isEmpty || next == agent.slug) return;
-    try {
-      await widget.daemon.renameAgent(agentId: agent.id, slug: next);
-      await _reload();
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _error = e.toString());
+  Set<String> _takenSlugs({String? except}) {
+    final taken = <String>{};
+    for (final a in _list?.agents ?? const <AgentInfo>[]) {
+      final s = a.slug.toLowerCase();
+      if (except != null && s == except.toLowerCase()) continue;
+      taken.add(s);
     }
+    return taken;
+  }
+
+  Future<void> _renameAgent(AgentInfo agent, String next) async {
+    await widget.daemon.renameAgent(agentId: agent.id, slug: next);
+    await _reload();
   }
 
   void _openInspector(AgentInfo agent, {required bool isPrimary}) {
-    final handle = widget.handle ?? 'alice@acme';
+    final handle = widget.handle ?? 'your@handle';
+    final host = agentHostLabel(agent.slug);
     showDialog<void>(
       context: context,
       barrierColor: const Color(0x660C0A09),
-      builder: (context) => _AgentInspector(
+      builder: (dialogContext) => _AgentInspector(
         handle: handle,
         agent: agent,
         isPrimary: isPrimary,
-        onRename: () {
-          Navigator.pop(context);
-          _rename(agent);
-        },
+        takenSlugs: _takenSlugs(except: agent.slug),
+        onRename: (slug) => _renameAgent(agent, slug),
         onSetDefault: isPrimary
             ? null
-            : () async {
-                Navigator.pop(context);
-                await _setDefault(agent.id);
-              },
-        onViewThreads: () {
-          Navigator.pop(context);
-          // Parent owns tabs; snack is enough for now.
-          ScaffoldMessenger.of(this.context).showSnackBar(
-            const SnackBar(content: Text('Open Threads to view mail.')),
+            : () => widget.daemon
+                  .setDefaultAgent(agent.id)
+                  .then((_) => _reload()),
+        onDisconnect: () async {
+          // No remove-host RPC yet — confirm + guided outcome.
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'To disconnect $host, remove the mutande MCP server in that app. '
+                'Reconnect anytime from Settings → AI hosts.',
+              ),
+            ),
           );
+        },
+        onViewThreads: () {
+          Navigator.pop(dialogContext);
+          final go = widget.onViewThreads;
+          if (go != null) {
+            go();
+          } else if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Open Threads to view mail.')),
+            );
+          }
         },
       ),
     );
   }
 
-  void _onAdd() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Connect an AI host in Settings, then return here to Add.'),
-      ),
+  Future<void> _onAdd() async {
+    if (_adding) return;
+    final taken = {
+      for (final a in _list?.agents ?? const <AgentInfo>[])
+        a.slug.toLowerCase(),
+    };
+    final available = _hosts
+        .where((h) => !taken.contains(h.$1))
+        .toList(growable: false);
+    if (available.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('All AI hosts are already on this graph.'),
+        ),
+      );
+      return;
+    }
+
+    final host = await showDialog<String>(
+      context: context,
+      barrierColor: const Color(0x660C0A09),
+      builder: (context) => _AddHostPicker(hosts: available),
     );
+    if (host == null || !mounted) return;
+
+    setState(() => _adding = true);
+    try {
+      final result = await widget.daemon.connectHost(host);
+      if (!mounted) return;
+      HostWriteResult? write;
+      for (final h in result.hosts) {
+        if (h.host.toLowerCase() == host) {
+          write = h;
+          break;
+        }
+      }
+      if (write != null && !write.ok) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              write.note?.isNotEmpty == true
+                  ? write.note!
+                  : 'Could not connect $host.',
+            ),
+          ),
+        );
+        return;
+      }
+      await _reload();
+      if (!mounted) return;
+      final label = _hosts.firstWhere((h) => h.$1 == host).$2;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Added $label')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not add host: $e')));
+    } finally {
+      if (mounted) setState(() => _adding = false);
+    }
   }
 
   @override
@@ -173,16 +304,38 @@ class _AgentsPanelState extends State<AgentsPanel> {
           ),
         ),
         const SizedBox(height: 4),
-        if (_loading)
+        if (_loading || _adding)
           const Expanded(child: Center(child: MutandeOrb.standard()))
         else if (_error != null)
           Expanded(
             child: Center(
-              child: Text(
-                _error!,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: const Color(0xFF991B1B),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 28),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      friendlyAgentsError(_error!),
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: const Color(0xFF78716C),
+                        height: 1.4,
+                      ),
                     ),
+                    const SizedBox(height: 16),
+                    OutlinedButton(
+                      onPressed: _reload,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF292524),
+                        side: const BorderSide(color: Color(0xFFD6D3D1)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                ),
               ),
             ),
           )
@@ -207,10 +360,7 @@ class _AgentsPanelState extends State<AgentsPanel> {
                     onSetDefault: _setDefault,
                   ),
           ),
-        _AgentsFooter(
-          count: agents.length,
-          version: widget.appVersion,
-        ),
+        _AgentsFooter(count: agents.length, version: widget.appVersion),
       ],
     );
   }
@@ -237,11 +387,11 @@ class _ViewToggle extends StatelessWidget {
           child: Text(
             label,
             style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: selected
-                      ? const Color(0xFF292524)
-                      : const Color(0xFF78716C),
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                ),
+              color: selected
+                  ? const Color(0xFF292524)
+                  : const Color(0xFF78716C),
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+            ),
           ),
         ),
       );
@@ -366,14 +516,24 @@ class _HandleNode extends StatelessWidget {
             color: const Color(0xFF1C1917),
             borderRadius: BorderRadius.circular(999),
           ),
-          child: Text(
-            handle,
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 240),
+            child: Tooltip(
+              message: handle,
+              waitDuration: const Duration(milliseconds: 400),
+              child: Text(
+                handle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
                   color: const Color(0xFFFAFAF9),
                   fontFamily: 'Menlo',
                   fontSize: 12,
                   letterSpacing: 0.2,
                 ),
+              ),
+            ),
           ),
         ),
       ],
@@ -392,10 +552,7 @@ class _Trunk extends StatelessWidget {
       height: 28,
       width: 2,
       child: CustomPaint(
-        painter: _LinePainter(
-          color: const Color(0xFF92400E),
-          dashed: !solid,
-        ),
+        painter: _LinePainter(color: const Color(0xFF92400E), dashed: !solid),
       ),
     );
   }
@@ -468,30 +625,25 @@ class _PrimaryCard extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF5F5F4),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(
-                      Icons.hub_outlined,
-                      size: 18,
-                      color: Color(0xFF57534E),
-                    ),
-                  ),
+                  AiHostIcon(slug, size: 40),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          slug,
-                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                color: const Color(0xFF292524),
-                                fontWeight: FontWeight.w700,
-                              ),
+                        Tooltip(
+                          message: slug,
+                          waitDuration: const Duration(milliseconds: 400),
+                          child: Text(
+                            slug,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.titleSmall
+                                ?.copyWith(
+                                  color: const Color(0xFF292524),
+                                  fontWeight: FontWeight.w700,
+                                ),
+                          ),
                         ),
                         const SizedBox(height: 2),
                         Row(
@@ -507,9 +659,7 @@ class _PrimaryCard extends StatelessWidget {
                             const SizedBox(width: 5),
                             Text(
                               'CONNECTED',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .labelSmall
+                              style: Theme.of(context).textTheme.labelSmall
                                   ?.copyWith(
                                     color: const Color(0xFF78716C),
                                     letterSpacing: 0.6,
@@ -528,8 +678,10 @@ class _PrimaryCard extends StatelessWidget {
                 top: -4,
                 right: -4,
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0xFF92400E),
                     borderRadius: BorderRadius.circular(4),
@@ -537,11 +689,11 @@ class _PrimaryCard extends StatelessWidget {
                   child: Text(
                     'PRIMARY',
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: Colors.white,
-                          fontSize: 9,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.5,
-                        ),
+                      color: Colors.white,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.5,
+                    ),
                   ),
                 ),
               ),
@@ -567,12 +719,7 @@ class _BranchRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final children = <Widget>[
-      ...subs.map(
-        (a) => _SubCard(
-          slug: a.slug,
-          onTap: () => onSelect(a),
-        ),
-      ),
+      ...subs.map((a) => _SubCard(slug: a.slug, onTap: () => onSelect(a))),
       _AddNode(onTap: onAdd),
     ];
 
@@ -581,9 +728,7 @@ class _BranchRow extends StatelessWidget {
         SizedBox(
           height: 18,
           width: math.max(200.0, children.length * 100.0),
-          child: CustomPaint(
-            painter: _BranchPainter(count: children.length),
-          ),
+          child: CustomPaint(painter: _BranchPainter(count: children.length)),
         ),
         Wrap(
           spacing: 12,
@@ -653,17 +798,6 @@ class _SubCard extends StatelessWidget {
   final String slug;
   final VoidCallback onTap;
 
-  IconData get _icon {
-    switch (slug) {
-      case 'cursor':
-        return Icons.code;
-      case 'chatgpt':
-        return Icons.smart_toy_outlined;
-      default:
-        return Icons.extension_outlined;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Material(
@@ -683,14 +817,21 @@ class _SubCard extends StatelessWidget {
           ),
           child: Column(
             children: [
-              Icon(_icon, size: 20, color: const Color(0xFF57534E)),
+              AiHostIcon(slug, size: 36),
               const SizedBox(height: 8),
-              Text(
-                slug,
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      color: const Color(0xFF292524),
-                      fontWeight: FontWeight.w600,
-                    ),
+              Tooltip(
+                message: slug,
+                waitDuration: const Duration(milliseconds: 400),
+                child: Text(
+                  slug.isEmpty ? '—' : slug,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: const Color(0xFF292524),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
               const SizedBox(height: 6),
               Row(
@@ -708,8 +849,8 @@ class _SubCard extends StatelessWidget {
                   Text(
                     'Idle',
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: const Color(0xFF78716C),
-                        ),
+                      color: const Color(0xFF78716C),
+                    ),
                   ),
                 ],
               ),
@@ -736,9 +877,7 @@ class _AddNode extends StatelessWidget {
         child: const SizedBox(
           width: 72,
           height: 72,
-          child: Center(
-            child: Icon(Icons.add, color: Color(0xFF78716C)),
-          ),
+          child: Center(child: Icon(Icons.add, color: Color(0xFF78716C))),
         ),
       ),
     );
@@ -788,15 +927,118 @@ class _EmptyPrimary extends StatelessWidget {
     return Column(
       children: [
         Text(
-          'Connect an AI host in Settings for your primary agent.',
+          'Add an AI host for your primary agent.',
           textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: const Color(0xFF78716C),
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: const Color(0xFF78716C)),
         ),
         const SizedBox(height: 12),
         _AddNode(onTap: onAdd),
       ],
+    );
+  }
+}
+
+class _AddHostPicker extends StatelessWidget {
+  const _AddHostPicker({required this.hosts});
+
+  final List<(String, String)> hosts;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: const Color(0xFFFAFAF9),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 340),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 14, 12, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.add_link,
+                    size: 18,
+                    color: Color(0xFFB45309),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Add AI host',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF292524),
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close, size: 18),
+                  ),
+                ],
+              ),
+              Text(
+                'Choose an idle host to add to your graph.',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: const Color(0xFF78716C)),
+              ),
+              const SizedBox(height: 12),
+              for (var i = 0; i < hosts.length; i++) ...[
+                if (i > 0) const Divider(height: 1, color: Color(0xFFE7E5E4)),
+                InkWell(
+                  onTap: () => Navigator.pop(context, hosts[i].$1),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 4,
+                      vertical: 12,
+                    ),
+                    child: Row(
+                      children: [
+                        AiHostIcon(hosts[i].$1, size: 36),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            hosts[i].$2,
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(
+                                  color: const Color(0xFF292524),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF5F5F4),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: const Text(
+                            'Idle',
+                            style: TextStyle(
+                              color: Color(0xFF78716C),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 4),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -830,26 +1072,28 @@ class _AgentsList extends StatelessWidget {
         if (primary != null)
           ListTile(
             contentPadding: const EdgeInsets.only(left: 28, right: 8),
-            leading: const Icon(Icons.anchor, color: Color(0xFF92400E)),
+            leading: AiHostIcon(primary!.slug, size: 32),
             title: Text(primary!.slug),
             subtitle: Text('Primary · receives $handle & @all'),
-            trailing: const Text('PRIMARY',
-                style: TextStyle(
-                  color: Color(0xFF92400E),
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                )),
+            trailing: const Text(
+              'PRIMARY',
+              style: TextStyle(
+                color: Color(0xFF92400E),
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
             onTap: () => onSelect(primary!, true),
           ),
         for (final a in subs)
           ListTile(
             contentPadding: const EdgeInsets.only(left: 48, right: 8),
-            leading: const Icon(Icons.circle_outlined, size: 16),
+            leading: AiHostIcon(a.slug, size: 32),
             title: Text(a.slug),
             subtitle: Text('$handle/${a.slug}'),
             trailing: TextButton(
               onPressed: () => onSetDefault(a.id),
-              child: const Text('Set default'),
+              child: const Text('Set as default'),
             ),
             onTap: () => onSelect(a, false),
           ),
@@ -875,11 +1119,11 @@ class _AgentsFooter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final style = Theme.of(context).textTheme.labelSmall?.copyWith(
-          color: const Color(0xFFA8A29E),
-          letterSpacing: 0.8,
-          fontSize: 10,
-          fontWeight: FontWeight.w600,
-        );
+      color: const Color(0xFFA8A29E),
+      letterSpacing: 0.8,
+      fontSize: 10,
+      fontWeight: FontWeight.w600,
+    );
     return Padding(
       padding: const EdgeInsets.only(top: 8),
       child: Column(
@@ -899,140 +1143,555 @@ class _AgentsFooter extends StatelessWidget {
   }
 }
 
-class _AgentInspector extends StatelessWidget {
+class _AgentInspector extends StatefulWidget {
   const _AgentInspector({
     required this.handle,
     required this.agent,
     required this.isPrimary,
+    required this.takenSlugs,
     required this.onRename,
     required this.onViewThreads,
+    required this.onDisconnect,
     this.onSetDefault,
   });
 
   final String handle;
   final AgentInfo agent;
   final bool isPrimary;
-  final VoidCallback onRename;
+  final Set<String> takenSlugs;
+  final Future<void> Function(String slug) onRename;
   final VoidCallback onViewThreads;
-  final VoidCallback? onSetDefault;
+  final Future<void> Function() onDisconnect;
+  final Future<void> Function()? onSetDefault;
+
+  @override
+  State<_AgentInspector> createState() => _AgentInspectorState();
+}
+
+class _AgentInspectorState extends State<_AgentInspector> {
+  bool _renaming = false;
+  bool _disconnecting = false;
+  bool _settingDefault = false;
+  String? _actionError;
+  Future<void> Function()? _retryAction;
+
+  bool get _busy => _renaming || _disconnecting || _settingDefault;
+
+  // Bare handle for default; never show /default. Subs: alice@acme/<slug>.
+  String get _display => widget.isPrimary
+      ? widget.handle
+      : '${widget.handle}/${widget.agent.slug}';
+
+  String get _host => agentHostLabel(widget.agent.slug);
+
+  String get _statusLabel {
+    if (widget.agent.slug.trim().isEmpty) return 'Unknown';
+    return widget.isPrimary ? 'Connected' : 'Idle';
+  }
+
+  Color get _statusColor {
+    if (widget.agent.slug.trim().isEmpty) return const Color(0xFFA8A29E);
+    return widget.isPrimary ? const Color(0xFF16A34A) : const Color(0xFFD97706);
+  }
+
+  Future<void> _onRename() async {
+    if (_busy) return;
+    final next = await showDialog<String>(
+      context: context,
+      barrierColor: const Color(0x660C0A09),
+      builder: (context) => _RenameSlugDialog(
+        initial: widget.agent.slug,
+        takenSlugs: widget.takenSlugs,
+      ),
+    );
+    if (next == null || !mounted) return;
+    setState(() {
+      _renaming = true;
+      _actionError = null;
+      _retryAction = null;
+    });
+    try {
+      await widget.onRename(next);
+      if (!mounted) return;
+      Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _renaming = false;
+        _actionError = friendlyAgentsError(e);
+        _retryAction = _onRename;
+      });
+    }
+  }
+
+  Future<void> _onDisconnect() async {
+    if (_busy) return;
+    final host = _host;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierColor: const Color(0x660C0A09),
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFFFAFAF9),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        title: const Text('Disconnect host?'),
+        content: Text(
+          'This stops mutande from using $host as an MCP host on this Mac. '
+          'You can reconnect later from Settings → AI hosts.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFB91C1C),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Disconnect'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() {
+      _disconnecting = true;
+      _actionError = null;
+      _retryAction = null;
+    });
+    try {
+      await widget.onDisconnect();
+      if (!mounted) return;
+      Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _disconnecting = false;
+        _actionError = friendlyAgentsError(e);
+        _retryAction = _onDisconnect;
+      });
+    }
+  }
+
+  Future<void> _onSetDefault() async {
+    final action = widget.onSetDefault;
+    if (action == null || _busy) return;
+    setState(() {
+      _settingDefault = true;
+      _actionError = null;
+      _retryAction = null;
+    });
+    try {
+      await action();
+      if (!mounted) return;
+      Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _settingDefault = false;
+        _actionError = friendlyAgentsError(e);
+        _retryAction = _onSetDefault;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final display = isPrimary ? handle : '$handle/${agent.slug}';
+    final motion = _agentsMotion(context, const Duration(milliseconds: 180));
+    final slug = widget.agent.slug.trim().isEmpty ? '—' : widget.agent.slug;
 
-    return Dialog(
-      backgroundColor: const Color(0xFFFAFAF9),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 340),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(18, 14, 12, 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
+    return PopScope(
+      canPop: !_busy,
+      child: Dialog(
+        backgroundColor: const Color(0xFFFAFAF9),
+        elevation: 8,
+        shadowColor: const Color(0x330C0A09),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 36, vertical: 48),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 320),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 14, 14, 18),
+            child: FocusTraversalGroup(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Icon(Icons.hub_outlined,
-                      size: 18, color: Color(0xFFB45309)),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Agent Inspector',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          color: const Color(0xFF292524),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      const Padding(
+                        // Optical nudge: tree icon sits slightly high vs SF title.
+                        padding: EdgeInsets.only(top: 1),
+                        child: Icon(
+                          Icons.account_tree_outlined,
+                          size: 18,
+                          color: Color(0xFFB45309),
                         ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Agent Inspector',
+                          style: Theme.of(context).textTheme.titleSmall
+                              ?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFF292524),
+                                height: 1.2,
+                              ),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Close',
+                        onPressed: _busy ? null : () => Navigator.pop(context),
+                        visualDensity: VisualDensity.compact,
+                        constraints: const BoxConstraints(
+                          minWidth: 36,
+                          minHeight: 36,
+                        ),
+                        icon: const Icon(Icons.close, size: 18),
+                        color: const Color(0xFF78716C),
+                      ),
+                    ],
                   ),
-                  const Spacer(),
-                  IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close, size: 18),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              _InspectorField(label: 'DISPLAY ADDRESS', value: display),
-              _InspectorField(label: 'AGENT SLUG', value: agent.slug),
-              _InspectorField(label: 'HOST', value: _hostLabel(agent.slug)),
-              _InspectorField(
-                label: 'STATUS',
-                value: isPrimary ? 'Connected' : 'Idle',
-                trailing: Container(
-                  width: 7,
-                  height: 7,
-                  decoration: BoxDecoration(
-                    color: isPrimary
-                        ? const Color(0xFF166534)
-                        : const Color(0xFFD97706),
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextButton.icon(
-                onPressed: onRename,
-                icon: const Icon(Icons.edit_outlined, size: 16),
-                label: const Text('Rename slug'),
-                style: TextButton.styleFrom(
-                  alignment: Alignment.centerLeft,
-                  foregroundColor: const Color(0xFF44403C),
-                ),
-              ),
-              TextButton.icon(
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Disconnect from Settings → AI hosts.'),
+                  const SizedBox(height: 12),
+                  _InspectorField(label: 'Display address', value: _display),
+                  _InspectorField(label: 'Agent slug', value: slug),
+                  _InspectorField(
+                    label: 'Host',
+                    value: _host,
+                    trailing: AiHostIcon(
+                      widget.agent.slug,
+                      size: 22,
+                      showPlate: false,
                     ),
-                  );
-                },
-                icon: const Icon(Icons.link_off, size: 16),
-                label: const Text('Disconnect host'),
-                style: TextButton.styleFrom(
-                  alignment: Alignment.centerLeft,
-                  foregroundColor: const Color(0xFF991B1B),
-                ),
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: onViewThreads,
-                      icon: const Icon(Icons.chat_bubble_outline, size: 16),
-                      label: const Text('View Threads'),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xFF1C1917),
+                  ),
+                  _InspectorField(
+                    label: 'Status',
+                    value: _statusLabel,
+                    trailing: AnimatedContainer(
+                      duration: motion,
+                      curve: Curves.easeOutCubic,
+                      width: 8,
+                      height: 8,
+                      margin: const EdgeInsets.only(left: 10),
+                      decoration: BoxDecoration(
+                        color: _statusColor,
+                        shape: BoxShape.circle,
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
+                  AnimatedSize(
+                    duration: motion,
+                    curve: Curves.easeOutCubic,
+                    child: _actionError == null
+                        ? const SizedBox.shrink()
+                        : Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: _InspectorErrorBanner(
+                              message: _actionError!,
+                              onRetry: _busy
+                                  ? null
+                                  : () {
+                                      final retry = _retryAction;
+                                      setState(() {
+                                        _actionError = null;
+                                        _retryAction = null;
+                                      });
+                                      retry?.call();
+                                    },
+                            ),
+                          ),
+                  ),
+                  const SizedBox(height: 2),
+                  _InspectorTextAction(
+                    icon: Icons.edit_outlined,
+                    label: _renaming ? 'Renaming…' : 'Rename slug',
+                    onPressed: _busy ? null : _onRename,
+                    busy: _renaming,
+                  ),
+                  _InspectorTextAction(
+                    icon: Icons.link_off,
+                    label: _disconnecting
+                        ? 'Disconnecting…'
+                        : 'Disconnect host',
+                    onPressed: _busy ? null : _onDisconnect,
+                    busy: _disconnecting,
+                    destructive: true,
+                  ),
+                  const SizedBox(height: 14),
+                  SizedBox(
+                    height: 44,
+                    child: FilledButton.icon(
+                      onPressed: _busy ? null : widget.onViewThreads,
+                      icon: const Icon(Icons.chat_bubble_outline, size: 16),
+                      label: const Text('View threads'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF1C1917),
+                        disabledBackgroundColor: const Color(0xFFD6D3D1),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    height: 44,
                     child: OutlinedButton(
-                      onPressed: onSetDefault,
-                      child: const Text('Set as Default'),
+                      onPressed: widget.isPrimary || _busy
+                          ? null
+                          : _onSetDefault,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF44403C),
+                        disabledForegroundColor: const Color(0xFFA8A29E),
+                        side: BorderSide(
+                          color: widget.isPrimary
+                              ? const Color(0xFFE7E5E4)
+                              : const Color(0xFFD6D3D1),
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      child: _settingDefault
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Text(
+                              widget.isPrimary ? 'Default' : 'Set as default',
+                            ),
                     ),
                   ),
                 ],
               ),
-            ],
+            ),
           ),
         ),
       ),
     );
   }
+}
 
-  static String _hostLabel(String slug) {
-    switch (slug) {
-      case 'claude':
-        return 'Claude Desktop';
-      case 'cursor':
-        return 'Cursor';
-      case 'chatgpt':
-        return 'ChatGPT';
-      default:
-        return slug;
+class _RenameSlugDialog extends StatefulWidget {
+  const _RenameSlugDialog({required this.initial, required this.takenSlugs});
+
+  final String initial;
+  final Set<String> takenSlugs;
+
+  @override
+  State<_RenameSlugDialog> createState() => _RenameSlugDialogState();
+}
+
+class _RenameSlugDialogState extends State<_RenameSlugDialog> {
+  late final TextEditingController _controller;
+  String? _error;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initial);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _validateLive(String _) {
+    final next = _controller.text.trim().toLowerCase();
+    setState(() {
+      if (next == widget.initial.toLowerCase()) {
+        _error = null;
+      } else {
+        _error = validateAgentSlug(next, taken: widget.takenSlugs);
+      }
+    });
+  }
+
+  void _submit() {
+    if (_saving) return;
+    final next = _controller.text.trim().toLowerCase();
+    if (next == widget.initial.toLowerCase()) {
+      Navigator.pop(context);
+      return;
     }
+    final err = validateAgentSlug(next, taken: widget.takenSlugs);
+    if (err != null) {
+      setState(() => _error = err);
+      return;
+    }
+    setState(() => _saving = true);
+    Navigator.pop(context, next);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final canSave =
+        !_saving &&
+        _controller.text.trim().isNotEmpty &&
+        (_error == null ||
+            _controller.text.trim().toLowerCase() ==
+                widget.initial.toLowerCase());
+
+    return AlertDialog(
+      backgroundColor: const Color(0xFFFAFAF9),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      title: const Text('Rename slug'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Lowercase letters, digits, or hyphens · 1–32 characters. '
+            'Reserved: default, all.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: const Color(0xFF78716C),
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _controller,
+            autofocus: true,
+            enabled: !_saving,
+            onChanged: _validateLive,
+            onSubmitted: (_) => _submit(),
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'[a-z0-9-]')),
+              LengthLimitingTextInputFormatter(32),
+            ],
+            decoration: InputDecoration(
+              hintText: 'claude',
+              errorText: _error,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: canSave ? _submit : null,
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xFF1C1917),
+            disabledBackgroundColor: const Color(0xFFD6D3D1),
+            foregroundColor: Colors.white,
+          ),
+          child: _saving
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Save'),
+        ),
+      ],
+    );
+  }
+}
+
+class _InspectorTextAction extends StatelessWidget {
+  const _InspectorTextAction({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+    this.busy = false,
+    this.destructive = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback? onPressed;
+  final bool busy;
+  final bool destructive;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = destructive
+        ? const Color(0xFFB91C1C)
+        : const Color(0xFF44403C);
+    final disabled = onPressed == null;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: TextButton.icon(
+        onPressed: onPressed,
+        icon: busy
+            ? SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: color.withValues(alpha: disabled ? 0.4 : 1),
+                ),
+              )
+            : Icon(icon, size: 16),
+        label: Text(label),
+        style: TextButton.styleFrom(
+          foregroundColor: color,
+          disabledForegroundColor: color.withValues(alpha: 0.4),
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+          minimumSize: const Size(44, 40),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          alignment: Alignment.centerLeft,
+        ),
+      ),
+    );
+  }
+}
+
+class _InspectorErrorBanner extends StatelessWidget {
+  const _InspectorErrorBanner({required this.message, this.onRetry});
+
+  final String message;
+  final VoidCallback? onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFEF2F2),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFFECACA)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Text(
+              message,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: const Color(0xFF991B1B),
+                height: 1.35,
+              ),
+            ),
+          ),
+          if (onRetry != null)
+            TextButton(
+              onPressed: onRetry,
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFF991B1B),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                minimumSize: const Size(44, 36),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: const Text('Retry'),
+            ),
+        ],
+      ),
+    );
   }
 }
 
@@ -1049,31 +1708,39 @@ class _InspectorField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final valueStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
+      color: const Color(0xFF292524),
+      fontFamily: 'Menlo',
+      fontSize: 13,
+      height: 1.3,
+    );
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.only(bottom: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            label,
+            label.toUpperCase(),
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: const Color(0xFFA8A29E),
-                  letterSpacing: 0.8,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w600,
-                ),
+              color: const Color(0xFFA8A29E),
+              letterSpacing: 0.8,
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+            ),
           ),
-          const SizedBox(height: 3),
+          const SizedBox(height: 4),
           Row(
             children: [
               Expanded(
-                child: Text(
-                  value,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: const Color(0xFF292524),
-                        fontFamily: 'Menlo',
-                        fontSize: 13,
-                      ),
+                child: Tooltip(
+                  message: value,
+                  waitDuration: const Duration(milliseconds: 400),
+                  child: Text(
+                    value,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: valueStyle,
+                  ),
                 ),
               ),
               ?trailing,

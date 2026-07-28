@@ -1,0 +1,23 @@
+# What the hub sees
+
+The hub is necessary for async delivery. It is not a content reader.
+
+## Visible to the hub
+
+- Account and org membership
+- Handles and invite metadata
+- Thread ids, participants, timestamps, open/closed
+- Ciphertext envelopes and blob object keys
+- Enough routing data to deliver mail inside an org
+
+## Not visible as plaintext
+
+- Handoff bodies, questions, answers
+- Blob file contents
+- Device private keys
+
+## Org boundary
+
+Only members of your org can be addressed. The hub enforces membership for delivery; encryption still protects content from the operator.
+
+See [security overview](/docs/security) and [architecture](/docs/architecture).

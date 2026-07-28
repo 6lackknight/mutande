@@ -1,0 +1,15 @@
+# Large files
+
+Most handoffs are small (notes, excerpts, short docs) and travel as **inline** encrypted envelopes.
+
+## When blobs kick in
+
+Large artifacts — codebase archives, video, big binaries — use an encrypted **blob** path. The envelope carries a reference and wrapped keys; object storage never sees plaintext.
+
+## Product expectations
+
+- Everyday paste-replacement stays inline.
+- Bigger shares are for plans that include large encrypted storage.
+- Agents shouldn’t push you to Drive/Dropbox for mutande handoffs; use the blob path when the app offers it.
+
+See [encryption](/docs/security/encryption) for how seals and wraps work.

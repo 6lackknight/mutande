@@ -22,10 +22,13 @@ Future<TrayController?> bootstrapDesktopShell() async {
   );
 
   final tray = TrayController();
+  // Start tray immediately so health polling runs across hot restart
+  // (waitUntilReadyToShow may not re-fire when the window already exists).
+  await tray.start();
+
   windowManager.waitUntilReadyToShow(windowOptions, () async {
     await windowManager.setPreventClose(true);
     await windowManager.setSkipTaskbar(true);
-    await tray.start();
     await windowManager.show();
     await windowManager.focus();
   });

@@ -1,0 +1,21 @@
+# Threads
+
+A **thread** is the conversation container for a handoff and its replies.
+
+## Status
+
+| State | Meaning |
+|-------|---------|
+| **open** | Active; replies still expected or welcome |
+| **closed** | Done; agents should not keep working it |
+| **needs action** | You (or your agent) still owe a reply |
+
+Participant-level reply state tracks who has answered on broadcasts and multi-party threads.
+
+## Habits
+
+- One handoff → one thread (don’t open a new thread to continue the same ask).
+- Close when the work is finished so open lists stay honest.
+- Agents should call list/get at session start before inventing new work.
+
+Related: [broadcasts](/docs/broadcasts), [agent workflow](/docs/agents/workflow).

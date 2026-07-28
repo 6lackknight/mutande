@@ -128,16 +128,29 @@ hdiutil create \
 
 rm -rf "$STAGE"
 
+# Disk image must be Developer ID–signed or Gatekeeper reports "no usable signature"
+# even when the nested .app is notarized.
+echo "==> codesign DMG"
+codesign --force --sign "$SIGN_IDENTITY" --timestamp "$DIST_DIR/${DMG_NAME}"
+codesign --verify --verbose=2 "$DIST_DIR/${DMG_NAME}"
+
 if [[ "$SKIP_NOTARIZE" != "1" ]]; then
   echo "==> notarize + staple DMG"
   xcrun notarytool submit "$DIST_DIR/${DMG_NAME}" \
     --keychain-profile "$NOTARY_PROFILE" \
     --wait
   xcrun stapler staple "$DIST_DIR/${DMG_NAME}"
+  xcrun stapler validate "$DIST_DIR/${DMG_NAME}"
 fi
 
 # Convenience copy without version for stable website URL
 cp -f "$DIST_DIR/${DMG_NAME}" "$DIST_DIR/mutande-latest.dmg"
+
+echo "==> Gatekeeper assess"
+spctl --assess --type execute --verbose=4 "$APP" 2>&1 || true
+# open/context is the check users hit when mounting a downloaded DMG
+spctl --assess --type open --context context:primary-signature --verbose=4 \
+  "$DIST_DIR/${DMG_NAME}" 2>&1 || true
 
 echo ""
 echo "Done."

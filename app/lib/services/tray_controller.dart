@@ -93,6 +93,7 @@ class TrayController with TrayListener, WindowListener {
   }
 
   Future<void> showMainWindow() async {
+    unawaited(_pollHealth());
     await windowManager.show();
     await windowManager.focus();
   }

@@ -130,6 +130,8 @@ class _RootScreenState extends State<RootScreen> {
   bool _loading = true;
   DaemonStatusResult? _status;
   String? _statusError;
+  /// Set after a failed [getStatus] via local `health` ping (tray uses the same).
+  bool _daemonReachable = false;
 
   int _lastConnectTick = 0;
   bool _pendingConnectHosts = false;
@@ -172,6 +174,7 @@ class _RootScreenState extends State<RootScreen> {
       setState(() {
         _status = status;
         _statusError = null;
+        _daemonReachable = true;
         _loading = false;
       });
       if (_pendingConnectHosts && status.configured) {
@@ -180,9 +183,14 @@ class _RootScreenState extends State<RootScreen> {
       }
     } catch (e) {
       if (!mounted) return;
+      // Distinguish hung/slow hub-backed get_status from a dead daemon.
+      // Tray "Daemon: up" uses pingHealth; do not call that "unreachable".
+      final health = await _daemon.pingHealth();
+      if (!mounted) return;
       // Keep last-known status; transport failure ≠ unconfigured.
       setState(() {
         _statusError = e.toString();
+        _daemonReachable = health.connected;
         _loading = false;
       });
     }
@@ -259,6 +267,7 @@ class _RootScreenState extends State<RootScreen> {
       return DaemonErrorScreen(
         error: _statusError!,
         endpoint: _daemon.httpBaseUrl,
+        daemonReachable: _daemonReachable,
         onRetry: _refreshStatus,
       );
     }
@@ -296,15 +305,27 @@ class DaemonErrorScreen extends StatelessWidget {
     super.key,
     required this.error,
     required this.endpoint,
+    this.daemonReachable = false,
     required this.onRetry,
   });
 
   final String error;
   final String endpoint;
+  final bool daemonReachable;
   final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
+    final title =
+        daemonReachable ? "Couldn't load session" : 'Daemon unreachable';
+    final detail = daemonReachable
+        ? 'mutande-core is up, but session status timed out or failed '
+            '(usually a slow hub). Retry in a moment.\n'
+            'HTTP: $endpoint'
+        : 'The app starts mutande-core automatically; if this persists, '
+            'set MUTANDE_CORE_PATH or build core/target/release/mutande-core.\n'
+            'HTTP: $endpoint';
+
     return Scaffold(
       body: Center(
         child: Padding(
@@ -325,16 +346,14 @@ class DaemonErrorScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'Daemon unreachable',
+                  title,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     color: const Color(0xFF991B1B),
                   ),
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'The app starts mutande-core automatically; if this persists, '
-                  'set MUTANDE_CORE_PATH or build core/target/release/mutande-core.\n'
-                  'HTTP: $endpoint',
+                  detail,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: const Color(0xFF78716C),
                   ),
@@ -440,12 +459,9 @@ class _HomeScreenState extends State<HomeScreen> {
             _HomeHeader(
               handle: handle,
               tab: _tab,
-              onTab: (i) => setState(() => _tab = i),
-              onRefresh: () {
-                if (_tab == 0) {
-                  _reloadThreads?.call();
-                }
-                _checkDaemon();
+              onTab: (i) {
+                setState(() => _tab = i);
+                if (i == 0) _reloadThreads?.call();
               },
               onSettings: _openSettings,
             ),
@@ -479,6 +495,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ? AgentsPanel(
                             daemon: widget.daemon,
                             handle: widget.status.handle,
+                            onViewThreads: () => setState(() => _tab = 0),
                           )
                         : SingleChildScrollView(
                             child: ContactsPanel(
@@ -499,31 +516,32 @@ class _HomeHeader extends StatelessWidget {
     required this.handle,
     required this.tab,
     required this.onTab,
-    required this.onRefresh,
     required this.onSettings,
   });
 
   final String handle;
   final int tab;
   final ValueChanged<int> onTab;
-  final VoidCallback onRefresh;
   final VoidCallback onSettings;
 
   @override
   Widget build(BuildContext context) {
+    final initial = handle.isNotEmpty && handle != 'Agent-to-agent mail'
+        ? handle[0].toUpperCase()
+        : 'M';
+
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 8, 4),
+      padding: const EdgeInsets.fromLTRB(16, 10, 12, 6),
       child: Row(
         children: [
           SizedBox(
-            width: 110,
+            width: 96,
             child: Text(
-              handle,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: const Color(0xFF78716C),
-                    fontWeight: FontWeight.w500,
+              'mutande',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: const Color(0xFF292524),
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: -0.3,
                   ),
             ),
           ),
@@ -550,16 +568,25 @@ class _HomeHeader extends StatelessWidget {
             ),
           ),
           IconButton(
-            tooltip: 'Refresh',
-            onPressed: onRefresh,
-            icon: const Icon(Icons.refresh, size: 20),
-            color: const Color(0xFF57534E),
-          ),
-          IconButton(
             tooltip: 'Settings',
             onPressed: onSettings,
             icon: const Icon(Icons.settings_outlined, size: 20),
             color: const Color(0xFF57534E),
+          ),
+          Tooltip(
+            message: handle,
+            child: CircleAvatar(
+              radius: 14,
+              backgroundColor: const Color(0xFFE7E5E4),
+              child: Text(
+                initial,
+                style: const TextStyle(
+                  color: Color(0xFF57534E),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              ),
+            ),
           ),
         ],
       ),

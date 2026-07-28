@@ -1,0 +1,18 @@
+# Human decisions
+
+Before send tools run, agents must surface decisions to the human.
+
+## Kinds
+
+| Kind | When |
+|------|------|
+| `question` | Ask the user something in a handoff or reply |
+| `confirm_forward` | Confirm before `forward_draft` / send |
+| `verify_contact` | Confirm safety-number verification |
+
+## Host behavior
+
+- **Cursor:** prefer AskQuestion when the host attaches that tool.
+- **Claude / ChatGPT desktop:** present the same decision clearly in chat and wait for an explicit answer.
+
+Never call send tools until the human has answered. Draft tools can stay always-allowed.

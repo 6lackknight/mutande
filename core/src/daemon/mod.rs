@@ -66,15 +66,18 @@ pub fn expand_path(path: &str) -> PathBuf {
     }
 }
 
+/// Canonical daemon Unix socket (`mutande-core serve` + `mutande-core mcp`).
+pub const DEFAULT_SOCKET: &str = "~/.mutande/daemon.sock";
+
 pub async fn run(socket_path: &str, http_bind: Option<&str>) -> Result<()> {
     let socket_path = expand_path(socket_path);
     ensure_mutande_dir(&socket_path)?;
 
-    if socket_path.exists() {
-        std::fs::remove_file(&socket_path).context("remove stale daemon socket")?;
-    }
-
+    // Bootstrap before touching the listen path. A second `serve` used to
+    // unlink a live socket immediately, then hang on Keychain — leaving the
+    // first daemon on HTTP with a ghost Unix fd and MCP unable to connect.
     let state = Arc::new(DaemonState::bootstrap()?);
+    prepare_unix_socket(&socket_path).await?;
 
     if let Some(bind) = http_bind {
         let token = config::ensure_http_token().context("ensure HTTP bridge token")?;
@@ -92,6 +95,23 @@ pub async fn run(socket_path: &str, http_bind: Option<&str>) -> Result<()> {
     }
 
     run_unix(socket_path, state).await
+}
+
+/// Remove a dead socket file; refuse if another daemon is still accepting.
+async fn prepare_unix_socket(socket_path: &Path) -> Result<()> {
+    if !socket_path.exists() {
+        return Ok(());
+    }
+    match UnixStream::connect(socket_path).await {
+        Ok(_) => {
+            anyhow::bail!(
+                "daemon already running at {} (stop it before starting another serve)",
+                socket_path.display()
+            );
+        }
+        Err(_) => std::fs::remove_file(socket_path)
+            .with_context(|| format!("remove stale daemon socket {}", socket_path.display())),
+    }
 }
 
 async fn run_unix(socket_path: PathBuf, state: Arc<DaemonState>) -> Result<()> {
