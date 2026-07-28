@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -9,6 +10,7 @@ import 'package:app/app.dart';
 import 'package:app/config/app_config.dart';
 import 'package:app/screens/agents_screen.dart';
 import 'package:app/services/daemon_client.dart';
+import 'package:app/services/host_link_store.dart';
 
 DaemonClient _mockDaemon(
   Future<http.Response> Function(http.Request) handler,
@@ -21,10 +23,13 @@ DaemonClient _mockDaemon(
 }
 
 http.Response _rpcOk(Object? id, Map<String, dynamic> result) {
-  return http.Response(
+  final body = utf8.encode(
     jsonEncode({'jsonrpc': '2.0', 'id': id, 'result': result}),
+  );
+  return http.Response.bytes(
+    body,
     200,
-    headers: {'Content-Type': 'application/json'},
+    headers: {'Content-Type': 'application/json; charset=utf-8'},
   );
 }
 
@@ -78,6 +83,39 @@ void main() {
     expect(find.textContaining('ACTION REQUIRED'), findsOneWidget);
   });
 
+  testWidgets('threads timeout shows friendly retry', (WidgetTester tester) async {
+    final daemon = _mockDaemon((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      final method = body['method'] as String?;
+      if (method == 'list_threads') {
+        throw TimeoutException('Future not completed');
+      }
+      return _rpcOk(body['id'], {
+        'ok': true,
+        'service': 'mutande-core',
+        'version': '0.0.0',
+      });
+    });
+
+    await tester.pumpWidget(
+      MutandeApp(
+        config: const AppConfig(hubUrl: 'http://localhost:8000'),
+        daemon: daemon,
+        seedStatus: const DaemonStatusResult(
+          configured: true,
+          hubUrl: 'http://localhost:8000',
+          handle: 'alice@acme',
+        ),
+        welcomeDuration: Duration.zero,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('TimeoutException'), findsNothing);
+    expect(find.textContaining('took too long'), findsOneWidget);
+    expect(find.text('Retry'), findsOneWidget);
+  });
+
   testWidgets('settings has Check daemon', (WidgetTester tester) async {
     final daemon = _mockDaemon((request) async {
       final body = jsonDecode(request.body) as Map<String, dynamic>;
@@ -104,6 +142,7 @@ void main() {
       MutandeApp(
         config: const AppConfig(hubUrl: 'http://localhost:8000'),
         daemon: daemon,
+        hostLinkStore: HostLinkStore.memory(),
         seedStatus: const DaemonStatusResult(
           configured: true,
           hubUrl: 'http://localhost:8000',
@@ -117,17 +156,21 @@ void main() {
     await tester.tap(find.byTooltip('Settings'));
     await tester.pumpAndSettle();
     expect(find.text('Settings'), findsWidgets);
+    expect(find.text('Local courier'), findsOneWidget);
     expect(find.text('Check daemon'), findsOneWidget);
     expect(find.text('Connect new host'), findsOneWidget);
-    expect(find.text('CONNECTED'), findsOneWidget);
+    expect(find.text('Connected'), findsOneWidget);
+    expect(find.text('CONNECTED'), findsNothing);
+    expect(find.text('Not linked'), findsAtLeastNWidgets(3));
     expect(find.text('Safety Numbers'), findsOneWidget);
-    await tester.scrollUntilVisible(find.text('Sign out'), 200);
+    expect(find.text('Sign out'), findsNothing);
+    expect(find.text('Standard Professional License'), findsNothing);
+    await tester.scrollUntilVisible(find.text('alice@acme'), 200);
     await tester.pumpAndSettle();
-    expect(find.text('Sign out'), findsOneWidget);
     expect(find.text('alice@acme'), findsOneWidget);
   });
 
-  testWidgets('connect AI hosts shows friendly success rows', (
+  testWidgets('connect AI host via picker shows Linked status', (
     WidgetTester tester,
   ) async {
     final daemon = _mockDaemon((request) async {
@@ -144,28 +187,16 @@ void main() {
         });
       }
       if (method == 'connect_host') {
+        final params = body['params'] as Map<String, dynamic>? ?? {};
+        final host = params['host'] as String? ?? 'cursor';
         return _rpcOk(body['id'], {
           'command': '/Users/dev/bin/mutande-core',
           'args': ['mcp'],
           'hosts': [
             {
-              'host': 'cursor',
+              'host': host,
               'path': '/Users/dev/.cursor/mcp.json',
               'ok': true,
-            },
-            {
-              'host': 'claude',
-              'path':
-                  '/Users/dev/Library/Application Support/Claude/claude_desktop_config.json',
-              'ok': true,
-            },
-            {
-              'host': 'chatgpt',
-              'path':
-                  '/Users/dev/Library/Application Support/ChatGPT/mcp.json',
-              'ok': true,
-              'note':
-                  'ChatGPT path unconfirmed; also seen: mcp_config.json. Prefer Settings -> MCP if the file is ignored.',
             },
           ],
         });
@@ -181,6 +212,7 @@ void main() {
       MutandeApp(
         config: const AppConfig(hubUrl: 'http://localhost:8000'),
         daemon: daemon,
+        hostLinkStore: HostLinkStore.memory(),
         seedStatus: const DaemonStatusResult(
           configured: true,
           hubUrl: 'http://localhost:8000',
@@ -197,26 +229,19 @@ void main() {
     await tester.ensureVisible(connect);
     await tester.pumpAndSettle();
     await tester.tap(connect);
-    // Allow the connect_host future to complete past the loading orb tickers.
+    await tester.pumpAndSettle();
+    expect(find.text('Connect AI host'), findsOneWidget);
+
+    await tester.tap(find.text('Cursor').last);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
     await tester.pumpAndSettle();
 
-    expect(find.text('Connected 3 AI hosts'), findsOneWidget);
-    expect(find.text('Cursor'), findsOneWidget);
-    expect(find.text('Claude (Anthropic)'), findsOneWidget);
-    expect(find.text('ChatGPT'), findsOneWidget);
-    expect(find.text('Connected'), findsAtLeastNWidgets(3));
-    expect(find.textContaining('Wrote '), findsNothing);
-    expect(find.textContaining('/Users/dev/bin/mutande-core'), findsNothing);
-    expect(find.textContaining('Settings'), findsWidgets);
-
-    final details = find.text('Details');
-    await tester.ensureVisible(details);
-    await tester.tap(details);
-    await tester.pumpAndSettle();
-    expect(find.textContaining('.cursor/mcp.json'), findsOneWidget);
-    expect(find.textContaining('MCP'), findsWidgets);
+    expect(find.text('Linked Cursor'), findsOneWidget);
+    expect(find.text('Linked'), findsOneWidget);
+    expect(find.text('Not linked'), findsAtLeastNWidgets(2));
+    expect(find.text('Connected 3 AI hosts'), findsNothing);
+    expect(find.text('Details'), findsNothing);
   });
 
   testWidgets('agents Add opens idle host picker', (WidgetTester tester) async {
@@ -267,6 +292,7 @@ void main() {
       MutandeApp(
         config: const AppConfig(hubUrl: 'http://localhost:8000'),
         daemon: daemon,
+        hostLinkStore: HostLinkStore.memory(),
         seedStatus: const DaemonStatusResult(
           configured: true,
           hubUrl: 'http://localhost:8000',
@@ -290,7 +316,7 @@ void main() {
     expect(find.text('Cursor'), findsOneWidget);
     expect(find.text('Claude (Anthropic)'), findsOneWidget);
     expect(find.text('ChatGPT'), findsOneWidget);
-    expect(find.text('Idle'), findsAtLeastNWidgets(3));
+    expect(find.text('Not linked'), findsAtLeastNWidgets(3));
 
     await tester.tap(find.text('Cursor'));
     await tester.pump();
@@ -327,6 +353,7 @@ void main() {
       MutandeApp(
         config: const AppConfig(hubUrl: 'http://localhost:8000'),
         daemon: daemon,
+        hostLinkStore: HostLinkStore.memory(),
         seedStatus: const DaemonStatusResult(
           configured: true,
           hubUrl: 'http://localhost:8000',
@@ -469,11 +496,17 @@ test('validateHandle and validateHubUrl', () {
     );
   });
 
+  test('friendlyDaemonError hides raw TimeoutException', () {
+    expect(
+      friendlyDaemonError('TimeoutException after 0:00:03.000000: Future not completed',
+          what: 'Threads'),
+      allOf(contains('took too long'), isNot(contains('TimeoutException'))),
+    );
+  });
+
   testWidgets('agent inspector harden paths', (WidgetTester tester) async {
     String claudeSlug = 'claude';
-    String? defaultAgentId = 'a-default';
     String? renamedTo;
-    String? setDefaultId;
     final daemon = _mockDaemon((request) async {
       final body = jsonDecode(request.body) as Map<String, dynamic>;
       final method = body['method'] as String?;
@@ -486,7 +519,7 @@ test('validateHandle and validateHubUrl', () {
             {'id': 'a-default', 'slug': 'cursor'},
             {'id': 'a-claude', 'slug': claudeSlug},
           ],
-          'default_agent_id': defaultAgentId,
+          'default_agent_id': 'a-default',
         });
       }
       if (method == 'rename_agent') {
@@ -495,15 +528,6 @@ test('validateHandle and validateHubUrl', () {
         claudeSlug = renamedTo ?? claudeSlug;
         return _rpcOk(body['id'], {
           'id': params['agent_id'],
-          'slug': claudeSlug,
-        });
-      }
-      if (method == 'set_default_agent') {
-        final params = body['params'] as Map<String, dynamic>? ?? {};
-        setDefaultId = params['agent_id'] as String?;
-        defaultAgentId = setDefaultId;
-        return _rpcOk(body['id'], {
-          'id': setDefaultId,
           'slug': claudeSlug,
         });
       }
@@ -518,6 +542,7 @@ test('validateHandle and validateHubUrl', () {
       MutandeApp(
         config: const AppConfig(hubUrl: 'http://localhost:8000'),
         daemon: daemon,
+        hostLinkStore: HostLinkStore.memory(),
         seedStatus: const DaemonStatusResult(
           configured: true,
           hubUrl: 'http://localhost:8000',
@@ -537,17 +562,11 @@ test('validateHandle and validateHubUrl', () {
     expect(find.text('Agent Inspector'), findsOneWidget);
     expect(find.text('alice@acme/claude'), findsOneWidget);
     expect(find.text('Claude Desktop'), findsOneWidget);
-    expect(find.text('Idle'), findsWidgets);
-    expect(find.text('Set as default'), findsOneWidget);
-    expect(find.text('Default'), findsNothing);
-
-    await tester.tap(find.text('Disconnect host'));
-    await tester.pumpAndSettle();
-    expect(find.text('Disconnect host?'), findsOneWidget);
-    expect(find.textContaining('mutande'), findsWidgets);
-    await tester.tap(find.text('Cancel'));
-    await tester.pumpAndSettle();
-    expect(find.text('Agent Inspector'), findsOneWidget);
+    expect(find.text('Not linked'), findsWidgets);
+    expect(find.text('Connect host'), findsOneWidget);
+    expect(find.text('View threads'), findsNothing);
+    expect(find.text('Set as default'), findsNothing);
+    expect(find.text('Disconnect host'), findsNothing);
 
     await tester.tap(find.text('Rename slug'));
     await tester.pumpAndSettle();
@@ -568,18 +587,158 @@ test('validateHandle and validateHubUrl', () {
     await tester.pump();
     await tester.pumpAndSettle();
     expect(renamedTo, 'codex');
+  });
 
-    await tester.tap(find.text('codex').first);
+  testWidgets('agent inspector Connect host links MCP', (
+    WidgetTester tester,
+  ) async {
+    String? connectedHost;
+    final daemon = _mockDaemon((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      final method = body['method'] as String?;
+      if (method == 'list_threads') {
+        return _rpcOk(body['id'], {'threads': []});
+      }
+      if (method == 'list_agents') {
+        return _rpcOk(body['id'], {
+          'agents': [
+            {'id': 'a-default', 'slug': 'cursor'},
+            {'id': 'a-claude', 'slug': 'claude'},
+          ],
+          'default_agent_id': 'a-default',
+        });
+      }
+      if (method == 'connect_host') {
+        final params = body['params'] as Map<String, dynamic>? ?? {};
+        connectedHost = params['host'] as String? ?? 'claude';
+        return _rpcOk(body['id'], {
+          'command': '/Users/dev/bin/mutande-core',
+          'args': ['mcp'],
+          'hosts': [
+            {
+              'host': connectedHost,
+              'path': '/Users/dev/Library/Application Support/Claude/claude_desktop_config.json',
+              'ok': true,
+            },
+          ],
+        });
+      }
+      return _rpcOk(body['id'], {'ok': true});
+    });
+
+    final hostLinks = HostLinkStore.memory();
+    await tester.pumpWidget(
+      MutandeApp(
+        config: const AppConfig(hubUrl: 'http://localhost:8000'),
+        daemon: daemon,
+        hostLinkStore: hostLinks,
+        seedStatus: const DaemonStatusResult(
+          configured: true,
+          hubUrl: 'http://localhost:8000',
+          handle: 'alice@acme',
+        ),
+        welcomeDuration: Duration.zero,
+      ),
+    );
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Agents'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('claude').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Connect host'), findsOneWidget);
+    await tester.tap(find.text('Connect host'));
+    await tester.pump();
+    await tester.pumpAndSettle();
+    expect(connectedHost, 'claude');
+    expect(find.text('Linked Claude Desktop'), findsOneWidget);
+    expect(find.text('Agent Inspector'), findsNothing);
+
+    await tester.tap(find.text('claude').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Linked'), findsWidgets);
+    expect(find.text('View threads'), findsOneWidget);
+    expect(find.text('Set as default'), findsOneWidget);
+    expect(find.text('Disconnect host'), findsOneWidget);
+    expect(find.text('Connect host'), findsNothing);
+  });
+
+  testWidgets('agent inspector linked shows Set as default', (
+    WidgetTester tester,
+  ) async {
+    String? setDefaultId;
+    final hostLinks = HostLinkStore.memory();
+    await hostLinks.record(
+      const HostWriteResult(
+        host: 'claude',
+        path: '/tmp/claude.json',
+        ok: true,
+      ),
+    );
+    final daemon = _mockDaemon((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      final method = body['method'] as String?;
+      if (method == 'list_threads') {
+        return _rpcOk(body['id'], {'threads': []});
+      }
+      if (method == 'list_agents') {
+        return _rpcOk(body['id'], {
+          'agents': [
+            {'id': 'a-default', 'slug': 'cursor'},
+            {'id': 'a-claude', 'slug': 'claude'},
+          ],
+          'default_agent_id': 'a-default',
+        });
+      }
+      if (method == 'set_default_agent') {
+        final params = body['params'] as Map<String, dynamic>? ?? {};
+        setDefaultId = params['agent_id'] as String?;
+        return _rpcOk(body['id'], {
+          'id': setDefaultId,
+          'slug': 'claude',
+        });
+      }
+      return _rpcOk(body['id'], {'ok': true});
+    });
+
+    await tester.pumpWidget(
+      MutandeApp(
+        config: const AppConfig(hubUrl: 'http://localhost:8000'),
+        daemon: daemon,
+        hostLinkStore: hostLinks,
+        seedStatus: const DaemonStatusResult(
+          configured: true,
+          hubUrl: 'http://localhost:8000',
+          handle: 'alice@acme',
+        ),
+        welcomeDuration: Duration.zero,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Agents'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('claude').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('View threads'), findsOneWidget);
+    expect(find.text('Set as default'), findsOneWidget);
     await tester.tap(find.text('Set as default'));
     await tester.pump();
     await tester.pumpAndSettle();
     expect(setDefaultId, 'a-claude');
   });
 
-  testWidgets('agent inspector shows Default for primary', (
+  testWidgets('agent inspector shows Default for linked primary', (
     WidgetTester tester,
   ) async {
+    final hostLinks = HostLinkStore.memory();
+    await hostLinks.record(
+      const HostWriteResult(
+        host: 'cursor',
+        path: '/tmp/cursor.json',
+        ok: true,
+      ),
+    );
     final daemon = _mockDaemon((request) async {
       final body = jsonDecode(request.body) as Map<String, dynamic>;
       final method = body['method'] as String?;
@@ -601,6 +760,7 @@ test('validateHandle and validateHubUrl', () {
       MutandeApp(
         config: const AppConfig(hubUrl: 'http://localhost:8000'),
         daemon: daemon,
+        hostLinkStore: hostLinks,
         seedStatus: const DaemonStatusResult(
           configured: true,
           hubUrl: 'http://localhost:8000',
@@ -619,6 +779,7 @@ test('validateHandle and validateHubUrl', () {
     expect(find.text('alice@acme/cursor'), findsNothing);
     expect(find.text('Default'), findsOneWidget);
     expect(find.text('Set as default'), findsNothing);
-    expect(find.text('Connected'), findsOneWidget);
+    expect(find.text('Linked'), findsWidgets);
+    expect(find.text('Connect host'), findsNothing);
   });
 }

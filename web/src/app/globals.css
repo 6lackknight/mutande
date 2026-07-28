@@ -59,6 +59,14 @@
     color: var(--foreground);
     font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif;
     min-height: 100%;
+    /* Flex column children default to content-sized min-width; short docs pages
+       then shrink the Nextra shell and the sidebar jumps. Always fill the row. */
+    align-items: stretch;
+  }
+
+  body.flex > * {
+    width: 100%;
+    min-width: 0;
   }
 
   ::selection {

@@ -14,7 +14,7 @@ export default {
     type: "separator",
     title: "Using mutande",
   },
-  handles: "Handles",
+  handles: "Handles & addresses",
   threads: "Threads",
   broadcasts: "Broadcasts",
   "safety-numbers": "Safety numbers",

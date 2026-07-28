@@ -1,8 +1,8 @@
 diff --git a/node_modules/nextra-theme-docs/dist/layout.js b/node_modules/nextra-theme-docs/dist/layout.js
-index 57a511f..b1c1ae6 100644
+index 57a511f..ff649db 100644
 --- a/node_modules/nextra-theme-docs/dist/layout.js
 +++ b/node_modules/nextra-theme-docs/dist/layout.js
-@@ -1,125 +1,49 @@
+@@ -1,125 +1,44 @@
  import { jsx, jsxs } from "react/jsx-runtime";
 -import { c as _c } from "react-compiler-runtime";
  import { ThemeProvider } from "next-themes";
@@ -128,16 +128,11 @@ index 57a511f..b1c1ae6 100644
 -export {
 -  Layout
 +
-+// Patched: parse full props (includes children). Upstream 4.6.1 strips children
-+// before Zod 4 validation, which fails with "expected nonoptional".
++// Patched for Zod 4: parse full props including children. Upstream 4.6.1 strips
++// children before validation and throws "expected nonoptional".
 +const Layout = (props) => {
 +  const { data, error } = LayoutPropsSchema.safeParse(props);
 +  if (error) {
-+    console.error(
-+      "[nextra-theme-docs Layout] zod",
-+      z.prettifyError(error),
-+      error.issues,
-+    );
 +    throw new Error(z.prettifyError(error));
 +  }
 +  const {

@@ -115,11 +115,15 @@ async fn forward_tool_call(name: &str, arguments: Value) -> Result<String> {
     let daemon_method = tools::daemon_method_for_tool(name)
         .with_context(|| format!("unknown tool: {name}"))?;
 
+    // Per-call identity: shared daemon state is overwritten by whichever host
+    // last called register_agent. Always stamp MUTANDE_AGENT_SLUG on params.
+    let params = inject_agent_slug(arguments);
+
     let req = JsonRpcRequest {
         jsonrpc: Some("2.0".into()),
         id: Some(json!(1)),
         method: daemon_method.to_string(),
-        params: arguments,
+        params,
     };
 
     let resp = call_daemon(&req).await?;
@@ -127,6 +131,20 @@ async fn forward_tool_call(name: &str, arguments: Value) -> Result<String> {
         anyhow::bail!("{}", err.message);
     }
     Ok(serde_json::to_string_pretty(&resp.result.unwrap_or(json!({})))?)
+}
+
+fn inject_agent_slug(mut arguments: Value) -> Value {
+    let Ok(slug) = std::env::var("MUTANDE_AGENT_SLUG") else {
+        return arguments;
+    };
+    let slug = slug.trim();
+    if slug.is_empty() {
+        return arguments;
+    }
+    if let Some(obj) = arguments.as_object_mut() {
+        obj.insert("agent_slug".into(), json!(slug));
+    }
+    arguments
 }
 
 async fn call_daemon(req: &JsonRpcRequest) -> Result<JsonRpcResponse> {
@@ -159,6 +177,16 @@ mod tests {
         assert!(defs.iter().any(|t| t.name == "forward_blob"));
         assert!(defs.iter().any(|t| t.name == "get_safety_number"));
         assert!(defs.iter().any(|t| t.name == "verify_contact"));
+    }
+
+    #[test]
+    fn inject_agent_slug_stamps_env() {
+        // SAFETY: test-only env mutation; not run in parallel with other env tests.
+        unsafe { std::env::set_var("MUTANDE_AGENT_SLUG", "claude") };
+        let out = inject_agent_slug(json!({ "thread_id": "t1", "bundle": {} }));
+        assert_eq!(out["agent_slug"], "claude");
+        assert_eq!(out["thread_id"], "t1");
+        unsafe { std::env::remove_var("MUTANDE_AGENT_SLUG") };
     }
 
     #[tokio::test]

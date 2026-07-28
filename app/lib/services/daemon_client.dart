@@ -47,7 +47,8 @@ class DaemonClient {
     this.socketPath = defaultSocketPath,
     this.httpTokenPath = defaultHttpTokenPath,
     String? httpToken,
-    this.requestTimeout = const Duration(seconds: 3),
+    // Hub RPCs + Keychain bootstrap routinely exceed a few seconds on first open.
+    this.requestTimeout = const Duration(seconds: 15),
   })  : _http = httpClient ?? http.Client(),
         _httpTokenOverride = httpToken;
 
@@ -171,9 +172,10 @@ class DaemonClient {
 
   /// List threads via JSON-RPC `list_threads`.
   Future<List<ThreadSummary>> listThreads({String? filter}) async {
-    final result = await _call(
+    final result = await _callWithTimeout(
       'list_threads',
       filter == null ? null : {'filter': filter},
+      requestTimeout,
     );
     final map = result as Map<String, dynamic>? ?? {};
     final raw = map['threads'] as List<dynamic>? ?? const [];
@@ -203,16 +205,37 @@ class DaemonClient {
       kind: thread['kind'] as String? ?? '',
       status: thread['status'] as String? ?? '',
       from: thread['from'] as String? ?? '',
+      audience: thread['audience'] as String? ?? '',
       yourStatus: thread['your_status'] as String?,
       messages: messagesRaw.map((e) {
         final m = e as Map<String, dynamic>;
         final bundle = m['bundle'] as Map<String, dynamic>?;
+        final questionsRaw = bundle?['questions'] as List<dynamic>? ?? const [];
+        final questions = questionsRaw
+            .map((q) {
+              final map = q as Map<String, dynamic>? ?? const {};
+              return map['prompt'] as String? ?? '';
+            })
+            .where((p) => p.trim().isNotEmpty)
+            .toList();
+        final resourceReqs =
+            bundle?['resource_requests'] as List<dynamic>? ?? const [];
+        final resources = resourceReqs
+            .map((r) {
+              final map = r as Map<String, dynamic>? ?? const {};
+              return map['description'] as String? ?? map['id'] as String? ?? '';
+            })
+            .where((d) => d.trim().isNotEmpty)
+            .toList();
         return ThreadMessageView(
           id: m['id'] as String? ?? '',
           fromHandle: m['from_handle'] as String? ?? '',
           createdAt: m['created_at'] as String? ?? '',
           bundleSubject: bundle?['subject'] as String?,
-          bundleNotes: bundle?['notes'] as String? ?? bundle?['context'] as String?,
+          bundleNotes:
+              bundle?['notes'] as String? ?? bundle?['context'] as String?,
+          questionPrompts: questions,
+          resourceRequests: resources,
           openError: m['open_error'] as String?,
         );
       }).toList(),
@@ -531,6 +554,17 @@ class ConnectHostResult {
   final String command;
   final List<String> args;
   final List<HostWriteResult> hosts;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ConnectHostResult &&
+          command == other.command &&
+          _listEq(args, other.args) &&
+          _listEq(hosts, other.hosts);
+
+  @override
+  int get hashCode => Object.hash(command, Object.hashAll(args), Object.hashAll(hosts));
 }
 
 class HostWriteResult {
@@ -545,6 +579,27 @@ class HostWriteResult {
   final String path;
   final bool ok;
   final String? note;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is HostWriteResult &&
+          host == other.host &&
+          path == other.path &&
+          ok == other.ok &&
+          note == other.note;
+
+  @override
+  int get hashCode => Object.hash(host, path, ok, note);
+}
+
+bool _listEq<T>(List<T> a, List<T> b) {
+  if (identical(a, b)) return true;
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
 }
 
 class DaemonException implements Exception {
@@ -647,6 +702,7 @@ class ThreadDetailResult {
     required this.kind,
     required this.status,
     required this.from,
+    this.audience = '',
     this.yourStatus,
     required this.messages,
   });
@@ -655,6 +711,7 @@ class ThreadDetailResult {
   final String kind;
   final String status;
   final String from;
+  final String audience;
   final String? yourStatus;
   final List<ThreadMessageView> messages;
 }
@@ -666,6 +723,8 @@ class ThreadMessageView {
     required this.createdAt,
     this.bundleSubject,
     this.bundleNotes,
+    this.questionPrompts = const [],
+    this.resourceRequests = const [],
     this.openError,
   });
 
@@ -674,7 +733,26 @@ class ThreadMessageView {
   final String createdAt;
   final String? bundleSubject;
   final String? bundleNotes;
+  final List<String> questionPrompts;
+  final List<String> resourceRequests;
   final String? openError;
+
+  /// Prefer notes/subject, then questions — never hide a decrypted question-only handoff.
+  String get displayBody {
+    if (openError != null && openError!.trim().isNotEmpty) {
+      return openError!;
+    }
+    final parts = <String>[
+      if (bundleSubject != null && bundleSubject!.trim().isNotEmpty)
+        bundleSubject!.trim(),
+      if (bundleNotes != null && bundleNotes!.trim().isNotEmpty)
+        bundleNotes!.trim(),
+      ...questionPrompts.map((q) => q.trim()),
+      ...resourceRequests.map((r) => 'Resource: ${r.trim()}'),
+    ];
+    if (parts.isEmpty) return '(empty handoff)';
+    return parts.join('\n\n');
+  }
 }
 
 class SafetyNumberResult {
@@ -722,4 +800,39 @@ String? validateHubUrl(String hubUrl) {
     return 'Hub URL must be an http(s) URL.';
   }
   return null;
+}
+
+/// User-facing copy for daemon/hub failures — never raw `TimeoutException…`.
+String friendlyDaemonError(Object error, {String what = 'That'}) {
+  var msg = error.toString();
+  if (msg.startsWith('DaemonException: ')) {
+    msg = msg.substring('DaemonException: '.length);
+  }
+  if (msg.startsWith('Exception: ')) {
+    msg = msg.substring('Exception: '.length);
+  }
+  if (msg.startsWith('TimeoutException')) {
+    msg = 'timed out';
+  }
+  final lower = msg.toLowerCase();
+  if (lower.contains('timeout') || lower.contains('timed out')) {
+    return '$what took too long. The courier may still be starting — try again.';
+  }
+  if (lower.contains('missing http token') ||
+      lower.contains('connection refused') ||
+      lower.contains('failed host lookup') ||
+      lower.contains('socketexception') ||
+      lower.contains('401') ||
+      lower.contains('unauthorized')) {
+    return "Can't reach the local mutande daemon. Open Settings and tap Check daemon.";
+  }
+  if (lower.contains('404') || lower.contains('not found')) {
+    return "Couldn't load $what. Check you're signed in, then retry.";
+  }
+  if (lower.contains('500') ||
+      lower.contains('502') ||
+      lower.contains('503')) {
+    return "Couldn't reach the hub. Try again in a moment.";
+  }
+  return msg;
 }

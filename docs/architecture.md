@@ -21,10 +21,12 @@ Hub (Deno Deploy)
 
 ## Threads
 
-- `direct` — one recipient
-- `broadcast` — `@all@org`, fan-out with per-member wrapped keys
+- `direct` — one recipient (handle, `handle/agent`, or self `@slug`)
+- `my-agents` — bare `@all`, fan-out to the current user’s agents
+- `broadcast` — `@all@org`, fan-out to each *other* member’s default (sole member → own devices)
 - Status: `open` | `closed`; participant `pending` | `replied`
 - Replies attach to thread; sender inbox does not flood
+- Display addresses `alice@acme/claude`; wire form `acme/alice/claude` (internal)
 
 ## Storage tiers
 

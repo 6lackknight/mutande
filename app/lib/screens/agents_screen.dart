@@ -4,7 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../services/daemon_client.dart';
+import '../services/host_link_store.dart';
 import '../widgets/ai_host_icon.dart';
+import '../widgets/connect_host_picker.dart';
+import '../widgets/host_link_status.dart';
 import '../widgets/thinking_orb.dart';
 
 /// Agent slug rules match hub `assertValidAgentSlug` (`[a-z0-9-]{1,32}`).
@@ -41,35 +44,17 @@ String agentHostLabel(String slug) {
 
 /// Hub/timeout errors should not read like a dead local daemon.
 String friendlyAgentsError(Object error) {
-  var msg = error.toString();
-  if (msg.startsWith('DaemonException: ')) {
-    msg = msg.substring('DaemonException: '.length);
-  }
-  if (msg.startsWith('Exception: ')) {
-    msg = msg.substring('Exception: '.length);
-  }
-  final lower = msg.toLowerCase();
-  if (lower.contains('timeout') || lower.contains('timed out')) {
+  final base = friendlyDaemonError(error, what: 'Agents');
+  if (base.startsWith('Agents took too long')) {
     return 'The hub took too long to respond. Your agents may still be fine — try again.';
   }
-  if (lower.contains('404') || lower.contains('not found')) {
+  if (base.startsWith("Couldn't load Agents")) {
     return "Couldn't load agents from the hub. Check you're signed in, then retry.";
   }
-  if (lower.contains('401') ||
-      lower.contains('unauthorized') ||
-      lower.contains('missing http token') ||
-      lower.contains('connection refused') ||
-      lower.contains('failed host lookup') ||
-      lower.contains('socketexception')) {
-    return "Can't reach the local mutande daemon. Open Settings and tap Check daemon.";
-  }
-  if (lower.contains('500') ||
-      lower.contains('502') ||
-      lower.contains('503') ||
-      lower.contains('hub')) {
+  if (base.startsWith("Couldn't reach the hub")) {
     return "Couldn't load agents from the hub. Try again in a moment.";
   }
-  return msg;
+  return base;
 }
 
 Duration _agentsMotion(BuildContext context, Duration duration) {
@@ -78,18 +63,22 @@ Duration _agentsMotion(BuildContext context, Duration duration) {
 
 /// Handle → primary (default) → sub-agents. Graph (Stitch) + list toggle.
 class AgentsPanel extends StatefulWidget {
-  const AgentsPanel({
+  AgentsPanel({
     super.key,
     required this.daemon,
     this.handle,
     this.appVersion = '1.0.0',
     this.onViewThreads,
-  });
+    this.onReloadReady,
+    HostLinkStore? hostLinkStore,
+  }) : hostLinkStore = hostLinkStore ?? HostLinkStore();
 
   final DaemonClient daemon;
   final String? handle;
   final String appVersion;
   final VoidCallback? onViewThreads;
+  final void Function(VoidCallback? reload)? onReloadReady;
+  final HostLinkStore hostLinkStore;
 
   @override
   State<AgentsPanel> createState() => _AgentsPanelState();
@@ -101,30 +90,41 @@ class _AgentsPanelState extends State<AgentsPanel> {
   String? _error;
   AgentListResult? _list;
   bool _graph = true;
-
-  /// Same host catalog as Settings → AI hosts.
-  static const _hosts = <(String, String)>[
-    ('cursor', 'Cursor'),
-    ('claude', 'Claude (Anthropic)'),
-    ('chatgpt', 'ChatGPT'),
-  ];
+  Map<String, HostLinkRecord> _hostLinks = const {};
 
   @override
   void initState() {
     super.initState();
+    widget.onReloadReady?.call(() => _reload(soft: true));
     _reload();
   }
 
-  Future<void> _reload() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  @override
+  void dispose() {
+    widget.onReloadReady?.call(null);
+    super.dispose();
+  }
+
+  Future<void> _loadHostLinks() async {
+    final links = await widget.hostLinkStore.load();
+    if (!mounted) return;
+    setState(() => _hostLinks = links);
+  }
+
+  Future<void> _reload({bool soft = false}) async {
+    if (!soft) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     try {
-      final list = await widget.daemon.listAgents(handle: widget.handle);
+      final list = await widget.daemon.listAgents();
+      final links = await widget.hostLinkStore.load();
       if (!mounted) return;
       setState(() {
         _list = list;
+        _hostLinks = links;
         _loading = false;
       });
     } catch (e) {
@@ -163,6 +163,39 @@ class _AgentsPanelState extends State<AgentsPanel> {
     await _reload();
   }
 
+  Future<void> _connectAgentHost(AgentInfo agent) async {
+    final host = agent.slug.trim().toLowerCase();
+    final result = await widget.daemon.connectHost(host);
+    HostWriteResult? write;
+    for (final h in result.hosts) {
+      if (h.host.toLowerCase() == host) {
+        write = h;
+        break;
+      }
+    }
+    write ??= result.hosts.isNotEmpty ? result.hosts.first : null;
+    if (write != null) {
+      await widget.hostLinkStore.record(write);
+      await _loadHostLinks();
+    }
+    if (!mounted) return;
+    final label = agentHostLabel(host);
+    if (write == null) {
+      throw StateError('No result for $label.');
+    }
+    if (!write.ok) {
+      final note = write.note?.trim();
+      throw StateError(
+        note != null && note.isNotEmpty
+            ? 'Could not link $label — $note'
+            : 'Could not link $label.',
+      );
+    }
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('Linked $label')));
+  }
+
   void _openInspector(AgentInfo agent, {required bool isPrimary}) {
     final handle = widget.handle ?? 'your@handle';
     final host = agentHostLabel(agent.slug);
@@ -173,13 +206,22 @@ class _AgentsPanelState extends State<AgentsPanel> {
         handle: handle,
         agent: agent,
         isPrimary: isPrimary,
+        link: hostLinkForSlug(agent.slug, _hostLinks),
         takenSlugs: _takenSlugs(except: agent.slug),
         onRename: (slug) => _renameAgent(agent, slug),
+        onConnect: () => _connectAgentHost(agent),
         onSetDefault: isPrimary
             ? null
-            : () => widget.daemon
-                  .setDefaultAgent(agent.id)
-                  .then((_) => _reload()),
+            : () async {
+                await widget.daemon.setDefaultAgent(agent.id);
+                await _reload();
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('${agent.slug} is now your default agent'),
+                  ),
+                );
+              },
         onDisconnect: () async {
           // No remove-host RPC yet — confirm + guided outcome.
           if (!mounted) return;
@@ -213,7 +255,7 @@ class _AgentsPanelState extends State<AgentsPanel> {
       for (final a in _list?.agents ?? const <AgentInfo>[])
         a.slug.toLowerCase(),
     };
-    final available = _hosts
+    final available = AiHostCatalog.hosts
         .where((h) => !taken.contains(h.$1))
         .toList(growable: false);
     if (available.isEmpty) {
@@ -228,7 +270,12 @@ class _AgentsPanelState extends State<AgentsPanel> {
     final host = await showDialog<String>(
       context: context,
       barrierColor: const Color(0x660C0A09),
-      builder: (context) => _AddHostPicker(hosts: available),
+      builder: (context) => ConnectHostPicker(
+        title: 'Add AI host',
+        subtitle: 'Choose a host to add to your graph.',
+        hosts: available,
+        hostLinks: _hostLinks,
+      ),
     );
     if (host == null || !mounted) return;
 
@@ -242,6 +289,10 @@ class _AgentsPanelState extends State<AgentsPanel> {
           write = h;
           break;
         }
+      }
+      if (write != null) {
+        await widget.hostLinkStore.record(write);
+        await _loadHostLinks();
       }
       if (write != null && !write.ok) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -257,7 +308,7 @@ class _AgentsPanelState extends State<AgentsPanel> {
       }
       await _reload();
       if (!mounted) return;
-      final label = _hosts.firstWhere((h) => h.$1 == host).$2;
+      final label = AiHostCatalog.hosts.firstWhere((h) => h.$1 == host).$2;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Added $label')));
@@ -305,7 +356,15 @@ class _AgentsPanelState extends State<AgentsPanel> {
         ),
         const SizedBox(height: 4),
         if (_loading || _adding)
-          const Expanded(child: Center(child: MutandeOrb.standard()))
+          const Expanded(
+            child: Center(
+              child: SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          )
         else if (_error != null)
           Expanded(
             child: Center(
@@ -346,6 +405,7 @@ class _AgentsPanelState extends State<AgentsPanel> {
                     handle: handle,
                     primary: primary,
                     subs: subs,
+                    hostLinks: _hostLinks,
                     onSelect: (a, isPrimary) =>
                         _openInspector(a, isPrimary: isPrimary),
                     onAdd: _onAdd,
@@ -354,6 +414,7 @@ class _AgentsPanelState extends State<AgentsPanel> {
                     handle: handle,
                     primary: primary,
                     subs: subs,
+                    hostLinks: _hostLinks,
                     onSelect: (a, isPrimary) =>
                         _openInspector(a, isPrimary: isPrimary),
                     onAdd: _onAdd,
@@ -412,6 +473,7 @@ class _AgentsGraph extends StatelessWidget {
     required this.handle,
     required this.primary,
     required this.subs,
+    required this.hostLinks,
     required this.onSelect,
     required this.onAdd,
   });
@@ -419,6 +481,7 @@ class _AgentsGraph extends StatelessWidget {
   final String handle;
   final AgentInfo? primary;
   final List<AgentInfo> subs;
+  final Map<String, HostLinkRecord> hostLinks;
   final void Function(AgentInfo agent, bool isPrimary) onSelect;
   final VoidCallback onAdd;
 
@@ -439,11 +502,13 @@ class _AgentsGraph extends StatelessWidget {
               else ...[
                 _PrimaryCard(
                   slug: primary!.slug,
+                  link: hostLinkForSlug(primary!.slug, hostLinks),
                   onTap: () => onSelect(primary!, true),
                 ),
                 _Trunk(solid: false),
                 _BranchRow(
                   subs: subs,
+                  hostLinks: hostLinks,
                   onSelect: (a) => onSelect(a, false),
                   onAdd: onAdd,
                 ),
@@ -598,9 +663,14 @@ class _LinePainter extends CustomPainter {
 }
 
 class _PrimaryCard extends StatelessWidget {
-  const _PrimaryCard({required this.slug, required this.onTap});
+  const _PrimaryCard({
+    required this.slug,
+    required this.link,
+    required this.onTap,
+  });
 
   final String slug;
+  final HostLinkRecord? link;
   final VoidCallback onTap;
 
   @override
@@ -646,29 +716,7 @@ class _PrimaryCard extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 2),
-                        Row(
-                          children: [
-                            Container(
-                              width: 6,
-                              height: 6,
-                              decoration: const BoxDecoration(
-                                color: Color(0xFF166534),
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 5),
-                            Text(
-                              'CONNECTED',
-                              style: Theme.of(context).textTheme.labelSmall
-                                  ?.copyWith(
-                                    color: const Color(0xFF78716C),
-                                    letterSpacing: 0.6,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                            ),
-                          ],
-                        ),
+                        HostLinkStatusBadge(link: link),
                       ],
                     ),
                   ),
@@ -708,18 +756,26 @@ class _PrimaryCard extends StatelessWidget {
 class _BranchRow extends StatelessWidget {
   const _BranchRow({
     required this.subs,
+    required this.hostLinks,
     required this.onSelect,
     required this.onAdd,
   });
 
   final List<AgentInfo> subs;
+  final Map<String, HostLinkRecord> hostLinks;
   final ValueChanged<AgentInfo> onSelect;
   final VoidCallback onAdd;
 
   @override
   Widget build(BuildContext context) {
     final children = <Widget>[
-      ...subs.map((a) => _SubCard(slug: a.slug, onTap: () => onSelect(a))),
+      ...subs.map(
+        (a) => _SubCard(
+          slug: a.slug,
+          link: hostLinkForSlug(a.slug, hostLinks),
+          onTap: () => onSelect(a),
+        ),
+      ),
       _AddNode(onTap: onAdd),
     ];
 
@@ -793,9 +849,14 @@ class _BranchPainter extends CustomPainter {
 }
 
 class _SubCard extends StatelessWidget {
-  const _SubCard({required this.slug, required this.onTap});
+  const _SubCard({
+    required this.slug,
+    required this.link,
+    required this.onTap,
+  });
 
   final String slug;
+  final HostLinkRecord? link;
   final VoidCallback onTap;
 
   @override
@@ -834,25 +895,12 @@ class _SubCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 6),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    width: 6,
-                    height: 6,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFD97706),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Idle',
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: const Color(0xFF78716C),
-                    ),
-                  ),
-                ],
+              SizedBox(
+                width: 88,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: HostLinkStatusBadge(link: link),
+                ),
               ),
             ],
           ),
@@ -940,114 +988,12 @@ class _EmptyPrimary extends StatelessWidget {
   }
 }
 
-class _AddHostPicker extends StatelessWidget {
-  const _AddHostPicker({required this.hosts});
-
-  final List<(String, String)> hosts;
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: const Color(0xFFFAFAF9),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 340),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(18, 14, 12, 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  const Icon(
-                    Icons.add_link,
-                    size: 18,
-                    color: Color(0xFFB45309),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Add AI host',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: const Color(0xFF292524),
-                    ),
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close, size: 18),
-                  ),
-                ],
-              ),
-              Text(
-                'Choose an idle host to add to your graph.',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: const Color(0xFF78716C)),
-              ),
-              const SizedBox(height: 12),
-              for (var i = 0; i < hosts.length; i++) ...[
-                if (i > 0) const Divider(height: 1, color: Color(0xFFE7E5E4)),
-                InkWell(
-                  onTap: () => Navigator.pop(context, hosts[i].$1),
-                  borderRadius: BorderRadius.circular(8),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 4,
-                      vertical: 12,
-                    ),
-                    child: Row(
-                      children: [
-                        AiHostIcon(hosts[i].$1, size: 36),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            hosts[i].$2,
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(
-                                  color: const Color(0xFF292524),
-                                  fontWeight: FontWeight.w500,
-                                ),
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF5F5F4),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: const Text(
-                            'Idle',
-                            style: TextStyle(
-                              color: Color(0xFF78716C),
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-              const SizedBox(height: 4),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _AgentsList extends StatelessWidget {
   const _AgentsList({
     required this.handle,
     required this.primary,
     required this.subs,
+    required this.hostLinks,
     required this.onSelect,
     required this.onAdd,
     required this.onSetDefault,
@@ -1056,6 +1002,7 @@ class _AgentsList extends StatelessWidget {
   final String handle;
   final AgentInfo? primary;
   final List<AgentInfo> subs;
+  final Map<String, HostLinkRecord> hostLinks;
   final void Function(AgentInfo agent, bool isPrimary) onSelect;
   final VoidCallback onAdd;
   final ValueChanged<String> onSetDefault;
@@ -1075,13 +1022,23 @@ class _AgentsList extends StatelessWidget {
             leading: AiHostIcon(primary!.slug, size: 32),
             title: Text(primary!.slug),
             subtitle: Text('Primary · receives $handle & @all'),
-            trailing: const Text(
-              'PRIMARY',
-              style: TextStyle(
-                color: Color(0xFF92400E),
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-              ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                HostLinkStatusBadge(
+                  link: hostLinkForSlug(primary!.slug, hostLinks),
+                  style: HostLinkStatusStyle.settings,
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  'PRIMARY',
+                  style: TextStyle(
+                    color: Color(0xFF92400E),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
             ),
             onTap: () => onSelect(primary!, true),
           ),
@@ -1091,9 +1048,19 @@ class _AgentsList extends StatelessWidget {
             leading: AiHostIcon(a.slug, size: 32),
             title: Text(a.slug),
             subtitle: Text('$handle/${a.slug}'),
-            trailing: TextButton(
-              onPressed: () => onSetDefault(a.id),
-              child: const Text('Set as default'),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                HostLinkStatusBadge(
+                  link: hostLinkForSlug(a.slug, hostLinks),
+                  style: HostLinkStatusStyle.settings,
+                ),
+                const SizedBox(width: 8),
+                TextButton(
+                  onPressed: () => onSetDefault(a.id),
+                  child: const Text('Set as default'),
+                ),
+              ],
             ),
             onTap: () => onSelect(a, false),
           ),
@@ -1148,8 +1115,10 @@ class _AgentInspector extends StatefulWidget {
     required this.handle,
     required this.agent,
     required this.isPrimary,
+    required this.link,
     required this.takenSlugs,
     required this.onRename,
+    required this.onConnect,
     required this.onViewThreads,
     required this.onDisconnect,
     this.onSetDefault,
@@ -1158,8 +1127,10 @@ class _AgentInspector extends StatefulWidget {
   final String handle;
   final AgentInfo agent;
   final bool isPrimary;
+  final HostLinkRecord? link;
   final Set<String> takenSlugs;
   final Future<void> Function(String slug) onRename;
+  final Future<void> Function() onConnect;
   final VoidCallback onViewThreads;
   final Future<void> Function() onDisconnect;
   final Future<void> Function()? onSetDefault;
@@ -1170,12 +1141,16 @@ class _AgentInspector extends StatefulWidget {
 
 class _AgentInspectorState extends State<_AgentInspector> {
   bool _renaming = false;
+  bool _connecting = false;
   bool _disconnecting = false;
   bool _settingDefault = false;
   String? _actionError;
   Future<void> Function()? _retryAction;
 
-  bool get _busy => _renaming || _disconnecting || _settingDefault;
+  bool get _busy =>
+      _renaming || _connecting || _disconnecting || _settingDefault;
+
+  bool get _linked => widget.link != null && widget.link!.ok;
 
   // Bare handle for default; never show /default. Subs: alice@acme/<slug>.
   String get _display => widget.isPrimary
@@ -1184,15 +1159,11 @@ class _AgentInspectorState extends State<_AgentInspector> {
 
   String get _host => agentHostLabel(widget.agent.slug);
 
-  String get _statusLabel {
-    if (widget.agent.slug.trim().isEmpty) return 'Unknown';
-    return widget.isPrimary ? 'Connected' : 'Idle';
-  }
+  String get _statusLabel =>
+      HostLinkStatusBadge.resolve(widget.link).$1;
 
-  Color get _statusColor {
-    if (widget.agent.slug.trim().isEmpty) return const Color(0xFFA8A29E);
-    return widget.isPrimary ? const Color(0xFF16A34A) : const Color(0xFFD97706);
-  }
+  Color get _statusColor =>
+      HostLinkStatusBadge.resolve(widget.link).$2;
 
   Future<void> _onRename() async {
     if (_busy) return;
@@ -1220,6 +1191,29 @@ class _AgentInspectorState extends State<_AgentInspector> {
         _renaming = false;
         _actionError = friendlyAgentsError(e);
         _retryAction = _onRename;
+      });
+    }
+  }
+
+  Future<void> _onConnect() async {
+    if (_busy) return;
+    setState(() {
+      _connecting = true;
+      _actionError = null;
+      _retryAction = null;
+    });
+    try {
+      await widget.onConnect();
+      if (!mounted) return;
+      Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _connecting = false;
+        _actionError = e is StateError
+            ? e.message
+            : friendlyAgentsError(e);
+        _retryAction = _onConnect;
       });
     }
   }
@@ -1411,62 +1405,98 @@ class _AgentInspectorState extends State<_AgentInspector> {
                     onPressed: _busy ? null : _onRename,
                     busy: _renaming,
                   ),
-                  _InspectorTextAction(
-                    icon: Icons.link_off,
-                    label: _disconnecting
-                        ? 'Disconnecting…'
-                        : 'Disconnect host',
-                    onPressed: _busy ? null : _onDisconnect,
-                    busy: _disconnecting,
-                    destructive: true,
-                  ),
+                  if (_linked)
+                    _InspectorTextAction(
+                      icon: Icons.link_off,
+                      label: _disconnecting
+                          ? 'Disconnecting…'
+                          : 'Disconnect host',
+                      onPressed: _busy ? null : _onDisconnect,
+                      busy: _disconnecting,
+                      destructive: true,
+                    ),
                   const SizedBox(height: 14),
-                  SizedBox(
-                    height: 44,
-                    child: FilledButton.icon(
-                      onPressed: _busy ? null : widget.onViewThreads,
-                      icon: const Icon(Icons.chat_bubble_outline, size: 16),
-                      label: const Text('View threads'),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xFF1C1917),
-                        disabledBackgroundColor: const Color(0xFFD6D3D1),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
+                  if (_linked) ...[
+                    SizedBox(
+                      height: 44,
+                      child: FilledButton.icon(
+                        onPressed: _busy ? null : widget.onViewThreads,
+                        icon: const Icon(Icons.chat_bubble_outline, size: 16),
+                        label: const Text('View threads'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF1C1917),
+                          disabledBackgroundColor: const Color(0xFFD6D3D1),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    height: 44,
-                    child: OutlinedButton(
-                      onPressed: widget.isPrimary || _busy
-                          ? null
-                          : _onSetDefault,
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFF44403C),
-                        disabledForegroundColor: const Color(0xFFA8A29E),
-                        side: BorderSide(
-                          color: widget.isPrimary
-                              ? const Color(0xFFE7E5E4)
-                              : const Color(0xFFD6D3D1),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      height: 44,
+                      child: OutlinedButton(
+                        onPressed: widget.isPrimary || _busy
+                            ? null
+                            : _onSetDefault,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF44403C),
+                          disabledForegroundColor: const Color(0xFFA8A29E),
+                          side: BorderSide(
+                            color: widget.isPrimary
+                                ? const Color(0xFFE7E5E4)
+                                : const Color(0xFFD6D3D1),
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
                         ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
+                        child: _settingDefault
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : Text(
+                                widget.isPrimary
+                                    ? 'Default'
+                                    : 'Set as default',
+                              ),
+                      ),
+                    ),
+                  ] else
+                    SizedBox(
+                      height: 44,
+                      child: FilledButton.icon(
+                        onPressed: _connecting
+                            ? () {}
+                            : (_busy ? null : _onConnect),
+                        icon: _connecting
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.link, size: 16),
+                        label: Text(
+                          _connecting ? 'Connecting…' : 'Connect host',
+                        ),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF1C1917),
+                          disabledBackgroundColor: const Color(0xFFD6D3D1),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
                         ),
                       ),
-                      child: _settingDefault
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : Text(
-                              widget.isPrimary ? 'Default' : 'Set as default',
-                            ),
                     ),
-                  ),
                 ],
               ),
             ),

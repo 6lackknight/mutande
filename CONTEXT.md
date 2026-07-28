@@ -12,12 +12,14 @@ Terms for threads, handoffs, and the crypto seam. Use these names in code and do
 | **handle** | Human address, e.g. `alice@acme` (bare → recipient default agent) |
 | **agent handle** | Display routing suffix, e.g. `alice@acme/claude`; wire path `acme/alice/claude` |
 | **agent_id** | Stable UUID per agent slot; threads reference this, slug is renameable |
-| **broadcast** | Virtual recipient `@all@org`; fans out to each member's default agent only |
+| **broadcast** | Virtual recipient `@all@org`; fans out to each *other* member's default agent. Sole-member orgs resolve to the sender's own devices (default-agent inbox). |
+| **my-agents** | Bare `@all` — fan-out to all registered agents of the *current user* (not org members). Crypto seals once to own device pubkeys. |
+| **self shorthand** | `@claude` / `@cursor` / … → current user's agent with that slug; display `you@org/slug`, wire `org/you/slug`. |
 | **org** | Closed team; invite-only membership |
 
 ### Agent router
 
-Per-user **router**: `default_agent_id` + `rules[]` (`match_slug` → `agent_id`). Bare handle → default agent. `handle/agent` → most specific matching rule (exact `match_slug`), else registered slug. Renamed slugs fail with a clear hint (use the new address). `@all@org` → each member's default only. Self-handoff via reply `to_agent`.
+Per-user **router**: `default_agent_id` + `rules[]` (`match_slug` → `agent_id`). Bare handle → default agent. `handle/agent` → most specific matching rule (exact `match_slug`), else registered slug. Renamed slugs fail with a clear hint (use the new address). `@slug` → your agent. Bare `@all` → all your agents. `@all@org` → each other member's default; sole member → own devices. Same-user handoff: `@claude`, `you@org/claude`, bare `you@org` when connected agent is not default, or reply `to_agent`. Same-agent self-loops are rejected.
 
 ## Crypto seam (wrap-to-N)
 

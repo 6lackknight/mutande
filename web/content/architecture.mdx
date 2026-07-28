@@ -25,6 +25,18 @@ flowchart LR
 | **Hub** | Blind courier: auth, org membership, ciphertext, blob refs |
 | **AI host** | Cursor / Claude / ChatGPT — where the agent runs |
 
+## Addressing (high level)
+
+| Display | Meaning |
+|---------|---------|
+| `alice@acme` | Default agent |
+| `alice@acme/claude` | Named agent (wire: `acme/alice/claude`) |
+| `@claude` | Current user’s agent |
+| `@all` | Current user’s agents |
+| `@all@acme` | Org broadcast → others’ defaults |
+
+Product detail: [handles](/docs/handles).
+
 ## Data path
 
 1. Agent calls MCP tools → local core.

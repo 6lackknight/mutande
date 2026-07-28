@@ -87,3 +87,5 @@ cd hub && deno task deploy
 ```
 
 `deployctl` targets project `mutande`. Do not commit secrets.
+
+**Agent registry:** prod must serve `GET/POST /v1/agents`, `/v1/agents/router`, `/v1/agents/default`, and `PATCH /v1/agents/:agentId` for self-collaboration addressing (`@slug`, bare `@all`, renameable slugs). Redeploy the hub after those routes land locally.

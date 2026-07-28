@@ -49,6 +49,8 @@ import {
   formatDisplayAddress,
   formatWirePath,
   isBroadcastHandle,
+  isMyAgentsHandle,
+  myAgentsHandle,
   parseDisplayAddress,
   parseUserHandle,
   stripAgentSuffix,
@@ -531,31 +533,75 @@ export class HubStore {
     const fromAgent = await this.resolveAgentForUser(auth.userId, input.from_agent);
     const fromDisplay = formatDisplayAddress(senderParts.local, senderParts.orgSlug, fromAgent.slug);
 
-    const isBroadcast = isBroadcastHandle(input.to) && input.to === broadcastHandle(org.slug);
+    const trimmedTo = input.to.trim();
+    const isOrgBroadcast =
+      isBroadcastHandle(trimmedTo) && trimmedTo === broadcastHandle(org.slug);
+    const isMyAgents = isMyAgentsHandle(trimmedTo);
     let recipientIds: string[] = [];
-    let audience = input.to;
+    let audience = trimmedTo;
     let audienceAgentId: string | undefined;
     let audienceWirePath: string | undefined;
+    let isBroadcast = false;
 
-    if (isBroadcast) {
+    if (isOrgBroadcast) {
+      // Exclude sender when other members exist; sole-member orgs deliver @all@org to self
+      // (default-agent inbox) so founders can still use broadcast before inviting anyone.
       recipientIds = await this.listMemberIds(auth.orgId, auth.userId);
-      audience = broadcastHandle(org.slug);
-    } else {
-      const parsedTo = parseDisplayAddress(input.to);
-      const bareTo = formatDisplayAddress(parsedTo.local, parsedTo.orgSlug);
-      await this.assertSameOrgHandle(auth.orgId, bareTo);
-      const recipient = await this.getUserByHandle(bareTo);
-      if (!recipient) throw notFound("Recipient");
-
-      const toAgent = await this.resolveAgentForUser(recipient.id, parsedTo.agentSlug);
-      audience = formatDisplayAddress(parsedTo.local, parsedTo.orgSlug, toAgent.slug);
-      audienceAgentId = toAgent.id;
-      audienceWirePath = formatWirePath(parsedTo.orgSlug, parsedTo.local, toAgent.slug);
-
-      if (recipient.id === auth.userId && !parsedTo.agentSlug) {
-        throw new HubError("Cannot message yourself", "invalid_recipient");
+      if (recipientIds.length === 0) {
+        recipientIds = [auth.userId];
       }
-      recipientIds = [recipient.id];
+      audience = broadcastHandle(org.slug);
+      isBroadcast = true;
+    } else if (isMyAgents) {
+      // Bare @all → fan-out to all of the current user's agents (inbox visibility).
+      // Crypto still seals once to the user's own device pubkeys.
+      const { agents } = await this.listAgents(auth);
+      if (agents.length === 0) {
+        throw new HubError("No agents registered", "unknown_agent", 400);
+      }
+      recipientIds = [auth.userId];
+      audience = myAgentsHandle();
+      isBroadcast = true;
+    } else {
+      const parsedTo = parseDisplayAddress(trimmedTo);
+
+      if (parsedTo.kind === "self_agent") {
+        // @claude → expand to you@org/claude for the authenticated user.
+        const toAgent = await this.resolveAgentForUser(auth.userId, parsedTo.agentSlug);
+        audience = formatDisplayAddress(senderParts.local, senderParts.orgSlug, toAgent.slug);
+        audienceAgentId = toAgent.id;
+        audienceWirePath = formatWirePath(senderParts.orgSlug, senderParts.local, toAgent.slug);
+        if (fromAgent.id === toAgent.id) {
+          throw new HubError(
+            `Cannot hand off to the same agent (${fromAgent.slug}). Send to a different agent address, e.g. @claude`,
+            "invalid_recipient",
+          );
+        }
+        recipientIds = [auth.userId];
+      } else if (parsedTo.kind === "user") {
+        const bareTo = formatDisplayAddress(parsedTo.local, parsedTo.orgSlug);
+        await this.assertSameOrgHandle(auth.orgId, bareTo);
+        const recipient = await this.getUserByHandle(bareTo);
+        if (!recipient) throw notFound("Recipient");
+
+        const toAgent = await this.resolveAgentForUser(recipient.id, parsedTo.agentSlug);
+        audience = formatDisplayAddress(parsedTo.local, parsedTo.orgSlug, toAgent.slug);
+        audienceAgentId = toAgent.id;
+        audienceWirePath = formatWirePath(parsedTo.orgSlug, parsedTo.local, toAgent.slug);
+
+        if (recipient.id === auth.userId) {
+          // Self-handoff: bare → default agent; /agent → that slot. Reject same-agent noops.
+          if (fromAgent.id === toAgent.id) {
+            throw new HubError(
+              `Cannot hand off to the same agent (${fromAgent.slug}). Send to a different agent address, e.g. ${senderParts.local}@${senderParts.orgSlug}/claude or @claude`,
+              "invalid_recipient",
+            );
+          }
+        }
+        recipientIds = [recipient.id];
+      } else {
+        throw new HubError("Invalid recipient address", "invalid_handle");
+      }
     }
 
     const threadId = crypto.randomUUID();
@@ -717,6 +763,13 @@ export class HubStore {
 
     if (input.to_agent?.trim()) {
       const toAgent = await this.resolveAgentForUser(auth.userId, input.to_agent.trim());
+      if (fromAgent.id === toAgent.id) {
+        throw new HubError(
+          `Cannot hand off to the same agent (${fromAgent.slug}). Use a different to_agent slug.`,
+          "invalid_reply",
+          400,
+        );
+      }
       updatedThread = {
         ...updatedThread,
         audience: formatDisplayAddress(userParts.local, userParts.orgSlug, toAgent.slug),

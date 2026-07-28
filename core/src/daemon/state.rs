@@ -8,7 +8,10 @@ use crypto_box::aead::OsRng;
 use crypto_box::SecretKey;
 use serde::{Deserialize, Serialize};
 
-use crate::address::{agent_suffix, is_broadcast_handle, strip_agent_suffix};
+use crate::address::{
+    agent_suffix, bare_handle, is_broadcast_handle, is_my_agents_handle, parse_display_address,
+    strip_agent_suffix, AddressKind,
+};
 use crate::crypto::{
     DevicePubKey, DeviceSecretKey, Envelope, IdentityStore, MemoryStore, StoreError,
     fingerprints_match, open, open_from_bytes, safety_number, safety_uri, seal, seal_to_temp,
@@ -96,6 +99,14 @@ pub struct OpenedThreadMessage {
 pub struct OpenedThreadDetail {
     pub thread: ThreadMeta,
     pub messages: Vec<OpenedThreadMessage>,
+}
+
+/// Result of `forward_draft` / `forward_blob` fan-out (`@all` → N directs).
+#[derive(Debug, Clone)]
+pub struct ForwardThreadsResult {
+    /// Hub `to` addresses, same order as [`Self::thread_ids`].
+    pub recipients: Vec<String>,
+    pub thread_ids: Vec<String>,
 }
 
 /// File-backed identity store (~/.mutande/device.json). Used on non-macOS
@@ -403,6 +414,11 @@ impl DaemonState {
         *self.hub.lock().unwrap() = Some(hub);
     }
 
+    #[cfg(test)]
+    pub fn set_connected_agent_slug_for_test(&self, slug: Option<&str>) {
+        *self.connected_agent_slug.lock().unwrap() = slug.map(str::to_string);
+    }
+
     fn hub_client(&self) -> Option<HubClient> {
         self.hub.lock().unwrap().clone()
     }
@@ -590,21 +606,34 @@ impl DaemonState {
         None
     }
 
-    async fn effective_agent_slug(&self) -> Option<String> {
-        if let Some(s) = self.connected_agent_slug() {
+    /// Prefer per-request MCP `agent_slug` over the shared connected slot
+    /// (multiple hosts overwrite that slot on register_agent).
+    fn resolve_send_agent_slug(&self, override_slug: Option<&str>) -> Option<String> {
+        if let Some(s) = override_slug.map(str::trim).filter(|s| !s.is_empty()) {
+            return Some(s.to_string());
+        }
+        self.connected_agent_slug()
+    }
+
+    async fn effective_agent_slug(&self, override_slug: Option<&str>) -> Option<String> {
+        if let Some(s) = self.resolve_send_agent_slug(override_slug) {
             return Some(s);
         }
         self.default_agent_slug().await
     }
 
-    async fn filter_threads_for_agent(&self, threads: Vec<ThreadMeta>) -> Result<Vec<ThreadMeta>> {
+    async fn filter_threads_for_agent(
+        &self,
+        threads: Vec<ThreadMeta>,
+        agent_slug: Option<&str>,
+    ) -> Result<Vec<ThreadMeta>> {
         let Some(hub) = self.hub_client() else {
             return Ok(threads);
         };
         let me = hub.me().await?;
         let user_id = me.user.as_ref().map(|u| u.id.as_str()).unwrap_or("");
         let default_slug = self.default_agent_slug().await;
-        let Some(slug) = self.effective_agent_slug().await else {
+        let Some(slug) = self.effective_agent_slug(agent_slug).await else {
             return Ok(threads);
         };
         let default_slug = default_slug.as_deref().unwrap_or(&slug);
@@ -614,8 +643,8 @@ impl DaemonState {
             .collect())
     }
 
-    fn from_agent_for_send(&self) -> Option<String> {
-        self.connected_agent_slug()
+    fn from_agent_for_send(&self, override_slug: Option<&str>) -> Option<String> {
+        self.resolve_send_agent_slug(override_slug)
     }
 
     fn persist_session(
@@ -779,10 +808,14 @@ impl DaemonState {
         Ok(vec![])
     }
 
-    pub async fn list_threads(&self, filter: Option<ThreadFilter>) -> Result<Vec<ThreadMeta>> {
+    pub async fn list_threads(
+        &self,
+        filter: Option<ThreadFilter>,
+        agent_slug: Option<&str>,
+    ) -> Result<Vec<ThreadMeta>> {
         if let Some(hub) = self.hub_client() {
             let threads = hub.list_threads(filter).await?;
-            return self.filter_threads_for_agent(threads).await;
+            return self.filter_threads_for_agent(threads, agent_slug).await;
         }
         Ok(vec![])
     }
@@ -930,7 +963,13 @@ impl DaemonState {
         Ok(env)
     }
 
-    pub async fn forward_draft(&self, recipient: &str) -> Result<String> {
+    /// Create one thread per expanded hub recipient. `thread_ids[i]` matches
+    /// `recipients[i]`; callers expose `thread_id` = first id.
+    pub async fn forward_draft(
+        &self,
+        recipient: &str,
+        agent_slug: Option<&str>,
+    ) -> Result<ForwardThreadsResult> {
         let bundle = self.get_draft_plain();
         if bundle.questions.is_empty()
             && bundle.resource_requests.is_empty()
@@ -942,18 +981,33 @@ impl DaemonState {
             bail!("draft is empty");
         }
 
+        self.assert_recipient_allowed(recipient, agent_slug).await?;
         let plain = serde_json::to_vec(&bundle)?;
-        let recipients = self.resolve_recipient_pubkeys(recipient).await?;
-        let env = self.seal_inline_or_blob(&plain, &recipients).await?;
+        let seal_keys = self.resolve_recipient_pubkeys(recipient).await?;
+        let env = self.seal_inline_or_blob(&plain, &seal_keys).await?;
 
-        let thread_id = if let Some(hub) = self.hub_client() {
-            let from_agent = self.from_agent_for_send();
-            let resp = hub
-                .create_thread(recipient, &env, from_agent.as_deref())
-                .await?;
-            resp.thread.id
+        let result = if let Some(hub) = self.hub_client() {
+            let hub_tos = self.expand_hub_recipients(recipient, agent_slug).await?;
+            let from_agent = self.from_agent_for_send(agent_slug);
+            let mut thread_ids = Vec::with_capacity(hub_tos.len());
+            for to in &hub_tos {
+                let resp = hub
+                    .create_thread(to, &env, from_agent.as_deref())
+                    .await?;
+                thread_ids.push(resp.thread.id);
+            }
+            if thread_ids.is_empty() {
+                bail!("no hub recipients after expand");
+            }
+            ForwardThreadsResult {
+                recipients: hub_tos,
+                thread_ids,
+            }
         } else {
-            uuid::Uuid::new_v4().to_string()
+            ForwardThreadsResult {
+                recipients: vec![recipient.to_string()],
+                thread_ids: vec![uuid::Uuid::new_v4().to_string()],
+            }
         };
 
         let draft_id = self.draft_id.lock().unwrap().take();
@@ -964,7 +1018,7 @@ impl DaemonState {
         }
         self.clear_draft();
 
-        Ok(thread_id)
+        Ok(result)
     }
 
     /// Explicit blob send: seal bytes → upload → create thread with blob envelope.
@@ -976,21 +1030,37 @@ impl DaemonState {
         recipient: &str,
         plaintext: &[u8],
         _subject: Option<&str>,
-    ) -> Result<String> {
+        agent_slug: Option<&str>,
+    ) -> Result<ForwardThreadsResult> {
         if plaintext.is_empty() {
             bail!("blob plaintext empty");
         }
-        let recipients = self.resolve_recipient_pubkeys(recipient).await?;
-        let env = self.seal_and_upload_blob(plaintext, &recipients).await?;
+        self.assert_recipient_allowed(recipient, agent_slug).await?;
+        let seal_keys = self.resolve_recipient_pubkeys(recipient).await?;
+        let env = self.seal_and_upload_blob(plaintext, &seal_keys).await?;
 
         if let Some(hub) = self.hub_client() {
-            let from_agent = self.from_agent_for_send();
-            let resp = hub
-                .create_thread(recipient, &env, from_agent.as_deref())
-                .await?;
-            Ok(resp.thread.id)
+            let hub_tos = self.expand_hub_recipients(recipient, agent_slug).await?;
+            let from_agent = self.from_agent_for_send(agent_slug);
+            let mut thread_ids = Vec::with_capacity(hub_tos.len());
+            for to in &hub_tos {
+                let resp = hub
+                    .create_thread(to, &env, from_agent.as_deref())
+                    .await?;
+                thread_ids.push(resp.thread.id);
+            }
+            if thread_ids.is_empty() {
+                bail!("no hub recipients after expand");
+            }
+            Ok(ForwardThreadsResult {
+                recipients: hub_tos,
+                thread_ids,
+            })
         } else {
-            Ok(uuid::Uuid::new_v4().to_string())
+            Ok(ForwardThreadsResult {
+                recipients: vec![recipient.to_string()],
+                thread_ids: vec![uuid::Uuid::new_v4().to_string()],
+            })
         }
     }
 
@@ -1011,6 +1081,7 @@ impl DaemonState {
         thread_id: &str,
         bundle: MutandeBundle,
         to_agent: Option<&str>,
+        agent_slug: Option<&str>,
     ) -> Result<()> {
         let plain = serde_json::to_vec(&bundle)?;
         let detail = self.get_thread(thread_id).await?;
@@ -1018,7 +1089,7 @@ impl DaemonState {
         let env = self.seal_inline_or_blob(&plain, &recipients).await?;
 
         if let Some(hub) = self.hub_client() {
-            let from_agent = self.from_agent_for_send();
+            let from_agent = self.from_agent_for_send(agent_slug);
             hub.reply_to_thread(thread_id, &env, from_agent.as_deref(), to_agent)
                 .await?;
         }
@@ -1121,18 +1192,153 @@ impl DaemonState {
         self.processed_threads.lock().unwrap().contains(thread_id)
     }
 
+    async fn my_bare_handle(&self) -> Result<String> {
+        let hub = self.hub_client().context("hub not configured")?;
+        let me = hub.me().await?;
+        me.user
+            .as_ref()
+            .and_then(|u| u.handle.as_deref())
+            .map(strip_agent_suffix)
+            .map(|s| s.to_string())
+            .context("local handle unknown — cannot expand self-collaboration address")
+    }
+
+    /// Expand `@all` / `@claude` to full `you@org/slug` addresses before hub
+    /// createThread. Prod hubs that lack shorthand parsing still accept the
+    /// expanded form; `@all` becomes one thread per other registered agent.
+    async fn expand_hub_recipients(
+        &self,
+        recipient: &str,
+        agent_slug: Option<&str>,
+    ) -> Result<Vec<String>> {
+        let trimmed = recipient.trim();
+        let parsed = parse_display_address(trimmed)?;
+        match parsed.kind {
+            AddressKind::SelfAgent => {
+                let slug = parsed
+                    .agent_slug
+                    .as_deref()
+                    .context("self-agent shorthand missing slug")?;
+                let bare = self.my_bare_handle().await?;
+                Ok(vec![format!("{bare}/{slug}")])
+            }
+            AddressKind::MyAgents => {
+                let bare = self.my_bare_handle().await?;
+                let list = self.list_agents().await?;
+                let from = self.effective_agent_slug(agent_slug).await;
+                let mut out: Vec<String> = list
+                    .agents
+                    .into_iter()
+                    .filter(|a| from.as_deref() != Some(a.slug.as_str()))
+                    .map(|a| format!("{bare}/{}", a.slug))
+                    .collect();
+                if out.is_empty() {
+                    bail!(
+                        "no other agents to hand off to with @all — register another agent or use @claude/@cursor/@chatgpt"
+                    );
+                }
+                out.sort();
+                Ok(out)
+            }
+            AddressKind::User | AddressKind::OrgBroadcast => Ok(vec![trimmed.to_string()]),
+        }
+    }
+
+    /// Reject same-agent self-loops; allow handoffs to a different own agent slot.
+    async fn assert_recipient_allowed(
+        &self,
+        recipient: &str,
+        agent_slug: Option<&str>,
+    ) -> Result<()> {
+        let parsed = parse_display_address(recipient)?;
+        match parsed.kind {
+            AddressKind::OrgBroadcast | AddressKind::MyAgents => return Ok(()),
+            AddressKind::SelfAgent => {
+                let from_slug = self
+                    .effective_agent_slug(agent_slug)
+                    .await
+                    .context("connected agent unknown — cannot validate self-handoff")?;
+                let to_slug = parsed
+                    .agent_slug
+                    .as_deref()
+                    .context("self-agent shorthand missing slug")?;
+                if from_slug == to_slug {
+                    bail!(
+                        "cannot hand off to the same agent ({from_slug}); send to a different agent address, e.g. @claude"
+                    );
+                }
+                return Ok(());
+            }
+            AddressKind::User => {}
+        }
+
+        let Some(hub) = self.hub_client() else {
+            return Ok(());
+        };
+        let Ok(me) = hub.me().await else {
+            // Offline / mock hubs without /me: skip local check; hub still enforces.
+            return Ok(());
+        };
+        let my_bare = me
+            .user
+            .as_ref()
+            .and_then(|u| u.handle.as_deref())
+            .map(strip_agent_suffix);
+        let target_bare = bare_handle(&parsed.local, &parsed.org_slug);
+        if my_bare != Some(target_bare.as_str()) {
+            return Ok(());
+        }
+
+        let from_slug = self
+            .effective_agent_slug(agent_slug)
+            .await
+            .context("connected agent unknown — cannot validate self-handoff")?;
+        let to_slug = match parsed.agent_slug.as_deref() {
+            Some(s) => s.to_string(),
+            None => self
+                .default_agent_slug()
+                .await
+                .context("default agent unknown — cannot validate bare self-send")?,
+        };
+        if from_slug == to_slug {
+            bail!(
+                "cannot hand off to the same agent ({from_slug}); send to a different agent address, e.g. @claude or {target_bare}/claude"
+            );
+        }
+        Ok(())
+    }
+
     async fn resolve_recipient_pubkeys(&self, recipient: &str) -> Result<Vec<DevicePubKey>> {
-        let bare = strip_agent_suffix(recipient);
+        let trimmed = recipient.trim();
+        let parsed = parse_display_address(trimmed)?;
+
+        // Bare @all (my agents) and @slug (self agent): seal once to own device pubkeys.
+        if matches!(parsed.kind, AddressKind::MyAgents | AddressKind::SelfAgent) {
+            return Ok(vec![self.device_public()?]);
+        }
+
+        let bare = strip_agent_suffix(trimmed);
         if is_broadcast_handle(bare) {
             let contacts = self.list_contacts().await?;
-            let keys: Vec<DevicePubKey> = contacts
+            let others: Vec<&Contact> = contacts
+                .iter()
+                .filter(|c| !is_broadcast_handle(&c.handle))
+                .collect();
+            let keys: Vec<DevicePubKey> = others
                 .iter()
                 .filter_map(|c| c.pubkey.as_deref().and_then(pubkey_from_hub_string))
                 .collect();
-            if keys.is_empty() {
-                bail!("no pubkeys for broadcast {recipient}");
+            if !keys.is_empty() {
+                return Ok(keys);
             }
-            return Ok(keys);
+            if others.is_empty() {
+                // Sole-member org: list_contacts excludes self, so @all@org has no other
+                // keys — encrypt to own device(s) for default-agent inbox delivery.
+                return Ok(vec![self.device_public()?]);
+            }
+            bail!(
+                "broadcast {recipient} has no registered pubkeys — no other members have onboarded devices"
+            );
         }
 
         let contacts = self.list_contacts().await?;
@@ -1158,6 +1364,7 @@ impl DaemonState {
                     .map(strip_agent_suffix)
                     == Some(bare)
                 {
+                    // Self-send / agent handoff: seal to local identity (not in contacts).
                     return Ok(vec![self.device_public()?]);
                 }
             }
@@ -1249,10 +1456,22 @@ fn thread_visible_for_agent(
     default_slug: &str,
 ) -> bool {
     if thread.kind == ThreadKind::Broadcast {
+        // Bare @all → all of this user's agents. @all@org → default agent only.
+        if is_my_agents_handle(&thread.audience) {
+            return thread.from_user_id == my_user_id;
+        }
         return slug == default_slug;
     }
     if thread.from_user_id == my_user_id {
-        agent_matches_display(&thread.from, slug, default_slug)
+        // Outbound: visible to the sending agent.
+        if agent_matches_display(&thread.from, slug, default_slug) {
+            return true;
+        }
+        // Self-handoff only: also visible to the target own-agent slot.
+        // Do not match on audience slug alone — that would leak e.g.
+        // cursor→bob@acme/claude into the sender's own `claude` agent.
+        let same_user = strip_agent_suffix(&thread.from) == strip_agent_suffix(&thread.audience);
+        same_user && agent_matches_display(&thread.audience, slug, default_slug)
     } else {
         agent_matches_display(&thread.audience, slug, default_slug)
     }
@@ -1317,22 +1536,7 @@ mod tests {
     use crate::hub_client::{ThreadKind, ThreadStatus};
 
     #[test]
-    fn auth0_resolvers_fall_back_to_builtin_defaults() {
-        // Explicit / env take precedence; with neither, use compile-time defaults.
-        assert_eq!(
-            resolve_auth0_domain(None).unwrap(),
-            super::super::auth0_defaults::AUTH0_DOMAIN
-        );
-        assert_eq!(
-            resolve_auth0_client_id(None).unwrap(),
-            super::super::auth0_defaults::AUTH0_NATIVE_CLIENT_ID
-        );
-        // Audience already had a hardcoded fallback; ensure it matches the module.
-        let audience = resolve_auth0_audience(None);
-        assert!(
-            audience == super::super::auth0_defaults::AUTH0_AUDIENCE
-                || std::env::var("AUTH0_AUDIENCE").is_ok()
-        );
+    fn auth0_resolvers_prefer_explicit_params() {
         assert_eq!(
             resolve_auth0_domain(Some("custom.auth0.com")).unwrap(),
             "custom.auth0.com"
@@ -1345,6 +1549,31 @@ mod tests {
             resolve_auth0_audience(Some("https://custom.audience")),
             "https://custom.audience"
         );
+    }
+
+    #[test]
+    fn auth0_resolvers_fall_back_to_builtin_defaults_when_env_unset() {
+        // Skip assertions for any AUTH0_* already present (CI / local .env).
+        if std::env::var("AUTH0_DOMAIN").is_err() {
+            assert_eq!(
+                resolve_auth0_domain(None).unwrap(),
+                super::super::auth0_defaults::AUTH0_DOMAIN
+            );
+        }
+        if std::env::var("AUTH0_NATIVE_CLIENT_ID").is_err()
+            && std::env::var("AUTH0_CLIENT_ID").is_err()
+        {
+            assert_eq!(
+                resolve_auth0_client_id(None).unwrap(),
+                super::super::auth0_defaults::AUTH0_NATIVE_CLIENT_ID
+            );
+        }
+        if std::env::var("AUTH0_AUDIENCE").is_err() {
+            assert_eq!(
+                resolve_auth0_audience(None),
+                super::super::auth0_defaults::AUTH0_AUDIENCE
+            );
+        }
     }
 
     #[test]
@@ -1621,11 +1850,12 @@ mod tests {
         state.attach_hub_for_test(hub);
 
         let artifact = b"large codebase tarball bytes for e2e";
-        let thread_id = state
-            .forward_blob("bob@acme", artifact, Some("code drop"))
+        let forwarded = state
+            .forward_blob("bob@acme", artifact, Some("code drop"), None)
             .await
             .unwrap();
-        assert_eq!(thread_id, "thread-blob-1");
+        assert_eq!(forwarded.thread_ids, vec!["thread-blob-1".to_string()]);
+        assert_eq!(forwarded.recipients, vec!["bob@acme".to_string()]);
 
         let env_json = captured_env.lock().unwrap().clone().unwrap();
         assert_eq!(env_json["blob_id"], "blob-e2e-1");
@@ -1636,5 +1866,456 @@ mod tests {
         let env: Envelope = serde_json::from_value(env_json).unwrap();
         let opened = state.open_envelope_maybe_blob(&env).await.unwrap();
         assert_eq!(opened, artifact);
+    }
+
+    async fn mock_solo_hub(server: &wiremock::MockServer) {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, ResponseTemplate};
+
+        Mock::given(method("GET"))
+            .and(path("/v1/contacts"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                "contacts": [
+                    { "handle": "@all@tbhco", "pubkey": null, "devices": [] }
+                ]
+            })))
+            .mount(server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/v1/me"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                "auth0_sub": "auth0|solo",
+                "needs_onboarding": false,
+                "onboarded": true,
+                "user": {
+                    "id": "u-solo",
+                    "handle": "solo@tbhco",
+                    "org_id": "org-solo",
+                    "created_at": "2026-01-01T00:00:00Z"
+                },
+                "org": {
+                    "id": "org-solo",
+                    "slug": "tbhco",
+                    "name": "TBH",
+                    "created_at": "2026-01-01T00:00:00Z"
+                }
+            })))
+            .mount(server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/v1/agents"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                "agents": [
+                    { "id": "a-cursor", "user_id": "u-solo", "slug": "cursor", "created_at": "2026-01-01T00:00:00Z" },
+                    { "id": "a-claude", "user_id": "u-solo", "slug": "claude", "created_at": "2026-01-01T00:00:00Z" }
+                ],
+                "default_agent_id": "a-cursor"
+            })))
+            .mount(server)
+            .await;
+    }
+
+    #[tokio::test]
+    async fn sole_member_all_resolves_to_own_pubkey_and_seals() {
+        use crate::crypto::seal;
+        use crate::hub_client::HubConfig;
+        use wiremock::MockServer;
+
+        let state = DaemonState::new_in_memory_for_test().unwrap();
+        let own_pk = state.device_public().unwrap();
+        let server = MockServer::start().await;
+        mock_solo_hub(&server).await;
+        state.attach_hub_for_test(HubClient::new(HubConfig::new(server.uri(), "tok")).unwrap());
+        state.set_connected_agent_slug_for_test(Some("cursor"));
+
+        let keys = state
+            .resolve_recipient_pubkeys("@all@tbhco")
+            .await
+            .unwrap();
+        assert_eq!(keys.len(), 1);
+        assert_eq!(keys[0].0, own_pk.0);
+
+        let env = seal(b"{\"subject\":\"solo all\"}", &keys).unwrap();
+        let opened = state.open_envelope(&env).unwrap();
+        assert_eq!(opened, b"{\"subject\":\"solo all\"}");
+    }
+
+    #[tokio::test]
+    async fn self_agent_handoff_seals_to_own_device() {
+        use crate::crypto::seal;
+        use crate::hub_client::HubConfig;
+        use wiremock::MockServer;
+
+        let state = DaemonState::new_in_memory_for_test().unwrap();
+        let own_pk = state.device_public().unwrap();
+        let server = MockServer::start().await;
+        mock_solo_hub(&server).await;
+        state.attach_hub_for_test(HubClient::new(HubConfig::new(server.uri(), "tok")).unwrap());
+        state.set_connected_agent_slug_for_test(Some("cursor"));
+
+        state
+            .assert_recipient_allowed("solo@tbhco/claude", None)
+            .await
+            .unwrap();
+        let keys = state
+            .resolve_recipient_pubkeys("solo@tbhco/claude")
+            .await
+            .unwrap();
+        assert_eq!(keys[0].0, own_pk.0);
+        let env = seal(b"{\"subject\":\"cursor to claude\"}", &keys).unwrap();
+        assert_eq!(
+            state.open_envelope(&env).unwrap(),
+            b"{\"subject\":\"cursor to claude\"}"
+        );
+    }
+
+    #[tokio::test]
+    async fn same_agent_self_loop_rejected() {
+        use crate::hub_client::HubConfig;
+        use wiremock::MockServer;
+
+        let state = DaemonState::new_in_memory_for_test().unwrap();
+        let server = MockServer::start().await;
+        mock_solo_hub(&server).await;
+        state.attach_hub_for_test(HubClient::new(HubConfig::new(server.uri(), "tok")).unwrap());
+        state.set_connected_agent_slug_for_test(Some("cursor"));
+
+        let err = state
+            .assert_recipient_allowed("solo@tbhco/cursor", None)
+            .await
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("same agent"),
+            "got: {err}"
+        );
+
+        let bare_err = state
+            .assert_recipient_allowed("solo@tbhco", None)
+            .await
+            .unwrap_err();
+        assert!(
+            bare_err.to_string().contains("same agent"),
+            "got: {bare_err}"
+        );
+    }
+
+    #[test]
+    fn self_handoff_visible_to_target_agent() {
+        let thread = ThreadMeta {
+            id: "t1".into(),
+            kind: ThreadKind::Direct,
+            status: ThreadStatus::Open,
+            from: "solo@tbhco/cursor".into(),
+            from_user_id: "u-solo".into(),
+            from_agent_id: Some("a-cursor".into()),
+            audience: "solo@tbhco/claude".into(),
+            audience_agent_id: Some("a-claude".into()),
+            audience_wire_path: Some("tbhco/solo/claude".into()),
+            org_id: "org-solo".into(),
+            participant_count: 1,
+            reply_count: 0,
+            your_status: None,
+            created_at: "2026-01-01T00:00:00Z".into(),
+            updated_at: "2026-01-01T00:00:00Z".into(),
+        };
+        assert!(thread_visible_for_agent(&thread, "u-solo", "cursor", "cursor"));
+        assert!(thread_visible_for_agent(&thread, "u-solo", "claude", "cursor"));
+        assert!(!thread_visible_for_agent(&thread, "u-solo", "chatgpt", "cursor"));
+    }
+
+    #[test]
+    fn outbound_to_other_user_does_not_leak_by_audience_slug() {
+        // alice/cursor → bob@acme/claude must not appear in alice's own `claude` agent.
+        let thread = ThreadMeta {
+            id: "t-ext".into(),
+            kind: ThreadKind::Direct,
+            status: ThreadStatus::Open,
+            from: "alice@acme/cursor".into(),
+            from_user_id: "u-alice".into(),
+            from_agent_id: Some("a-cursor".into()),
+            audience: "bob@acme/claude".into(),
+            audience_agent_id: Some("a-bob-claude".into()),
+            audience_wire_path: Some("acme/bob/claude".into()),
+            org_id: "org-acme".into(),
+            participant_count: 2,
+            reply_count: 0,
+            your_status: None,
+            created_at: "2026-01-01T00:00:00Z".into(),
+            updated_at: "2026-01-01T00:00:00Z".into(),
+        };
+        assert!(thread_visible_for_agent(&thread, "u-alice", "cursor", "cursor"));
+        assert!(!thread_visible_for_agent(
+            &thread, "u-alice", "claude", "cursor"
+        ));
+        // Recipient bob's claude still sees it.
+        assert!(thread_visible_for_agent(&thread, "u-bob", "claude", "cursor"));
+    }
+
+    #[test]
+    fn my_agents_broadcast_visible_to_all_own_agents() {
+        let thread = ThreadMeta {
+            id: "t-all".into(),
+            kind: ThreadKind::Broadcast,
+            status: ThreadStatus::Open,
+            from: "solo@tbhco/cursor".into(),
+            from_user_id: "u-solo".into(),
+            from_agent_id: Some("a-cursor".into()),
+            audience: "@all".into(),
+            audience_agent_id: None,
+            audience_wire_path: None,
+            org_id: "org-solo".into(),
+            participant_count: 2,
+            reply_count: 0,
+            your_status: None,
+            created_at: "2026-01-01T00:00:00Z".into(),
+            updated_at: "2026-01-01T00:00:00Z".into(),
+        };
+        assert!(thread_visible_for_agent(&thread, "u-solo", "cursor", "cursor"));
+        assert!(thread_visible_for_agent(&thread, "u-solo", "claude", "cursor"));
+        assert!(thread_visible_for_agent(&thread, "u-solo", "chatgpt", "cursor"));
+        assert!(!thread_visible_for_agent(&thread, "u-other", "cursor", "cursor"));
+    }
+
+    #[test]
+    fn org_broadcast_still_default_agent_only() {
+        let thread = ThreadMeta {
+            id: "t-org".into(),
+            kind: ThreadKind::Broadcast,
+            status: ThreadStatus::Open,
+            from: "alice@acme/cursor".into(),
+            from_user_id: "u-alice".into(),
+            from_agent_id: Some("a-cursor".into()),
+            audience: "@all@acme".into(),
+            audience_agent_id: None,
+            audience_wire_path: None,
+            org_id: "org-acme".into(),
+            participant_count: 3,
+            reply_count: 0,
+            your_status: None,
+            created_at: "2026-01-01T00:00:00Z".into(),
+            updated_at: "2026-01-01T00:00:00Z".into(),
+        };
+        assert!(thread_visible_for_agent(&thread, "u-bob", "cursor", "cursor"));
+        assert!(!thread_visible_for_agent(&thread, "u-bob", "claude", "cursor"));
+    }
+
+    #[tokio::test]
+    async fn shorthand_self_agent_allowed_and_loop_rejected() {
+        use crate::hub_client::HubConfig;
+        use wiremock::MockServer;
+
+        let state = DaemonState::new_in_memory_for_test().unwrap();
+        let server = MockServer::start().await;
+        mock_solo_hub(&server).await;
+        state.attach_hub_for_test(HubClient::new(HubConfig::new(server.uri(), "tok")).unwrap());
+        state.set_connected_agent_slug_for_test(Some("cursor"));
+
+        state.assert_recipient_allowed("@claude", None).await.unwrap();
+        state.assert_recipient_allowed("@all", None).await.unwrap();
+
+        let err = state.assert_recipient_allowed("@cursor", None).await.unwrap_err();
+        assert!(err.to_string().contains("same agent"), "got: {err}");
+    }
+
+    #[tokio::test]
+    async fn resolve_pubkeys_for_shorthand_and_my_agents() {
+        let state = DaemonState::new_in_memory_for_test().unwrap();
+        let own = state.device_public().unwrap();
+        let for_slug = state.resolve_recipient_pubkeys("@claude").await.unwrap();
+        assert_eq!(for_slug.len(), 1);
+        assert_eq!(for_slug[0].0, own.0);
+        let for_all = state.resolve_recipient_pubkeys("@all").await.unwrap();
+        assert_eq!(for_all.len(), 1);
+        assert_eq!(for_all[0].0, own.0);
+    }
+
+    #[tokio::test]
+    async fn expand_hub_recipients_shorthand_for_legacy_prod() {
+        use crate::hub_client::HubConfig;
+        use wiremock::MockServer;
+
+        let state = DaemonState::new_in_memory_for_test().unwrap();
+        let server = MockServer::start().await;
+        mock_solo_hub(&server).await;
+        state.attach_hub_for_test(HubClient::new(HubConfig::new(server.uri(), "tok")).unwrap());
+        state.set_connected_agent_slug_for_test(Some("cursor"));
+
+        let claude = state.expand_hub_recipients("@claude", None).await.unwrap();
+        assert_eq!(claude, vec!["solo@tbhco/claude".to_string()]);
+
+        let all = state.expand_hub_recipients("@all", None).await.unwrap();
+        assert_eq!(all, vec!["solo@tbhco/claude".to_string()]);
+
+        let passthrough = state
+            .expand_hub_recipients("solo@tbhco/claude", None)
+            .await
+            .unwrap();
+        assert_eq!(passthrough, vec!["solo@tbhco/claude".to_string()]);
+    }
+
+    /// Bare `@all` from claude with three registered agents → cursor + chatgpt
+    /// (sorted), never only one peer.
+    #[tokio::test]
+    async fn expand_all_excludes_sender_keeps_every_other_agent() {
+        use crate::hub_client::HubConfig;
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let state = DaemonState::new_in_memory_for_test().unwrap();
+        let server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/v1/me"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                "auth0_sub": "auth0|solo",
+                "needs_onboarding": false,
+                "onboarded": true,
+                "user": {
+                    "id": "u-solo",
+                    "handle": "tawanda@tbhco",
+                    "org_id": "org-solo",
+                    "created_at": "2026-01-01T00:00:00Z"
+                },
+                "org": {
+                    "id": "org-solo",
+                    "slug": "tbhco",
+                    "name": "TBH",
+                    "created_at": "2026-01-01T00:00:00Z"
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/v1/agents"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                "agents": [
+                    { "id": "a-claude", "user_id": "u-solo", "slug": "claude", "created_at": "2026-01-01T00:00:00Z" },
+                    { "id": "a-cursor", "user_id": "u-solo", "slug": "cursor", "created_at": "2026-01-01T00:00:00Z" },
+                    { "id": "a-chatgpt", "user_id": "u-solo", "slug": "chatgpt", "created_at": "2026-01-01T00:00:00Z" }
+                ],
+                "default_agent_id": "a-cursor"
+            })))
+            .mount(&server)
+            .await;
+
+        state.attach_hub_for_test(HubClient::new(HubConfig::new(server.uri(), "tok")).unwrap());
+        state.set_connected_agent_slug_for_test(Some("claude"));
+
+        let all = state.expand_hub_recipients("@all", None).await.unwrap();
+        assert_eq!(
+            all,
+            vec![
+                "tawanda@tbhco/chatgpt".to_string(),
+                "tawanda@tbhco/cursor".to_string(),
+            ]
+        );
+        assert!(!all.iter().any(|a| a.ends_with("/claude")));
+    }
+
+    /// Stale shared connected_agent_slug=cursor must not win when the MCP call
+    /// stamps agent_slug=claude (multi-host register_agent race).
+    #[tokio::test]
+    async fn reply_uses_per_request_agent_slug_not_shared_slot() {
+        use crate::hub_client::{pubkey_to_hub_string, HubConfig};
+        use wiremock::matchers::{body_partial_json, method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let state = DaemonState::new_in_memory_for_test().unwrap();
+        let own_pk = state.device_public().unwrap();
+        let pk_hub = pubkey_to_hub_string(&own_pk);
+        let server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/v1/me"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                "auth0_sub": "auth0|solo",
+                "needs_onboarding": false,
+                "onboarded": true,
+                "user": {
+                    "id": "u-solo",
+                    "handle": "tawanda@tbhco",
+                    "org_id": "org-solo",
+                    "created_at": "2026-01-01T00:00:00Z"
+                },
+                "org": {
+                    "id": "org-solo",
+                    "slug": "tbhco",
+                    "name": "TBH",
+                    "created_at": "2026-01-01T00:00:00Z"
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/v1/threads/t-reply"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                "thread": {
+                    "id": "t-reply",
+                    "kind": "direct",
+                    "status": "open",
+                    "from": "bob@tbhco/cursor",
+                    "from_user_id": "u-bob",
+                    "from_agent_id": "a-bob-cursor",
+                    "audience": "tawanda@tbhco/claude",
+                    "audience_agent_id": "a-claude",
+                    "audience_wire_path": "tbhco/tawanda/claude",
+                    "org_id": "org-solo",
+                    "participant_count": 2,
+                    "reply_count": 0,
+                    "created_at": "2026-01-01T00:00:00Z",
+                    "updated_at": "2026-01-01T00:00:00Z"
+                },
+                "messages": []
+            })))
+            .mount(&server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/v1/contacts"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                "contacts": [{
+                    "handle": "bob@tbhco",
+                    "pubkey": pk_hub,
+                    "devices": [{ "pubkey": pk_hub, "platform": "macos" }]
+                }]
+            })))
+            .mount(&server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/threads/t-reply/replies"))
+            .and(body_partial_json(serde_json::json!({ "from_agent": "claude" })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                "message_id": "m-reply"
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        state.attach_hub_for_test(HubClient::new(HubConfig::new(server.uri(), "tok")).unwrap());
+        // Shared slot looks like cursor (last host that registered) — must not win.
+        state.set_connected_agent_slug_for_test(Some("cursor"));
+
+        state
+            .reply_to_thread(
+                "t-reply",
+                MutandeBundle {
+                    subject: Some("from claude".into()),
+                    context: None,
+                    questions: vec![],
+                    resource_requests: vec![],
+                    resources: vec![],
+                    answers: vec![],
+                    notes: None,
+                },
+                None,
+                Some("claude"),
+            )
+            .await
+            .unwrap();
     }
 }

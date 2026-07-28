@@ -8,6 +8,7 @@ import 'screens/settings_screen.dart';
 import 'screens/threads_screen.dart';
 import 'services/app_actions.dart';
 import 'services/daemon_client.dart';
+import 'services/host_link_store.dart';
 import 'widgets/thinking_orb.dart';
 import 'widgets/welcome_splash.dart';
 
@@ -76,7 +77,9 @@ class MutandeApp extends StatelessWidget {
     required this.config,
     this.daemon,
     this.seedStatus,
+    this.hostLinkStore,
     this.welcomeDuration = const Duration(seconds: 3),
+    this.appVersion = AppConfig.appVersion,
   });
 
   final AppConfig config;
@@ -87,8 +90,14 @@ class MutandeApp extends StatelessWidget {
   /// When set, skips the initial `get_status` RPC (widget tests).
   final DaemonStatusResult? seedStatus;
 
+  /// Injectable for tests; defaults to file-backed store.
+  final HostLinkStore? hostLinkStore;
+
   /// Dark orb welcome hold. Pass [Duration.zero] to skip (tests).
   final Duration welcomeDuration;
+
+  /// pubspec version (before `+`), overridable via `--dart-define=APP_VERSION=`.
+  final String appVersion;
 
   @override
   Widget build(BuildContext context) {
@@ -98,10 +107,12 @@ class MutandeApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       home: WelcomeSplash(
         duration: welcomeDuration,
+        appVersion: appVersion,
         child: RootScreen(
           config: config,
           daemon: daemon,
           seedStatus: seedStatus,
+          hostLinkStore: hostLinkStore,
         ),
       ),
     );
@@ -114,11 +125,13 @@ class RootScreen extends StatefulWidget {
     required this.config,
     this.daemon,
     this.seedStatus,
+    this.hostLinkStore,
   });
 
   final AppConfig config;
   final DaemonClient? daemon;
   final DaemonStatusResult? seedStatus;
+  final HostLinkStore? hostLinkStore;
 
   @override
   State<RootScreen> createState() => _RootScreenState();
@@ -295,6 +308,7 @@ class _RootScreenState extends State<RootScreen> {
       connectResult: _connectResult,
       connectError: _connectError,
       onConnectHosts: _runConnectHosts,
+      hostLinkStore: widget.hostLinkStore,
     );
   }
 }
@@ -391,6 +405,7 @@ class HomeScreen extends StatefulWidget {
     this.connectResult,
     this.connectError,
     required this.onConnectHosts,
+    this.hostLinkStore,
   });
 
   final AppConfig config;
@@ -402,6 +417,7 @@ class HomeScreen extends StatefulWidget {
   final ConnectHostResult? connectResult;
   final String? connectError;
   final VoidCallback onConnectHosts;
+  final HostLinkStore? hostLinkStore;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -412,6 +428,15 @@ class _HomeScreenState extends State<HomeScreen> {
   DaemonHealthResult? _health;
   int _tab = 0; // 0 threads · 1 agents · 2 contacts
   VoidCallback? _reloadThreads;
+  VoidCallback? _reloadAgents;
+
+  void _registerAgentsReload(VoidCallback? reload) {
+    _reloadAgents = reload;
+  }
+
+  void _registerThreadsReload(VoidCallback? reload) {
+    _reloadThreads = reload;
+  }
 
   @override
   void initState() {
@@ -429,22 +454,23 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  void _openSettings() {
-    Navigator.of(context).push(
+  Future<void> _openSettings() async {
+    await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (context) => SettingsScreen(
           daemon: widget.daemon,
           checking: _checking,
           connecting: widget.connecting,
           health: _health,
-          connectResult: widget.connectResult,
           connectError: widget.connectError,
           onCheckDaemon: _checkDaemon,
           onConnectHosts: widget.onConnectHosts,
           handle: widget.status.handle,
+          hostLinkStore: widget.hostLinkStore,
         ),
       ),
     );
+    if (_tab == 1) _reloadAgents?.call();
   }
 
   @override
@@ -459,10 +485,7 @@ class _HomeScreenState extends State<HomeScreen> {
             _HomeHeader(
               handle: handle,
               tab: _tab,
-              onTab: (i) {
-                setState(() => _tab = i);
-                if (i == 0) _reloadThreads?.call();
-              },
+              onTab: (i) => setState(() => _tab = i),
               onSettings: _openSettings,
             ),
             if (widget.statusError != null)
@@ -489,13 +512,15 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: _tab == 0
                     ? ThreadsPanel(
                         daemon: widget.daemon,
-                        onReloadReady: (reload) => _reloadThreads = reload,
+                        onReloadReady: _registerThreadsReload,
                       )
                     : _tab == 1
                         ? AgentsPanel(
                             daemon: widget.daemon,
                             handle: widget.status.handle,
                             onViewThreads: () => setState(() => _tab = 0),
+                            hostLinkStore: widget.hostLinkStore,
+                            onReloadReady: _registerAgentsReload,
                           )
                         : SingleChildScrollView(
                             child: ContactsPanel(

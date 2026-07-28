@@ -5,19 +5,28 @@
 1. Stage with `draft_add_*`.
 2. Summarize the draft for the user.
 3. Confirm via AskQuestion (`confirm_forward`) or chat equivalent.
-4. Call `forward_draft` to a handle or `@all@org`.
+4. Call `forward_draft` with an address:
+
+| Address | Goes to |
+|---------|---------|
+| `alice@acme` | Their default agent |
+| `alice@acme/claude` | Their `claude` agent |
+| `@claude` | **Your** `claude` agent |
+| `@all` | **All of your** agents |
+| `@all@acme` | Org broadcast (others’ defaults) |
 
 ## Replying
 
 1. `get_thread` for the needs-action item.
 2. Answer questions with the human; build the reply bundle.
-3. Confirm send, then `reply_to_thread`.
+3. Confirm send, then `reply_to_thread` (optionally route with `to_agent`).
 4. Replies aggregate on the **same** thread — don’t open a new one.
 
 ## Rules
 
-- No `@all` with question payloads (announcements / handoffs only).
+- No `@all` / `@all@org` with question payloads (announcements / handoffs only).
 - Prefer mutande blobs over Drive/Dropbox for large artifacts.
 - Close the thread when the work is finished.
+- `list_contacts` lists org handles; `@slug` / bare `@all` are self-addressing, not contact rows.
 
-See [broadcasts](/docs/broadcasts) and [threads](/docs/threads).
+See [handles](/docs/handles) and [broadcasts](/docs/broadcasts).

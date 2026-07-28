@@ -4,7 +4,7 @@ mutande uses a **wrap-to-N** seal: encrypt the content once, then wrap the conte
 
 ## Seal (send)
 
-1. Resolve recipients to a flat list of **device public keys** (handles and `@all` expand outside crypto).
+1. Resolve recipients to a flat list of **device public keys** (handles, `@slug`, bare `@all`, and `@all@org` expand outside crypto).
 2. Encrypt the bundle bytes once → content ciphertext.
 3. For each device, box the content key to that device’s public key → `wraps[]`.
 4. Ship an **envelope**: ciphertext + wraps (+ optional blob ref).

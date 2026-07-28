@@ -32,7 +32,7 @@ Hosted on prod web — prefer these URLs in Stitch:
 
 Agent-to-agent encrypted mail for teams. Quiet courier. Hub is blind; plaintext stays on-device.
 
-Domain terms: **thread**, **bundle**, **handoff**, **org**, **handle** (`alice@acme`), **agent handle** (`alice@acme/claude`), **broadcast** (`@all@acme`).
+Domain terms: **thread**, **bundle**, **handoff**, **org**, **handle** (`alice@acme`), **agent handle** (`alice@acme/claude`), **my-agents** (bare `@all`), **broadcast** (`@all@acme`), **self shorthand** (`@claude`).
 
 ### Addressing hierarchy (must be visible in UI)
 
@@ -40,9 +40,9 @@ Mail routes through a **human handle**, then into **agent slots** under that han
 
 ```
 alice@acme                    ← human handle (bare address)
-└── default                   ← default agent (receives bare + @all fan-in)
+└── default                   ← default agent (receives bare + @all@org fan-in)
     │                          display: alice@acme  (never alice@acme/default)
-    ├── claude                ← alice@acme/claude   (sub-agent under default)
+    ├── claude                ← alice@acme/claude   (also addressable as @claude when you)
     ├── cursor                ← alice@acme/cursor
     ├── chatgpt               ← alice@acme/chatgpt
     └── [ + Add ]             ← empty node — only way to add a sub-agent
@@ -60,7 +60,9 @@ Rules for Stitch copy and trees:
 | Empty node | Always visible under default when more agents can be added; looks like a placeholder/ghost slot, not a full agent row |
 | Other agents | Children of default: slug + full display `alice@acme/<slug>` |
 | Set default | User can promote another agent to default; tree updates so that row wears the default badge |
-| Broadcast | `@all@acme` fans out to each member’s **default** agent only — call this out in a short caption near the tree |
+| Self shorthand | When addressing yourself: `@claude` / `@cursor` / `@slug` (not a contact-list row) |
+| My agents | Bare `@all` fans out to **all of your** agents — caption near tree / composer if shown |
+| Broadcast | `@all@acme` fans out to each *other* member’s **default** agent only; sole-member orgs seal to own devices |
 | Connected now | Session may highlight which agent/host is currently connected (MCP) vs merely registered |
 
 Wire path (for designers, not primary UI): `acme/alice/claude`. Prefer display form in the app.
@@ -74,7 +76,7 @@ Design inside these — Stitch frames should match:
 | Constraint | Spec |
 |------------|------|
 | Shell | macOS **menu-bar accessory** (no Dock icon) |
-| Window | **560 × 680** pt, titled `mutande` (tray utility — not a full IDE; was 480×560, too tight) |
+| Window | **720 × 840** pt default (**640 × 720** min), titled `mutande` (tray utility — not a full IDE; was 560×680) |
 | Close | Hides window; app stays via tray |
 | Tray | Solid black plate + white MT; not a template silhouette |
 | Theme | System light/dark eventually; **v1 mocks: light stone first**, then one dark pass for splash + tray |
@@ -91,7 +93,7 @@ Obvious desktop / tray mistakes. If a mock looks like any of these, redesign.
 
 | Antipattern | Why it fails here |
 |-------------|-------------------|
-| Full-width SaaS dashboard / sidebar app | This is a **560×680 menu-bar utility**, not Linear/Notion |
+| Full-width SaaS dashboard / sidebar app | This is a **720×840 menu-bar utility**, not Linear/Notion |
 | Dock-first “big app” chrome (sidebar + toolbar + inspector) | No Dock icon; window is secondary to the tray |
 | Mobile patterns (bottom tab bars, huge touch targets, sheet stacks) | Design for mouse/trackpad density and macOS HIG |
 | Marketing landing squeezed into a window | No hero stats, logo walls, or “Book a demo” energy in-app |
@@ -189,7 +191,7 @@ Do not replace orbs with Material spinners in mocks.
 
 1. **Menu bar** — tray icon among other status items; tooltip `mutande`.  
 2. **Tray menu** — `Daemon: up|down|…` (disabled status) · Open mutande · Connect AI hosts · Quit.  
-3. **Window chrome** — traffic lights + title `mutande` at **560×680**.
+3. **Window chrome** — traffic lights + title `mutande` at **720×840** (640×720 min).
 
 ### B. Launch & routing
 
@@ -256,7 +258,7 @@ Tray may still expose **Connect AI hosts** as a shortcut; destination UI lives i
 
 Address book for send/broadcast — not Settings.
 
-21. **Contacts list** — org members as `bob@acme` (and agent suffix only if useful); synthetic **`@all@acme`** row with caption that fan-out hits each member’s **default** agent.  
+21. **Contacts list** — org members as `bob@acme` (and agent suffix only if useful); synthetic **`@all@acme`** row with caption that fan-out hits each *other* member’s **default** agent (not bare `@all` / `@slug`).  
 22. **Empty / loading** — “No teammates yet” + invite cue (web) if needed; panel orb.  
 23. **Row action (light)** — start thread / copy handle — keep sparse; no CRM profile pages.
 
@@ -289,12 +291,13 @@ For each screen above, Stitch should cover when relevant:
 ```
 handle:           alice@acme
 default agent:    claude     → receives alice@acme  (label: default — not /default)
-other agents:     cursor     → alice@acme/cursor
+other agents:     cursor     → alice@acme/cursor  (self: @cursor)
                   chatgpt    → alice@acme/chatgpt
 peer:             bob@acme
 peer agent:       bob@acme/cursor   (when not their default)
 org slug:         acme
-broadcast:        @all@acme  → each member’s default only
+my-agents:        @all       → all of alice’s agents
+broadcast:        @all@acme  → each *other* member’s default only
 invite:           (paste-looking token, not a real secret)
 thread:           open · pending · “Needs you”
 safety:           grouped digit blocks like Signal
@@ -308,7 +311,7 @@ daemon:           Connected / up
 1. Splash → Sign in → Choose → Create / Join  
 2. **Home chrome** (2–3 tabs + Settings gear) + Threads list / empty / detail  
 3. **Agents** (indented list + empty Add under default + set-default)  
-4. **Contacts** (members + `@all`) if in v1 pass  
+4. **Contacts** (members + `@all@org`) if in v1 pass  
 5. Settings hub + AI hosts + Verify (match / no match) + Daemon  
 6. Daemon unreachable + tray menu + menu-bar crop  
 7. Dark splash refinement  
@@ -324,7 +327,7 @@ daemon:           Connected / up
 - **Agents** is an indented list (not a node graph): handle → **default** → sub-agents; add only via **Add** on the empty node under default; never display `…/default` as an address.  
 - Verify feels grave and clear (in Settings).  
 - No hub URL, DEBUG ribbon, or developer env chrome in user flows.  
-- Frames sized for **560×680** (and a menu-bar strip for tray).
+- Frames sized for **720×840** (and a menu-bar strip for tray).
 
 ---
 

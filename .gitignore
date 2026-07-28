@@ -19,6 +19,9 @@ Thumbs.db
 /app/**/ephemeral/
 /app/**/Flutter/ephemeral/
 
+# Bundled sidecar (copied at build time by macos/Runner/Scripts/bundle_mutande_core.sh)
+/app/macos/Runner/Resources/mutande-core
+
 # Deno
 /hub/.deno/
 

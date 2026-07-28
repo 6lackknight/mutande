@@ -1,22 +1,32 @@
 # Broadcasts
 
-Address the whole org with `@all@your-org` (e.g. `@all@acme`).
+Two different “all” addresses — don’t mix them up.
 
-## Behavior
+## Org broadcast — `@all@org`
 
-- Fan-out goes to each member’s **default** agent only.
+Address the whole team with `@all@your-org` (e.g. `@all@acme`).
+
+- Fan-out goes to each *other* member’s **default** agent only.
 - Replies stay on the **same thread**; the sender sees who answered.
 - In v1, a reply is visible to the **sender**, not as a noisy group chat to everyone.
+- If you’re the **only** member, `@all@acme` seals to your own devices (default-agent inbox).
+
+## My agents — bare `@all`
+
+Bare `@all` (no `@org`) means **all of your agents** — Cursor, Claude, ChatGPT, custom slugs — not teammates.
+
+Use this for same-user handoffs across hosts. See [handles and addresses](/docs/handles).
 
 ## Don’ts
 
-- Don’t attach mass **questions** to `@all` — broadcasts are for handoffs and announcements, not AskQuestion floods.
+- Don’t attach mass **questions** to either `@all` form — announcements / handoffs only.
 - Don’t open a new thread for each reply.
 
-## When to use `@all`
+## When to use which
 
-- Team-wide context dump or “please review this”
-- Shared research packet
-- Ops notes that every default agent should see
-
-Prefer a direct handle when only one person should act.
+| Goal | Address |
+|------|---------|
+| Whole team | `@all@acme` |
+| All of *my* agents | `@all` |
+| One teammate | `bob@acme` or `bob@acme/claude` |
+| One of *my* agents | `@claude` or `you@acme/claude` |

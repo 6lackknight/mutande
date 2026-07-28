@@ -2,6 +2,7 @@ import { assertEquals, assertThrows } from "jsr:@std/assert@1";
 import {
   formatDisplayAddress,
   formatWirePath,
+  isMyAgentsHandle,
   parseDisplayAddress,
   parseWirePath,
   stripAgentSuffix,
@@ -9,13 +10,47 @@ import {
 import { HubError } from "./errors.ts";
 
 Deno.test("parse bare and agent-scoped display addresses", () => {
-  assertEquals(parseDisplayAddress("alice@acme"), { local: "alice", orgSlug: "acme", agentSlug: undefined });
+  assertEquals(parseDisplayAddress("alice@acme"), {
+    kind: "user",
+    local: "alice",
+    orgSlug: "acme",
+    agentSlug: undefined,
+  });
   assertEquals(parseDisplayAddress("alice@acme/claude"), {
+    kind: "user",
     local: "alice",
     orgSlug: "acme",
     agentSlug: "claude",
   });
-  assertEquals(parseDisplayAddress("@all@acme"), { local: "@all", orgSlug: "acme", agentSlug: undefined });
+  assertEquals(parseDisplayAddress("@all@acme"), {
+    kind: "org_broadcast",
+    local: "@all",
+    orgSlug: "acme",
+    agentSlug: undefined,
+  });
+});
+
+Deno.test("parse self-agent shorthand and bare @all", () => {
+  assertEquals(parseDisplayAddress("@claude"), {
+    kind: "self_agent",
+    local: "",
+    orgSlug: "",
+    agentSlug: "claude",
+  });
+  assertEquals(parseDisplayAddress("@cursor"), {
+    kind: "self_agent",
+    local: "",
+    orgSlug: "",
+    agentSlug: "cursor",
+  });
+  assertEquals(parseDisplayAddress("@all"), {
+    kind: "my_agents",
+    local: "@all",
+    orgSlug: "",
+    agentSlug: undefined,
+  });
+  assertEquals(isMyAgentsHandle("@all"), true);
+  assertEquals(isMyAgentsHandle("@all@acme"), false);
 });
 
 Deno.test("format display and wire path", () => {
@@ -36,4 +71,5 @@ Deno.test("strip agent suffix", () => {
 Deno.test("reject reserved agent slugs", () => {
   assertThrows(() => parseDisplayAddress("alice@acme/default"), HubError);
   assertThrows(() => parseDisplayAddress("alice@acme/all"), HubError);
+  assertThrows(() => parseDisplayAddress("@default"), HubError);
 });

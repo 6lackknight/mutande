@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/daemon_client.dart';
 import '../widgets/thinking_orb.dart';
+import 'threads_spatial_view.dart';
 
 /// Stitch home threads — filters, list rows, search + new thread footer.
 class ThreadsPanel extends StatefulWidget {
@@ -12,7 +13,7 @@ class ThreadsPanel extends StatefulWidget {
   });
 
   final DaemonClient daemon;
-  final ValueChanged<VoidCallback>? onReloadReady;
+  final ValueChanged<VoidCallback?>? onReloadReady;
 
   @override
   State<ThreadsPanel> createState() => _ThreadsPanelState();
@@ -20,9 +21,11 @@ class ThreadsPanel extends StatefulWidget {
 
 class _ThreadsPanelState extends State<ThreadsPanel> {
   String _filter = 'needs_action';
+  bool _spatial = false;
   bool _loading = true;
   String? _error;
   List<ThreadSummary> _threads = const [];
+  AgentListResult? _agents;
   String? _openId;
   bool _composeOpen = false;
   String _query = '';
@@ -42,22 +45,38 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
     }
   }
 
+  @override
+  void dispose() {
+    widget.onReloadReady?.call(null);
+    super.dispose();
+  }
+
   Future<void> _reload() async {
+    if (!mounted) return;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
       final threads = await widget.daemon.listThreads(filter: _filter);
+      AgentListResult? agents;
+      if (_spatial) {
+        try {
+          agents = await widget.daemon.listAgents();
+        } catch (_) {
+          agents = null;
+        }
+      }
       if (!mounted) return;
       setState(() {
         _threads = threads;
+        _agents = agents;
         _loading = false;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = friendlyDaemonError(e, what: 'Threads');
         _loading = false;
       });
     }
@@ -95,6 +114,11 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
       children: [
         _FilterBar(
           filter: _filter,
+          spatial: _spatial,
+          onSpatialChanged: (v) {
+            setState(() => _spatial = v);
+            _reload();
+          },
           onChanged: (v) {
             setState(() => _filter = v);
             _reload();
@@ -117,14 +141,32 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
               ? const Center(child: MutandeOrb.standard())
               : _error != null
                   ? Center(
-                      child: Text(
-                        _error!,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: const Color(0xFF991B1B),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              _error!,
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodyMedium
+                                  ?.copyWith(
+                                    color: const Color(0xFF57534E),
+                                    height: 1.35,
+                                  ),
                             ),
+                            const SizedBox(height: 14),
+                            OutlinedButton(
+                              onPressed: _reload,
+                              child: const Text('Retry'),
+                            ),
+                          ],
+                        ),
                       ),
                     )
-                  : _visible.isEmpty
+                  : _visible.isEmpty && !_spatial
                       ? Center(
                           child: Text(
                             'No threads.',
@@ -134,7 +176,14 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
                                 ?.copyWith(color: const Color(0xFF78716C)),
                           ),
                         )
-                      : ListView.separated(
+                      : _spatial
+                          ? ThreadsSpatialView(
+                              threads: _visible,
+                              agents: _agents,
+                              onOpenThread: (id) =>
+                                  setState(() => _openId = id),
+                            )
+                          : ListView.separated(
                           padding: const EdgeInsets.only(top: 4, bottom: 8),
                           itemCount: _visible.length,
                           separatorBuilder: (_, _) => const Divider(
@@ -162,9 +211,16 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
 }
 
 class _FilterBar extends StatelessWidget {
-  const _FilterBar({required this.filter, required this.onChanged});
+  const _FilterBar({
+    required this.filter,
+    required this.spatial,
+    required this.onSpatialChanged,
+    required this.onChanged,
+  });
 
   final String filter;
+  final bool spatial;
+  final ValueChanged<bool> onSpatialChanged;
   final ValueChanged<String> onChanged;
 
   @override
@@ -196,13 +252,38 @@ class _FilterBar extends StatelessWidget {
       );
     }
 
+    Widget viewChip(String label, bool selected, VoidCallback onTap) {
+      return InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(6),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: selected ? const Color(0xFFE7E5E4) : Colors.transparent,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Text(
+            label,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: selected
+                      ? const Color(0xFF292524)
+                      : const Color(0xFF78716C),
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                ),
+          ),
+        ),
+      );
+    }
+
     return Row(
       children: [
         pill('needs_action', 'Needs you'),
         pill('open', 'Open'),
         pill('closed', 'Closed'),
         const Spacer(),
-        Icon(Icons.tune, size: 18, color: Colors.grey.shade400),
+        viewChip('List', !spatial, () => onSpatialChanged(false)),
+        const SizedBox(width: 4),
+        viewChip('Spatial', spatial, () => onSpatialChanged(true)),
       ],
     );
   }
@@ -217,8 +298,10 @@ class _ThreadRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final badge = _badgeFor(thread);
-    final title = thread.from;
+    // Self-collab: list by target agent (audience). Otherwise show sender.
+    final title = _selfCollabTitle(thread) ?? thread.from;
     final snippet = [
+      if (_selfCollabTitle(thread) != null) 'from ${thread.from}',
       if (thread.agentBadge != null) '/${thread.agentBadge}',
       thread.kind,
       if (thread.replyCount > 0) '${thread.replyCount} replies',
@@ -324,6 +407,15 @@ class _BadgeInfo {
   final Color dot;
   final Color bg;
   final Color fg;
+}
+
+/// Same-user agent handoff: title the row by audience (target agent).
+String? _selfCollabTitle(ThreadSummary t) {
+  final fromBare = t.from.split('/').first;
+  final audBare = t.audience.split('/').first;
+  if (fromBare.isEmpty || audBare.isEmpty || fromBare != audBare) return null;
+  if (t.audience == t.from) return null;
+  return t.audience;
 }
 
 _BadgeInfo _badgeFor(ThreadSummary t) {
@@ -489,7 +581,27 @@ class _ComposePanelState extends State<_ComposePanel> {
   }
 
   Future<List<String>> _recipientOptions(String input) async {
-    final bare = _bareHandleFromInput(input);
+    final trimmed = input.trim();
+    final lower = trimmed.toLowerCase();
+
+    // Self-collaboration shorthand: @cursor, @claude, @all, …
+    if (trimmed.isEmpty || trimmed.startsWith('@')) {
+      try {
+        final list = await widget.daemon.listAgents();
+        final suggestions = <String>[
+          '@all',
+          ...list.agents.map((a) => '@${a.slug}'),
+        ];
+        if (trimmed.isEmpty || lower == '@') return suggestions;
+        return suggestions.where((s) => s.startsWith(lower)).toList();
+      } catch (_) {
+        if (trimmed.isEmpty || lower.startsWith('@')) {
+          return const ['@all'];
+        }
+      }
+    }
+
+    final bare = _bareHandleFromInput(trimmed);
     if (bare == null) return const [];
     try {
       final list = await widget.daemon.listAgents(handle: bare);
@@ -502,6 +614,10 @@ class _ComposePanelState extends State<_ComposePanel> {
   String? _bareHandleFromInput(String input) {
     final trimmed = input.trim();
     if (trimmed.isEmpty) return null;
+    // Bare @all / @slug are handled above — not user handles.
+    if (trimmed.startsWith('@') && !trimmed.substring(1).contains('@')) {
+      return null;
+    }
     final slash = trimmed.indexOf('/');
     final base = slash >= 0 ? trimmed.substring(0, slash) : trimmed;
     final at = base.lastIndexOf('@');
@@ -524,7 +640,7 @@ class _ComposePanelState extends State<_ComposePanel> {
       widget.onSent();
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = e.toString());
+      setState(() => _error = friendlyDaemonError(e, what: 'Send'));
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -551,7 +667,7 @@ class _ComposePanelState extends State<_ComposePanel> {
                 controller: controller,
                 focusNode: focusNode,
                 decoration: const InputDecoration(
-                  hintText: 'bob@acme or bob@acme/claude',
+                  hintText: '@claude, @all, or bob@acme/claude',
                   labelText: 'Recipient',
                 ),
                 enabled: !_sending,
@@ -649,7 +765,7 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = friendlyDaemonError(e, what: 'This thread');
         _loading = false;
       });
     }
@@ -668,7 +784,7 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
       await _load();
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = e.toString());
+      setState(() => _error = friendlyDaemonError(e, what: 'Reply'));
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -705,15 +821,24 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
           )
         else ...[
           Text(
-            _detail!.from,
+            _detail!.audience.isNotEmpty &&
+                    _detail!.audience != _detail!.from
+                ? _detail!.audience
+                : _detail!.from,
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   color: const Color(0xFF292524),
                   fontWeight: FontWeight.w600,
                 ),
           ),
           Text(
-            '${_detail!.kind} · ${_detail!.status}'
-            '${_detail!.yourStatus != null ? ' · ${_detail!.yourStatus}' : ''}',
+            [
+              if (_detail!.audience.isNotEmpty &&
+                  _detail!.audience != _detail!.from)
+                'from ${_detail!.from}',
+              _detail!.kind,
+              _detail!.status,
+              if (_detail!.yourStatus != null) _detail!.yourStatus!,
+            ].join(' · '),
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: const Color(0xFF78716C),
                 ),
@@ -732,10 +857,7 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
             child: ListView(
               children: [
                 ..._detail!.messages.map((m) {
-                  final body = m.bundleNotes ??
-                      m.bundleSubject ??
-                      m.openError ??
-                      '(no plaintext)';
+                  final body = m.displayBody;
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: Column(

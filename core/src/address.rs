@@ -8,26 +8,46 @@ use anyhow::{Context, Result, bail};
 static RESERVED: LazyLock<HashSet<&'static str>> =
     LazyLock::new(|| HashSet::from(["default", "all"]));
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AddressKind {
+    User,
+    OrgBroadcast,
+    SelfAgent,
+    MyAgents,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ParsedDisplayAddress {
+    pub kind: AddressKind,
     pub local: String,
     pub org_slug: String,
     pub agent_slug: Option<String>,
 }
 
+/// Org-wide broadcast: `@all@org`.
 pub fn is_broadcast_handle(handle: &str) -> bool {
     handle.starts_with("@all@")
+}
+
+/// Self fan-out to all of the current user's agents: bare `@all`.
+pub fn is_my_agents_handle(handle: &str) -> bool {
+    handle.trim() == "@all"
 }
 
 pub fn broadcast_handle(org_slug: &str) -> String {
     format!("@all@{org_slug}")
 }
 
+pub fn my_agents_handle() -> &'static str {
+    "@all"
+}
+
 fn is_valid_agent_slug(slug: &str) -> bool {
     if slug.is_empty() || slug.len() > 32 {
         return false;
     }
-    slug.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+    slug.bytes()
+        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
 }
 
 pub fn assert_valid_agent_slug(slug: &str) -> Result<()> {
@@ -40,18 +60,47 @@ pub fn assert_valid_agent_slug(slug: &str) -> Result<()> {
     Ok(())
 }
 
-/// Parse `alice@acme`, `alice@acme/claude`, or `@all@acme`.
+/// Parse `alice@acme`, `alice@acme/claude`, `@all@acme`, bare `@all`, or `@claude`.
 pub fn parse_display_address(input: &str) -> Result<ParsedDisplayAddress> {
     let trimmed = input.trim();
+
+    if is_my_agents_handle(trimmed) {
+        return Ok(ParsedDisplayAddress {
+            kind: AddressKind::MyAgents,
+            local: "@all".into(),
+            org_slug: String::new(),
+            agent_slug: None,
+        });
+    }
+
     if is_broadcast_handle(trimmed) {
         let org_slug = trimmed.strip_prefix("@all@").unwrap_or("");
         if org_slug.is_empty() {
             bail!("invalid broadcast handle");
         }
         return Ok(ParsedDisplayAddress {
+            kind: AddressKind::OrgBroadcast,
             local: "@all".into(),
             org_slug: org_slug.into(),
             agent_slug: None,
+        });
+    }
+
+    // Self-agent shorthand: `@claude` (single leading @, no other @ or /).
+    if trimmed.starts_with('@')
+        && !trimmed[1..].contains('/')
+        && !trimmed[1..].contains('@')
+    {
+        let slug = &trimmed[1..];
+        if slug.is_empty() {
+            bail!("invalid handle format");
+        }
+        assert_valid_agent_slug(slug)?;
+        return Ok(ParsedDisplayAddress {
+            kind: AddressKind::SelfAgent,
+            local: String::new(),
+            org_slug: String::new(),
+            agent_slug: Some(slug.to_string()),
         });
     }
 
@@ -77,6 +126,7 @@ pub fn parse_display_address(input: &str) -> Result<ParsedDisplayAddress> {
     }
 
     Ok(ParsedDisplayAddress {
+        kind: AddressKind::User,
         local,
         org_slug,
         agent_slug,
@@ -122,6 +172,7 @@ mod tests {
     #[test]
     fn parse_and_format_roundtrip() {
         let p = parse_display_address("alice@acme/claude").unwrap();
+        assert_eq!(p.kind, AddressKind::User);
         assert_eq!(p.local, "alice");
         assert_eq!(p.org_slug, "acme");
         assert_eq!(p.agent_slug.as_deref(), Some("claude"));
@@ -133,6 +184,26 @@ mod tests {
     }
 
     #[test]
+    fn parse_self_agent_shorthand() {
+        let p = parse_display_address("@claude").unwrap();
+        assert_eq!(p.kind, AddressKind::SelfAgent);
+        assert_eq!(p.agent_slug.as_deref(), Some("claude"));
+    }
+
+    #[test]
+    fn parse_my_agents_vs_org_broadcast() {
+        let mine = parse_display_address("@all").unwrap();
+        assert_eq!(mine.kind, AddressKind::MyAgents);
+        let org = parse_display_address("@all@acme").unwrap();
+        assert_eq!(org.kind, AddressKind::OrgBroadcast);
+        assert_eq!(org.org_slug, "acme");
+        assert!(is_my_agents_handle("@all"));
+        assert!(!is_my_agents_handle("@all@acme"));
+        assert!(is_broadcast_handle("@all@acme"));
+        assert!(!is_broadcast_handle("@all"));
+    }
+
+    #[test]
     fn strip_suffix() {
         assert_eq!(strip_agent_suffix("bob@acme/research"), "bob@acme");
         assert_eq!(agent_suffix("bob@acme/research"), Some("research"));
@@ -141,5 +212,7 @@ mod tests {
     #[test]
     fn reserved_slug_rejected() {
         assert!(parse_display_address("x@y/default").is_err());
+        assert!(parse_display_address("@default").is_err());
+        assert!(parse_display_address("@all").is_ok()); // my_agents, not slug
     }
 }

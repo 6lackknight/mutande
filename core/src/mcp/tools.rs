@@ -6,12 +6,12 @@ use super::protocol::McpToolDefinition;
 const READ_TOOLS: &[(&str, &str, ValueFn)] = &[
     (
         "list_agents",
-        "List registered agent slugs for you or ?handle=bare@org recipient autocomplete. Read-only.",
+        "List YOUR agent slugs for self-collaboration (@claude, @cursor, bare @all). Omit handle for your agents; pass a teammate handle only for THEIR agents. For org people use list_contacts. Read-only.",
         || {
             json!({
                 "type": "object",
                 "properties": {
-                    "handle": { "type": "string", "description": "bare org member handle for recipient agent slugs" }
+                    "handle": { "type": "string", "description": "optional teammate handle for THEIR agent slugs; omit to list YOUR agents" }
                 },
                 "additionalProperties": false
             })
@@ -24,12 +24,12 @@ const READ_TOOLS: &[(&str, &str, ValueFn)] = &[
     ),
     (
         "list_contacts",
-        "List org contacts (bare handles only, includes @all@org). Read-only.",
+        "List org teammates (bare handles + @all@org). Not your agents. For 'ask my agents' / self-collab use @all or @claude via forward_draft; discover own slugs with list_agents. Read-only.",
         || json!({ "type": "object", "properties": {}, "additionalProperties": false }),
     ),
     (
         "list_threads",
-        "List threads. Optional filter: needs_action, open, closed. Read-only.",
+        "List collaboration threads. Optional filter: needs_action, open, closed. Read-only.",
         || {
             json!({
                 "type": "object",
@@ -45,7 +45,7 @@ const READ_TOOLS: &[(&str, &str, ValueFn)] = &[
     ),
     (
         "get_thread",
-        "Get thread metadata and messages with locally decrypted bundles when this device can open them. Read-only.",
+        "Get thread metadata and bundles (opened locally on this device when possible). Read-only.",
         || {
             json!({
                 "type": "object",
@@ -59,7 +59,7 @@ const READ_TOOLS: &[(&str, &str, ValueFn)] = &[
     ),
     (
         "get_draft",
-        "Get current encrypted draft (decrypted locally). Read-only.",
+        "Get the current staged draft (opened locally). Read-only.",
         || json!({ "type": "object", "properties": {}, "additionalProperties": false }),
     ),
     (
@@ -83,7 +83,7 @@ const READ_TOOLS: &[(&str, &str, ValueFn)] = &[
     ),
 ];
 
-/// Send / mutate tools — require host allow now/always.
+/// Handoff / mutate tools — host may gate with allow now/always.
 const SEND_TOOLS: &[(&str, &str, ValueFn)] = &[
     (
         "set_router",
@@ -111,7 +111,7 @@ const SEND_TOOLS: &[(&str, &str, ValueFn)] = &[
     ),
     (
         "draft_add_question",
-        "Stage a HumanDecision question on the draft. Does not send mail.",
+        "Stage a question on the collaboration draft (does not hand off yet). Ask all your agents: then forward_draft recipient=@all. One agent: @claude / @cursor / @chatgpt. Do not use list_contacts for my-agents.",
         || {
             json!({
                 "type": "object",
@@ -128,7 +128,7 @@ const SEND_TOOLS: &[(&str, &str, ValueFn)] = &[
     ),
     (
         "draft_add_resource",
-        "Stage a resource request on the draft. Does not send mail.",
+        "Stage a resource request on the collaboration draft (does not hand off yet).",
         || {
             json!({
                 "type": "object",
@@ -143,13 +143,13 @@ const SEND_TOOLS: &[(&str, &str, ValueFn)] = &[
     ),
     (
         "forward_draft",
-        "Send staged draft to a handle (optional /agent suffix) or @all@org. Creates a thread. Requires user confirmation.",
+        "Hand off the staged draft. Self-collab: @all fans out one thread per other registered agent (excludes sender); result has recipients + thread_ids (parallel arrays) and thread_id (first only — do not treat that as the full fanout). Single agent: @claude/@cursor/@chatgpt. Teammates: alice@org, alice@org/claude, @all@org. 'Ask my agents' → @all.",
         || {
             json!({
                 "type": "object",
                 "required": ["recipient"],
                 "properties": {
-                    "recipient": { "type": "string", "description": "alice@org or alice@org/claude or @all@org" }
+                    "recipient": { "type": "string", "description": "Self: @all or @claude/@cursor/@chatgpt. Teammates: alice@org, alice@org/claude, @all@org." }
                 },
                 "additionalProperties": false
             })
@@ -157,14 +157,14 @@ const SEND_TOOLS: &[(&str, &str, ValueFn)] = &[
     ),
     (
         "reply_to_thread",
-        "Reply on an existing thread with a bundle. Optional to_agent for self-handoff. Requires user confirmation.",
+        "Continue a thread with a reply bundle. Optional to_agent for self-handoff to another of your agents (e.g. claude). Confirm via AskQuestion when the skill requires it.",
         || {
             json!({
                 "type": "object",
                 "required": ["thread_id", "bundle"],
                 "properties": {
                     "thread_id": { "type": "string" },
-                    "to_agent": { "type": "string", "description": "self-handoff target agent slug" },
+                    "to_agent": { "type": "string", "description": "self-handoff target agent slug (must differ from the sending agent)" },
                     "bundle": { "type": "object" }
                 },
                 "additionalProperties": false
@@ -173,7 +173,7 @@ const SEND_TOOLS: &[(&str, &str, ValueFn)] = &[
     ),
     (
         "close_thread",
-        "Mark a thread closed. Requires user confirmation.",
+        "Mark a collaboration thread closed. Confirm via AskQuestion when the skill requires it.",
         || {
             json!({
                 "type": "object",
@@ -201,13 +201,13 @@ const SEND_TOOLS: &[(&str, &str, ValueFn)] = &[
     ),
     (
         "forward_blob",
-        "Encrypt a large artifact, upload via hub presign PUT, and open a thread with blob_id envelope. Provide content_base64 or path. Requires user confirmation.",
+        "Hand off a large artifact as a sealed blob on a new thread (hub presign PUT). Provide content_base64 or path. Same recipients as forward_draft. Confirm via AskQuestion when the skill requires it.",
         || {
             json!({
                 "type": "object",
                 "required": ["recipient"],
                 "properties": {
-                    "recipient": { "type": "string", "description": "handle or @all@org" },
+                    "recipient": { "type": "string", "description": "Self: @all or @claude/@cursor/@chatgpt. Teammates: alice@org, alice@org/claude, @all@org." },
                     "content_base64": { "type": "string" },
                     "path": { "type": "string", "description": "local file path to seal and upload" },
                     "subject": { "type": "string" }

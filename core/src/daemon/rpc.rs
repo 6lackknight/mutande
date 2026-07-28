@@ -137,7 +137,8 @@ async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Resu
             let filter = params
                 .get("filter")
                 .and_then(|v| serde_json::from_value(v.clone()).ok());
-            let threads = state.list_threads(filter).await?;
+            let agent_slug = optional_str(&params, "agent_slug");
+            let threads = state.list_threads(filter, agent_slug.as_deref()).await?;
             Ok(serde_json::to_value(serde_json::json!({ "threads": threads }))?)
         }
         "get_thread" => {
@@ -164,22 +165,35 @@ async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Resu
         }
         "forward_draft" => {
             let recipient = param_str(&params, "recipient")?;
+            let agent_slug = optional_str(&params, "agent_slug");
             if let Some(notes) = optional_str(&params, "notes") {
                 state.set_draft_notes(&notes);
             }
-            let thread_id = state.forward_draft(&recipient).await?;
-            Ok(serde_json::json!({ "thread_id": thread_id }))
+            let result = state
+                .forward_draft(&recipient, agent_slug.as_deref())
+                .await?;
+            let thread_id = result
+                .thread_ids
+                .first()
+                .cloned()
+                .context("forward_draft produced no threads")?;
+            Ok(serde_json::json!({
+                "thread_id": thread_id,
+                "thread_ids": result.thread_ids,
+                "recipients": result.recipients,
+            }))
         }
         "reply_to_thread" => {
             let thread_id = param_str(&params, "thread_id")?;
             let to_agent = optional_str(&params, "to_agent");
+            let agent_slug = optional_str(&params, "agent_slug");
             let bundle: MutandeBundle = if let Some(b) = params.get("bundle") {
                 serde_json::from_value(b.clone())?
             } else {
                 serde_json::from_value(params.clone())?
             };
             state
-                .reply_to_thread(&thread_id, bundle, to_agent.as_deref())
+                .reply_to_thread(&thread_id, bundle, to_agent.as_deref(), agent_slug.as_deref())
                 .await?;
             Ok(serde_json::json!({ "ok": true }))
         }
@@ -266,6 +280,7 @@ async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Resu
         }
         "forward_blob" => {
             let recipient = param_str(&params, "recipient")?;
+            let agent_slug = optional_str(&params, "agent_slug");
             let subject = params
                 .get("subject")
                 .and_then(|v| v.as_str())
@@ -279,10 +294,24 @@ async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Resu
             } else {
                 anyhow::bail!("missing param: content_base64 or path");
             };
-            let thread_id = state
-                .forward_blob(&recipient, &plaintext, subject.as_deref())
+            let result = state
+                .forward_blob(
+                    &recipient,
+                    &plaintext,
+                    subject.as_deref(),
+                    agent_slug.as_deref(),
+                )
                 .await?;
-            Ok(serde_json::json!({ "thread_id": thread_id }))
+            let thread_id = result
+                .thread_ids
+                .first()
+                .cloned()
+                .context("forward_blob produced no threads")?;
+            Ok(serde_json::json!({
+                "thread_id": thread_id,
+                "thread_ids": result.thread_ids,
+                "recipients": result.recipients,
+            }))
         }
         "set_core_path" => {
             let path = param_str(&params, "path")?;

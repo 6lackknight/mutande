@@ -83,7 +83,10 @@ pub struct KeychainIdentityStore {
 
 #[cfg(target_os = "macos")]
 impl KeychainIdentityStore {
-    pub const SERVICE: &'static str = "xyz.mutande.core";
+    /// Keychain generic-password service — matches app reverse-DNS (`ai.mutande.app`).
+    pub const SERVICE: &'static str = "ai.mutande.core";
+    /// Pre-brand placeholder; read once then rewrite under [SERVICE].
+    const LEGACY_SERVICE: &'static str = "xyz.mutande.core";
     pub const ACCOUNT: &'static str = "device-secret";
 
     pub fn new() -> Self {
@@ -98,12 +101,20 @@ impl KeychainIdentityStore {
     pub fn load_from_keychain(&self) -> Result<(), StoreError> {
         use security_framework::passwords::get_generic_password;
 
-        let bytes = match get_generic_password(self.service, self.account) {
-            Ok(bytes) => bytes,
+        let (bytes, from_legacy) = match get_generic_password(self.service, self.account) {
+            Ok(bytes) => (bytes, false),
             Err(e)
                 if e.code() == security_framework_sys::base::errSecItemNotFound =>
             {
-                return Ok(());
+                match get_generic_password(Self::LEGACY_SERVICE, self.account) {
+                    Ok(bytes) => (bytes, true),
+                    Err(e)
+                        if e.code() == security_framework_sys::base::errSecItemNotFound =>
+                    {
+                        return Ok(());
+                    }
+                    Err(_) => return Err(StoreError::Failed),
+                }
             }
             Err(_) => return Err(StoreError::Failed),
         };
@@ -115,7 +126,13 @@ impl KeychainIdentityStore {
         sk.copy_from_slice(&bytes);
         let secret = DeviceSecretKey(sk);
         let public = device_public_from_secret(&secret);
-        self.memory.save_device_keypair(&public, &secret)
+        self.memory.save_device_keypair(&public, &secret)?;
+
+        // Quiet rename: next prompts show `ai.mutande.core`, not `xyz…`.
+        if from_legacy {
+            let _ = self.persist_secret(&secret);
+        }
+        Ok(())
     }
 
     fn persist_secret(&self, secret: &DeviceSecretKey) -> Result<(), StoreError> {

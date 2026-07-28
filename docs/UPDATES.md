@@ -15,12 +15,19 @@ xcrun notarytool store-credentials "mutande-notary" \
   --team-id "Q22P2YXR6M" \
   --password "<app-specific-password>"
 
-# Build, sign, notarize, staple, package:
+# Build, sign, notarize, staple, package (auto-bumps patch + build by default):
 ./scripts/release-macos-dmg.sh
 
 # Or skip notary while iterating:
 SKIP_NOTARIZE=1 ./scripts/release-macos-dmg.sh
+
+# Version controls:
+#   BUMP=patch|minor|major|build   (default: patch — also always +1 build)
+#   SKIP_BUMP=1                    keep app/pubspec.yaml as-is
 ```
+
+Each release rewrites `app/pubspec.yaml`, `core/Cargo.toml`, and the default
+`MAC_DMG_VERSION` in `web/src/lib/downloads.ts`.
 
 Outputs land in `dist/macos/` (`mutande-VERSION.dmg`, `mutande-latest.dmg`).
 Copy into `web/public/downloads/` before deploying the site (DMGs are

@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'thinking_orb.dart';
 
 /// Stitch launcher splash — dark hold with working orb + wordmark.
+///
+/// [child] stays mounted under the overlay so RootScreen / tray listeners
+/// keep running during the hold.
 class WelcomeSplash extends StatefulWidget {
   const WelcomeSplash({
     super.key,
@@ -39,47 +42,60 @@ class _WelcomeSplashState extends State<WelcomeSplash> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_showSplash) return widget.child;
-
-    return ColoredBox(
-      color: const Color(0xFF0C0A09),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          const _MidGlow(),
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
-              child: Column(
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        widget.child,
+        if (_showSplash)
+          Positioned.fill(
+            child: ColoredBox(
+              color: const Color(0xFF0C0A09),
+              child: Stack(
+                fit: StackFit.expand,
                 children: [
-                  const Spacer(flex: 3),
-                  const ThinkingOrb(
-                    state: ThinkingOrbState.working,
-                    size: ThinkingOrbSize.panel,
-                    dark: true,
-                    semanticLabel: 'Starting',
+                  const _MidGlow(),
+                  SafeArea(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 28,
+                        vertical: 24,
+                      ),
+                      child: Column(
+                        children: [
+                          const Spacer(flex: 3),
+                          const ThinkingOrb(
+                            state: ThinkingOrbState.working,
+                            size: ThinkingOrbSize.panel,
+                            dark: true,
+                            semanticLabel: 'Starting',
+                          ),
+                          const SizedBox(height: 28),
+                          Text(
+                            'mutande',
+                            style: Theme.of(context)
+                                .textTheme
+                                .headlineMedium
+                                ?.copyWith(
+                                  color: const Color(0xFFFAFAF9),
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: -0.8,
+                                  fontSize: 36,
+                                  height: 1,
+                                ),
+                          ),
+                          const SizedBox(height: 18),
+                          const _StatusLine(),
+                          const Spacer(flex: 4),
+                          _Footer(version: widget.appVersion),
+                        ],
+                      ),
+                    ),
                   ),
-                  const SizedBox(height: 28),
-                  Text(
-                    'mutande',
-                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                          color: const Color(0xFFFAFAF9),
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: -0.8,
-                          fontSize: 36,
-                          height: 1,
-                        ),
-                  ),
-                  const SizedBox(height: 18),
-                  const _StatusLine(),
-                  const Spacer(flex: 4),
-                  _Footer(version: widget.appVersion),
                 ],
               ),
             ),
           ),
-        ],
-      ),
+      ],
     );
   }
 }

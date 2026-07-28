@@ -3,18 +3,32 @@ import { HubError } from "./errors.ts";
 const RESERVED_AGENT_SLUGS = new Set(["default", "all"]);
 const AGENT_SLUG_RE = /^[a-z0-9-]{1,32}$/;
 
+/** How a display address should be resolved. */
+export type AddressKind = "user" | "org_broadcast" | "self_agent" | "my_agents";
+
 export interface ParsedDisplayAddress {
+  kind: AddressKind;
   local: string;
   orgSlug: string;
   agentSlug?: string;
 }
 
+/** Org-wide broadcast: `@all@org`. */
 export function isBroadcastHandle(handle: string): boolean {
   return handle.startsWith("@all@");
 }
 
+/** Self fan-out to all of the current user's agents: bare `@all`. */
+export function isMyAgentsHandle(handle: string): boolean {
+  return handle.trim() === "@all";
+}
+
 export function broadcastHandle(orgSlug: string): string {
   return `@all@${orgSlug}`;
+}
+
+export function myAgentsHandle(): string {
+  return "@all";
 }
 
 export function assertValidAgentSlug(slug: string): void {
@@ -29,15 +43,38 @@ export function assertValidAgentSlug(slug: string): void {
   }
 }
 
-/** Parse `alice@acme`, `alice@acme/claude`, or `@all@acme`. */
+/**
+ * Parse display addresses:
+ * - `alice@acme`, `alice@acme/claude`
+ * - `@all@acme` (org broadcast)
+ * - `@all` (all of my agents)
+ * - `@claude` (shorthand for current user's agent slug)
+ */
 export function parseDisplayAddress(input: string): ParsedDisplayAddress {
   const trimmed = input.trim();
+
+  if (isMyAgentsHandle(trimmed)) {
+    return { kind: "my_agents", local: "@all", orgSlug: "", agentSlug: undefined };
+  }
+
   if (isBroadcastHandle(trimmed)) {
     const orgSlug = trimmed.slice("@all@".length);
     if (!orgSlug) {
       throw new HubError("Invalid broadcast handle", "invalid_handle");
     }
-    return { local: "@all", orgSlug, agentSlug: undefined };
+    return { kind: "org_broadcast", local: "@all", orgSlug, agentSlug: undefined };
+  }
+
+  // Self-agent shorthand: `@claude` (single leading @, no other @ or /).
+  if (
+    trimmed.startsWith("@") &&
+    !trimmed.includes("/", 1) &&
+    trimmed.indexOf("@", 1) === -1
+  ) {
+    const slug = trimmed.slice(1);
+    if (!slug) throw new HubError("Invalid handle format", "invalid_handle");
+    assertValidAgentSlug(slug);
+    return { kind: "self_agent", local: "", orgSlug: "", agentSlug: slug };
   }
 
   const slash = trimmed.indexOf("/");
@@ -57,7 +94,7 @@ export function parseDisplayAddress(input: string): ParsedDisplayAddress {
   if (local.toLowerCase() === "@all" || local.toLowerCase().startsWith("@all")) {
     throw new HubError("Handle cannot use @all broadcast prefix", "invalid_handle");
   }
-  return { local, orgSlug, agentSlug };
+  return { kind: "user", local, orgSlug, agentSlug };
 }
 
 export function bareHandle(local: string, orgSlug: string): string {
@@ -103,8 +140,11 @@ export function assertHandleLocal(local: string): void {
   }
 }
 
-/** Legacy user handle parse (no agent suffix). */
+/** Legacy user handle parse (no agent suffix). Rejects shorthand / my-agents forms. */
 export function parseUserHandle(handle: string): { local: string; orgSlug: string } {
-  const { local, orgSlug } = parseDisplayAddress(handle);
-  return { local, orgSlug };
+  const parsed = parseDisplayAddress(handle);
+  if (parsed.kind !== "user" && parsed.kind !== "org_broadcast") {
+    throw new HubError("Invalid handle format", "invalid_handle");
+  }
+  return { local: parsed.local, orgSlug: parsed.orgSlug };
 }

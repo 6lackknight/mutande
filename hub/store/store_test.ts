@@ -89,6 +89,177 @@ Deno.test("broadcast fan-out", async () => {
   });
 });
 
+Deno.test("sole-member @all delivers to self", async () => {
+  await withTestStore(async ({ store }) => {
+    const { user } = await store.createOrgWithAdmin(
+      { sub: "auth0|solo", email: "solo@tbh.co" },
+      { slug: "tbhco", name: "TBH", handle: "solo@tbhco" },
+    );
+    const auth = store.authContextFromUser(user);
+    await store.registerDevice(auth, { pubkey: "solo-pk", platform: "macos" });
+    await store.registerAgent(auth, { slug: "cursor" });
+    const { thread } = await store.createThread(auth, {
+      to: "@all@tbhco",
+      envelope: sampleEnvelope("solo-all"),
+      from_agent: "cursor",
+    });
+    assertEquals(thread.kind, "broadcast");
+    assertEquals(thread.audience, "@all@tbhco");
+    assertEquals((await store.listThreads(auth, "needs_action")).threads.length, 1);
+  });
+});
+
+Deno.test("self agent handoff allowed", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth } = await setupOrgWithUsers(store);
+    await store.registerAgent(aliceAuth, { slug: "claude" });
+    const { thread } = await store.createThread(aliceAuth, {
+      to: "alice@acme/claude",
+      envelope: sampleEnvelope("self-hand"),
+      from_agent: "cursor",
+    });
+    assertEquals(thread.from, "alice@acme/cursor");
+    assertEquals(thread.audience, "alice@acme/claude");
+    assertEquals((await store.listThreads(aliceAuth, "needs_action")).threads.length, 1);
+  });
+});
+
+Deno.test("reply from_agent=claude sets from_handle /claude", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth, bobAuth } = await setupOrgWithUsers(store);
+    await store.registerAgent(bobAuth, { slug: "cursor" });
+    const { thread } = await store.createThread(aliceAuth, {
+      to: "bob@acme/claude",
+      envelope: sampleEnvelope("to-bob"),
+      from_agent: "cursor",
+    });
+    await store.postReply(bobAuth, thread.id, {
+      envelope: sampleEnvelope("bob-claude-reply"),
+      from_agent: "claude",
+    });
+    const detail = await store.getThread(aliceAuth, thread.id);
+    const reply = detail.messages.find((m) => m.id !== detail.messages[0]?.id) ?? detail.messages.at(-1);
+    assertExists(reply);
+    assertEquals(reply!.from_handle, "bob@acme/claude");
+    assertEquals(reply!.from_handle.endsWith("/claude"), true);
+  });
+});
+
+Deno.test("bare self-send allowed when from_agent is not default", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth } = await setupOrgWithUsers(store);
+    await store.registerAgent(aliceAuth, { slug: "claude" });
+    // default is cursor (first registered); send from claude → bare → cursor
+    const { thread } = await store.createThread(aliceAuth, {
+      to: "alice@acme",
+      envelope: sampleEnvelope("bare-self"),
+      from_agent: "claude",
+    });
+    assertEquals(thread.audience, "alice@acme/cursor");
+    assertEquals(thread.from, "alice@acme/claude");
+  });
+});
+
+Deno.test("same-agent self-loop rejected", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth } = await setupOrgWithUsers(store);
+    const err = await assertRejects(
+      () => store.createThread(aliceAuth, {
+        to: "alice@acme/cursor",
+        envelope: sampleEnvelope("noop"),
+        from_agent: "cursor",
+      }),
+      HubError,
+    );
+    assertEquals((err as HubError).code, "invalid_recipient");
+    assertEquals((err as Error).message.includes("same agent"), true);
+
+    const bareErr = await assertRejects(
+      () => store.createThread(aliceAuth, {
+        to: "alice@acme",
+        envelope: sampleEnvelope("bare-noop"),
+        from_agent: "cursor",
+      }),
+      HubError,
+    );
+    assertEquals((bareErr as HubError).code, "invalid_recipient");
+
+    const shorthandErr = await assertRejects(
+      () => store.createThread(aliceAuth, {
+        to: "@cursor",
+        envelope: sampleEnvelope("shorthand-noop"),
+        from_agent: "cursor",
+      }),
+      HubError,
+    );
+    assertEquals((shorthandErr as HubError).code, "invalid_recipient");
+  });
+});
+
+Deno.test("@claude shorthand expands to self agent", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth } = await setupOrgWithUsers(store);
+    await store.registerAgent(aliceAuth, { slug: "claude" });
+    const { thread } = await store.createThread(aliceAuth, {
+      to: "@claude",
+      envelope: sampleEnvelope("shorthand"),
+      from_agent: "cursor",
+    });
+    assertEquals(thread.kind, "direct");
+    assertEquals(thread.from, "alice@acme/cursor");
+    assertEquals(thread.audience, "alice@acme/claude");
+    assertEquals(thread.audience_wire_path, "acme/alice/claude");
+    assertEquals((await store.listThreads(aliceAuth, "needs_action")).threads.length, 1);
+  });
+});
+
+Deno.test("unknown @slug rejected", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth } = await setupOrgWithUsers(store);
+    const err = await assertRejects(
+      () => store.createThread(aliceAuth, {
+        to: "@research",
+        envelope: sampleEnvelope("missing"),
+        from_agent: "cursor",
+      }),
+      HubError,
+    );
+    assertEquals((err as HubError).code, "unknown_agent");
+  });
+});
+
+Deno.test("bare @all fans out to my agents", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth, bobAuth } = await setupOrgWithUsers(store);
+    await store.registerAgent(aliceAuth, { slug: "claude" });
+    const { thread } = await store.createThread(aliceAuth, {
+      to: "@all",
+      envelope: sampleEnvelope("my-agents"),
+      from_agent: "cursor",
+    });
+    assertEquals(thread.kind, "broadcast");
+    assertEquals(thread.audience, "@all");
+    assertEquals(thread.audience_agent_id, undefined);
+    assertEquals((await store.listThreads(aliceAuth, "needs_action")).threads.length, 1);
+    // Org members do not receive bare @all (that's @all@org).
+    assertEquals((await store.listThreads(bobAuth, "needs_action")).threads.length, 0);
+  });
+});
+
+Deno.test("@all@org still fans out to other members", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth, bobAuth, carolAuth } = await setupOrgWithUsers(store);
+    const { thread } = await store.createThread(aliceAuth, {
+      to: "@all@acme",
+      envelope: sampleEnvelope("org-all"),
+      from_agent: "cursor",
+    });
+    assertEquals(thread.audience, "@all@acme");
+    assertEquals((await store.listThreads(bobAuth, "needs_action")).threads.length, 1);
+    assertEquals((await store.listThreads(carolAuth, "needs_action")).threads.length, 1);
+  });
+});
+
 Deno.test("draft CRUD", async () => {
   await withTestStore(async ({ store }) => {
     const { aliceAuth } = await setupOrgWithUsers(store);

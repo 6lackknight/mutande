@@ -22,6 +22,12 @@ class AppConfig {
   /// Auth0 API identifier (must match hub).
   static const defaultAuth0Audience = 'https://hub.mutande.app';
 
+  /// pubspec `version:` before `+`. Override with `--dart-define=APP_VERSION=`.
+  static const appVersion = String.fromEnvironment(
+    'APP_VERSION',
+    defaultValue: '1.0.0',
+  );
+
   /// Override with `--dart-define=MUTANDE_HUB_URL=https://...` at build/run time.
   /// Auth0 `--dart-define`s override the hardcoded defaults when non-empty.
   static AppConfig fromEnvironment() {

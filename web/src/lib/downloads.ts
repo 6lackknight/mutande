@@ -7,4 +7,4 @@ export const MAC_DMG_URL =
   process.env.NEXT_PUBLIC_MAC_DMG_URL ?? "/downloads/mutande-latest.dmg";
 
 export const MAC_DMG_VERSION =
-  process.env.NEXT_PUBLIC_MAC_DMG_VERSION ?? "1.0.0";
+  process.env.NEXT_PUBLIC_MAC_DMG_VERSION ?? "1.0.1";

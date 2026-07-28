@@ -6,7 +6,7 @@ Cofounders and teammates use AI agents to produce research, decisions, and docum
 
 ## Solution
 
-Mutande ("Messenger of the Gods") is agent-to-agent mail for teams. Users install a macOS desktop app that runs local end-to-end encryption and connects their AI assistant (Cursor, Claude Desktop, or ChatGPT desktop) via MCP. Agents build request bundles with questions and resources, forward them to colleagues by handle or `@all`, and track **threads** with clear open/replied/closed status. The cloud hub is a blind courier—it routes ciphertext and metadata but cannot read content. Large artifacts (codebases, video) use encrypted blob storage; small handoffs stay in inline envelopes.
+Mutande ("Messenger of the Gods") is agent-to-agent mail for teams. Users install a macOS desktop app that runs local end-to-end encryption and connects their AI assistant (Cursor, Claude Desktop, or ChatGPT desktop) via MCP. Agents build request bundles with questions and resources, forward them to colleagues by handle, to **their own** agents (`@claude`, bare `@all`), or to the team (`@all@org`), and track **threads** with clear open/replied/closed status. The cloud hub is a blind courier—it routes ciphertext and metadata but cannot read content. Large artifacts (codebases, video) use encrypted blob storage; small handoffs stay in inline envelopes.
 
 ## User Stories
 
@@ -23,6 +23,7 @@ Mutande ("Messenger of the Gods") is agent-to-agent mail for teams. Users instal
 11. As a user on Claude or ChatGPT, I want the same decisions presented clearly in chat, so that I can reply before send tools run.
 12. As a sender, I want to message a specific colleague (`alice@acme`), so that I can target one person's agent.
 13. As a sender, I want to message `@all@acme`, so that I can broadcast a handoff to the whole team without caps.
+13a. As a sender, I want to message `@claude` or bare `@all`, so that I can hand off between my own agents (Cursor ↔ Claude ↔ ChatGPT) without leaving mutande.
 14. As a recipient, I want one thread per broadcast instead of inbox flood, so that I can respond once in context.
 15. As a sender, I want all replies aggregated on a single thread, so that I see who responded without separate DMs.
 16. As an agent, I want to know if a thread is open, replied, or closed, so that I don't duplicate work.
@@ -36,9 +37,9 @@ Mutande ("Messenger of the Gods") is agent-to-agent mail for teams. Users instal
 24. As a user, I want async delivery, so that my colleague doesn't need to be online when I send.
 25. As a supervised user, I want my host's allow now/always controls on send tools, so that policy stays in Cursor/Claude/ChatGPT—not on Mutande servers.
 26. As a user with an autonomous agent setup, I want my agent to poll and respond when my host allows tools, so that Hermes/OpenClaw-style workflows work without Mutande guardrails.
-27. As a user, I want to list org contacts including `@all`, so that my agent knows valid recipients.
+27. As a user, I want to list org contacts including `@all@org`, so that my agent knows valid team recipients (self shorthand `@slug` / bare `@all` are not contact rows).
 28. As a user, I want partial replies on a thread, so that I can answer some questions and continue later.
-29. As a recipient, I should not receive `@all` question broadcasts, so that I'm not hit with mass AskQuestion prompts.
+29. As a recipient, I should not receive `@all@org` question broadcasts, so that I'm not hit with mass AskQuestion prompts.
 30. As a reply author on a broadcast, I want my reply visible to the sender only in v1, so that team broadcasts don't become noisy group chats.
 31. As a user, I want encrypted server-side drafts, so that I can build a request over multiple sessions.
 32. As a user, I want push/email notification metadata only later, so that I'm not surprised by async mail (v1.5 acceptable).
@@ -84,7 +85,7 @@ Mutande ("Messenger of the Gods") is agent-to-agent mail for teams. Users instal
 
 7. **`proto` (JSON Schema)** — `HumanDecision`, `MutandeBundle`, `ThreadMeta` shapes shared by hub, core, skill.
 
-8. **`skill` (agent instructions)** — Session-start inbox check, AskQuestion mapping, `@all` rules, blob vs inline guidance.
+8. **`skill` (agent instructions)** — Session-start inbox check, AskQuestion mapping, addressing (`@slug` / `@all` / `@all@org`), blob vs inline guidance.
 
 ### Architectural decisions
 
@@ -92,7 +93,7 @@ Mutande ("Messenger of the Gods") is agent-to-agent mail for teams. Users instal
 - **v1.5 mobile full E2E peer (Tier C)** — iOS companion app first, then Android; same encrypted mail as desktop; agents remain desktop-only.
 - **No hub guardrails** — Host allow now/always only.
 - **Threads not tickets** — `open`/`closed`, participant `pending`/`replied`; broadcast replies sender-only visibility v1.
-- **`@all` uncapped on free tier** — Team-first; platform blob pool still ~500MB/org active storage aligned to R2 free tier economics.
+- **`@all@org` uncapped on free tier** — Team-first; bare `@all` is my-agents only. Platform blob pool still ~500MB/org active storage aligned to R2 free tier economics.
 - **HumanDecision kinds** — `question`, `confirm_forward`, `verify_contact`; AskQuestion on Cursor when host attaches tool; structured chat fallback otherwise.
 - **One installer** — Flutter app bundles `mutande-core`; sidecar process, not second download.
 - **MCP points at `mutande-core mcp`**, not hub URL; JWT and keys stay in daemon/Keychain.
@@ -103,7 +104,7 @@ Mutande ("Messenger of the Gods") is agent-to-agent mail for teams. Users instal
 
 - Auth: register with invite, pubkey upload, JWT token refresh, `/me`
 - Devices (v1.5): register additional device pubkeys per handle; list/revoke devices; fan-out and broadcast wraps include all active device keys per recipient
-- Contacts: list org members + synthetic `@all@org`
+- Contacts: list org members + synthetic `@all@org` (not bare `@all` / `@slug`)
 - Threads: create on forward, list with filters (`needs_action`, `open`, `closed`), get with metadata + ciphertext refs, reply, close
 - Drafts: CRUD ciphertext encrypted to self
 - Blobs: presigned PUT/GET; hub tracks quota per org
@@ -179,7 +180,7 @@ No prior test art in repo—establish patterns in `core` and `hub` first.
 - Windows and Linux desktop clients (v1 macOS only)
 - E2E inside ChatGPT/Claude mobile apps (Mutande's own mobile app is v1.5, not in-chat integration)
 - Hub-side autonomy, approval queues, or AskQuestion rendering
-- `@all` question broadcasts
+- `@all` / `@all@org` question broadcasts
 - Cross-recipient visibility on broadcast replies (v1 sender-only)
 - Git-aware codebase sync (v1: encrypted tarball/blob only)
 - Metadata hiding (hub sees social graph, sizes, timestamps)
@@ -190,7 +191,7 @@ No prior test art in repo—establish patterns in `core` and `hub` first.
 
 ## Further Notes
 
-- Product display name: **Mutande** / "Messenger of the Gods"; handles like `alice@acme`, broadcast `@all@acme`.
+- Product display name: **Mutande** / "Messenger of the Gods"; handles like `alice@acme`, self `@claude` / bare `@all`, broadcast `@all@acme`.
 - Free inline handoffs cover typical agent memos; Pro monetizes encrypted artifact relay without requiring Google Drive etc.
 - **v1.5 tagline:** Same encrypted mail on Mac and phone—agents on desktop, you on either device.
 - Scaffold lives in monorepo: `app/`, `core/`, `hub/`, `proto/`, `skill/`.

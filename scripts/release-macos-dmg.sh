@@ -11,6 +11,8 @@
 # Usage (from repo root):
 #   ./scripts/release-macos-dmg.sh
 #   SKIP_NOTARIZE=1 ./scripts/release-macos-dmg.sh
+#   BUMP=patch|minor|major|build ./scripts/release-macos-dmg.sh   # default: patch
+#   SKIP_BUMP=1 ./scripts/release-macos-dmg.sh                     # keep current version
 #   NOTARY_PROFILE=mutande-notary ./scripts/release-macos-dmg.sh
 set -euo pipefail
 
@@ -23,23 +25,94 @@ TEAM_ID="${TEAM_ID:-Q22P2YXR6M}"
 SIGN_IDENTITY="${SIGN_IDENTITY:-Developer ID Application: Tawanda Brandon Holdings (PTY) Ltd. ($TEAM_ID)}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-mutande-notary}"
 SKIP_NOTARIZE="${SKIP_NOTARIZE:-0}"
+SKIP_BUMP="${SKIP_BUMP:-0}"
+BUMP="${BUMP:-patch}"
 BUNDLE_ID="ai.mutande.app"
 
 export PATH="${HOME}/.cargo/bin:${HOME}/flutter/bin:/opt/homebrew/bin:${PATH:-}"
 
-VERSION="$(
-  python3 - <<PY
-import re
+echo "==> bump version (BUMP=${BUMP}, SKIP_BUMP=${SKIP_BUMP})"
+VERSION_INFO="$(
+  BUMP="$BUMP" SKIP_BUMP="$SKIP_BUMP" APP_DIR="$APP_DIR" CORE_DIR="$CORE_DIR" ROOT="$ROOT" python3 - <<'PY'
+import os, re
 from pathlib import Path
-text = Path("$APP_DIR/pubspec.yaml").read_text()
-m = re.search(r"^version:\\s*([0-9]+\\.[0-9]+\\.[0-9]+)", text, re.M)
-print(m.group(1) if m else "0.0.0")
+
+app_dir = Path(os.environ["APP_DIR"])
+core_dir = Path(os.environ["CORE_DIR"])
+root = Path(os.environ["ROOT"])
+bump = os.environ.get("BUMP", "patch")
+skip = os.environ.get("SKIP_BUMP", "0") == "1"
+
+pubspec = app_dir / "pubspec.yaml"
+text = pubspec.read_text()
+m = re.search(r"^version:\s*(\d+)\.(\d+)\.(\d+)(?:\+(\d+))?\s*$", text, re.M)
+if not m:
+    raise SystemExit("error: could not parse version: in app/pubspec.yaml")
+major, minor, patch, build = int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4) or "0")
+old = f"{major}.{minor}.{patch}+{build}"
+
+if not skip:
+    if bump == "major":
+        major, minor, patch = major + 1, 0, 0
+    elif bump == "minor":
+        minor, patch = minor + 1, 0
+    elif bump == "patch":
+        patch += 1
+    elif bump == "build":
+        pass
+    else:
+        raise SystemExit(f"error: unknown BUMP={bump!r} (use major|minor|patch|build)")
+    build += 1
+    new = f"{major}.{minor}.{patch}+{build}"
+    text2, n = re.subn(
+        r"^version:\s*\d+\.\d+\.\d+(?:\+\d+)?\s*$",
+        f"version: {new}",
+        text,
+        count=1,
+        flags=re.M,
+    )
+    if n != 1:
+        raise SystemExit("error: failed to rewrite app/pubspec.yaml version")
+    pubspec.write_text(text2)
+
+    cargo = core_dir / "Cargo.toml"
+    cargo_text = cargo.read_text()
+    cargo2, cn = re.subn(
+        r'(?m)^version\s*=\s*"[^"]*"\s*$',
+        f'version = "{major}.{minor}.{patch}"',
+        cargo_text,
+        count=1,
+    )
+    if cn != 1:
+        raise SystemExit("error: failed to rewrite core/Cargo.toml version")
+    cargo.write_text(cargo2)
+
+    downloads = root / "web/src/lib/downloads.ts"
+    if downloads.exists():
+        dtext = downloads.read_text()
+        d2, dn = re.subn(
+            r'(NEXT_PUBLIC_MAC_DMG_VERSION\s*\?\?\s*")([^"]*)(")',
+            rf"\g<1>{major}.{minor}.{patch}\g<3>",
+            dtext,
+            count=1,
+        )
+        if dn == 1:
+            downloads.write_text(d2)
+
+    print(f"bumped {old} -> {new}", file=__import__("sys").stderr)
+else:
+    new = old
+    print(f"skip bump; using {new}", file=__import__("sys").stderr)
+
+print(f"{major}.{minor}.{patch} {build}")
 PY
 )"
+VERSION="$(echo "$VERSION_INFO" | awk '{print $1}')"
+BUILD_NUMBER="$(echo "$VERSION_INFO" | awk '{print $2}')"
 DMG_NAME="mutande-${VERSION}.dmg"
 APP_NAME="mutande.app"
 
-echo "==> version ${VERSION}"
+echo "==> version ${VERSION} (build ${BUILD_NUMBER})"
 echo "==> identity ${SIGN_IDENTITY}"
 
 mkdir -p "$DIST_DIR"
@@ -49,7 +122,9 @@ echo "==> cargo build --release (mutande-core)"
 (cd "$CORE_DIR" && cargo build --release)
 
 echo "==> flutter build macos --release"
-(cd "$APP_DIR" && flutter build macos --release)
+(cd "$APP_DIR" && flutter build macos --release \
+  --build-name="${VERSION}" \
+  --build-number="${BUILD_NUMBER}")
 
 BUILT_APP="$APP_DIR/build/macos/Build/Products/Release/${APP_NAME}"
 if [[ ! -d "$BUILT_APP" ]]; then
@@ -62,6 +137,7 @@ cp -R "$BUILT_APP" "$DIST_DIR/${APP_NAME}"
 APP="$DIST_DIR/${APP_NAME}"
 
 ENTITLEMENTS="$APP_DIR/macos/Runner/Release.entitlements"
+SIDECAR_ENTITLEMENTS="$APP_DIR/macos/Runner/Sidecar.entitlements"
 CORE_BIN="$APP/Contents/Resources/mutande-core"
 
 echo "==> codesign nested frameworks + sidecar + app"
@@ -70,19 +146,18 @@ if [[ ! -x "$CORE_BIN" ]]; then
   exit 1
 fi
 
-# Inside-out: frameworks, then sidecar, then outer app (Flutter-friendly).
+# Inside-out: frameworks (runtime only — no app entitlements), sidecar, then app.
 find "$APP/Contents/Frameworks" -name "*.framework" -maxdepth 1 -print0 2>/dev/null \
   | while IFS= read -r -d '' fw; do
       echo "    $(basename "$fw")"
       codesign --force --options runtime --timestamp --deep \
-        --entitlements "$ENTITLEMENTS" \
         --sign "$SIGN_IDENTITY" \
         "$fw"
     done
 
 echo "    mutande-core"
 codesign --force --options runtime --timestamp \
-  --entitlements "$ENTITLEMENTS" \
+  --entitlements "$SIDECAR_ENTITLEMENTS" \
   --sign "$SIGN_IDENTITY" \
   "$CORE_BIN"
 

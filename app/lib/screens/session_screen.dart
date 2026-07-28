@@ -370,6 +370,8 @@ class _ConnectSuccessCardState extends State<_ConnectSuccessCard>
     with SingleTickerProviderStateMixin {
   late final AnimationController _appear;
   bool _detailsOpen = false;
+  /// Bumps [ExpansionTile] key so Details collapses on a new connect result.
+  int _detailsEpoch = 0;
 
   @override
   void initState() {
@@ -386,6 +388,7 @@ class _ConnectSuccessCardState extends State<_ConnectSuccessCard>
     if (oldWidget.result != widget.result) {
       _appear.forward(from: 0);
       _detailsOpen = false;
+      _detailsEpoch++;
     }
   }
 
@@ -449,6 +452,7 @@ class _ConnectSuccessCardState extends State<_ConnectSuccessCard>
             Theme(
               data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
               child: ExpansionTile(
+                key: ValueKey('connect-details-$_detailsEpoch'),
                 initiallyExpanded: false,
                 tilePadding: EdgeInsets.zero,
                 childrenPadding: const EdgeInsets.only(bottom: 4),
