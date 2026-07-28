@@ -27,13 +27,11 @@ class OnboardingScreen extends StatefulWidget {
 
 class _OnboardingScreenState extends State<OnboardingScreen> {
   late _OnboardStep _step;
-  late final TextEditingController _hubUrl;
   late final TextEditingController _slug;
   late final TextEditingController _orgName;
   late final TextEditingController _handle;
   late final TextEditingController _invite;
   bool _submitting = false;
-  bool _showHub = false;
   String? _error;
   String? _email;
 
@@ -44,20 +42,14 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         widget.status?.needsOnboarding == true;
     _step = signedIn ? _OnboardStep.choose : _OnboardStep.signIn;
     _email = widget.status?.email;
-    _hubUrl = TextEditingController(text: widget.config.hubUrl);
     _slug = TextEditingController();
     _orgName = TextEditingController();
     _handle = TextEditingController();
     _invite = TextEditingController();
-    final hub = widget.config.hubUrl.trim();
-    _showHub = hub.isNotEmpty &&
-        !hub.contains('mutande') &&
-        (hub.contains('localhost') || hub.contains('127.0.0.1'));
   }
 
   @override
   void dispose() {
-    _hubUrl.dispose();
     _slug.dispose();
     _orgName.dispose();
     _handle.dispose();
@@ -66,22 +58,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   Future<void> _signIn() async {
-    final hubUrl = _hubUrl.text.trim();
-    final hubErr = validateHubUrl(hubUrl);
-    if (hubErr != null) {
-      setState(() {
-        _showHub = true;
-        _error = hubErr;
-      });
-      return;
-    }
     setState(() {
       _submitting = true;
       _error = null;
     });
     try {
       final status = await widget.daemon.authLogin(
-        hubUrl: hubUrl,
+        hubUrl: widget.config.hubUrl,
         auth0Domain: widget.config.auth0Domain,
         auth0ClientId: widget.config.auth0NativeClientId,
         auth0Audience: widget.config.auth0Audience,
@@ -280,36 +263,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     switch (_step) {
       case _OnboardStep.signIn:
         return [
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton(
-              onPressed: _submitting
-                  ? null
-                  : () => setState(() => _showHub = !_showHub),
-              style: TextButton.styleFrom(
-                foregroundColor: const Color(0xFFA8A29E),
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              child: Text(
-                _showHub ? 'Hide hub' : 'Hub URL',
-                style: text.labelMedium?.copyWith(
-                  color: const Color(0xFFA8A29E),
-                ),
-              ),
-            ),
-          ),
-          if (_showHub) ...[
-            const SizedBox(height: 4),
-            TextField(
-              controller: _hubUrl,
-              decoration: const InputDecoration(hintText: 'https://…'),
-              keyboardType: TextInputType.url,
-              enabled: !_submitting,
-            ),
-          ],
-          const SizedBox(height: 22),
           SizedBox(
             height: 44,
             child: FilledButton(

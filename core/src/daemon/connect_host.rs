@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use super::config::load_config;
-use super::expand_path;
+use super::{expand_path, user_home_dir};
 
 pub const SERVER_NAME: &str = "mutande";
 
@@ -173,7 +173,7 @@ fn connect_host_inner(
     };
     let home = match home_override {
         Some(h) => h.to_path_buf(),
-        None => dirs::home_dir().context("could not resolve home directory")?,
+        None => user_home_dir().context("could not resolve home directory")?,
     };
 
     let targets: Vec<Host> = if host == "all" {

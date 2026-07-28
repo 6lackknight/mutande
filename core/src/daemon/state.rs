@@ -1128,10 +1128,7 @@ fn resolve_auth0_domain(explicit: Option<&str>) -> Result<String> {
             return Ok(d);
         }
     }
-    bail!(
-        "Auth0 domain required (param auth0_domain or env AUTH0_DOMAIN). \
-         Create a Native app in Auth0 and set AUTH0_NATIVE_CLIENT_ID."
-    );
+    Ok(super::auth0_defaults::AUTH0_DOMAIN.to_string())
 }
 
 fn resolve_auth0_client_id(explicit: Option<&str>) -> Result<String> {
@@ -1146,9 +1143,7 @@ fn resolve_auth0_client_id(explicit: Option<&str>) -> Result<String> {
             }
         }
     }
-    bail!(
-        "Auth0 native client_id required (param auth0_client_id or env AUTH0_NATIVE_CLIENT_ID)"
-    );
+    Ok(super::auth0_defaults::AUTH0_NATIVE_CLIENT_ID.to_string())
 }
 
 fn resolve_auth0_audience(explicit: Option<&str>) -> String {
@@ -1159,13 +1154,44 @@ fn resolve_auth0_audience(explicit: Option<&str>) -> String {
         .ok()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "https://hub.mutande.app".into())
+        .unwrap_or_else(|| super::auth0_defaults::AUTH0_AUDIENCE.to_string())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::hub_client::{ThreadKind, ThreadStatus};
+
+    #[test]
+    fn auth0_resolvers_fall_back_to_builtin_defaults() {
+        // Explicit / env take precedence; with neither, use compile-time defaults.
+        assert_eq!(
+            resolve_auth0_domain(None).unwrap(),
+            super::super::auth0_defaults::AUTH0_DOMAIN
+        );
+        assert_eq!(
+            resolve_auth0_client_id(None).unwrap(),
+            super::super::auth0_defaults::AUTH0_NATIVE_CLIENT_ID
+        );
+        // Audience already had a hardcoded fallback; ensure it matches the module.
+        let audience = resolve_auth0_audience(None);
+        assert!(
+            audience == super::super::auth0_defaults::AUTH0_AUDIENCE
+                || std::env::var("AUTH0_AUDIENCE").is_ok()
+        );
+        assert_eq!(
+            resolve_auth0_domain(Some("custom.auth0.com")).unwrap(),
+            "custom.auth0.com"
+        );
+        assert_eq!(
+            resolve_auth0_client_id(Some("custom-client")).unwrap(),
+            "custom-client"
+        );
+        assert_eq!(
+            resolve_auth0_audience(Some("https://custom.audience")),
+            "https://custom.audience"
+        );
+    }
 
     #[test]
     fn seal_open_draft_roundtrip() {

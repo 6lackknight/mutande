@@ -1,11 +1,16 @@
 //! Local JSON-RPC API for Flutter UI and MCP subprocess.
 
+mod auth0_defaults;
 mod config;
 mod connect_host;
 mod http_bridge;
 mod oauth;
 pub mod rpc;
 mod state;
+
+pub use auth0_defaults::{
+    AUTH0_AUDIENCE, AUTH0_DOMAIN, AUTH0_NATIVE_CLIENT_ID, HUB_URL as DEFAULT_HUB_URL,
+};
 
 pub use connect_host::{ConnectHostResult, connect_host};
 
@@ -26,13 +31,36 @@ use crate::hub_client::{HubClient, HubConfig};
 use rpc::{JsonRpcRequest, JsonRpcResponse, handle_request};
 use state::DaemonState;
 
+/// Real login-home directory (passwd), not sandboxed `$HOME`.
+///
+/// macOS app-sandbox remaps `HOME` into `~/Library/Containers/…/Data`, which
+/// makes `dirs::home_dir()` point at the container. MCP host configs and
+/// `~/.mutande` must resolve to the user's actual home.
+pub fn user_home_dir() -> Option<PathBuf> {
+    #[cfg(unix)]
+    {
+        // SAFETY: getpwuid returns a pointer we only read; path is copied out.
+        unsafe {
+            let pw = libc::getpwuid(libc::getuid());
+            if !pw.is_null() && !(*pw).pw_dir.is_null() {
+                if let Ok(dir) = std::ffi::CStr::from_ptr((*pw).pw_dir).to_str() {
+                    if !dir.is_empty() {
+                        return Some(PathBuf::from(dir));
+                    }
+                }
+            }
+        }
+    }
+    dirs::home_dir()
+}
+
 pub fn expand_path(path: &str) -> PathBuf {
     if let Some(rest) = path.strip_prefix("~/") {
-        dirs::home_dir()
+        user_home_dir()
             .map(|home| home.join(rest))
             .unwrap_or_else(|| PathBuf::from(path))
     } else if path == "~" {
-        dirs::home_dir().unwrap_or_else(|| PathBuf::from(path))
+        user_home_dir().unwrap_or_else(|| PathBuf::from(path))
     } else {
         PathBuf::from(path)
     }
@@ -217,7 +245,7 @@ mod tests {
 
     #[test]
     fn expand_tilde_path() {
-        let home = dirs::home_dir().unwrap();
+        let home = user_home_dir().unwrap();
         assert_eq!(expand_path("~/foo"), home.join("foo"));
     }
 }

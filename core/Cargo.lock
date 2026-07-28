@@ -968,6 +968,7 @@ dependencies = [
  "crypto_box",
  "dirs",
  "hex",
+ "libc",
  "rand 0.8.7",
  "reqwest",
  "security-framework",

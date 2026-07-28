@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 
 import 'config/app_config.dart';
 import 'screens/join_screen.dart';
+import 'screens/session_screen.dart';
 import 'screens/threads_screen.dart';
 import 'screens/verify_screen.dart';
 import 'services/app_actions.dart';
 import 'services/daemon_client.dart';
 import 'widgets/thinking_orb.dart';
+import 'widgets/welcome_splash.dart';
 
 /// Stone/slate neutrals with a muted bronze accent — mythic, not flashy.
 ThemeData mutandeTheme() {
@@ -73,6 +75,7 @@ class MutandeApp extends StatelessWidget {
     required this.config,
     this.daemon,
     this.seedStatus,
+    this.welcomeDuration = const Duration(seconds: 3),
   });
 
   final AppConfig config;
@@ -83,15 +86,22 @@ class MutandeApp extends StatelessWidget {
   /// When set, skips the initial `get_status` RPC (widget tests).
   final DaemonStatusResult? seedStatus;
 
+  /// Dark orb welcome hold. Pass [Duration.zero] to skip (tests).
+  final Duration welcomeDuration;
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'mutande',
       theme: mutandeTheme(),
-      home: RootScreen(
-        config: config,
-        daemon: daemon,
-        seedStatus: seedStatus,
+      debugShowCheckedModeBanner: false,
+      home: WelcomeSplash(
+        duration: welcomeDuration,
+        child: RootScreen(
+          config: config,
+          daemon: daemon,
+          seedStatus: seedStatus,
+        ),
       ),
     );
   }
@@ -123,8 +133,8 @@ class _RootScreenState extends State<RootScreen> {
   int _lastConnectTick = 0;
   bool _pendingConnectHosts = false;
   bool _connecting = false;
-  String? _connectMessage;
-  bool _connectIsWarning = false;
+  ConnectHostResult? _connectResult;
+  String? _connectError;
 
   @override
   void initState() {
@@ -214,34 +224,23 @@ class _RootScreenState extends State<RootScreen> {
   Future<void> _runConnectHosts() async {
     setState(() {
       _connecting = true;
-      _connectMessage = null;
-      _connectIsWarning = false;
+      _connectResult = null;
+      _connectError = null;
     });
     try {
       final result = await _daemon.connectHost('all');
       if (!mounted) return;
-      final okHosts = result.hosts.where((h) => h.ok).toList();
-      final badHosts = result.hosts.where((h) => !h.ok).toList();
-      final lines = <String>[
-        'Wrote ${okHosts.length}/${result.hosts.length} configs',
-        'command: ${result.command} mcp',
-      ];
-      for (final h in result.hosts) {
-        final status = h.ok ? 'ok' : 'failed';
-        final note = (h.note != null && h.note!.isNotEmpty) ? ' — ${h.note}' : '';
-        lines.add('${h.host}: ${h.path} ($status)$note');
-      }
       setState(() {
         _connecting = false;
-        _connectMessage = lines.join('\n');
-        _connectIsWarning = badHosts.isNotEmpty;
+        _connectResult = result;
+        _connectError = null;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _connecting = false;
-        _connectMessage = e.toString();
-        _connectIsWarning = true;
+        _connectResult = null;
+        _connectError = e.toString();
       });
     }
   }
@@ -283,8 +282,8 @@ class _RootScreenState extends State<RootScreen> {
       statusError: _statusError,
       onRetryStatus: _refreshStatus,
       connecting: _connecting,
-      connectMessage: _connectMessage,
-      connectIsWarning: _connectIsWarning,
+      connectResult: _connectResult,
+      connectError: _connectError,
       onConnectHosts: _runConnectHosts,
     );
   }
@@ -369,8 +368,8 @@ class HomeScreen extends StatefulWidget {
     this.statusError,
     this.onRetryStatus,
     required this.connecting,
-    this.connectMessage,
-    this.connectIsWarning = false,
+    this.connectResult,
+    this.connectError,
     required this.onConnectHosts,
   });
 
@@ -380,8 +379,8 @@ class HomeScreen extends StatefulWidget {
   final String? statusError;
   final VoidCallback? onRetryStatus;
   final bool connecting;
-  final String? connectMessage;
-  final bool connectIsWarning;
+  final ConnectHostResult? connectResult;
+  final String? connectError;
   final VoidCallback onConnectHosts;
 
   @override
@@ -422,7 +421,6 @@ class _HomeScreenState extends State<HomeScreen> {
         : connected
         ? const Color(0xFF166534)
         : const Color(0xFF991B1B);
-    final hubDisplay = widget.status.hubUrl ?? widget.config.hubUrl;
     final handle = widget.status.handle;
 
     return Scaffold(
@@ -442,7 +440,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(height: 4),
               Text(
-                'Daemon $statusLabel · $hubDisplay',
+                'Daemon $statusLabel',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: statusColor,
                 ),

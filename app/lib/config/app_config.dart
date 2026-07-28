@@ -4,32 +4,48 @@
 class AppConfig {
   const AppConfig({
     required this.hubUrl,
-    this.auth0Domain,
-    this.auth0NativeClientId,
-    this.auth0Audience,
+    this.auth0Domain = defaultAuth0Domain,
+    this.auth0NativeClientId = defaultAuth0NativeClientId,
+    this.auth0Audience = defaultAuth0Audience,
   });
 
   /// Deployed hub (Deno Deploy).
   static const defaultHubUrl = 'https://mutande.6lackknight.deno.net';
 
+  /// Auth0 tenant host (no scheme). Matches core `auth0_defaults`.
+  static const defaultAuth0Domain = 'chevrondigital.auth0.com';
+
+  /// Auth0 Native Application client id (public).
+  static const defaultAuth0NativeClientId =
+      '2cbPq8c2JelRxBRkvKlSHTmrM91ItUUm';
+
+  /// Auth0 API identifier (must match hub).
+  static const defaultAuth0Audience = 'https://hub.mutande.app';
+
   /// Override with `--dart-define=MUTANDE_HUB_URL=https://...` at build/run time.
+  /// Auth0 `--dart-define`s override the hardcoded defaults when non-empty.
   static AppConfig fromEnvironment() {
     const hubUrl = String.fromEnvironment(
       'MUTANDE_HUB_URL',
       defaultValue: defaultHubUrl,
     );
-    const auth0Domain = String.fromEnvironment('AUTH0_DOMAIN');
-    const auth0NativeClientId = String.fromEnvironment('AUTH0_NATIVE_CLIENT_ID');
+    const auth0Domain = String.fromEnvironment(
+      'AUTH0_DOMAIN',
+      defaultValue: defaultAuth0Domain,
+    );
+    const auth0NativeClientId = String.fromEnvironment(
+      'AUTH0_NATIVE_CLIENT_ID',
+      defaultValue: defaultAuth0NativeClientId,
+    );
     const auth0Audience = String.fromEnvironment(
       'AUTH0_AUDIENCE',
-      defaultValue: 'https://hub.mutande.app',
+      defaultValue: defaultAuth0Audience,
     );
     return AppConfig(
       hubUrl: hubUrl,
-      auth0Domain: auth0Domain.isEmpty ? null : auth0Domain,
-      auth0NativeClientId:
-          auth0NativeClientId.isEmpty ? null : auth0NativeClientId,
-      auth0Audience: auth0Audience.isEmpty ? null : auth0Audience,
+      auth0Domain: auth0Domain,
+      auth0NativeClientId: auth0NativeClientId,
+      auth0Audience: auth0Audience,
     );
   }
 

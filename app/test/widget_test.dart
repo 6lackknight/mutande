@@ -62,6 +62,7 @@ void main() {
           hubUrl: 'http://localhost:8000',
           handle: 'alice@acme',
         ),
+        welcomeDuration: Duration.zero,
       ),
     );
     await tester.pumpAndSettle();
@@ -69,7 +70,6 @@ void main() {
     expect(find.text('mutande'), findsOneWidget);
     expect(find.text('alice@acme'), findsOneWidget);
     expect(find.textContaining('Connected'), findsOneWidget);
-    expect(find.textContaining('http://localhost:8000'), findsOneWidget);
     expect(find.text('Threads'), findsWidgets);
     expect(find.text('bob@acme'), findsOneWidget);
     expect(find.textContaining('pending'), findsOneWidget);
@@ -98,6 +98,7 @@ void main() {
           hubUrl: 'http://localhost:8000',
           handle: 'alice@acme',
         ),
+        welcomeDuration: Duration.zero,
       ),
     );
     await tester.pumpAndSettle();
@@ -134,6 +135,7 @@ void main() {
           hubUrl: 'http://localhost:8000',
           handle: 'alice@acme',
         ),
+        welcomeDuration: Duration.zero,
       ),
     );
     await tester.pumpAndSettle();
@@ -150,6 +152,7 @@ void main() {
       MutandeApp(
         config: const AppConfig(hubUrl: 'http://localhost:8000'),
         seedStatus: const DaemonStatusResult(configured: false),
+        welcomeDuration: Duration.zero,
       ),
     );
 
@@ -168,6 +171,7 @@ void main() {
           needsOnboarding: true,
           email: 'a@x.com',
         ),
+        welcomeDuration: Duration.zero,
       ),
     );
 
@@ -187,6 +191,7 @@ void main() {
       MutandeApp(
         config: const AppConfig(hubUrl: 'http://localhost:8000'),
         daemon: daemon,
+        welcomeDuration: Duration.zero,
       ),
     );
     await tester.pumpAndSettle();

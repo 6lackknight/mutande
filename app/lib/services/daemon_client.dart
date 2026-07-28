@@ -98,11 +98,11 @@ class DaemonClient {
     if (auth0Audience != null) params['auth0_audience'] = auth0Audience;
     if (accessToken != null) params['access_token'] = accessToken;
     if (refreshToken != null) params['refresh_token'] = refreshToken;
-    // OAuth can take minutes; use a longer timeout than other RPCs.
+    // OAuth can take minutes; daemon keeps the loopback socket for 5 minutes.
     final result = await _callWithTimeout(
       'auth_login',
       params,
-      const Duration(minutes: 4),
+      const Duration(minutes: 5),
     );
     final map = result as Map<String, dynamic>? ?? {};
     return DaemonStatusResult.fromJson(map);
