@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from "react";
 
@@ -19,17 +20,35 @@ export function Shell({
   );
 }
 
-export function BrandMark({ className = "" }: { className?: string }) {
+export function BrandMark({
+  className = "",
+  size = "md",
+}: {
+  className?: string;
+  size?: "sm" | "md" | "lg";
+}) {
+  const icon = size === "lg" ? 40 : size === "sm" ? 22 : 28;
+  const text =
+    size === "lg"
+      ? "text-2xl"
+      : size === "sm"
+        ? "text-base"
+        : "text-xl";
+
   return (
     <Link
       href="/"
-      className={`inline-flex items-baseline gap-2 font-display text-xl tracking-tight text-stone-900 ${className}`}
+      className={`inline-flex items-center gap-2.5 font-display font-semibold tracking-tight text-stone-900 ${text} ${className}`}
     >
-      <span
-        aria-hidden
-        className="inline-block size-2 translate-y-[-1px] rounded-full bg-accent"
+      <Image
+        src="/brand/tray-icon.png"
+        alt=""
+        width={icon}
+        height={icon}
+        className="rounded-[22%] shadow-sm"
+        priority
       />
-      Mutande
+      <span>mutande</span>
     </Link>
   );
 }
@@ -43,7 +62,7 @@ export function PageTitle({
 }) {
   return (
     <header className="mb-8">
-      <h1 className="font-display text-3xl tracking-tight text-stone-900 sm:text-4xl">
+      <h1 className="font-display text-3xl font-semibold tracking-tight text-stone-900 sm:text-4xl">
         {title}
       </h1>
       {subtitle ? (

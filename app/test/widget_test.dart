@@ -107,6 +107,89 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Check daemon'), findsOneWidget);
     expect(find.text('Connect AI hosts'), findsOneWidget);
+    expect(find.textContaining('Daemon is running'), findsOneWidget);
+  });
+
+  testWidgets('connect AI hosts shows friendly success rows', (
+    WidgetTester tester,
+  ) async {
+    final daemon = _mockDaemon((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      final method = body['method'] as String?;
+      if (method == 'list_threads') {
+        return _rpcOk(body['id'], {'threads': []});
+      }
+      if (method == 'connect_host') {
+        return _rpcOk(body['id'], {
+          'command': '/Users/dev/bin/mutande-core',
+          'args': ['mcp'],
+          'hosts': [
+            {
+              'host': 'cursor',
+              'path': '/Users/dev/.cursor/mcp.json',
+              'ok': true,
+            },
+            {
+              'host': 'claude',
+              'path':
+                  '/Users/dev/Library/Application Support/Claude/claude_desktop_config.json',
+              'ok': true,
+            },
+            {
+              'host': 'chatgpt',
+              'path':
+                  '/Users/dev/Library/Application Support/ChatGPT/mcp.json',
+              'ok': true,
+              'note':
+                  'ChatGPT path unconfirmed; also seen: mcp_config.json. Prefer Settings -> MCP if the file is ignored.',
+            },
+          ],
+        });
+      }
+      return _rpcOk(body['id'], {
+        'ok': true,
+        'service': 'mutande-core',
+        'version': '0.0.0',
+      });
+    });
+
+    await tester.pumpWidget(
+      MutandeApp(
+        config: const AppConfig(hubUrl: 'http://localhost:8000'),
+        daemon: daemon,
+        seedStatus: const DaemonStatusResult(
+          configured: true,
+          hubUrl: 'http://localhost:8000',
+          handle: 'alice@acme',
+        ),
+        welcomeDuration: Duration.zero,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Session'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Connect AI hosts'));
+    // Allow the connect_host future to complete past the loading orb tickers.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Connected 3 AI hosts'), findsOneWidget);
+    expect(find.text('Cursor'), findsOneWidget);
+    expect(find.text('Claude Desktop'), findsOneWidget);
+    expect(find.text('ChatGPT'), findsOneWidget);
+    expect(find.text('Connected'), findsNWidgets(3));
+    expect(find.textContaining('Wrote '), findsNothing);
+    expect(find.textContaining('/Users/dev/bin/mutande-core'), findsNothing);
+    expect(find.textContaining('Settings'), findsOneWidget);
+    expect(find.textContaining('MCP'), findsWidgets);
+
+    final details = find.text('Details');
+    await tester.ensureVisible(details);
+    await tester.tap(details);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('.cursor/mcp.json'), findsOneWidget);
   });
 
   testWidgets('verify tab shows safety UI', (WidgetTester tester) async {

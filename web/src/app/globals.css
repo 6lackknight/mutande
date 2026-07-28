@@ -1,6 +1,12 @@
 @import "tailwindcss";
 
 :root {
+  /* SF Pro / system stack — matches the macOS app wordmark */
+  --font-body:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui,
+    sans-serif;
+  --font-display: var(--font-body);
+
   --stone-50: oklch(0.985 0.004 95);
   --stone-100: oklch(0.96 0.008 90);
   --stone-200: oklch(0.91 0.012 85);
@@ -9,9 +15,10 @@
   --stone-700: oklch(0.38 0.018 70);
   --stone-800: oklch(0.28 0.016 65);
   --stone-900: oklch(0.22 0.014 60);
-  --slate-ink: oklch(0.24 0.02 240);
-  --accent: oklch(0.52 0.1 155);
-  --accent-soft: oklch(0.92 0.04 155);
+  --slate-ink: oklch(0.24 0.02 55);
+  /* Bronze accent — same lane as the Flutter shell */
+  --accent: oklch(0.45 0.12 50);
+  --accent-soft: oklch(0.94 0.03 70);
   --amber: oklch(0.72 0.12 75);
   --background: var(--stone-50);
   --foreground: var(--slate-ink);
@@ -35,7 +42,7 @@
   --color-stone-800: var(--stone-800);
   --color-stone-900: var(--stone-900);
   --font-sans: var(--font-body);
-  --font-display: var(--font-display);
+  --font-display: var(--font-body);
 }
 
 @layer base {

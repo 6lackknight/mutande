@@ -29,20 +29,28 @@ pub async fn run_stdio() -> Result<()> {
 
         let response = match serde_json::from_str::<McpRequest>(line) {
             Ok(req) => handle_mcp_request(req).await,
-            Err(err) => McpResponse::error(None, -32700, format!("parse error: {err}")),
+            Err(err) => Some(McpResponse::error(None, -32700, format!("parse error: {err}"))),
         };
 
-        serde_json::to_writer(&mut stdout, &response)?;
-        stdout.write_all(b"\n")?;
-        stdout.flush()?;
+        // MCP notifications must not get a JSON-RPC response (Claude Desktop rejects them).
+        if let Some(response) = response {
+            serde_json::to_writer(&mut stdout, &response)?;
+            stdout.write_all(b"\n")?;
+            stdout.flush()?;
+        }
     }
 
     Ok(())
 }
 
-async fn handle_mcp_request(req: McpRequest) -> McpResponse {
+async fn handle_mcp_request(req: McpRequest) -> Option<McpResponse> {
+    // Spec: notifications have no `id` and must not be answered.
+    if req.id.is_none() || req.method.starts_with("notifications/") {
+        return None;
+    }
+
     let id = req.id.clone();
-    match req.method.as_str() {
+    Some(match req.method.as_str() {
         "initialize" => McpResponse::success(
             id,
             json!({
@@ -54,7 +62,6 @@ async fn handle_mcp_request(req: McpRequest) -> McpResponse {
                 }
             }),
         ),
-        "notifications/initialized" | "initialized" => McpResponse::success(id, json!({})),
         "tools/list" => McpResponse::success(
             id,
             serde_json::to_value(McpToolsListResult {
@@ -85,7 +92,7 @@ async fn handle_mcp_request(req: McpRequest) -> McpResponse {
         },
         "ping" => McpResponse::success(id, json!({})),
         _ => McpResponse::error(id, -32601, format!("method not found: {}", req.method)),
-    }
+    })
 }
 
 async fn forward_tool_call(name: &str, arguments: Value) -> Result<String> {
@@ -126,6 +133,7 @@ async fn call_daemon(req: &JsonRpcRequest) -> Result<JsonRpcResponse> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use protocol::McpRequest;
 
     #[test]
     fn tool_definitions_include_send_and_read() {
@@ -135,5 +143,16 @@ mod tests {
         assert!(defs.iter().any(|t| t.name == "forward_blob"));
         assert!(defs.iter().any(|t| t.name == "get_safety_number"));
         assert!(defs.iter().any(|t| t.name == "verify_contact"));
+    }
+
+    #[tokio::test]
+    async fn notifications_get_no_response() {
+        let req = McpRequest {
+            jsonrpc: Some("2.0".into()),
+            id: None,
+            method: "notifications/initialized".into(),
+            params: None,
+        };
+        assert!(handle_mcp_request(req).await.is_none());
     }
 }

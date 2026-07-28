@@ -469,11 +469,12 @@ class _HomeScreenState extends State<HomeScreen> {
                       ? ThreadsPanel(daemon: widget.daemon)
                       : _tab == 1
                       ? VerifyContactPanel(daemon: widget.daemon)
-                      : _SessionPanel(
+                      : SessionPanel(
                           checking: _checking,
                           connecting: widget.connecting,
-                          connectMessage: widget.connectMessage,
-                          connectIsWarning: widget.connectIsWarning,
+                          health: _health,
+                          connectResult: widget.connectResult,
+                          connectError: widget.connectError,
                           onCheckDaemon: _checkDaemon,
                           onConnectHosts: widget.onConnectHosts,
                         ),
@@ -483,67 +484,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _SessionPanel extends StatelessWidget {
-  const _SessionPanel({
-    required this.checking,
-    required this.connecting,
-    this.connectMessage,
-    this.connectIsWarning = false,
-    required this.onCheckDaemon,
-    required this.onConnectHosts,
-  });
-
-  final bool checking;
-  final bool connecting;
-  final String? connectMessage;
-  final bool connectIsWarning;
-  final VoidCallback onCheckDaemon;
-  final VoidCallback onConnectHosts;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          'Session',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            color: const Color(0xFF292524),
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 12),
-        FilledButton.icon(
-          onPressed: checking ? null : onCheckDaemon,
-          icon: checking
-              ? const MutandeOrb.loading(semanticLabel: 'Checking…')
-              : const Icon(Icons.refresh),
-          label: Text(checking ? 'Checking…' : 'Check daemon'),
-        ),
-        const SizedBox(height: 8),
-        OutlinedButton.icon(
-          onPressed: connecting ? null : onConnectHosts,
-          icon: connecting
-              ? const MutandeOrb.loading(semanticLabel: 'Connecting…')
-              : const Icon(Icons.link),
-          label: Text(connecting ? 'Connecting…' : 'Connect AI hosts'),
-        ),
-        if (connectMessage != null) ...[
-          const SizedBox(height: 12),
-          Text(
-            connectMessage!,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: connectIsWarning
-                  ? const Color(0xFF92400E)
-                  : const Color(0xFF44403C),
-            ),
-          ),
-        ],
-      ],
     );
   }
 }

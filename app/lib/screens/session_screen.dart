@@ -57,7 +57,7 @@ class SessionPanel extends StatelessWidget {
                   onPressed: checking ? null : onCheckDaemon,
                   icon: checking
                       ? const MutandeOrb.loading(semanticLabel: 'Checking…')
-                      : const Icon(Icons.favorite_border, size: 18),
+                      : const Icon(Icons.refresh, size: 18),
                   label: Text(checking ? 'Checking…' : 'Check daemon'),
                 ),
                 if (health != null) ...[
