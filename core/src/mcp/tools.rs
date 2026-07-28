@@ -5,8 +5,26 @@ use super::protocol::McpToolDefinition;
 /// Read tools — safe for always-allow in host policy.
 const READ_TOOLS: &[(&str, &str, ValueFn)] = &[
     (
+        "list_agents",
+        "List registered agent slugs for you or ?handle=bare@org recipient autocomplete. Read-only.",
+        || {
+            json!({
+                "type": "object",
+                "properties": {
+                    "handle": { "type": "string", "description": "bare org member handle for recipient agent slugs" }
+                },
+                "additionalProperties": false
+            })
+        },
+    ),
+    (
+        "get_router",
+        "Get your agent router: default agent + rules (most specific match_slug wins). Bare handle uses default. Read-only.",
+        || json!({ "type": "object", "properties": {}, "additionalProperties": false }),
+    ),
+    (
         "list_contacts",
-        "List org contacts including @all@org. Read-only.",
+        "List org contacts (bare handles only, includes @all@org). Read-only.",
         || json!({ "type": "object", "properties": {}, "additionalProperties": false }),
     ),
     (
@@ -68,6 +86,30 @@ const READ_TOOLS: &[(&str, &str, ValueFn)] = &[
 /// Send / mutate tools — require host allow now/always.
 const SEND_TOOLS: &[(&str, &str, ValueFn)] = &[
     (
+        "set_router",
+        "Update your agent router. Set default_agent_id and/or rules [{match_slug, agent_id}]. Most specific match_slug wins; bare handle uses default.",
+        || {
+            json!({
+                "type": "object",
+                "properties": {
+                    "default_agent_id": { "type": "string" },
+                    "rules": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": ["match_slug", "agent_id"],
+                            "properties": {
+                                "match_slug": { "type": "string" },
+                                "agent_id": { "type": "string" }
+                            }
+                        }
+                    }
+                },
+                "additionalProperties": false
+            })
+        },
+    ),
+    (
         "draft_add_question",
         "Stage a HumanDecision question on the draft. Does not send mail.",
         || {
@@ -101,13 +143,13 @@ const SEND_TOOLS: &[(&str, &str, ValueFn)] = &[
     ),
     (
         "forward_draft",
-        "Send staged draft to a handle or @all@org. Creates a thread. Requires user confirmation.",
+        "Send staged draft to a handle (optional /agent suffix) or @all@org. Creates a thread. Requires user confirmation.",
         || {
             json!({
                 "type": "object",
                 "required": ["recipient"],
                 "properties": {
-                    "recipient": { "type": "string", "description": "handle or @all@org" }
+                    "recipient": { "type": "string", "description": "alice@org or alice@org/claude or @all@org" }
                 },
                 "additionalProperties": false
             })
@@ -115,13 +157,14 @@ const SEND_TOOLS: &[(&str, &str, ValueFn)] = &[
     ),
     (
         "reply_to_thread",
-        "Reply on an existing thread with a bundle. Requires user confirmation.",
+        "Reply on an existing thread with a bundle. Optional to_agent for self-handoff. Requires user confirmation.",
         || {
             json!({
                 "type": "object",
                 "required": ["thread_id", "bundle"],
                 "properties": {
                     "thread_id": { "type": "string" },
+                    "to_agent": { "type": "string", "description": "self-handoff target agent slug" },
                     "bundle": { "type": "object" }
                 },
                 "additionalProperties": false
@@ -206,6 +249,9 @@ pub fn tool_definitions() -> Vec<McpToolDefinition> {
 
 pub fn daemon_method_for_tool(name: &str) -> Option<&'static str> {
     match name {
+        "list_agents" => Some("list_agents"),
+        "get_router" => Some("get_router"),
+        "set_router" => Some("set_router"),
         "list_contacts" => Some("list_contacts"),
         "list_threads" => Some("list_threads"),
         "get_thread" => Some("get_thread"),

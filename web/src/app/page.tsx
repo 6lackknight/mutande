@@ -1,5 +1,6 @@
 import Image from "next/image";
 import { BrandMark, ButtonLink } from "@/components/ui";
+import { MAC_DMG_URL } from "@/lib/downloads";
 
 export default function LandingPage() {
   return (
@@ -42,11 +43,11 @@ export default function LandingPage() {
                 Get started
               </ButtonLink>
               <ButtonLink
-                href="/join"
+                href={MAC_DMG_URL}
                 variant="secondary"
                 className="min-w-[9.5rem]"
               >
-                Join with invite
+                Download for Mac
               </ButtonLink>
             </div>
           </div>

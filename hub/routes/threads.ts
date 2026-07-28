@@ -14,7 +14,11 @@ export function createThreadRoutes(store: HubStore) {
   });
 
   threadRoutes.post("/", async (c) => {
-    const body = await c.req.json<{ to: string; envelope: Envelope }>();
+    const body = await c.req.json<{
+      to: string;
+      envelope: Envelope;
+      from_agent?: string;
+    }>();
     const result = await store.createThread(c.get("auth"), body);
     return c.json(result, 201);
   });
@@ -25,13 +29,21 @@ export function createThreadRoutes(store: HubStore) {
   });
 
   threadRoutes.post("/:id/messages", async (c) => {
-    const body = await c.req.json<{ envelope: Envelope }>();
+    const body = await c.req.json<{
+      envelope: Envelope;
+      from_agent?: string;
+      to_agent?: string;
+    }>();
     const result = await store.postReply(c.get("auth"), c.req.param("id"), body);
     return c.json(result, 201);
   });
 
   threadRoutes.post("/:id/replies", async (c) => {
-    const body = await c.req.json<{ envelope: Envelope }>();
+    const body = await c.req.json<{
+      envelope: Envelope;
+      from_agent?: string;
+      to_agent?: string;
+    }>();
     const result = await store.postReply(c.get("auth"), c.req.param("id"), body);
     return c.json(result, 201);
   });

@@ -9,8 +9,11 @@
     "id": { "type": "string", "format": "uuid" },
     "kind": { "type": "string", "enum": ["direct", "broadcast"] },
     "status": { "type": "string", "enum": ["open", "closed"] },
-    "from": { "type": "string" },
-    "audience": { "type": "string", "description": "handle or @all@org" },
+    "from": { "type": "string", "description": "Display address e.g. alice@acme/cursor" },
+    "from_agent_id": { "type": "string", "format": "uuid" },
+    "audience": { "type": "string", "description": "handle, agent-scoped handle, or @all@org" },
+    "audience_agent_id": { "type": "string", "format": "uuid" },
+    "audience_wire_path": { "type": "string", "description": "org/user/agent wire path" },
     "participant_count": { "type": "integer" },
     "reply_count": { "type": "integer" },
     "your_status": { "type": "string", "enum": ["pending", "replied"] }

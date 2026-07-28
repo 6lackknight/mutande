@@ -181,6 +181,7 @@ class DaemonClient {
         audience: m['audience'] as String? ?? '',
         yourStatus: m['your_status'] as String?,
         replyCount: (m['reply_count'] as num?)?.toInt() ?? 0,
+        agentBadge: _agentBadgeFromThread(m),
       );
     }).toList();
   }
@@ -216,11 +217,75 @@ class DaemonClient {
   Future<void> replyToThread({
     required String threadId,
     required String notes,
+    String? toAgent,
   }) async {
     await _call('reply_to_thread', {
       'thread_id': threadId,
       'bundle': {'notes': notes},
+      if (toAgent != null) 'to_agent': toAgent,
     });
+  }
+
+  Future<AgentListResult> listAgents({String? handle}) async {
+    final result = await _call(
+      'list_agents',
+      handle == null ? null : {'handle': handle},
+    );
+    final map = result as Map<String, dynamic>? ?? {};
+    final raw = map['agents'] as List<dynamic>? ?? const [];
+    return AgentListResult(
+      agents: raw
+          .map((e) => AgentInfo.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      defaultAgentId: map['default_agent_id'] as String?,
+    );
+  }
+
+  Future<void> setDefaultAgent(String agentId) async {
+    await _call('set_default_agent', {'agent_id': agentId});
+  }
+
+  Future<AgentInfo> renameAgent({
+    required String agentId,
+    required String slug,
+  }) async {
+    final result = await _call('rename_agent', {
+      'agent_id': agentId,
+      'slug': slug,
+    });
+    return AgentInfo.fromJson(result as Map<String, dynamic>? ?? {});
+  }
+
+  Future<RouterConfig> getRouter() async {
+    final result = await _call('get_router');
+    return RouterConfig.fromJson(result as Map<String, dynamic>? ?? {});
+  }
+
+  Future<RouterConfig> setRouter({
+    String? defaultAgentId,
+    List<RoutingRule>? rules,
+  }) async {
+    final result = await _call('set_router', {
+      if (defaultAgentId != null) 'default_agent_id': defaultAgentId,
+      if (rules != null)
+        'rules': rules
+            .map((r) => {'match_slug': r.matchSlug, 'agent_id': r.agentId})
+            .toList(),
+    });
+    return RouterConfig.fromJson(result as Map<String, dynamic>? ?? {});
+  }
+
+  /// Send notes to [recipient] (optional agent suffix) via `forward_draft`.
+  Future<String> forwardDraft({
+    required String recipient,
+    required String notes,
+  }) async {
+    final result = await _call('forward_draft', {
+      'recipient': recipient,
+      'notes': notes,
+    });
+    final map = result as Map<String, dynamic>? ?? {};
+    return map['thread_id'] as String? ?? '';
   }
 
   Future<SafetyNumberResult> getSafetyNumber() async {
@@ -414,6 +479,8 @@ class DaemonStatusResult {
     this.handle,
     this.orgId,
     this.email,
+    this.connectedAgent,
+    this.defaultAgent,
   });
 
   factory DaemonStatusResult.fromJson(Map<String, dynamic> map) {
@@ -425,6 +492,8 @@ class DaemonStatusResult {
       handle: map['handle'] as String?,
       orgId: map['org_id'] as String?,
       email: map['email'] as String?,
+      connectedAgent: map['connected_agent'] as String?,
+      defaultAgent: map['default_agent'] as String?,
     );
   }
 
@@ -435,6 +504,8 @@ class DaemonStatusResult {
   final String? handle;
   final String? orgId;
   final String? email;
+  final String? connectedAgent;
+  final String? defaultAgent;
 }
 
 class OnboardResult {
@@ -487,6 +558,7 @@ class ThreadSummary {
     required this.audience,
     this.yourStatus,
     this.replyCount = 0,
+    this.agentBadge,
   });
 
   final String id;
@@ -496,6 +568,71 @@ class ThreadSummary {
   final String audience;
   final String? yourStatus;
   final int replyCount;
+  final String? agentBadge;
+}
+
+class AgentInfo {
+  const AgentInfo({required this.id, required this.slug});
+
+  factory AgentInfo.fromJson(Map<String, dynamic> map) {
+    return AgentInfo(
+      id: map['id'] as String? ?? '',
+      slug: map['slug'] as String? ?? '',
+    );
+  }
+
+  final String id;
+  final String slug;
+}
+
+class AgentListResult {
+  const AgentListResult({required this.agents, this.defaultAgentId});
+
+  final List<AgentInfo> agents;
+  final String? defaultAgentId;
+}
+
+class RoutingRule {
+  const RoutingRule({required this.matchSlug, required this.agentId});
+
+  factory RoutingRule.fromJson(Map<String, dynamic> map) {
+    return RoutingRule(
+      matchSlug: map['match_slug'] as String? ?? '',
+      agentId: map['agent_id'] as String? ?? '',
+    );
+  }
+
+  final String matchSlug;
+  final String agentId;
+}
+
+class RouterConfig {
+  const RouterConfig({this.defaultAgentId, this.rules = const []});
+
+  factory RouterConfig.fromJson(Map<String, dynamic> map) {
+    final raw = map['rules'] as List<dynamic>? ?? const [];
+    return RouterConfig(
+      defaultAgentId: map['default_agent_id'] as String?,
+      rules: raw
+          .map((e) => RoutingRule.fromJson(e as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+
+  final String? defaultAgentId;
+  final List<RoutingRule> rules;
+}
+
+String? _agentBadgeFromThread(Map<String, dynamic> m) {
+  for (final field in ['audience', 'from']) {
+    final value = m[field] as String?;
+    if (value == null) continue;
+    final slash = value.indexOf('/');
+    if (slash >= 0 && slash < value.length - 1) {
+      return value.substring(slash + 1);
+    }
+  }
+  return null;
 }
 
 class ThreadDetailResult {

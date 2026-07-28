@@ -6,9 +6,10 @@ import '../services/daemon_client.dart';
 import '../widgets/thinking_orb.dart';
 
 /// Session tab: daemon health + Connect AI hosts with quiet success UI.
-class SessionPanel extends StatelessWidget {
+class SessionPanel extends StatefulWidget {
   const SessionPanel({
     super.key,
+    required this.daemon,
     required this.checking,
     required this.connecting,
     this.health,
@@ -18,6 +19,7 @@ class SessionPanel extends StatelessWidget {
     required this.onConnectHosts,
   });
 
+  final DaemonClient daemon;
   final bool checking;
   final bool connecting;
   final DaemonHealthResult? health;
@@ -25,6 +27,57 @@ class SessionPanel extends StatelessWidget {
   final String? connectError;
   final VoidCallback onCheckDaemon;
   final VoidCallback onConnectHosts;
+
+  @override
+  State<SessionPanel> createState() => _SessionPanelState();
+}
+
+class _SessionPanelState extends State<SessionPanel> {
+  bool _loadingAgents = true;
+  String? _agentsError;
+  AgentListResult? _agents;
+  bool _savingDefault = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAgents();
+  }
+
+  Future<void> _loadAgents() async {
+    setState(() {
+      _loadingAgents = true;
+      _agentsError = null;
+    });
+    try {
+      final list = await widget.daemon.listAgents();
+      if (!mounted) return;
+      setState(() {
+        _agents = list;
+        _loadingAgents = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _agentsError = e.toString();
+        _loadingAgents = false;
+      });
+    }
+  }
+
+  Future<void> _pickDefault(String agentId) async {
+    if (_agents?.defaultAgentId == agentId) return;
+    setState(() => _savingDefault = true);
+    try {
+      await widget.daemon.setDefaultAgent(agentId);
+      await _loadAgents();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _agentsError = e.toString());
+    } finally {
+      if (mounted) setState(() => _savingDefault = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -53,36 +106,150 @@ class SessionPanel extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                Text(
+                  'Default agent',
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        color: const Color(0xFF57534E),
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Bare handle mail and @all fan-in route here.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: const Color(0xFF78716C),
+                      ),
+                ),
+                const SizedBox(height: 12),
+                if (_loadingAgents)
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8),
+                      child: MutandeOrb.loading(semanticLabel: 'Loading agents…'),
+                    ),
+                  )
+                else if (_agentsError != null)
+                  Text(
+                    _friendlyError(_agentsError!),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: const Color(0xFF991B1B),
+                        ),
+                  )
+                else if (_agents == null || _agents!.agents.isEmpty)
+                  Text(
+                    'No agents yet — connect an AI host to register one.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: const Color(0xFF78716C),
+                        ),
+                  )
+                else
+                  ..._agents!.agents.map((agent) {
+                    final isDefault = agent.id == _agents!.defaultAgentId;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: InkWell(
+                        onTap: _savingDefault ? null : () => _pickDefault(agent.id),
+                        borderRadius: BorderRadius.circular(8),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 8,
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                isDefault
+                                    ? Icons.radio_button_checked
+                                    : Icons.radio_button_off,
+                                size: 18,
+                                color: isDefault
+                                    ? const Color(0xFF166534)
+                                    : const Color(0xFFA8A29E),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  agent.slug,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodyMedium
+                                      ?.copyWith(
+                                        color: const Color(0xFF292524),
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                ),
+                              ),
+                              if (isDefault)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFECFDF5),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: Text(
+                                    'default',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelSmall
+                                        ?.copyWith(
+                                          color: const Color(0xFF166534),
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+        Card(
+          margin: EdgeInsets.zero,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
                 FilledButton.icon(
-                  onPressed: checking ? null : onCheckDaemon,
-                  icon: checking
+                  onPressed: widget.checking ? null : widget.onCheckDaemon,
+                  icon: widget.checking
                       ? const MutandeOrb.loading(semanticLabel: 'Checking…')
                       : const Icon(Icons.refresh, size: 18),
-                  label: Text(checking ? 'Checking…' : 'Check daemon'),
+                  label: Text(widget.checking ? 'Checking…' : 'Check daemon'),
                 ),
-                if (health != null) ...[
+                if (widget.health != null) ...[
                   const SizedBox(height: 12),
-                  _DaemonStatusRow(health: health!),
+                  _DaemonStatusRow(health: widget.health!),
                 ],
                 const SizedBox(height: 10),
                 OutlinedButton.icon(
-                  onPressed: connecting ? null : onConnectHosts,
-                  icon: connecting
+                  onPressed: widget.connecting ? null : widget.onConnectHosts,
+                  icon: widget.connecting
                       ? const MutandeOrb.loading(semanticLabel: 'Connecting…')
                       : const Icon(Icons.link, size: 18),
-                  label: Text(connecting ? 'Connecting…' : 'Connect AI hosts'),
+                  label: Text(
+                    widget.connecting ? 'Connecting…' : 'Connect AI hosts',
+                  ),
                 ),
               ],
             ),
           ),
         ),
-        if (connectError != null) ...[
+        if (widget.connectError != null) ...[
           const SizedBox(height: 14),
-          _ConnectErrorCard(message: connectError!),
+          _ConnectErrorCard(message: widget.connectError!),
         ],
-        if (connectResult != null) ...[
+        if (widget.connectResult != null) ...[
           const SizedBox(height: 14),
-          _ConnectSuccessCard(result: connectResult!),
+          _ConnectSuccessCard(result: widget.connectResult!),
         ],
       ],
     );

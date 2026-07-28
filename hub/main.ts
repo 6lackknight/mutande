@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { handleHubError } from "./middleware/auth.ts";
 import { createAdminRoutes } from "./routes/admin.ts";
+import { createAgentRoutes } from "./routes/agents.ts";
 import { createAuthRoutes } from "./routes/auth.ts";
 import { createBlobRoutes } from "./routes/blobs.ts";
 import { createContactRoutes } from "./routes/contacts.ts";
@@ -32,6 +33,7 @@ export async function createApp(
   app.route("/v1/orgs", createOrgRoutes(store));
   app.route("/v1/onboarding", createOnboardingRoutes(store));
   app.route("/v1/devices", createDeviceRoutes(store));
+  app.route("/v1/agents", createAgentRoutes(store));
   app.route("/v1/admin", createAdminRoutes(store));
   app.route("/v1/contacts", createContactRoutes(store));
   app.route("/v1/threads", createThreadRoutes(store));

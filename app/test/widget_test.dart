@@ -67,20 +67,28 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('mutande'), findsOneWidget);
     expect(find.text('alice@acme'), findsOneWidget);
-    expect(find.textContaining('Connected'), findsOneWidget);
     expect(find.text('Threads'), findsWidgets);
+    expect(find.text('Agents'), findsOneWidget);
+    expect(find.text('Contacts'), findsOneWidget);
     expect(find.text('bob@acme'), findsOneWidget);
-    expect(find.textContaining('pending'), findsOneWidget);
+    expect(find.textContaining('ACTION REQUIRED'), findsOneWidget);
   });
 
-  testWidgets('session tab still has Check daemon', (WidgetTester tester) async {
+  testWidgets('settings has Check daemon', (WidgetTester tester) async {
     final daemon = _mockDaemon((request) async {
       final body = jsonDecode(request.body) as Map<String, dynamic>;
       final method = body['method'] as String?;
       if (method == 'list_threads') {
         return _rpcOk(body['id'], {'threads': []});
+      }
+      if (method == 'get_safety_number') {
+        return _rpcOk(body['id'], {
+          'handle': 'me',
+          'fingerprint':
+              '11111 22222 33333 44444 55555 66666 77777 88888 99999 00000',
+          'uri': 'mutande:safety:me:11111 22222',
+        });
       }
       return _rpcOk(body['id'], {
         'ok': true,
@@ -103,11 +111,17 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Session'));
+    await tester.tap(find.byTooltip('Settings'));
     await tester.pumpAndSettle();
+    expect(find.text('Settings'), findsWidgets);
     expect(find.text('Check daemon'), findsOneWidget);
-    expect(find.text('Connect AI hosts'), findsOneWidget);
-    expect(find.textContaining('Daemon is running'), findsOneWidget);
+    expect(find.text('Connect new host'), findsOneWidget);
+    expect(find.text('CONNECTED'), findsOneWidget);
+    expect(find.text('Safety Numbers'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Sign out'), 200);
+    await tester.pumpAndSettle();
+    expect(find.text('Sign out'), findsOneWidget);
+    expect(find.text('alice@acme'), findsOneWidget);
   });
 
   testWidgets('connect AI hosts shows friendly success rows', (
@@ -118,6 +132,13 @@ void main() {
       final method = body['method'] as String?;
       if (method == 'list_threads') {
         return _rpcOk(body['id'], {'threads': []});
+      }
+      if (method == 'get_safety_number') {
+        return _rpcOk(body['id'], {
+          'handle': 'me',
+          'fingerprint': '11111 22222 33333 44444 55555 66666',
+          'uri': 'mutande:safety:me:11111 22222',
+        });
       }
       if (method == 'connect_host') {
         return _rpcOk(body['id'], {
@@ -167,9 +188,12 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Session'));
+    await tester.tap(find.byTooltip('Settings'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Connect AI hosts'));
+    final connect = find.text('Connect new host');
+    await tester.ensureVisible(connect);
+    await tester.pumpAndSettle();
+    await tester.tap(connect);
     // Allow the connect_host future to complete past the loading orb tickers.
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
@@ -177,22 +201,22 @@ void main() {
 
     expect(find.text('Connected 3 AI hosts'), findsOneWidget);
     expect(find.text('Cursor'), findsOneWidget);
-    expect(find.text('Claude Desktop'), findsOneWidget);
+    expect(find.text('Claude (Anthropic)'), findsOneWidget);
     expect(find.text('ChatGPT'), findsOneWidget);
-    expect(find.text('Connected'), findsNWidgets(3));
+    expect(find.text('Connected'), findsAtLeastNWidgets(3));
     expect(find.textContaining('Wrote '), findsNothing);
     expect(find.textContaining('/Users/dev/bin/mutande-core'), findsNothing);
-    expect(find.textContaining('Settings'), findsOneWidget);
-    expect(find.textContaining('MCP'), findsWidgets);
+    expect(find.textContaining('Settings'), findsWidgets);
 
     final details = find.text('Details');
     await tester.ensureVisible(details);
     await tester.tap(details);
     await tester.pumpAndSettle();
     expect(find.textContaining('.cursor/mcp.json'), findsOneWidget);
+    expect(find.textContaining('MCP'), findsWidgets);
   });
 
-  testWidgets('verify tab shows safety UI', (WidgetTester tester) async {
+  testWidgets('settings shows verify UI', (WidgetTester tester) async {
     final daemon = _mockDaemon((request) async {
       final body = jsonDecode(request.body) as Map<String, dynamic>;
       final method = body['method'] as String?;
@@ -223,9 +247,18 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Verify'));
+    await tester.tap(find.byTooltip('Settings'));
     await tester.pumpAndSettle();
-    expect(find.text('Verify contact'), findsOneWidget);
+    expect(find.text('Safety Numbers'), findsOneWidget);
+    expect(find.text('Compare safety numbers'), findsOneWidget);
+    expect(find.text('11111'), findsOneWidget);
+    expect(find.text('22222'), findsOneWidget);
+
+    final compare = find.text('Compare safety numbers');
+    await tester.ensureVisible(compare);
+    await tester.pumpAndSettle();
+    await tester.tap(compare);
+    await tester.pumpAndSettle();
     expect(find.text('Your number'), findsOneWidget);
     expect(find.text('Compare'), findsOneWidget);
   });

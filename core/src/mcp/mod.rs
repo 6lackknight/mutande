@@ -17,6 +17,13 @@ use tools::tool_definitions;
 const DAEMON_SOCKET: &str = "~/.mutande/daemon.sock";
 
 pub async fn run_stdio() -> Result<()> {
+    if let Ok(slug) = std::env::var("MUTANDE_AGENT_SLUG") {
+        let slug = slug.trim();
+        if !slug.is_empty() {
+            let _ = register_agent_on_connect(slug).await;
+        }
+    }
+
     let stdin = io::stdin();
     let mut stdout = io::stdout();
 
@@ -93,6 +100,17 @@ async fn handle_mcp_request(req: McpRequest) -> Option<McpResponse> {
         "ping" => McpResponse::success(id, json!({})),
         _ => McpResponse::error(id, -32601, format!("method not found: {}", req.method)),
     })
+}
+
+async fn register_agent_on_connect(slug: &str) -> Result<()> {
+    let req = JsonRpcRequest {
+        jsonrpc: Some("2.0".into()),
+        id: Some(json!(1)),
+        method: "register_agent".to_string(),
+        params: json!({ "slug": slug }),
+    };
+    let _ = call_daemon(&req).await?;
+    Ok(())
 }
 
 async fn forward_tool_call(name: &str, arguments: Value) -> Result<String> {

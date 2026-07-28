@@ -32,3 +32,5 @@ Thumbs.db
 # IDE
 .idea/
 *.iml
+dist/macos
+web/public/downloads/*.dmg

@@ -164,17 +164,23 @@ async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Resu
         }
         "forward_draft" => {
             let recipient = param_str(&params, "recipient")?;
+            if let Some(notes) = optional_str(&params, "notes") {
+                state.set_draft_notes(&notes);
+            }
             let thread_id = state.forward_draft(&recipient).await?;
             Ok(serde_json::json!({ "thread_id": thread_id }))
         }
         "reply_to_thread" => {
             let thread_id = param_str(&params, "thread_id")?;
+            let to_agent = optional_str(&params, "to_agent");
             let bundle: MutandeBundle = if let Some(b) = params.get("bundle") {
                 serde_json::from_value(b.clone())?
             } else {
                 serde_json::from_value(params.clone())?
             };
-            state.reply_to_thread(&thread_id, bundle).await?;
+            state
+                .reply_to_thread(&thread_id, bundle, to_agent.as_deref())
+                .await?;
             Ok(serde_json::json!({ "ok": true }))
         }
         "close_thread" => {
@@ -190,7 +196,54 @@ async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Resu
         "connect_host" => {
             let host = param_str(&params, "host")?;
             let result = super::connect_host::connect_host(&host, None)?;
+            if host == "all" {
+                for slug in ["cursor", "claude", "chatgpt"] {
+                    let _ = state.register_connected_agent(slug).await;
+                }
+            } else {
+                let _ = state.register_connected_agent(&host).await;
+            }
             Ok(serde_json::to_value(result)?)
+        }
+        "register_agent" => {
+            let slug = param_str(&params, "slug")?;
+            let agent = state.register_connected_agent(&slug).await?;
+            Ok(serde_json::to_value(agent)?)
+        }
+        "list_agents" => {
+            let handle = optional_str(&params, "handle");
+            if let Some(handle) = handle {
+                let agents = state.list_agents_for_handle(&handle).await?;
+                Ok(serde_json::json!({ "agents": agents }))
+            } else {
+                let list = state.list_agents().await?;
+                Ok(serde_json::to_value(list)?)
+            }
+        }
+        "set_default_agent" => {
+            let agent_id = param_str(&params, "agent_id")?;
+            let agent = state.set_default_agent(&agent_id).await?;
+            Ok(serde_json::to_value(agent)?)
+        }
+        "rename_agent" => {
+            let agent_id = param_str(&params, "agent_id")?;
+            let slug = param_str(&params, "slug")?;
+            let agent = state.rename_agent(&agent_id, &slug).await?;
+            Ok(serde_json::to_value(agent)?)
+        }
+        "get_router" => {
+            let router = state.get_router().await?;
+            Ok(serde_json::to_value(router)?)
+        }
+        "set_router" => {
+            let default_agent_id = optional_str(&params, "default_agent_id");
+            let rules = params.get("rules").and_then(|v| {
+                serde_json::from_value::<Vec<crate::hub_client::RoutingRule>>(v.clone()).ok()
+            });
+            let router = state
+                .set_router(default_agent_id.as_deref(), rules)
+                .await?;
+            Ok(serde_json::to_value(router)?)
         }
         "get_safety_number" | "own_safety_number" => {
             let result = state.own_safety_number()?;

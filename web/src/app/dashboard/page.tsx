@@ -1,4 +1,5 @@
 import { Alert, BrandMark, ButtonLink, PageTitle, Shell } from "@/components/ui";
+import { MAC_DMG_URL, MAC_DMG_VERSION } from "@/lib/downloads";
 import { requireOnboarded } from "@/lib/session";
 import { isOrgAdmin } from "@/lib/types";
 
@@ -54,23 +55,25 @@ export default async function DashboardPage() {
         {isAdmin ? (
           <ButtonLink href="/admin/invites">Manage invites</ButtonLink>
         ) : null}
-        <ButtonLink href="#download" variant="secondary">
+        <ButtonLink href={MAC_DMG_URL} variant="secondary">
           Download Mac app
         </ButtonLink>
       </div>
 
-      <div id="download" className="mt-12">
-        <Alert tone="amber">
-          Mac download placeholder — release link will live on{" "}
+      <div id="download" className="mt-12 space-y-3">
+        <Alert tone="ok">
+          mutande for macOS {MAC_DMG_VERSION} — menu bar app with the local
+          daemon bundled. Open the DMG and drag mutande into Applications.
+        </Alert>
+        <p className="text-sm text-muted">
+          Direct link:{" "}
           <a
-            href="https://mutande.vercel.app"
+            href={MAC_DMG_URL}
             className="underline underline-offset-2 hover:text-stone-900"
           >
-            mutande.vercel.app
-          </a>{" "}
-          once the tray app ships. Until then, continue with local builds from
-          the monorepo <code className="text-[13px]">app/</code>.
-        </Alert>
+            mutande-{MAC_DMG_VERSION}.dmg
+          </a>
+        </p>
       </div>
     </Shell>
   );

@@ -27,6 +27,13 @@ import type {
   Org,
   RegisterDeviceInput,
   ReplyInput,
+  Agent,
+  SetDefaultAgentInput,
+  RegisterAgentInput,
+  RenameAgentInput,
+  RouterConfig,
+  RoutingRule,
+  SetRouterInput,
   ThreadFilter,
   ThreadMessage,
   ThreadMeta,
@@ -35,21 +42,20 @@ import type {
 } from "./types.ts";
 import { createBlobUrls } from "./r2.ts";
 import { MAX_ENVELOPE_BYTES, ORG_BLOB_QUOTA_BYTES } from "./types.ts";
+import {
+  assertHandleLocal,
+  assertValidAgentSlug,
+  broadcastHandle,
+  formatDisplayAddress,
+  formatWirePath,
+  isBroadcastHandle,
+  parseDisplayAddress,
+  parseUserHandle,
+  stripAgentSuffix,
+} from "./address.ts";
 
 function nowIso(): string {
   return new Date().toISOString();
-}
-
-function parseHandle(handle: string): { local: string; orgSlug: string } {
-  const at = handle.lastIndexOf("@");
-  if (at <= 0 || at === handle.length - 1) {
-    throw new HubError("Invalid handle format", "invalid_handle");
-  }
-  return { local: handle.slice(0, at), orgSlug: handle.slice(at + 1) };
-}
-
-function broadcastHandle(orgSlug: string): string {
-  return `@all@${orgSlug}`;
 }
 
 function emailLocalPart(email?: string): string | null {
@@ -66,12 +72,6 @@ function assertValidSlug(slug: string): void {
       "Org slug must be lowercase alphanumeric (hyphens allowed)",
       "invalid_slug",
     );
-  }
-}
-
-function assertHandleLocal(local: string): void {
-  if (local.toLowerCase() === "@all" || local.toLowerCase().startsWith("@all")) {
-    throw new HubError("Handle cannot use @all broadcast prefix", "invalid_handle");
   }
 }
 
@@ -124,6 +124,12 @@ export class HubStore {
   private draftsPrefix(userId: string) { return ["drafts", userId]; }
   private blobKey(id: string) { return ["blobs", id]; }
   private orgQuotaKey(orgId: string) { return ["org_blob_quota", orgId]; }
+  private agentKey(id: string) { return ["agents", id]; }
+  private userAgentSlugKey(userId: string, slug: string) { return ["user_agent_slugs", userId, slug]; }
+  private userAgentsPrefix(userId: string) { return ["user_agent_slugs", userId]; }
+  private userDefaultAgentKey(userId: string) { return ["user_default_agent", userId]; }
+  private userRouterKey(userId: string) { return ["user_router", userId]; }
+  private userAgentAliasKey(userId: string, slug: string) { return ["user_agent_aliases", userId, slug]; }
 
   assertEnvelopeSize(envelope: Envelope): void {
     const size = new TextEncoder().encode(JSON.stringify(envelope)).byteLength;
@@ -184,7 +190,7 @@ export class HubStore {
     }
 
     const local = input.handle
-      ? parseHandle(input.handle.includes("@") ? input.handle : `${input.handle}@${slug}`).local
+      ? parseUserHandle(input.handle.includes("@") ? input.handle : `${input.handle}@${slug}`).local
       : (emailLocalPart(claims.email) ?? "admin");
     assertHandleLocal(local);
     const handle = `${local}@${slug}`;
@@ -239,7 +245,7 @@ export class HubStore {
     let handle: string;
     if (input.handle) {
       const raw = input.handle.includes("@") ? input.handle : `${input.handle}@${org.slug}`;
-      const { local, orgSlug } = parseHandle(raw);
+      const { local, orgSlug } = parseUserHandle(raw);
       assertHandleLocal(local);
       if (orgSlug !== org.slug) throw forbidden("Handle must belong to invite org");
       handle = `${local}@${org.slug}`;
@@ -281,6 +287,9 @@ export class HubStore {
     if (!["macos", "ios", "web"].includes(input.platform)) {
       throw new HubError("platform must be macos, ios, or web", "invalid_platform");
     }
+    if (input.agent_slug?.trim()) {
+      await this.registerAgent(auth, { slug: input.agent_slug.trim() });
+    }
     const device: Device = {
       id: crypto.randomUUID(),
       user_id: auth.userId,
@@ -305,6 +314,153 @@ export class HubStore {
     }
     devices.sort((a, b) => a.created_at.localeCompare(b.created_at));
     return { devices };
+  }
+
+  async registerAgent(auth: AuthContext, input: RegisterAgentInput): Promise<Agent> {
+    const slug = input.slug.trim().toLowerCase();
+    assertValidAgentSlug(slug);
+    const existing = await this.kv.get<string>(this.userAgentSlugKey(auth.userId, slug));
+    if (existing.value) {
+      const agent = await this.getAgent(existing.value);
+      if (agent) return agent;
+    }
+
+    const agent: Agent = {
+      id: crypto.randomUUID(),
+      user_id: auth.userId,
+      slug,
+      created_at: nowIso(),
+    };
+    const router = await this.loadRouter(auth.userId);
+    const rules = router.rules.filter((r) => r.match_slug !== slug);
+    rules.push({ match_slug: slug, agent_id: agent.id });
+    rules.sort((a, b) => a.match_slug.localeCompare(b.match_slug));
+    const defaultAgentId = router.default_agent_id ?? agent.id;
+
+    const tx = this.kv.atomic();
+    tx.set(this.agentKey(agent.id), agent);
+    tx.set(this.userAgentSlugKey(auth.userId, slug), agent.id);
+    tx.set(this.userDefaultAgentKey(auth.userId), defaultAgentId);
+    tx.set(this.userRouterKey(auth.userId), {
+      default_agent_id: defaultAgentId,
+      rules,
+    } satisfies RouterConfig);
+    const res = await tx.commit();
+    if (!res.ok) throw conflict("Agent register conflict");
+    return agent;
+  }
+
+  async addAgent(auth: AuthContext, input: RegisterAgentInput): Promise<Agent> {
+    return this.registerAgent(auth, input);
+  }
+
+  async listAgents(auth: AuthContext): Promise<{ agents: Agent[]; default_agent_id: string | null }> {
+    const agents: Agent[] = [];
+    const iter = this.kv.list<string>({ prefix: this.userAgentsPrefix(auth.userId) });
+    for await (const entry of iter) {
+      const agent = await this.getAgent(entry.value);
+      if (agent) agents.push(agent);
+    }
+    agents.sort((a, b) => a.slug.localeCompare(b.slug));
+    const router = await this.loadRouter(auth.userId);
+    return { agents, default_agent_id: router.default_agent_id };
+  }
+
+  async listAgentsForHandle(
+    auth: AuthContext,
+    handle: string,
+  ): Promise<{ agents: Agent[] }> {
+    const bare = stripAgentSuffix(handle.trim());
+    await this.assertSameOrgHandle(auth.orgId, bare);
+    const user = await this.getUserByHandle(bare);
+    if (!user) throw notFound("User");
+    const { agents } = await this.listAgents(authContextFromUser(user));
+    return { agents };
+  }
+
+  async getRouter(auth: AuthContext): Promise<RouterConfig> {
+    return this.loadRouter(auth.userId);
+  }
+
+  async setRouter(auth: AuthContext, input: SetRouterInput): Promise<RouterConfig> {
+    const current = await this.loadRouter(auth.userId);
+    let defaultAgentId = current.default_agent_id;
+    if (input.default_agent_id !== undefined) {
+      if (input.default_agent_id === null) {
+        defaultAgentId = null;
+      } else {
+        const agent = await this.getAgent(input.default_agent_id);
+        if (!agent || agent.user_id !== auth.userId) throw notFound("Agent");
+        defaultAgentId = agent.id;
+      }
+    }
+
+    let rules = current.rules;
+    if (input.rules !== undefined) {
+      rules = await this.normalizeRules(auth.userId, input.rules);
+    }
+
+    const router: RouterConfig = { default_agent_id: defaultAgentId, rules };
+    const tx = this.kv.atomic();
+    if (defaultAgentId) {
+      tx.set(this.userDefaultAgentKey(auth.userId), defaultAgentId);
+    } else {
+      tx.delete(this.userDefaultAgentKey(auth.userId));
+    }
+    tx.set(this.userRouterKey(auth.userId), router);
+    const res = await tx.commit();
+    if (!res.ok) throw conflict("Router update conflict");
+    return router;
+  }
+
+  async setDefaultAgent(auth: AuthContext, input: SetDefaultAgentInput): Promise<Agent> {
+    const agent = await this.getAgent(input.agent_id);
+    if (!agent || agent.user_id !== auth.userId) throw notFound("Agent");
+    await this.setRouter(auth, { default_agent_id: agent.id });
+    return agent;
+  }
+
+  async renameAgent(auth: AuthContext, agentId: string, input: RenameAgentInput): Promise<Agent> {
+    const newSlug = input.slug.trim().toLowerCase();
+    assertValidAgentSlug(newSlug);
+    const agent = await this.getAgent(agentId);
+    if (!agent || agent.user_id !== auth.userId) throw notFound("Agent");
+    if (agent.slug === newSlug) return agent;
+
+    const taken = await this.kv.get<string>(this.userAgentSlugKey(auth.userId, newSlug));
+    if (taken.value && taken.value !== agentId) {
+      throw conflict("Agent slug already taken");
+    }
+
+    const oldSlug = agent.slug;
+    const updated: Agent = { ...agent, slug: newSlug };
+    const router = await this.loadRouter(auth.userId);
+    const rules = router.rules.map((r) =>
+      r.agent_id === agentId && r.match_slug === oldSlug
+        ? { ...r, match_slug: newSlug }
+        : r
+    );
+    if (!rules.some((r) => r.agent_id === agentId && r.match_slug === newSlug)) {
+      rules.push({ match_slug: newSlug, agent_id: agentId });
+    }
+    rules.sort((a, b) => a.match_slug.localeCompare(b.match_slug));
+
+    const tx = this.kv.atomic();
+    tx.delete(this.userAgentSlugKey(auth.userId, oldSlug));
+    tx.set(this.userAgentSlugKey(auth.userId, newSlug), agent.id);
+    tx.set(this.agentKey(agent.id), updated);
+    tx.set(this.userAgentAliasKey(auth.userId, oldSlug), {
+      agent_id: agentId,
+      current_slug: newSlug,
+    });
+    tx.delete(this.userAgentAliasKey(auth.userId, newSlug));
+    tx.set(this.userRouterKey(auth.userId), {
+      default_agent_id: router.default_agent_id,
+      rules,
+    } satisfies RouterConfig);
+    const res = await tx.commit();
+    if (!res.ok) throw conflict("Agent rename conflict");
+    return updated;
   }
 
   async createInvite(auth: AuthContext): Promise<Invite> {
@@ -366,22 +522,37 @@ export class HubStore {
   }> {
     this.assertEnvelopeSize(input.envelope);
     const sender = await this.getUser(auth.userId);
-    if (!sender) throw notFound("User");
+    if (!sender?.handle) throw notFound("User");
 
     const org = await this.getOrg(auth.orgId);
     if (!org) throw notFound("Org");
 
-    const isBroadcast = input.to === broadcastHandle(org.slug);
+    const senderParts = parseUserHandle(sender.handle);
+    const fromAgent = await this.resolveAgentForUser(auth.userId, input.from_agent);
+    const fromDisplay = formatDisplayAddress(senderParts.local, senderParts.orgSlug, fromAgent.slug);
+
+    const isBroadcast = isBroadcastHandle(input.to) && input.to === broadcastHandle(org.slug);
     let recipientIds: string[] = [];
     let audience = input.to;
+    let audienceAgentId: string | undefined;
+    let audienceWirePath: string | undefined;
 
     if (isBroadcast) {
       recipientIds = await this.listMemberIds(auth.orgId, auth.userId);
+      audience = broadcastHandle(org.slug);
     } else {
-      await this.assertSameOrgHandle(auth.orgId, input.to);
-      const recipient = await this.getUserByHandle(input.to);
+      const parsedTo = parseDisplayAddress(input.to);
+      const bareTo = formatDisplayAddress(parsedTo.local, parsedTo.orgSlug);
+      await this.assertSameOrgHandle(auth.orgId, bareTo);
+      const recipient = await this.getUserByHandle(bareTo);
       if (!recipient) throw notFound("Recipient");
-      if (recipient.id === auth.userId) {
+
+      const toAgent = await this.resolveAgentForUser(recipient.id, parsedTo.agentSlug);
+      audience = formatDisplayAddress(parsedTo.local, parsedTo.orgSlug, toAgent.slug);
+      audienceAgentId = toAgent.id;
+      audienceWirePath = formatWirePath(parsedTo.orgSlug, parsedTo.local, toAgent.slug);
+
+      if (recipient.id === auth.userId && !parsedTo.agentSlug) {
         throw new HubError("Cannot message yourself", "invalid_recipient");
       }
       recipientIds = [recipient.id];
@@ -395,9 +566,12 @@ export class HubStore {
       id: threadId,
       kind: isBroadcast ? "broadcast" : "direct",
       status: "open",
-      from: sender.handle!,
+      from: fromDisplay,
       from_user_id: sender.id,
+      from_agent_id: fromAgent.id,
       audience,
+      audience_agent_id: audienceAgentId,
+      audience_wire_path: audienceWirePath,
       org_id: auth.orgId,
       participant_count: isBroadcast ? recipientIds.length + 1 : 2,
       reply_count: 0,
@@ -409,7 +583,7 @@ export class HubStore {
       id: messageId,
       thread_id: threadId,
       from_user_id: sender.id,
-      from_handle: sender.handle!,
+      from_handle: fromDisplay,
       envelope: input.envelope,
       created_at: ts,
     };
@@ -517,10 +691,7 @@ export class HubStore {
       throw new HubError("Thread is closed", "thread_closed", 409);
     }
 
-    const user = await this.getUser(auth.userId);
-    if (!user) throw notFound("User");
-
-    if (inbox.role === "sender") {
+    if (inbox.role === "sender" && !input.to_agent?.trim()) {
       throw new HubError(
         "Sender cannot reply on own thread; start a new thread instead",
         "invalid_reply",
@@ -528,24 +699,40 @@ export class HubStore {
       );
     }
 
+    const user = await this.getUser(auth.userId);
+    if (!user?.handle) throw notFound("User");
+
+    const userParts = parseUserHandle(user.handle);
+    const fromAgent = await this.resolveAgentForUser(auth.userId, input.from_agent);
+    const fromDisplay = formatDisplayAddress(userParts.local, userParts.orgSlug, fromAgent.slug);
+
     const messageId = crypto.randomUUID();
     const ts = nowIso();
-    if (!user.handle) throw forbidden("Onboarding required");
+
+    let updatedThread: ThreadMeta = {
+      ...thread,
+      reply_count: thread.reply_count + 1,
+      updated_at: ts,
+    };
+
+    if (input.to_agent?.trim()) {
+      const toAgent = await this.resolveAgentForUser(auth.userId, input.to_agent.trim());
+      updatedThread = {
+        ...updatedThread,
+        audience: formatDisplayAddress(userParts.local, userParts.orgSlug, toAgent.slug),
+        audience_agent_id: toAgent.id,
+        audience_wire_path: formatWirePath(userParts.orgSlug, userParts.local, toAgent.slug),
+      };
+    }
 
     const message: ThreadMessage = {
       id: messageId,
       thread_id: threadId,
       from_user_id: user.id,
-      from_handle: user.handle,
+      from_handle: fromDisplay,
       envelope: input.envelope,
       created_at: ts,
       sender_only: thread.kind === "broadcast",
-    };
-
-    const updatedThread: ThreadMeta = {
-      ...thread,
-      reply_count: thread.reply_count + 1,
-      updated_at: ts,
     };
 
     const tx = this.kv.atomic();
@@ -724,8 +911,110 @@ export class HubStore {
     return ids;
   }
 
+  private async getAgent(id: string): Promise<Agent | null> {
+    const res = await this.kv.get<Agent>(this.agentKey(id));
+    return res.value;
+  }
+
+  /** Load router; migrate from slug index + default when missing. */
+  private async loadRouter(userId: string): Promise<RouterConfig> {
+    const stored = await this.kv.get<RouterConfig>(this.userRouterKey(userId));
+    if (stored.value) {
+      return {
+        default_agent_id: stored.value.default_agent_id ?? null,
+        rules: [...(stored.value.rules ?? [])].sort((a, b) =>
+          a.match_slug.localeCompare(b.match_slug)
+        ),
+      };
+    }
+
+    const rules: RoutingRule[] = [];
+    const iter = this.kv.list<string>({ prefix: this.userAgentsPrefix(userId) });
+    for await (const entry of iter) {
+      const agent = await this.getAgent(entry.value);
+      if (agent) rules.push({ match_slug: agent.slug, agent_id: agent.id });
+    }
+    rules.sort((a, b) => a.match_slug.localeCompare(b.match_slug));
+    const defaultRes = await this.kv.get<string>(this.userDefaultAgentKey(userId));
+    const router: RouterConfig = {
+      default_agent_id: defaultRes.value ?? null,
+      rules,
+    };
+    if (rules.length > 0 || router.default_agent_id) {
+      await this.kv.set(this.userRouterKey(userId), router);
+    }
+    return router;
+  }
+
+  private async normalizeRules(userId: string, rules: RoutingRule[]): Promise<RoutingRule[]> {
+    const seen = new Set<string>();
+    const out: RoutingRule[] = [];
+    for (const rule of rules) {
+      const matchSlug = rule.match_slug.trim().toLowerCase();
+      assertValidAgentSlug(matchSlug);
+      if (seen.has(matchSlug)) {
+        throw new HubError(`Duplicate router rule for '${matchSlug}'`, "invalid_router", 400);
+      }
+      const agent = await this.getAgent(rule.agent_id);
+      if (!agent || agent.user_id !== userId) {
+        throw notFound("Agent");
+      }
+      seen.add(matchSlug);
+      out.push({ match_slug: matchSlug, agent_id: agent.id });
+    }
+    out.sort((a, b) => a.match_slug.localeCompare(b.match_slug));
+    return out;
+  }
+
+  /**
+   * Resolve agent for address routing.
+   * Bare → default agent. Slug → most specific router rule, else slug index.
+   * Renamed slugs fail with a clear hint (no silent redirect).
+   */
+  private async resolveAgentForUser(userId: string, slug?: string): Promise<Agent> {
+    const router = await this.loadRouter(userId);
+
+    if (slug?.trim()) {
+      const normalized = slug.trim().toLowerCase();
+
+      // Most specific: exact match_slug rule wins.
+      const rule = router.rules.find((r) => r.match_slug === normalized);
+      if (rule) {
+        const agent = await this.getAgent(rule.agent_id);
+        if (agent) return agent;
+      }
+
+      const mapped = await this.kv.get<string>(this.userAgentSlugKey(userId, normalized));
+      if (mapped.value) {
+        const agent = await this.getAgent(mapped.value);
+        if (agent) return agent;
+      }
+
+      const alias = await this.kv.get<{ agent_id: string; current_slug: string }>(
+        this.userAgentAliasKey(userId, normalized),
+      );
+      if (alias.value?.current_slug) {
+        throw new HubError(
+          `Agent '${normalized}' was renamed to '${alias.value.current_slug}'. Use the new address.`,
+          "agent_renamed",
+          400,
+        );
+      }
+
+      throw new HubError(`Unknown agent '${normalized}'`, "unknown_agent", 400);
+    }
+
+    if (router.default_agent_id) {
+      const agent = await this.getAgent(router.default_agent_id);
+      if (agent) return agent;
+    }
+
+    throw new HubError("No default agent registered", "unknown_agent", 400);
+  }
+
   private async assertSameOrgHandle(orgId: string, handle: string): Promise<void> {
-    const { orgSlug } = parseHandle(handle);
+    const bare = stripAgentSuffix(handle);
+    const { orgSlug } = parseUserHandle(bare);
     const org = await this.getOrg(orgId);
     if (!org || org.slug !== orgSlug) {
       throw forbidden("Recipient must be in your org");

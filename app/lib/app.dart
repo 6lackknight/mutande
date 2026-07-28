@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 
 import 'config/app_config.dart';
+import 'screens/agents_screen.dart';
+import 'screens/contacts_screen.dart';
 import 'screens/join_screen.dart';
-import 'screens/session_screen.dart';
+import 'screens/settings_screen.dart';
 import 'screens/threads_screen.dart';
-import 'screens/verify_screen.dart';
 import 'services/app_actions.dart';
 import 'services/daemon_client.dart';
 import 'widgets/thinking_orb.dart';
@@ -390,7 +391,8 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   bool _checking = false;
   DaemonHealthResult? _health;
-  int _tab = 0; // 0 threads · 1 verify · 2 session
+  int _tab = 0; // 0 threads · 1 agents · 2 contacts
+  VoidCallback? _reloadThreads;
 
   @override
   void initState() {
@@ -408,80 +410,204 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  void _openSettings() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) => SettingsScreen(
+          daemon: widget.daemon,
+          checking: _checking,
+          connecting: widget.connecting,
+          health: _health,
+          connectResult: widget.connectResult,
+          connectError: widget.connectError,
+          onCheckDaemon: _checkDaemon,
+          onConnectHosts: widget.onConnectHosts,
+          handle: widget.status.handle,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final connected = _health?.connected ?? false;
-    final statusLabel = _health == null
-        ? 'Unknown'
-        : connected
-        ? 'Connected'
-        : 'Disconnected';
-    final statusColor = _health == null
-        ? const Color(0xFF78716C)
-        : connected
-        ? const Color(0xFF166534)
-        : const Color(0xFF991B1B);
-    final handle = widget.status.handle;
+    final handle = widget.status.handle ?? 'Agent-to-agent mail';
 
     return Scaffold(
-      appBar: AppBar(title: const Text('mutande')),
-      body: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 480),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                handle ?? 'Agent-to-agent mail',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: const Color(0xFF78716C),
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _HomeHeader(
+              handle: handle,
+              tab: _tab,
+              onTab: (i) => setState(() => _tab = i),
+              onRefresh: () {
+                if (_tab == 0) {
+                  _reloadThreads?.call();
+                }
+                _checkDaemon();
+              },
+              onSettings: _openSettings,
+            ),
+            if (widget.statusError != null)
+              Material(
+                color: const Color(0xFFFEF3C7),
+                child: InkWell(
+                  onTap: widget.onRetryStatus,
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Text(
+                      'Daemon blip — tap to retry status',
+                      style: TextStyle(
+                        color: Color(0xFF92400E),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
                 ),
               ),
-              const SizedBox(height: 4),
-              Text(
-                'Daemon $statusLabel',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: statusColor,
-                ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                child: _tab == 0
+                    ? ThreadsPanel(
+                        daemon: widget.daemon,
+                        onReloadReady: (reload) => _reloadThreads = reload,
+                      )
+                    : _tab == 1
+                        ? AgentsPanel(
+                            daemon: widget.daemon,
+                            handle: widget.status.handle,
+                          )
+                        : SingleChildScrollView(
+                            child: ContactsPanel(
+                              handle: widget.status.handle,
+                            ),
+                          ),
               ),
-              if (widget.statusError != null) ...[
-                const SizedBox(height: 8),
-                TextButton(
-                  onPressed: widget.onRetryStatus,
-                  child: const Text('Retry status'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HomeHeader extends StatelessWidget {
+  const _HomeHeader({
+    required this.handle,
+    required this.tab,
+    required this.onTab,
+    required this.onRefresh,
+    required this.onSettings,
+  });
+
+  final String handle;
+  final int tab;
+  final ValueChanged<int> onTab;
+  final VoidCallback onRefresh;
+  final VoidCallback onSettings;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 8, 4),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 110,
+            child: Text(
+              handle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: const Color(0xFF78716C),
+                    fontWeight: FontWeight.w500,
+                  ),
+            ),
+          ),
+          Expanded(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _NavTab(
+                  label: 'Threads',
+                  selected: tab == 0,
+                  onTap: () => onTab(0),
+                ),
+                _NavTab(
+                  label: 'Agents',
+                  selected: tab == 1,
+                  onTap: () => onTab(1),
+                ),
+                _NavTab(
+                  label: 'Contacts',
+                  selected: tab == 2,
+                  onTap: () => onTab(2),
                 ),
               ],
-              const SizedBox(height: 12),
-              SegmentedButton<int>(
-                segments: const [
-                  ButtonSegment(value: 0, label: Text('Threads')),
-                  ButtonSegment(value: 1, label: Text('Verify')),
-                  ButtonSegment(value: 2, label: Text('Session')),
-                ],
-                selected: {_tab},
-                onSelectionChanged: (s) => setState(() => _tab = s.first),
-              ),
-              const SizedBox(height: 16),
-              Expanded(
-                child: SingleChildScrollView(
-                  child: _tab == 0
-                      ? ThreadsPanel(daemon: widget.daemon)
-                      : _tab == 1
-                      ? VerifyContactPanel(daemon: widget.daemon)
-                      : SessionPanel(
-                          checking: _checking,
-                          connecting: widget.connecting,
-                          health: _health,
-                          connectResult: widget.connectResult,
-                          connectError: widget.connectError,
-                          onCheckDaemon: _checkDaemon,
-                          onConnectHosts: widget.onConnectHosts,
-                        ),
-                ),
-              ),
-            ],
+            ),
           ),
+          IconButton(
+            tooltip: 'Refresh',
+            onPressed: onRefresh,
+            icon: const Icon(Icons.refresh, size: 20),
+            color: const Color(0xFF57534E),
+          ),
+          IconButton(
+            tooltip: 'Settings',
+            onPressed: onSettings,
+            icon: const Icon(Icons.settings_outlined, size: 20),
+            color: const Color(0xFF57534E),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NavTab extends StatelessWidget {
+  const _NavTab({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(6),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: selected
+                        ? const Color(0xFF92400E)
+                        : const Color(0xFF78716C),
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                  ),
+            ),
+            const SizedBox(height: 4),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 160),
+              height: 2,
+              width: selected ? 22 : 0,
+              decoration: BoxDecoration(
+                color: const Color(0xFF92400E),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ],
         ),
       ),
     );

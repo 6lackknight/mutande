@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert@1";
+import { assertEquals, assertExists, assertRejects, assertThrows } from "jsr:@std/assert@1";
 import { HubError } from "./errors.ts";
 import { HubStore, createStore, createStoreWithTestAuth } from "./store.ts";
 import type { Auth0Claims, Envelope } from "./types.ts";
@@ -31,6 +31,9 @@ async function setupOrgWithUsers(store: HubStore) {
   await store.registerDevice(store.authContextFromUser(alice), { pubkey: "alice-pk", platform: "macos" });
   await store.registerDevice(store.authContextFromUser(bob), { pubkey: "bob-pk", platform: "macos" });
   await store.registerDevice(store.authContextFromUser(carol), { pubkey: "carol-pk", platform: "ios" });
+  await store.registerAgent(store.authContextFromUser(alice), { slug: "cursor" });
+  await store.registerAgent(store.authContextFromUser(bob), { slug: "claude" });
+  await store.registerAgent(store.authContextFromUser(carol), { slug: "chatgpt" });
   return {
     aliceAuth: store.authContextFromUser(alice),
     bobAuth: store.authContextFromUser(bob),
@@ -101,6 +104,106 @@ Deno.test("cross-org rejected", async () => {
     const { aliceAuth } = await setupOrgWithUsers(store);
     await store.createOrgWithAdmin({ sub: "auth0|eve", email: "eve@rival.com" }, { slug: "rival", name: "Rival" });
     await assertRejects(() => store.createThread(aliceAuth, { to: "eve@rival", envelope: sampleEnvelope() }));
+  });
+});
+
+Deno.test("agent-scoped thread addressing", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth, bobAuth } = await setupOrgWithUsers(store);
+    const { thread } = await store.createThread(aliceAuth, {
+      to: "bob@acme/claude",
+      envelope: sampleEnvelope("agent"),
+      from_agent: "cursor",
+    });
+    assertEquals(thread.from, "alice@acme/cursor");
+    assertEquals(thread.audience, "bob@acme/claude");
+    assertEquals(thread.audience_wire_path, "acme/bob/claude");
+    assertEquals((await store.listThreads(bobAuth, "needs_action")).threads.length, 1);
+  });
+});
+
+Deno.test("unknown agent rejected", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth } = await setupOrgWithUsers(store);
+    await assertRejects(() => store.createThread(aliceAuth, {
+      to: "bob@acme/unknown",
+      envelope: sampleEnvelope(),
+    }));
+  });
+});
+
+Deno.test("rename agent slug", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth, bobAuth } = await setupOrgWithUsers(store);
+    const { agents } = await store.listAgents(aliceAuth);
+    const cursor = agents.find((a) => a.slug === "cursor");
+    assertExists(cursor);
+    const renamed = await store.renameAgent(aliceAuth, cursor!.id, { slug: "codex" });
+    assertEquals(renamed.slug, "codex");
+    assertEquals(renamed.id, cursor!.id);
+    const again = await store.listAgents(aliceAuth);
+    assertEquals(again.agents.some((a) => a.slug === "codex"), true);
+    assertEquals(again.agents.some((a) => a.slug === "cursor"), false);
+
+    const err = await assertRejects(
+      () => store.createThread(bobAuth, {
+        to: "alice@acme/cursor",
+        envelope: sampleEnvelope("renamed"),
+        from_agent: "claude",
+      }),
+      HubError,
+    );
+    assertEquals((err as HubError).code, "agent_renamed");
+    assertEquals((err as Error).message.includes("codex"), true);
+
+    const { thread } = await store.createThread(bobAuth, {
+      to: "alice@acme/codex",
+      envelope: sampleEnvelope("new-slug"),
+      from_agent: "claude",
+    });
+    assertEquals(thread.audience, "alice@acme/codex");
+    assertEquals(thread.audience_agent_id, cursor!.id);
+  });
+});
+
+Deno.test("router rules most specific wins", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth, bobAuth } = await setupOrgWithUsers(store);
+    await store.registerAgent(aliceAuth, { slug: "research" });
+    const { agents, default_agent_id } = await store.listAgents(aliceAuth);
+    const cursor = agents.find((a) => a.slug === "cursor");
+    const research = agents.find((a) => a.slug === "research");
+    assertExists(cursor);
+    assertExists(research);
+    assertEquals(default_agent_id, cursor!.id);
+
+    const router = await store.getRouter(aliceAuth);
+    assertEquals(router.default_agent_id, cursor!.id);
+    assertEquals(router.rules.some((r) => r.match_slug === "research"), true);
+
+    // Remap research → cursor agent_id (custom rule).
+    await store.setRouter(aliceAuth, {
+      rules: [
+        { match_slug: "cursor", agent_id: cursor!.id },
+        { match_slug: "research", agent_id: cursor!.id },
+      ],
+    });
+
+    const { thread } = await store.createThread(bobAuth, {
+      to: "alice@acme/research",
+      envelope: sampleEnvelope("remap"),
+      from_agent: "claude",
+    });
+    assertEquals(thread.audience_agent_id, cursor!.id);
+
+    // Bare → default.
+    const { thread: bare } = await store.createThread(bobAuth, {
+      to: "alice@acme",
+      envelope: sampleEnvelope("bare"),
+      from_agent: "claude",
+    });
+    assertEquals(bare.audience_agent_id, cursor!.id);
+    assertEquals(bare.audience, "alice@acme/cursor");
   });
 });
 

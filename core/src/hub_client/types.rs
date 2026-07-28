@@ -38,7 +38,13 @@ pub struct ThreadMeta {
     pub status: ThreadStatus,
     pub from: String,
     pub from_user_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_agent_id: Option<String>,
     pub audience: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audience_agent_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audience_wire_path: Option<String>,
     pub org_id: String,
     pub participant_count: u32,
     pub reply_count: u32,
@@ -150,10 +156,82 @@ pub struct JoinOrgRequest {
     pub handle: Option<String>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Agent {
+    pub id: String,
+    pub user_id: String,
+    pub slug: String,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentListResponse {
+    pub agents: Vec<Agent>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_agent_id: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentsForHandleResponse {
+    pub agents: Vec<Agent>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct RegisterAgentRequest {
+    pub slug: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RegisterAgentResponse {
+    pub agent: Agent,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct SetDefaultAgentRequest {
+    pub agent_id: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SetDefaultAgentResponse {
+    pub agent: Agent,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct RenameAgentRequest {
+    pub slug: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RenameAgentResponse {
+    pub agent: Agent,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RoutingRule {
+    pub match_slug: String,
+    pub agent_id: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RouterConfig {
+    pub default_agent_id: Option<String>,
+    pub rules: Vec<RoutingRule>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct SetRouterRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_agent_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rules: Option<Vec<RoutingRule>>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct RegisterDeviceRequest {
     pub pubkey: String,
     pub platform: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_slug: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -204,17 +282,23 @@ pub struct ContactsResponse {
 pub struct CreateThreadRequest<'a> {
     pub to: &'a str,
     pub envelope: &'a Envelope,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from_agent: Option<&'a str>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ReplyRequest<'a> {
+    pub envelope: &'a Envelope,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from_agent: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub to_agent: Option<&'a str>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CreateThreadResponse {
     pub thread: ThreadMeta,
     pub message_id: String,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-pub struct ReplyRequest<'a> {
-    pub envelope: &'a Envelope,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

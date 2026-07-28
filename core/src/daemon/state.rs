@@ -8,6 +8,7 @@ use crypto_box::aead::OsRng;
 use crypto_box::SecretKey;
 use serde::{Deserialize, Serialize};
 
+use crate::address::{agent_suffix, is_broadcast_handle, strip_agent_suffix};
 use crate::crypto::{
     DevicePubKey, DeviceSecretKey, Envelope, IdentityStore, MemoryStore, StoreError,
     fingerprints_match, open, open_from_bytes, safety_number, safety_uri, seal, seal_to_temp,
@@ -17,8 +18,8 @@ use crate::crypto::{
 #[cfg(target_os = "macos")]
 use crate::crypto::KeychainIdentityStore;
 use crate::hub_client::{
-    Contact, HubClient, MeResponse, ThreadDetail, ThreadFilter, ThreadMessage, ThreadMeta,
-    pubkey_from_hub_string,
+    Agent, Contact, HubClient, MeResponse, ThreadDetail, ThreadFilter, ThreadKind, ThreadMessage,
+    ThreadMeta, pubkey_from_hub_string,
 };
 
 use super::config::{DaemonConfig, config_path, load_config, save_config_at};
@@ -274,6 +275,10 @@ pub struct StatusResult {
     pub org_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub email: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connected_agent: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_agent: Option<String>,
 }
 
 /// Safety-number compare result (no raw pubkey in agent/MCP responses).
@@ -296,6 +301,7 @@ pub struct DaemonState {
     draft: Mutex<MutandeBundle>,
     draft_id: Mutex<Option<String>>,
     processed_threads: Mutex<HashSet<String>>,
+    connected_agent_slug: Mutex<Option<String>>,
 }
 
 impl DaemonState {
@@ -327,6 +333,7 @@ impl DaemonState {
             draft: Mutex::new(MutandeBundle::default()),
             draft_id: Mutex::new(None),
             processed_threads: Mutex::new(HashSet::new()),
+            connected_agent_slug: Mutex::new(None),
         };
         // So Connect AI / MCP host configs resolve the bundled sidecar absolute path.
         let _ = state.persist_own_exe_path();
@@ -387,6 +394,7 @@ impl DaemonState {
             draft: Mutex::new(MutandeBundle::default()),
             draft_id: Mutex::new(None),
             processed_threads: Mutex::new(HashSet::new()),
+            connected_agent_slug: Mutex::new(None),
         })
     }
 
@@ -515,8 +523,99 @@ impl DaemonState {
 
     async fn register_local_device(&self, hub: &HubClient) -> Result<()> {
         let pubkey = self.device_public()?;
-        hub.register_device(&pubkey, "macos").await?;
+        let agent_slug = self.connected_agent_slug.lock().unwrap().clone();
+        hub.register_device(&pubkey, "macos", agent_slug.as_deref()).await?;
         Ok(())
+    }
+
+    pub fn connected_agent_slug(&self) -> Option<String> {
+        self.connected_agent_slug.lock().unwrap().clone()
+    }
+
+    pub async fn register_connected_agent(&self, slug: &str) -> Result<Agent> {
+        let slug = slug.trim();
+        if slug.is_empty() {
+            bail!("missing param: slug");
+        }
+        let hub = self.hub_client().context("hub not configured")?;
+        let agent = hub.register_agent(slug).await?;
+        *self.connected_agent_slug.lock().unwrap() = Some(agent.slug.clone());
+        Ok(agent)
+    }
+
+    pub async fn list_agents(&self) -> Result<crate::hub_client::AgentListResponse> {
+        let hub = self.hub_client().context("hub not configured")?;
+        hub.list_agents().await
+    }
+
+    pub async fn list_agents_for_handle(&self, handle: &str) -> Result<Vec<Agent>> {
+        let hub = self.hub_client().context("hub not configured")?;
+        hub.list_agents_for_handle(handle).await
+    }
+
+    pub async fn set_default_agent(&self, agent_id: &str) -> Result<Agent> {
+        let hub = self.hub_client().context("hub not configured")?;
+        hub.set_default_agent(agent_id).await
+    }
+
+    pub async fn rename_agent(&self, agent_id: &str, slug: &str) -> Result<Agent> {
+        let hub = self.hub_client().context("hub not configured")?;
+        hub.rename_agent(agent_id, slug).await
+    }
+
+    pub async fn get_router(&self) -> Result<crate::hub_client::RouterConfig> {
+        let hub = self.hub_client().context("hub not configured")?;
+        hub.get_router().await
+    }
+
+    pub async fn set_router(
+        &self,
+        default_agent_id: Option<&str>,
+        rules: Option<Vec<crate::hub_client::RoutingRule>>,
+    ) -> Result<crate::hub_client::RouterConfig> {
+        let hub = self.hub_client().context("hub not configured")?;
+        hub.set_router(default_agent_id, rules).await
+    }
+
+    async fn default_agent_slug(&self) -> Option<String> {
+        if let Some(hub) = self.hub_client() {
+            if let Ok(list) = hub.list_agents().await {
+                if let Some(id) = list.default_agent_id.as_deref() {
+                    if let Some(agent) = list.agents.iter().find(|a| a.id == id) {
+                        return Some(agent.slug.clone());
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    async fn effective_agent_slug(&self) -> Option<String> {
+        if let Some(s) = self.connected_agent_slug() {
+            return Some(s);
+        }
+        self.default_agent_slug().await
+    }
+
+    async fn filter_threads_for_agent(&self, threads: Vec<ThreadMeta>) -> Result<Vec<ThreadMeta>> {
+        let Some(hub) = self.hub_client() else {
+            return Ok(threads);
+        };
+        let me = hub.me().await?;
+        let user_id = me.user.as_ref().map(|u| u.id.as_str()).unwrap_or("");
+        let default_slug = self.default_agent_slug().await;
+        let Some(slug) = self.effective_agent_slug().await else {
+            return Ok(threads);
+        };
+        let default_slug = default_slug.as_deref().unwrap_or(&slug);
+        Ok(threads
+            .into_iter()
+            .filter(|t| thread_visible_for_agent(t, user_id, &slug, default_slug))
+            .collect())
+    }
+
+    fn from_agent_for_send(&self) -> Option<String> {
+        self.connected_agent_slug()
     }
 
     fn persist_session(
@@ -575,12 +674,17 @@ impl DaemonState {
                 handle: None,
                 org_id: None,
                 email: None,
+                connected_agent: None,
+                default_agent: None,
             });
         }
 
         if let Some(hub) = self.hub_client() {
             if let Ok(me) = hub.me().await {
-                return Ok(status_from_me(&cfg.hub_url, &me));
+                let mut status = status_from_me(&cfg.hub_url, &me);
+                status.connected_agent = self.connected_agent_slug();
+                status.default_agent = self.default_agent_slug().await;
+                return Ok(status);
             }
         }
 
@@ -594,6 +698,8 @@ impl DaemonState {
             handle: None,
             org_id: None,
             email: None,
+            connected_agent: self.connected_agent_slug(),
+            default_agent: None,
         })
     }
 
@@ -644,6 +750,11 @@ impl DaemonState {
         self.draft.lock().unwrap().clone()
     }
 
+    pub fn set_draft_notes(&self, notes: &str) {
+        let mut draft = self.draft.lock().unwrap();
+        draft.notes = Some(notes.to_string());
+    }
+
     pub fn merge_question(&self, decision: HumanDecision) {
         let mut draft = self.draft.lock().unwrap();
         draft.questions.retain(|q| q.id != decision.id);
@@ -670,7 +781,8 @@ impl DaemonState {
 
     pub async fn list_threads(&self, filter: Option<ThreadFilter>) -> Result<Vec<ThreadMeta>> {
         if let Some(hub) = self.hub_client() {
-            return hub.list_threads(filter).await;
+            let threads = hub.list_threads(filter).await?;
+            return self.filter_threads_for_agent(threads).await;
         }
         Ok(vec![])
     }
@@ -825,6 +937,7 @@ impl DaemonState {
             && bundle.resources.is_empty()
             && bundle.subject.is_none()
             && bundle.context.is_none()
+            && bundle.notes.as_ref().is_none_or(|n| n.trim().is_empty())
         {
             bail!("draft is empty");
         }
@@ -834,7 +947,10 @@ impl DaemonState {
         let env = self.seal_inline_or_blob(&plain, &recipients).await?;
 
         let thread_id = if let Some(hub) = self.hub_client() {
-            let resp = hub.create_thread(recipient, &env).await?;
+            let from_agent = self.from_agent_for_send();
+            let resp = hub
+                .create_thread(recipient, &env, from_agent.as_deref())
+                .await?;
             resp.thread.id
         } else {
             uuid::Uuid::new_v4().to_string()
@@ -868,7 +984,10 @@ impl DaemonState {
         let env = self.seal_and_upload_blob(plaintext, &recipients).await?;
 
         if let Some(hub) = self.hub_client() {
-            let resp = hub.create_thread(recipient, &env).await?;
+            let from_agent = self.from_agent_for_send();
+            let resp = hub
+                .create_thread(recipient, &env, from_agent.as_deref())
+                .await?;
             Ok(resp.thread.id)
         } else {
             Ok(uuid::Uuid::new_v4().to_string())
@@ -887,14 +1006,21 @@ impl DaemonState {
         }
     }
 
-    pub async fn reply_to_thread(&self, thread_id: &str, bundle: MutandeBundle) -> Result<()> {
+    pub async fn reply_to_thread(
+        &self,
+        thread_id: &str,
+        bundle: MutandeBundle,
+        to_agent: Option<&str>,
+    ) -> Result<()> {
         let plain = serde_json::to_vec(&bundle)?;
         let detail = self.get_thread(thread_id).await?;
         let recipients = self.resolve_reply_recipients(&detail).await?;
         let env = self.seal_inline_or_blob(&plain, &recipients).await?;
 
         if let Some(hub) = self.hub_client() {
-            hub.reply_to_thread(thread_id, &env).await?;
+            let from_agent = self.from_agent_for_send();
+            hub.reply_to_thread(thread_id, &env, from_agent.as_deref(), to_agent)
+                .await?;
         }
         Ok(())
     }
@@ -918,6 +1044,7 @@ impl DaemonState {
         if handle.is_empty() {
             bail!("missing param: handle");
         }
+        let handle = strip_agent_suffix(handle);
         let contacts = self.list_contacts().await?;
         for c in &contacts {
             if c.handle == handle {
@@ -995,7 +1122,8 @@ impl DaemonState {
     }
 
     async fn resolve_recipient_pubkeys(&self, recipient: &str) -> Result<Vec<DevicePubKey>> {
-        if recipient.starts_with("@all@") {
+        let bare = strip_agent_suffix(recipient);
+        if is_broadcast_handle(bare) {
             let contacts = self.list_contacts().await?;
             let keys: Vec<DevicePubKey> = contacts
                 .iter()
@@ -1009,7 +1137,7 @@ impl DaemonState {
 
         let contacts = self.list_contacts().await?;
         for contact in &contacts {
-            if contact.handle == recipient {
+            if contact.handle == bare {
                 if let Some(pk) = contact
                     .pubkey
                     .as_deref()
@@ -1017,7 +1145,7 @@ impl DaemonState {
                 {
                     return Ok(vec![pk]);
                 }
-                bail!("contact {recipient} has no pubkey");
+                bail!("contact {bare} has no pubkey");
             }
         }
 
@@ -1027,7 +1155,8 @@ impl DaemonState {
                     .user
                     .as_ref()
                     .and_then(|u| u.handle.as_deref())
-                    == Some(recipient)
+                    .map(strip_agent_suffix)
+                    == Some(bare)
                 {
                     return Ok(vec![self.device_public()?]);
                 }
@@ -1045,7 +1174,7 @@ impl DaemonState {
         &self,
         detail: &OpenedThreadDetail,
     ) -> Result<Vec<DevicePubKey>> {
-        let sender = detail.thread.from.clone();
+        let sender = strip_agent_suffix(&detail.thread.from).to_string();
         self.resolve_recipient_pubkeys(&sender).await
     }
 
@@ -1101,6 +1230,31 @@ fn status_from_me(hub_url: &Option<String>, me: &MeResponse) -> StatusResult {
             .email
             .clone()
             .or_else(|| me.user.as_ref().and_then(|u| u.email.clone())),
+        connected_agent: None,
+        default_agent: None,
+    }
+}
+
+fn agent_matches_display(display: &str, slug: &str, default_slug: &str) -> bool {
+    match agent_suffix(display) {
+        Some(s) => s == slug,
+        None => slug == default_slug,
+    }
+}
+
+fn thread_visible_for_agent(
+    thread: &ThreadMeta,
+    my_user_id: &str,
+    slug: &str,
+    default_slug: &str,
+) -> bool {
+    if thread.kind == ThreadKind::Broadcast {
+        return slug == default_slug;
+    }
+    if thread.from_user_id == my_user_id {
+        agent_matches_display(&thread.from, slug, default_slug)
+    } else {
+        agent_matches_display(&thread.audience, slug, default_slug)
     }
 }
 
@@ -1226,7 +1380,10 @@ mod tests {
                 status: ThreadStatus::Open,
                 from: "alice@acme".into(),
                 from_user_id: "u1".into(),
+                from_agent_id: None,
                 audience: "bob@acme".into(),
+                audience_agent_id: None,
+                audience_wire_path: None,
                 org_id: "o1".into(),
                 participant_count: 2,
                 reply_count: 0,
@@ -1271,7 +1428,10 @@ mod tests {
                 status: ThreadStatus::Open,
                 from: "alice@acme".into(),
                 from_user_id: "u1".into(),
+                from_agent_id: None,
                 audience: "bob@acme".into(),
+                audience_agent_id: None,
+                audience_wire_path: None,
                 org_id: "o1".into(),
                 participant_count: 2,
                 reply_count: 0,
@@ -1326,7 +1486,10 @@ mod tests {
                 status: ThreadStatus::Open,
                 from: "alice@acme".into(),
                 from_user_id: "u1".into(),
+                from_agent_id: None,
                 audience: "bob@acme".into(),
+                audience_agent_id: None,
+                audience_wire_path: None,
                 org_id: "o1".into(),
                 participant_count: 2,
                 reply_count: 0,

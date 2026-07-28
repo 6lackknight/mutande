@@ -38,6 +38,10 @@ deno task check
 | POST | `/v1/devices` | Auth0 Bearer (onboarded) |
 | GET/POST | `/v1/admin/invites` | Auth0 Bearer + `org_admin` |
 | GET | `/v1/contacts` | Auth0 Bearer (onboarded) |
+| GET/POST | `/v1/agents` | Auth0 Bearer (onboarded); `?handle=` for recipient slug autocomplete |
+| GET/PUT | `/v1/agents/router` | Auth0 Bearer — default agent + routing rules |
+| PUT | `/v1/agents/default` | Auth0 Bearer — set default agent |
+| PATCH | `/v1/agents/:agentId` | Auth0 Bearer — rename slug (same `agent_id`) |
 | GET/POST | `/v1/threads` | Auth0 Bearer (onboarded) |
 | GET | `/v1/threads/:id` | Auth0 Bearer (onboarded) |
 | POST | `/v1/threads/:id/replies` | Auth0 Bearer (onboarded) |

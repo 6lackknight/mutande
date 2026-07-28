@@ -226,13 +226,69 @@ impl HubClient {
         &self,
         pubkey: &DevicePubKey,
         platform: &str,
+        agent_slug: Option<&str>,
     ) -> Result<Device> {
         let body = RegisterDeviceRequest {
             pubkey: pubkey_to_hub_string(pubkey),
             platform: platform.to_string(),
+            agent_slug: agent_slug.map(str::to_string),
         };
         let resp: RegisterDeviceResponse = self.post_json("/v1/devices", &body, true).await?;
         Ok(resp.device)
+    }
+
+    pub async fn register_agent(&self, slug: &str) -> Result<Agent> {
+        let body = RegisterAgentRequest {
+            slug: slug.to_string(),
+        };
+        let resp: RegisterAgentResponse = self.post_json("/v1/agents/register", &body, true).await?;
+        Ok(resp.agent)
+    }
+
+    pub async fn list_agents(&self) -> Result<AgentListResponse> {
+        self.get_json("/v1/agents").await
+    }
+
+    pub async fn list_agents_for_handle(&self, handle: &str) -> Result<Vec<Agent>> {
+        let encoded = handle.replace('@', "%40").replace('/', "%2F");
+        let resp: AgentsForHandleResponse = self
+            .get_json(&format!("/v1/agents?handle={encoded}"))
+            .await?;
+        Ok(resp.agents)
+    }
+
+    pub async fn set_default_agent(&self, agent_id: &str) -> Result<Agent> {
+        let body = SetDefaultAgentRequest {
+            agent_id: agent_id.to_string(),
+        };
+        let resp: SetDefaultAgentResponse = self.put_json("/v1/agents/default", &body).await?;
+        Ok(resp.agent)
+    }
+
+    pub async fn rename_agent(&self, agent_id: &str, slug: &str) -> Result<Agent> {
+        let body = RenameAgentRequest {
+            slug: slug.to_string(),
+        };
+        let resp: RenameAgentResponse = self
+            .patch_json(&format!("/v1/agents/{agent_id}"), &body)
+            .await?;
+        Ok(resp.agent)
+    }
+
+    pub async fn get_router(&self) -> Result<RouterConfig> {
+        self.get_json("/v1/agents/router").await
+    }
+
+    pub async fn set_router(
+        &self,
+        default_agent_id: Option<&str>,
+        rules: Option<Vec<RoutingRule>>,
+    ) -> Result<RouterConfig> {
+        let body = SetRouterRequest {
+            default_agent_id: default_agent_id.map(str::to_string),
+            rules,
+        };
+        self.put_json("/v1/agents/router", &body).await
     }
 
     pub async fn list_contacts(&self) -> Result<Vec<Contact>> {
@@ -251,8 +307,17 @@ impl HubClient {
         Ok(resp.threads)
     }
 
-    pub async fn create_thread(&self, to: &str, envelope: &Envelope) -> Result<CreateThreadResponse> {
-        let body = CreateThreadRequest { to, envelope };
+    pub async fn create_thread(
+        &self,
+        to: &str,
+        envelope: &Envelope,
+        from_agent: Option<&str>,
+    ) -> Result<CreateThreadResponse> {
+        let body = CreateThreadRequest {
+            to,
+            envelope,
+            from_agent,
+        };
         self.post_json("/v1/threads", &body, true).await
     }
 
@@ -260,8 +325,18 @@ impl HubClient {
         self.get_json(&format!("/v1/threads/{thread_id}")).await
     }
 
-    pub async fn reply_to_thread(&self, thread_id: &str, envelope: &Envelope) -> Result<()> {
-        let body = ReplyRequest { envelope };
+    pub async fn reply_to_thread(
+        &self,
+        thread_id: &str,
+        envelope: &Envelope,
+        from_agent: Option<&str>,
+        to_agent: Option<&str>,
+    ) -> Result<()> {
+        let body = ReplyRequest {
+            envelope,
+            from_agent,
+            to_agent,
+        };
         let _: serde_json::Value = self
             .post_json(
                 &format!("/v1/threads/{thread_id}/replies"),
@@ -534,6 +609,43 @@ impl HubClient {
             ));
         }
     }
+
+    async fn patch_json<T, B>(&self, path: &str, body: &B) -> Result<T>
+    where
+        T: DeserializeOwned,
+        B: Serialize + ?Sized,
+    {
+        let mut attempted_refresh = false;
+        loop {
+            let token = self.access_token();
+            let resp = self
+                .client
+                .patch(self.url(path))
+                .json(body)
+                .bearer_auth(&token)
+                .send()
+                .await
+                .with_context(|| format!("PATCH {path}"))?;
+
+            if resp.status().is_success() {
+                return resp
+                    .json()
+                    .await
+                    .with_context(|| format!("decode PATCH {path}"));
+            }
+            if resp.status() == StatusCode::UNAUTHORIZED
+                && !attempted_refresh
+                && self.try_refresh_after_unauthorized().await
+            {
+                attempted_refresh = true;
+                continue;
+            }
+            return Err(hub_error(
+                resp.status(),
+                resp.text().await.unwrap_or_default(),
+            ));
+        }
+    }
 }
 
 fn hub_error(status: StatusCode, body: String) -> anyhow::Error {
@@ -646,6 +758,7 @@ mod tests {
         let req = CreateThreadRequest {
             to: "bob@acme",
             envelope: &env,
+            from_agent: None,
         };
         let json = serde_json::to_value(&req).unwrap();
         assert_eq!(json["to"], "bob@acme");
@@ -657,7 +770,11 @@ mod tests {
     #[test]
     fn reply_request_wraps_envelope_object() {
         let env = sample_envelope();
-        let req = ReplyRequest { envelope: &env };
+        let req = ReplyRequest {
+            envelope: &env,
+            from_agent: None,
+            to_agent: None,
+        };
         let json = serde_json::to_value(&req).unwrap();
         assert!(json["envelope"]["wraps"].is_array());
     }
@@ -841,7 +958,7 @@ mod tests {
         assert!(joined.is_onboarded());
 
         let device = client
-            .register_device(&DevicePubKey([7u8; 32]), "macos")
+            .register_device(&DevicePubKey([7u8; 32]), "macos", None)
             .await
             .unwrap();
         assert_eq!(device.platform, "macos");
@@ -948,7 +1065,10 @@ mod tests {
             .await;
 
         let client = HubClient::new(HubConfig::new(server.uri(), "test-at")).unwrap();
-        let created = client.create_thread("bob@acme", &envelope).await.unwrap();
+        let created = client
+            .create_thread("bob@acme", &envelope, None)
+            .await
+            .unwrap();
         assert_eq!(created.thread.id, thread_id);
 
         let requests = server.received_requests().await.unwrap();

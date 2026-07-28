@@ -52,13 +52,24 @@ export interface Invite {
   used_by?: string;
 }
 
+export interface Agent {
+  id: string;
+  user_id: string;
+  slug: string;
+  created_at: string;
+}
+
 export interface ThreadMeta {
   id: string;
   kind: "direct" | "broadcast";
   status: "open" | "closed";
   from: string;
   from_user_id: string;
+  from_agent_id?: string;
   audience: string;
+  audience_agent_id?: string;
+  /** Wire path `org/user/agent` for routing (direct threads). */
+  audience_wire_path?: string;
   org_id: string;
   participant_count: number;
   reply_count: number;
@@ -139,6 +150,8 @@ export interface JoinOrgInput {
 export interface RegisterDeviceInput {
   pubkey: string;
   platform: DevicePlatform;
+  /** Auto-register this agent slug on device connect. */
+  agent_slug?: string;
 }
 
 export interface MeResponse {
@@ -151,8 +164,50 @@ export interface MeResponse {
   org?: Org;
 }
 
-export interface CreateThreadInput { to: string; envelope: Envelope; }
-export interface ReplyInput { envelope: Envelope; }
+export interface CreateThreadInput {
+  to: string;
+  envelope: Envelope;
+  /** Sender agent slug; defaults to user's default agent. */
+  from_agent?: string;
+}
+
+export interface ReplyInput {
+  envelope: Envelope;
+  /** Reply-from agent slug; defaults to user's default agent. */
+  from_agent?: string;
+  /** Self-handoff: route thread to another of your agent slots. */
+  to_agent?: string;
+}
+
+export interface RegisterAgentInput {
+  slug: string;
+}
+
+export interface SetDefaultAgentInput {
+  agent_id: string;
+}
+
+export interface RenameAgentInput {
+  slug: string;
+}
+
+/** One row in the per-user agent router (most specific match_slug wins). */
+export interface RoutingRule {
+  /** Address suffix to match (`research` for `alice@acme/research`). */
+  match_slug: string;
+  agent_id: string;
+}
+
+export interface RouterConfig {
+  default_agent_id: string | null;
+  rules: RoutingRule[];
+}
+
+export interface SetRouterInput {
+  default_agent_id?: string | null;
+  rules?: RoutingRule[];
+}
+
 export type ThreadFilter = "needs_action" | "open" | "closed";
 
 export const MAX_ENVELOPE_BYTES = 60 * 1024;

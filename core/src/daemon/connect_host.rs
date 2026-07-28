@@ -11,8 +11,6 @@ use serde_json::{Map, Value};
 use super::config::load_config;
 use super::{expand_path, user_home_dir};
 
-pub const SERVER_NAME: &str = "mutande";
-
 /// ChatGPT desktop MCP path is not officially documented and has varied across
 /// early builds. We write `~/Library/Application Support/ChatGPT/mcp.json`.
 /// Also reported: `mcp_config.json`, `chatgpt_mcp_config.json` in the same dir.
@@ -116,15 +114,26 @@ pub fn config_path_for_host(host: Host, home: &Path) -> PathBuf {
     }
 }
 
-pub fn mcp_server_entry(command: &str) -> Value {
+pub fn mcp_server_name(host: Host) -> &'static str {
+    match host {
+        Host::Cursor => "mutande-cursor",
+        Host::Claude => "mutande-claude",
+        Host::Chatgpt => "mutande-chatgpt",
+    }
+}
+
+pub fn mcp_server_entry(command: &str, agent_slug: &str) -> Value {
     serde_json::json!({
         "command": command,
         "args": ["mcp"],
+        "env": {
+            "MUTANDE_AGENT_SLUG": agent_slug
+        }
     })
 }
 
 /// Merge-write the mutande MCP server into an existing host config (or create it).
-pub fn merge_write_mcp_config(path: &Path, command: &str) -> Result<()> {
+pub fn merge_write_mcp_config(path: &Path, command: &str, host: Host) -> Result<()> {
     let mut root: Value = if path.exists() {
         let data = fs::read_to_string(path)
             .with_context(|| format!("read {}", path.display()))?;
@@ -146,7 +155,10 @@ pub fn merge_write_mcp_config(path: &Path, command: &str) -> Result<()> {
     let servers = servers
         .as_object_mut()
         .context("mcpServers must be a JSON object")?;
-    servers.insert(SERVER_NAME.to_string(), mcp_server_entry(command));
+    servers.insert(
+        mcp_server_name(host).to_string(),
+        mcp_server_entry(command, host.as_str()),
+    );
 
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
@@ -190,7 +202,7 @@ fn connect_host_inner(
         } else {
             None
         };
-        match merge_write_mcp_config(&path, &command) {
+        match merge_write_mcp_config(&path, &command, h) {
             Ok(()) => hosts.push(HostWriteResult {
                 host: h.as_str().into(),
                 path: path.display().to_string(),
@@ -237,11 +249,18 @@ mod tests {
         )
         .unwrap();
 
-        merge_write_mcp_config(&path, "/opt/mutande-core").unwrap();
+        merge_write_mcp_config(&path, "/opt/mutande-core", Host::Cursor).unwrap();
 
         let data: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-        assert_eq!(data["mcpServers"]["mutande"]["command"], "/opt/mutande-core");
-        assert_eq!(data["mcpServers"]["mutande"]["args"][0], "mcp");
+        assert_eq!(
+            data["mcpServers"]["mutande-cursor"]["command"],
+            "/opt/mutande-core"
+        );
+        assert_eq!(data["mcpServers"]["mutande-cursor"]["args"][0], "mcp");
+        assert_eq!(
+            data["mcpServers"]["mutande-cursor"]["env"]["MUTANDE_AGENT_SLUG"],
+            "cursor"
+        );
         assert_eq!(data["mcpServers"]["other"]["command"], "echo");
     }
 
@@ -267,7 +286,7 @@ mod tests {
         let written: Value =
             serde_json::from_str(&fs::read_to_string(&cursor).unwrap()).unwrap();
         assert_eq!(
-            written["mcpServers"]["mutande"]["command"],
+            written["mcpServers"]["mutande-cursor"]["command"],
             "/tmp/fake-mutande-core"
         );
 

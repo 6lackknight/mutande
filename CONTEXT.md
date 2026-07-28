@@ -9,9 +9,15 @@ Terms for threads, handoffs, and the crypto seam. Use these names in code and do
 | **thread** | Conversation container with `open` / `closed` status; holds handoffs and replies |
 | **bundle** | Plaintext payload before E2E encryption (questions, resources, answers) |
 | **handoff** | Outbound bundle from sender to recipient(s) |
-| **handle** | Human address, e.g. `alice@acme` |
-| **broadcast** | Virtual recipient `@all@org`; fans out to all org members |
+| **handle** | Human address, e.g. `alice@acme` (bare → recipient default agent) |
+| **agent handle** | Display routing suffix, e.g. `alice@acme/claude`; wire path `acme/alice/claude` |
+| **agent_id** | Stable UUID per agent slot; threads reference this, slug is renameable |
+| **broadcast** | Virtual recipient `@all@org`; fans out to each member's default agent only |
 | **org** | Closed team; invite-only membership |
+
+### Agent router
+
+Per-user **router**: `default_agent_id` + `rules[]` (`match_slug` → `agent_id`). Bare handle → default agent. `handle/agent` → most specific matching rule (exact `match_slug`), else registered slug. Renamed slugs fail with a clear hint (use the new address). `@all@org` → each member's default only. Self-handoff via reply `to_agent`.
 
 ## Crypto seam (wrap-to-N)
 
