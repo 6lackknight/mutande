@@ -29,9 +29,9 @@ SKIP_NOTARIZE=1 ./scripts/release-macos-dmg.sh
 Each release rewrites `app/pubspec.yaml`, `core/Cargo.toml`, and the default
 `MAC_DMG_VERSION` in `web/src/lib/downloads.ts`.
 
-Outputs land in `dist/macos/` (`mutande-VERSION.dmg`, `mutande-latest.dmg`).
-Copy into `web/public/downloads/` before deploying the site (DMGs are
-gitignored). Optional CDN: set `NEXT_PUBLIC_MAC_DMG_URL` on Vercel.
+Outputs land in `dist/macos/`. Public channel file is **`mutande-alpha.dmg`**
+(rolling; old versioned DMGs are pruned). Copy only that into
+`web/public/downloads/` before deploying (DMGs are gitignored).
 
 ## Intended path (Sparkle)
 

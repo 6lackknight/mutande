@@ -218,19 +218,22 @@ if [[ "$SKIP_NOTARIZE" != "1" ]]; then
   xcrun stapler validate "$DIST_DIR/${DMG_NAME}"
 fi
 
-# Convenience copy without version for stable website URL
-cp -f "$DIST_DIR/${DMG_NAME}" "$DIST_DIR/mutande-latest.dmg"
+# Rolling alpha channel — only this public name is kept (no version archives).
+CHANNEL_DMG="mutande-alpha.dmg"
+cp -f "$DIST_DIR/${DMG_NAME}" "$DIST_DIR/${CHANNEL_DMG}"
+rm -f "$DIST_DIR/${DMG_NAME}" "$DIST_DIR/mutande-latest.dmg"
+find "$DIST_DIR" -maxdepth 1 -type f -name 'mutande-*.dmg' ! -name "$CHANNEL_DMG" -delete
 
 echo "==> Gatekeeper assess"
 spctl --assess --type execute --verbose=4 "$APP" 2>&1 || true
 # open/context is the check users hit when mounting a downloaded DMG
 spctl --assess --type open --context context:primary-signature --verbose=4 \
-  "$DIST_DIR/${DMG_NAME}" 2>&1 || true
+  "$DIST_DIR/${CHANNEL_DMG}" 2>&1 || true
 
 echo ""
 echo "Done."
-echo "  App:  $APP"
-echo "  DMG:  $DIST_DIR/${DMG_NAME}"
-echo "  Also: $DIST_DIR/mutande-latest.dmg"
+echo "  App:     $APP"
+echo "  Version: $DIST_DIR/${DMG_NAME}"
+echo "  Publish: $DIST_DIR/${CHANNEL_DMG}"
 echo "  Bundle id: $BUNDLE_ID"
 echo "  Team: $TEAM_ID"

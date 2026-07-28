@@ -1,6 +1,6 @@
 import Image from "next/image";
 import { BrandMark, ButtonLink } from "@/components/ui";
-import { MAC_DMG_URL } from "@/lib/downloads";
+import { MAC_DMG_CHANNEL, MAC_DMG_URL } from "@/lib/downloads";
 
 export default function LandingPage() {
   return (
@@ -53,7 +53,7 @@ export default function LandingPage() {
                 variant="secondary"
                 className="min-w-[9.5rem]"
               >
-                Download for Mac
+                Mac {MAC_DMG_CHANNEL}
               </ButtonLink>
             </div>
           </div>

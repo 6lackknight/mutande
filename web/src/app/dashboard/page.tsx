@@ -1,5 +1,10 @@
 import { Alert, BrandMark, ButtonLink, PageTitle, Shell } from "@/components/ui";
-import { MAC_DMG_URL, MAC_DMG_VERSION } from "@/lib/downloads";
+import {
+  MAC_DMG_CHANNEL,
+  MAC_DMG_LABEL,
+  MAC_DMG_URL,
+  MAC_DMG_VERSION,
+} from "@/lib/downloads";
 import { requireOnboarded } from "@/lib/session";
 import { isOrgAdmin } from "@/lib/types";
 
@@ -56,14 +61,14 @@ export default async function DashboardPage() {
           <ButtonLink href="/admin/invites">Manage invites</ButtonLink>
         ) : null}
         <ButtonLink href={MAC_DMG_URL} variant="secondary">
-          Download Mac app
+          Download Mac {MAC_DMG_CHANNEL}
         </ButtonLink>
       </div>
 
       <div id="download" className="mt-12 space-y-3">
         <Alert tone="ok">
-          mutande for macOS {MAC_DMG_VERSION} — menu bar app with the local
-          daemon bundled. Open the DMG and drag mutande into Applications.
+          {MAC_DMG_LABEL} — early macOS build with the local daemon bundled.
+          Open the DMG and drag mutande into Applications. Expect rough edges.
         </Alert>
         <p className="text-sm text-muted">
           Direct link:{" "}
@@ -71,8 +76,9 @@ export default async function DashboardPage() {
             href={MAC_DMG_URL}
             className="underline underline-offset-2 hover:text-stone-900"
           >
-            mutande-{MAC_DMG_VERSION}.dmg
-          </a>
+            mutande-{MAC_DMG_CHANNEL}.dmg
+          </a>{" "}
+          <span className="text-stone-400">({MAC_DMG_VERSION})</span>
         </p>
       </div>
     </Shell>
