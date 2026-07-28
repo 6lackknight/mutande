@@ -268,4 +268,26 @@ mod tests {
         let home = user_home_dir().unwrap();
         assert_eq!(expand_path("~/foo"), home.join("foo"));
     }
+
+    #[tokio::test]
+    async fn prepare_unix_socket_refuses_live_listener() {
+        let dir = tempdir().unwrap();
+        let sock = dir.path().join("daemon.sock");
+        let _listener = UnixListener::bind(&sock).unwrap();
+        let err = prepare_unix_socket(&sock).await.unwrap_err();
+        assert!(
+            err.to_string().contains("already running"),
+            "unexpected error: {err}"
+        );
+        assert!(sock.exists(), "must not unlink a live socket path");
+    }
+
+    #[tokio::test]
+    async fn prepare_unix_socket_removes_stale_path() {
+        let dir = tempdir().unwrap();
+        let sock = dir.path().join("daemon.sock");
+        std::fs::write(&sock, b"").unwrap(); // not a live listener
+        prepare_unix_socket(&sock).await.unwrap();
+        assert!(!sock.exists());
+    }
 }

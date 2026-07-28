@@ -16,7 +16,8 @@ class CoreSidecar {
     DaemonClient? daemon,
     this.resolvePath,
     this.spawnServe,
-    this.healthTimeout = const Duration(seconds: 8),
+    // Keychain identity bootstrap on macOS can take several seconds.
+    this.healthTimeout = const Duration(seconds: 20),
   }) : _daemon = daemon ?? DaemonClient();
 
   final DaemonClient _daemon;
