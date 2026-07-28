@@ -138,7 +138,9 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
         const SizedBox(height: 4),
         Expanded(
           child: _loading
-              ? const Center(child: MutandeOrb.standard())
+              ? const Center(
+                  child: MutandeOrb.standard(semanticLabel: 'Loading threads…'),
+                )
               : _error != null
                   ? Center(
                       child: Padding(
@@ -810,7 +812,9 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
         ),
         if (_loading)
           const Expanded(
-            child: Center(child: MutandeOrb.standard()),
+            child: Center(
+              child: MutandeOrb.standard(semanticLabel: 'Loading thread…'),
+            ),
           )
         else if (_detail == null)
           Text(

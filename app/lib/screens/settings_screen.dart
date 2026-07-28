@@ -189,6 +189,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
         backgroundColor: _stone50,
         surfaceTintColor: Colors.transparent,
         titleSpacing: 0,
+        automaticallyImplyLeading: false,
+        leading: IconButton(
+          tooltip: 'Close',
+          onPressed: () => Navigator.pop(context),
+          icon: const Icon(Icons.close, size: 22),
+        ),
         title: const Text('Settings'),
       ),
       body: ListView(
@@ -431,11 +437,7 @@ class _HostsCard extends StatelessWidget {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 24),
         child: Center(
-          child: SizedBox(
-            width: 22,
-            height: 22,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
+          child: MutandeOrb.loading(semanticLabel: 'Loading hosts…'),
         ),
       );
     }
@@ -873,7 +875,10 @@ class _CompareSheetState extends State<_CompareSheet> {
                   ? const Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        MutandeOrb.loading(semanticLabel: 'Checking…'),
+                        MutandeOrb.loading(
+                          semanticLabel: 'Checking…',
+                          dark: true,
+                        ),
                         SizedBox(width: 8),
                         Text('Checking…'),
                       ],

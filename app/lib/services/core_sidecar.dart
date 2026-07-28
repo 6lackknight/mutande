@@ -16,8 +16,8 @@ class CoreSidecar {
     DaemonClient? daemon,
     this.resolvePath,
     this.spawnServe,
-    // Keychain identity bootstrap on macOS can take several seconds.
-    this.healthTimeout = const Duration(seconds: 20),
+    // Keychain identity bootstrap on macOS can take well over 20s.
+    this.healthTimeout = const Duration(seconds: 60),
   }) : _daemon = daemon ?? DaemonClient();
 
   final DaemonClient _daemon;
@@ -115,11 +115,12 @@ class CoreSidecar {
 
     final ready = await _waitHealthy();
     if (!ready) {
-      await stop();
+      // Do not stop — the user may still be completing a Keychain prompt.
       return CoreSidecarStartResult(
         alreadyRunning: false,
         path: path,
         error: 'daemon did not become healthy within ${healthTimeout.inSeconds}s',
+        stillStarting: true,
       );
     }
 
@@ -164,6 +165,16 @@ class CoreSidecar {
   /// Stop only the process we spawned (leave externally started daemons alone).
   Future<void> stop() async {
     if (!_startedByUs) return;
+    await _stopSpawnedProcess();
+  }
+
+  /// Stop our spawned process (if any) and start fresh.
+  Future<CoreSidecarStartResult> restart() async {
+    await _stopSpawnedProcess();
+    return start();
+  }
+
+  Future<void> _stopSpawnedProcess() async {
     final proc = _process;
     _process = null;
     _startedByUs = false;
@@ -186,11 +197,15 @@ class CoreSidecarStartResult {
     required this.alreadyRunning,
     this.path,
     this.error,
+    this.stillStarting = false,
   });
 
   final bool alreadyRunning;
   final String? path;
   final String? error;
+
+  /// Spawned process may still come up (e.g. Keychain unlock in progress).
+  final bool stillStarting;
 
   bool get ok => error == null;
 }

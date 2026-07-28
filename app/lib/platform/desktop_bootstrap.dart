@@ -15,8 +15,8 @@ Future<TrayController?> bootstrapDesktopShell() async {
   await windowManager.ensureInitialized();
 
   const windowOptions = WindowOptions(
-    size: Size(720, 840),
-    minimumSize: Size(640, 720),
+    size: Size(1088, 720), // ~15% narrower than 1280; height kept
+    minimumSize: Size(816, 540),
     center: true,
     skipTaskbar: true,
     title: 'mutande',

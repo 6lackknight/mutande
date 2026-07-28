@@ -425,13 +425,37 @@ void main() {
         config: const AppConfig(hubUrl: 'http://localhost:8000'),
         daemon: daemon,
         welcomeDuration: Duration.zero,
+        startupRetryAttempts: 0,
       ),
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Daemon unreachable'), findsOneWidget);
+    expect(find.text('Waiting for Keychain'), findsOneWidget);
     expect(find.text('Retry'), findsOneWidget);
+    expect(find.text('Restart courier'), findsNothing);
     expect(find.text('Sign in with Auth0'), findsNothing);
+    expect(find.textContaining('ClientException'), findsNothing);
+  });
+
+  testWidgets('daemon error shows restart courier when handler set', (
+    WidgetTester tester,
+  ) async {
+    final daemon = _mockDaemon((request) async {
+      throw Exception('connection refused');
+    });
+
+    await tester.pumpWidget(
+      MutandeApp(
+        config: const AppConfig(hubUrl: 'http://localhost:8000'),
+        daemon: daemon,
+        welcomeDuration: Duration.zero,
+        startupRetryAttempts: 0,
+        onRestartCourier: () async => null,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Restart courier'), findsOneWidget);
   });
 
   testWidgets('slow get_status with healthy daemon is not unreachable', (
@@ -455,12 +479,13 @@ void main() {
         config: const AppConfig(hubUrl: 'http://localhost:8000'),
         daemon: daemon,
         welcomeDuration: Duration.zero,
+        startupRetryAttempts: 0,
       ),
     );
     await tester.pumpAndSettle();
 
     expect(find.text("Couldn't load session"), findsOneWidget);
-    expect(find.text('Daemon unreachable'), findsNothing);
+    expect(find.text('Waiting for Keychain'), findsNothing);
     expect(find.text('Retry'), findsOneWidget);
   });
 

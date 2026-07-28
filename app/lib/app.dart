@@ -8,7 +8,9 @@ import 'screens/settings_screen.dart';
 import 'screens/threads_screen.dart';
 import 'services/app_actions.dart';
 import 'services/daemon_client.dart';
+import 'services/daemon_errors.dart';
 import 'services/host_link_store.dart';
+import 'widgets/daemon_error_screen.dart';
 import 'widgets/thinking_orb.dart';
 import 'widgets/welcome_splash.dart';
 
@@ -80,6 +82,8 @@ class MutandeApp extends StatelessWidget {
     this.hostLinkStore,
     this.welcomeDuration = const Duration(seconds: 3),
     this.appVersion = AppConfig.appVersion,
+    this.startupRetryAttempts = 15,
+    this.onRestartCourier,
   });
 
   final AppConfig config;
@@ -99,6 +103,12 @@ class MutandeApp extends StatelessWidget {
   /// pubspec version (before `+`), overridable via `--dart-define=APP_VERSION=`.
   final String appVersion;
 
+  /// Retries while mutande-core / Keychain may still be starting (× 2s apart).
+  final int startupRetryAttempts;
+
+  /// When set (macOS shell), error screen can restart the bundled sidecar.
+  final Future<String?> Function()? onRestartCourier;
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -113,6 +123,8 @@ class MutandeApp extends StatelessWidget {
           daemon: daemon,
           seedStatus: seedStatus,
           hostLinkStore: hostLinkStore,
+          startupRetryAttempts: startupRetryAttempts,
+          onRestartCourier: onRestartCourier,
         ),
       ),
     );
@@ -126,12 +138,16 @@ class RootScreen extends StatefulWidget {
     this.daemon,
     this.seedStatus,
     this.hostLinkStore,
+    this.startupRetryAttempts = 15,
+    this.onRestartCourier,
   });
 
   final AppConfig config;
   final DaemonClient? daemon;
   final DaemonStatusResult? seedStatus;
   final HostLinkStore? hostLinkStore;
+  final int startupRetryAttempts;
+  final Future<String?> Function()? onRestartCourier;
 
   @override
   State<RootScreen> createState() => _RootScreenState();
@@ -141,6 +157,7 @@ class _RootScreenState extends State<RootScreen> {
   late final DaemonClient _daemon;
   late final bool _ownsDaemon;
   bool _loading = true;
+  String? _loadingHint;
   DaemonStatusResult? _status;
   String? _statusError;
   /// Set after a failed [getStatus] via local `health` ping (tray uses the same).
@@ -163,7 +180,7 @@ class _RootScreenState extends State<RootScreen> {
       _status = widget.seedStatus;
       _loading = false;
     } else {
-      _refreshStatus();
+      _refreshStatus(bootstrap: true);
     }
   }
 
@@ -176,37 +193,82 @@ class _RootScreenState extends State<RootScreen> {
     super.dispose();
   }
 
-  Future<void> _refreshStatus() async {
+  Future<void> _refreshStatus({bool bootstrap = false}) async {
     setState(() {
       _loading = true;
       _statusError = null;
+      _loadingHint = null;
     });
-    try {
-      final status = await _daemon.getStatus();
-      if (!mounted) return;
-      setState(() {
-        _status = status;
-        _statusError = null;
-        _daemonReachable = true;
-        _loading = false;
-      });
-      if (_pendingConnectHosts && status.configured) {
-        _pendingConnectHosts = false;
-        await _runConnectHosts();
+
+    Object? lastError;
+    final maxAttempts =
+        bootstrap ? (widget.startupRetryAttempts + 1).clamp(1, 999) : 1;
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        final status = await _daemon.getStatus();
+        if (!mounted) return;
+        setState(() {
+          _status = status;
+          _statusError = null;
+          _daemonReachable = true;
+          _loading = false;
+          _loadingHint = null;
+        });
+        if (_pendingConnectHosts && status.configured) {
+          _pendingConnectHosts = false;
+          await _runConnectHosts();
+        }
+        return;
+      } catch (e) {
+        lastError = e;
+        final canRetry = bootstrap &&
+            attempt < maxAttempts - 1 &&
+            isLikelyStartingError(e);
+        if (!canRetry) break;
+        if (mounted) {
+          setState(() {
+            _loadingHint = 'Waiting for Keychain…';
+          });
+        }
+        await Future<void>.delayed(const Duration(seconds: 2));
+        if (!mounted) return;
       }
-    } catch (e) {
-      if (!mounted) return;
-      // Distinguish hung/slow hub-backed get_status from a dead daemon.
-      // Tray "Daemon: up" uses pingHealth; do not call that "unreachable".
-      final health = await _daemon.pingHealth();
-      if (!mounted) return;
-      // Keep last-known status; transport failure ≠ unconfigured.
-      setState(() {
-        _statusError = e.toString();
-        _daemonReachable = health.connected;
-        _loading = false;
-      });
     }
+
+    if (lastError == null) return;
+    // Distinguish hung/slow hub-backed get_status from a dead daemon.
+    // Tray "Daemon: up" uses pingHealth; do not call that "unreachable".
+    final health = await _daemon.pingHealth();
+    if (!mounted) return;
+    // Keep last-known status; transport failure ≠ unconfigured.
+    setState(() {
+      _statusError = lastError.toString();
+      _daemonReachable = health.connected;
+      _loading = false;
+      _loadingHint = null;
+    });
+  }
+
+  Future<void> _restartCourier() async {
+    final restart = widget.onRestartCourier;
+    if (restart == null) return;
+    setState(() {
+      _loading = true;
+      _loadingHint = 'Restarting courier…';
+      _statusError = null;
+    });
+    final err = await restart();
+    if (!mounted) return;
+    if (err != null) {
+      setState(() {
+        _statusError = err;
+        _daemonReachable = false;
+        _loading = false;
+        _loadingHint = null;
+      });
+      return;
+    }
+    await _refreshStatus(bootstrap: true);
   }
 
   void _onOnboarded(DaemonStatusResult status) {
@@ -270,8 +332,24 @@ class _RootScreenState extends State<RootScreen> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Scaffold(
-        body: Center(child: MutandeOrb.standard()),
+      return Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const MutandeOrb.standard(semanticLabel: 'Loading…'),
+              if (_loadingHint != null) ...[
+                const SizedBox(height: 20),
+                Text(
+                  _loadingHint!,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: const Color(0xFF78716C),
+                      ),
+                ),
+              ],
+            ],
+          ),
+        ),
       );
     }
 
@@ -282,6 +360,8 @@ class _RootScreenState extends State<RootScreen> {
         endpoint: _daemon.httpBaseUrl,
         daemonReachable: _daemonReachable,
         onRetry: _refreshStatus,
+        onRestartCourier:
+            widget.onRestartCourier != null ? _restartCourier : null,
       );
     }
 
@@ -309,86 +389,6 @@ class _RootScreenState extends State<RootScreen> {
       connectError: _connectError,
       onConnectHosts: _runConnectHosts,
       hostLinkStore: widget.hostLinkStore,
-    );
-  }
-}
-
-/// Shown when get_status/transport fails and we have no last-known status.
-class DaemonErrorScreen extends StatelessWidget {
-  const DaemonErrorScreen({
-    super.key,
-    required this.error,
-    required this.endpoint,
-    this.daemonReachable = false,
-    required this.onRetry,
-  });
-
-  final String error;
-  final String endpoint;
-  final bool daemonReachable;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    final title =
-        daemonReachable ? "Couldn't load session" : 'Daemon unreachable';
-    final detail = daemonReachable
-        ? 'mutande-core is up, but session status timed out or failed '
-            '(usually a slow hub). Retry in a moment.\n'
-            'HTTP: $endpoint'
-        : 'The app starts mutande-core automatically; if this persists, '
-            'set MUTANDE_CORE_PATH or build core/target/release/mutande-core.\n'
-            'HTTP: $endpoint';
-
-    return Scaffold(
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 400),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  'mutande',
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    color: const Color(0xFF292524),
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: -0.5,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  title,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: const Color(0xFF991B1B),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  detail,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: const Color(0xFF78716C),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  error,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: const Color(0xFFA8A29E),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                FilledButton(
-                  onPressed: onRetry,
-                  child: const Text('Retry'),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 }
@@ -456,8 +456,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _openSettings() async {
     await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (context) => SettingsScreen(
+      PageRouteBuilder<void>(
+        pageBuilder: (context, animation, secondaryAnimation) => SettingsScreen(
           daemon: widget.daemon,
           checking: _checking,
           connecting: widget.connecting,
@@ -468,6 +468,19 @@ class _HomeScreenState extends State<HomeScreen> {
           handle: widget.status.handle,
           hostLinkStore: widget.hostLinkStore,
         ),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0, 1),
+              end: Offset.zero,
+            ).animate(CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeOutCubic,
+              reverseCurve: Curves.easeInCubic,
+            )),
+            child: child,
+          );
+        },
       ),
     );
     if (_tab == 1) _reloadAgents?.call();

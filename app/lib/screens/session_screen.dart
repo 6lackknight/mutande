@@ -222,7 +222,10 @@ class _SessionPanelState extends State<SessionPanel> {
                 FilledButton.icon(
                   onPressed: widget.checking ? null : widget.onCheckDaemon,
                   icon: widget.checking
-                      ? const MutandeOrb.loading(semanticLabel: 'Checking…')
+                      ? const MutandeOrb.loading(
+                          semanticLabel: 'Checking…',
+                          dark: true,
+                        )
                       : const Icon(Icons.refresh, size: 18),
                   label: Text(widget.checking ? 'Checking…' : 'Check daemon'),
                 ),

@@ -47,7 +47,7 @@ iOS Mutande app: full E2E companion (read, reply, blobs, push). Multi-device pub
 - Mac Auth0 login is Native + loopback callback (`http://127.0.0.1:<port>/callback`); defaults live in `core/src/daemon/auth0_defaults.rs`.
 - Onboarding is self-serve create-team or join-invite; org slug is user-picked; handle defaults to `email-local@org`.
 - Large payloads use private R2 with object key prefix `blobs/{id}` (`R2_*` hub env).
-- Flutter thinking UI uses orb modes: searching (idle/standard) and working (active loading).
+- Flutter thinking UI uses a single **working** orb (tilted particle orbits) for all loading states.
 - Agent addresses use `handle/agent` (`alice@acme/claude`); bare handle is the default agent; never show `/default` as a user-facing address; for self-collaboration allow short `@agent` (e.g. `@claude`); personal `@all` means all of the user's own agents (distinct from org broadcast `@all@acme`).
 - Mac app bundle id is `ai.mutande.app`; bundles `mutande-core` sidecar in app Resources and launches it on startup; v1 ships as notarized DMG via `scripts/release-macos-dmg.sh`, with download on prod web.
 - Public docs at `/docs` via Nextra in `web/`, same Vercel deploy as marketing/auth (not a separate deploy).

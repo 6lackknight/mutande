@@ -63,9 +63,7 @@ class _WelcomeSplashState extends State<WelcomeSplash> {
                       child: Column(
                         children: [
                           const Spacer(flex: 3),
-                          const ThinkingOrb(
-                            state: ThinkingOrbState.working,
-                            size: ThinkingOrbSize.panel,
+                          const MutandeOrb.standard(
                             dark: true,
                             semanticLabel: 'Starting',
                           ),

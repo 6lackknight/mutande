@@ -237,7 +237,10 @@ class _VerifyContactPanelState extends State<VerifyContactPanel> {
               ? const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    MutandeOrb.loading(semanticLabel: 'Checking…'),
+                    MutandeOrb.loading(
+                      semanticLabel: 'Checking…',
+                      dark: true,
+                    ),
                     SizedBox(width: 8),
                     Text('Checking…'),
                   ],

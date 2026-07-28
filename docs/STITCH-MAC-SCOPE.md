@@ -76,7 +76,7 @@ Design inside these — Stitch frames should match:
 | Constraint | Spec |
 |------------|------|
 | Shell | macOS **menu-bar accessory** (no Dock icon) |
-| Window | **720 × 840** pt default (**640 × 720** min), titled `mutande` (tray utility — not a full IDE; was 560×680) |
+| Window | **1088 × 720** pt default (**816 × 540** min), titled `mutande` (tray utility — not a full IDE) |
 | Close | Hides window; app stays via tray |
 | Tray | Solid black plate + white MT; not a template silhouette |
 | Theme | System light/dark eventually; **v1 mocks: light stone first**, then one dark pass for splash + tray |
@@ -93,7 +93,7 @@ Obvious desktop / tray mistakes. If a mock looks like any of these, redesign.
 
 | Antipattern | Why it fails here |
 |-------------|-------------------|
-| Full-width SaaS dashboard / sidebar app | This is a **720×840 menu-bar utility**, not Linear/Notion |
+| Full-width SaaS dashboard / sidebar app | This is a **1088×720 menu-bar utility**, not Linear/Notion |
 | Dock-first “big app” chrome (sidebar + toolbar + inspector) | No Dock icon; window is secondary to the tray |
 | Mobile patterns (bottom tab bars, huge touch targets, sheet stacks) | Design for mouse/trackpad density and macOS HIG |
 | Marketing landing squeezed into a window | No hero stats, logo walls, or “Book a demo” energy in-app |
@@ -191,7 +191,7 @@ Do not replace orbs with Material spinners in mocks.
 
 1. **Menu bar** — tray icon among other status items; tooltip `mutande`.  
 2. **Tray menu** — `Daemon: up|down|…` (disabled status) · Open mutande · Connect AI hosts · Quit.  
-3. **Window chrome** — traffic lights + title `mutande` at **720×840** (640×720 min).
+3. **Window chrome** — traffic lights + title `mutande` at **1088×720** (816×540 min).
 
 ### B. Launch & routing
 
@@ -327,7 +327,7 @@ daemon:           Connected / up
 - **Agents** is an indented list (not a node graph): handle → **default** → sub-agents; add only via **Add** on the empty node under default; never display `…/default` as an address.  
 - Verify feels grave and clear (in Settings).  
 - No hub URL, DEBUG ribbon, or developer env chrome in user flows.  
-- Frames sized for **720×840** (and a menu-bar strip for tray).
+- Frames sized for **1280×720** (and a menu-bar strip for tray).
 
 ---
 

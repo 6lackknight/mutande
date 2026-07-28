@@ -268,7 +268,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             child: FilledButton(
               onPressed: _submitting ? null : _signIn,
               child: _submitting
-                  ? const MutandeOrb.loading(semanticLabel: 'Signing in…')
+                  ? const MutandeOrb.loading(
+                      semanticLabel: 'Signing in…',
+                      dark: true,
+                    )
                   : const Text('Sign in with Auth0'),
             ),
           ),
@@ -335,7 +338,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             child: FilledButton(
               onPressed: _submitting ? null : _createTeam,
               child: _submitting
-                  ? const MutandeOrb.loading(semanticLabel: 'Creating…')
+                  ? const MutandeOrb.loading(
+                      semanticLabel: 'Creating…',
+                      dark: true,
+                    )
                   : const Text('Create team'),
             ),
           ),
@@ -376,7 +382,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             child: FilledButton(
               onPressed: _submitting ? null : _joinInvite,
               child: _submitting
-                  ? const MutandeOrb.loading(semanticLabel: 'Joining…')
+                  ? const MutandeOrb.loading(
+                      semanticLabel: 'Joining…',
+                      dark: true,
+                    )
                   : const Text('Join team'),
             ),
           ),

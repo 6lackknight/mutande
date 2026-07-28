@@ -358,11 +358,7 @@ class _AgentsPanelState extends State<AgentsPanel> {
         if (_loading || _adding)
           const Expanded(
             child: Center(
-              child: SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
+              child: MutandeOrb.standard(semanticLabel: 'Loading agents…'),
             ),
           )
         else if (_error != null)
@@ -1453,12 +1449,8 @@ class _AgentInspectorState extends State<_AgentInspector> {
                           ),
                         ),
                         child: _settingDefault
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
+                            ? const MutandeOrb.loading(
+                                semanticLabel: 'Setting default…',
                               )
                             : Text(
                                 widget.isPrimary
@@ -1475,13 +1467,9 @@ class _AgentInspectorState extends State<_AgentInspector> {
                             ? () {}
                             : (_busy ? null : _onConnect),
                         icon: _connecting
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
+                            ? const MutandeOrb.loading(
+                                semanticLabel: 'Connecting…',
+                                dark: true,
                               )
                             : const Icon(Icons.link, size: 16),
                         label: Text(
@@ -1620,10 +1608,9 @@ class _RenameSlugDialogState extends State<_RenameSlugDialog> {
             foregroundColor: Colors.white,
           ),
           child: _saving
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+              ? const MutandeOrb.loading(
+                  semanticLabel: 'Saving…',
+                  dark: true,
                 )
               : const Text('Save'),
         ),
@@ -1658,13 +1645,9 @@ class _InspectorTextAction extends StatelessWidget {
       child: TextButton.icon(
         onPressed: onPressed,
         icon: busy
-            ? SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: color.withValues(alpha: disabled ? 0.4 : 1),
-                ),
+            ? MutandeOrb.loading(
+                semanticLabel: '$label…',
+                dark: Theme.of(context).brightness == Brightness.dark,
               )
             : Icon(icon, size: 16),
         label: Text(label),

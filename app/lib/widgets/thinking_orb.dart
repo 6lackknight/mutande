@@ -3,14 +3,9 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
-/// Dotted thought-orb indicators ported from
-/// [thinking-orbs](https://github.com/Jakubantalik/thinking-orbs) (MIT).
-///
-/// - [ThinkingOrbState.searching] — scan meridian on a lat/long globe (standard)
-/// - [ThinkingOrbState.working] — particles on tilted orbits (active loading)
-enum ThinkingOrbState { searching, working }
+/// Dotted working orb — particles on tilted orbits (thinking-orbs MIT port).
 
-/// Tuned size presets from thinking-orbs (separate designs, not a scale factor).
+/// Tuned size presets (separate designs, not a scale factor).
 enum ThinkingOrbSize {
   /// Inline / button scale.
   inline(20),
@@ -22,30 +17,34 @@ enum ThinkingOrbSize {
   final double px;
 }
 
-/// Convenience wrapper: standard = searching, loading = working.
+/// Convenience wrapper for [ThinkingOrb].
 class MutandeOrb extends StatelessWidget {
+  /// Full-panel loading (threads, bootstrap, etc.).
   const MutandeOrb.standard({
     super.key,
     this.size = ThinkingOrbSize.panel,
     this.semanticLabel,
-  }) : state = ThinkingOrbState.searching;
+    this.dark,
+  });
 
+  /// Inline loading (buttons, rows).
   const MutandeOrb.loading({
     super.key,
     this.size = ThinkingOrbSize.inline,
     this.semanticLabel,
-  }) : state = ThinkingOrbState.working;
+    this.dark,
+  });
 
-  final ThinkingOrbState state;
   final ThinkingOrbSize size;
   final String? semanticLabel;
+  final bool? dark;
 
   @override
   Widget build(BuildContext context) {
     return ThinkingOrb(
-      state: state,
       size: size,
       semanticLabel: semanticLabel,
+      dark: dark,
     );
   }
 }
@@ -53,7 +52,6 @@ class MutandeOrb extends StatelessWidget {
 class ThinkingOrb extends StatefulWidget {
   const ThinkingOrb({
     super.key,
-    this.state = ThinkingOrbState.searching,
     this.size = ThinkingOrbSize.panel,
     this.speed = 1.0,
     this.paused = false,
@@ -61,7 +59,6 @@ class ThinkingOrb extends StatefulWidget {
     this.semanticLabel,
   });
 
-  final ThinkingOrbState state;
   final ThinkingOrbSize size;
   final double speed;
   final bool paused;
@@ -98,9 +95,7 @@ class _ThinkingOrbState extends State<ThinkingOrb>
   @override
   void didUpdateWidget(covariant ThinkingOrb oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.paused != widget.paused ||
-        oldWidget.state != widget.state ||
-        oldWidget.size != widget.size) {
+    if (oldWidget.paused != widget.paused || oldWidget.size != widget.size) {
       _syncTicker();
     }
   }
@@ -129,9 +124,8 @@ class _ThinkingOrbState extends State<ThinkingOrb>
   Widget build(BuildContext context) {
     final dark =
         widget.dark ?? Theme.of(context).brightness == Brightness.dark;
-    final preset = _resolvePreset(widget.state, widget.size);
-    final label = widget.semanticLabel ??
-        (widget.state == ThinkingOrbState.working ? 'Working…' : 'Searching…');
+    final preset = _resolvePreset(widget.size);
+    final label = widget.semanticLabel ?? 'Working…';
     final px = widget.size.px;
 
     return Semantics(
@@ -144,7 +138,6 @@ class _ThinkingOrbState extends State<ThinkingOrb>
           painter: _ThinkingOrbPainter(
             tSec: _tSec * preset.speed * widget.speed,
             dark: dark,
-            mode: preset.mode,
             opts: preset.opts,
           ),
         ),
@@ -153,31 +146,15 @@ class _ThinkingOrbState extends State<ThinkingOrb>
   }
 }
 
-// --- presets (baked from thinking-orbs resolvePreset) -----------------
-
-enum _Mode { globe, orbits }
-
 class _Resolved {
-  const _Resolved({
-    required this.mode,
-    required this.speed,
-    required this.opts,
-  });
+  const _Resolved({required this.speed, required this.opts});
 
-  final _Mode mode;
   final double speed;
   final _ModeOpts opts;
 }
 
 class _ModeOpts {
   const _ModeOpts({
-    this.latRings = 17,
-    this.lonDensity = 44,
-    this.rBase = 0.6,
-    this.rDepth = 1.7,
-    this.rBoost = 1.0,
-    this.scanMul = 1.0,
-    this.dimBase = 1.0,
     this.orbitN = 12,
     this.ghostN = 40,
     this.ghostR = 0.9,
@@ -185,13 +162,6 @@ class _ModeOpts {
     this.partRDepth = 1.6,
   });
 
-  final int latRings;
-  final int lonDensity;
-  final double rBase;
-  final double rDepth;
-  final double rBoost;
-  final double scanMul;
-  final double dimBase;
   final int orbitN;
   final int ghostN;
   final double ghostR;
@@ -199,51 +169,11 @@ class _ModeOpts {
   final double partRDepth;
 }
 
-_Resolved _resolvePreset(ThinkingOrbState state, ThinkingOrbSize size) {
-  if (state == ThinkingOrbState.searching) {
-    if (size == ThinkingOrbSize.panel) {
-      // globe @ 64: count 0.42, size 1.15, scanMul 4.08, dimBase 0.45
-      return const _Resolved(
-        mode: _Mode.globe,
-        speed: 2.015,
-        opts: _ModeOpts(
-          latRings: 11,
-          lonDensity: 29,
-          rBase: 0.69,
-          rDepth: 1.955,
-          rBoost: 1.0,
-          scanMul: 4.08,
-          dimBase: 0.45,
-        ),
-      );
-    }
-    // globe @ 20
-    return const _Resolved(
-      mode: _Mode.globe,
-      speed: 2.665,
-      opts: _ModeOpts(
-        latRings: 6,
-        lonDensity: 14,
-        rBase: 1.05,
-        rDepth: 2.975,
-        rBoost: 1.0,
-        scanMul: 4.335,
-        dimBase: 0.45,
-      ),
-    );
-  }
-
-  // working / orbits
+_Resolved _resolvePreset(ThinkingOrbSize size) {
   if (size == ThinkingOrbSize.panel) {
-    return const _Resolved(
-      mode: _Mode.orbits,
-      speed: 1.885,
-      opts: _ModeOpts(),
-    );
+    return const _Resolved(speed: 1.885, opts: _ModeOpts());
   }
-  // orbits @ 20: count 0.238, size 2.4
   return const _Resolved(
-    mode: _Mode.orbits,
     speed: 3.9,
     opts: _ModeOpts(
       orbitN: 3,
@@ -254,8 +184,6 @@ _Resolved _resolvePreset(ThinkingOrbState state, ThinkingOrbSize size) {
     ),
   );
 }
-
-// --- painter ----------------------------------------------------------
 
 class _Dot {
   _Dot({
@@ -279,28 +207,22 @@ class _ThinkingOrbPainter extends CustomPainter {
   _ThinkingOrbPainter({
     required this.tSec,
     required this.dark,
-    required this.mode,
     required this.opts,
   });
 
   final double tSec;
   final bool dark;
-  final _Mode mode;
   final _ModeOpts opts;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final dots = mode == _Mode.globe
-        ? _drawGlobe(size.shortestSide, tSec, opts)
-        : _drawOrbits(size.shortestSide, tSec, opts);
-    _paintDots(canvas, dots, dark);
+    _paintDots(canvas, _drawOrbits(size.shortestSide, tSec, opts), dark);
   }
 
   @override
   bool shouldRepaint(covariant _ThinkingOrbPainter oldDelegate) {
     return oldDelegate.tSec != tSec ||
         oldDelegate.dark != dark ||
-        oldDelegate.mode != mode ||
         oldDelegate.opts != opts;
   }
 }
@@ -308,10 +230,6 @@ class _ThinkingOrbPainter extends CustomPainter {
 double _hashD(num a, num b) {
   final h = math.sin(a * 12.9898 + b * 78.233) * 43758.5453;
   return h - h.floorToDouble();
-}
-
-double _angleDelta(double a, double b) {
-  return math.atan2(math.sin(a - b), math.cos(a - b));
 }
 
 double _radiusScale(double size, double pow) {
@@ -338,49 +256,6 @@ _Projector _makeProj(
     final z2 = y * st + z1 * ct;
     return [cx + x1 * scale, cy - y1 * scale, z2];
   };
-}
-
-List<_Dot> _drawGlobe(double size, double t, _ModeOpts o) {
-  const spin = 0.5;
-  final cx = size / 2;
-  final cy = size / 2;
-  final radius = (size / 2) * 0.82;
-  final tilt = 0.4 + 0.06 * math.sin(t * 0.35);
-  final pt = _makeProj(t * spin, tilt, cx, cy, radius);
-  final scan = t * (spin + (1.7 - spin) * o.scanMul);
-  final rs = _radiusScale(size, 0.6);
-  final dimBase = o.dimBase;
-
-  final dots = <_Dot>[];
-  final latRings = o.latRings;
-  final lonDensity = o.lonDensity;
-  for (var li = 0; li <= latRings; li++) {
-    final lat = -math.pi / 2 + (li / latRings) * math.pi;
-    final cosLat = math.cos(lat);
-    final sinLat = math.sin(lat);
-    final lonCount = math.max(1, (cosLat.abs() * lonDensity).round());
-    for (var lj = 0; lj < lonCount; lj++) {
-      final lon = (lj / lonCount) * 2 * math.pi;
-      final p = pt(cosLat * math.cos(lon), sinLat, cosLat * math.sin(lon));
-      final px = p[0];
-      final py = p[1];
-      final z = p[2];
-      final depth = (z + 1) / 2;
-      final d = _angleDelta(lon + t * spin, scan);
-      final boost = math.exp(-(d * d) / 0.18) * math.max(0.0, z);
-      dots.add(
-        _Dot(
-          x: px,
-          y: py,
-          z: z,
-          r: (o.rBase + o.rDepth * depth + o.rBoost * boost) * rs,
-          white: 0.62 - 0.54 * depth,
-          a: dimBase + (1 - dimBase) * math.min(1.0, boost),
-        ),
-      );
-    }
-  }
-  return dots;
 }
 
 List<_Dot> _drawOrbits(double size, double t, _ModeOpts o) {

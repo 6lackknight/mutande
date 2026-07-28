@@ -16,5 +16,14 @@ Future<void> main() async {
   final tray = await bootstrapDesktopShell();
   tray?.attachSidecar(sidecar);
 
-  runApp(MutandeApp(config: AppConfig.fromEnvironment()));
+  runApp(
+    MutandeApp(
+      config: AppConfig.fromEnvironment(),
+      onRestartCourier: () async {
+        final result = await sidecar.restart();
+        if (result.ok || result.stillStarting) return null;
+        return result.error ?? 'Could not restart mutande-core';
+      },
+    ),
+  );
 }
