@@ -231,6 +231,8 @@ class DaemonClient {
           id: m['id'] as String? ?? '',
           fromHandle: m['from_handle'] as String? ?? '',
           createdAt: m['created_at'] as String? ?? '',
+          parentMessageId: m['parent_message_id'] as String?,
+          inReplyTo: bundle?['in_reply_to'] as String?,
           bundleSubject: bundle?['subject'] as String?,
           bundleNotes:
               bundle?['notes'] as String? ?? bundle?['context'] as String?,
@@ -247,10 +249,14 @@ class DaemonClient {
     required String threadId,
     required String notes,
     String? toAgent,
+    String? inReplyTo,
   }) async {
     await _call('reply_to_thread', {
       'thread_id': threadId,
-      'bundle': {'notes': notes},
+      'bundle': {
+        'notes': notes,
+        if (inReplyTo != null) 'in_reply_to': inReplyTo,
+      },
       if (toAgent != null) 'to_agent': toAgent,
     });
   }
@@ -721,6 +727,8 @@ class ThreadMessageView {
     required this.id,
     required this.fromHandle,
     required this.createdAt,
+    this.parentMessageId,
+    this.inReplyTo,
     this.bundleSubject,
     this.bundleNotes,
     this.questionPrompts = const [],
@@ -731,11 +739,16 @@ class ThreadMessageView {
   final String id;
   final String fromHandle;
   final String createdAt;
+  final String? parentMessageId;
+  final String? inReplyTo;
   final String? bundleSubject;
   final String? bundleNotes;
   final List<String> questionPrompts;
   final List<String> resourceRequests;
   final String? openError;
+
+  /// Resolved parent for tree layout (hub metadata preferred).
+  String? get replyParentId => parentMessageId ?? inReplyTo;
 
   /// Prefer notes/subject, then questions — never hide a decrypted question-only handoff.
   String get displayBody {

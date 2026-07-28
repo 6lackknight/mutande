@@ -45,6 +45,8 @@ pub struct MutandeBundle {
     pub answers: Vec<BundleAnswer>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub in_reply_to: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -86,6 +88,8 @@ pub struct OpenedThreadMessage {
     pub created_at: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sender_only: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_message_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bundle: Option<MutandeBundle>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -869,6 +873,7 @@ impl DaemonState {
         plain: Result<Vec<u8>>,
     ) -> OpenedThreadMessage {
         let is_blob = msg.envelope.blob_id.is_some();
+        let parent_message_id = msg.parent_message_id.clone();
         let meta = |open_error: Option<String>| OpenedThreadMessage {
             id: msg.id.clone(),
             thread_id: msg.thread_id.clone(),
@@ -876,12 +881,13 @@ impl DaemonState {
             from_handle: msg.from_handle.clone(),
             created_at: msg.created_at.clone(),
             sender_only: msg.sender_only,
+            parent_message_id: parent_message_id.clone(),
             bundle: None,
             envelope: None,
             open_error,
         };
 
-        match plain {
+        let mut opened = match plain {
             Ok(plain) => match serde_json::from_slice::<MutandeBundle>(&plain) {
                 Ok(bundle) => OpenedThreadMessage {
                     id: msg.id,
@@ -890,6 +896,7 @@ impl DaemonState {
                     from_handle: msg.from_handle,
                     created_at: msg.created_at,
                     sender_only: msg.sender_only,
+                    parent_message_id: parent_message_id.clone(),
                     bundle: Some(bundle),
                     envelope: None,
                     open_error: None,
@@ -903,6 +910,7 @@ impl DaemonState {
                         from_handle: msg.from_handle,
                         created_at: msg.created_at,
                         sender_only: msg.sender_only,
+                        parent_message_id: parent_message_id.clone(),
                         bundle: Some(MutandeBundle {
                             subject: Some("blob artifact".into()),
                             notes: Some(format!(
@@ -923,7 +931,13 @@ impl DaemonState {
                 Err(err) => meta(Some(format!("decode bundle: {err}"))),
             },
             Err(err) => meta(Some(err.to_string())),
+        };
+        if opened.parent_message_id.is_none() {
+            if let Some(ref bundle) = opened.bundle {
+                opened.parent_message_id = bundle.in_reply_to.clone();
+            }
         }
+        opened
     }
 
     /// Open inline envelope, or download R2 ciphertext when `blob_id` is set.
@@ -1090,8 +1104,14 @@ impl DaemonState {
 
         if let Some(hub) = self.hub_client() {
             let from_agent = self.from_agent_for_send(agent_slug);
-            hub.reply_to_thread(thread_id, &env, from_agent.as_deref(), to_agent)
-                .await?;
+            hub.reply_to_thread(
+                thread_id,
+                &env,
+                from_agent.as_deref(),
+                to_agent,
+                bundle.in_reply_to.as_deref(),
+            )
+            .await?;
         }
         Ok(())
     }
@@ -1628,6 +1648,7 @@ mod tests {
                 envelope: env,
                 created_at: "2026-01-01T00:00:00Z".into(),
                 sender_only: None,
+                parent_message_id: None,
             }],
         };
 
@@ -1676,6 +1697,7 @@ mod tests {
                 envelope: env,
                 created_at: "2026-01-01T00:00:00Z".into(),
                 sender_only: None,
+                parent_message_id: None,
             }],
         };
 
@@ -1734,6 +1756,7 @@ mod tests {
                 envelope: env,
                 created_at: "2026-01-01T00:00:00Z".into(),
                 sender_only: None,
+                parent_message_id: None,
             }],
         };
         let opened = state.open_thread_detail(detail);
@@ -2311,6 +2334,7 @@ mod tests {
                     resources: vec![],
                     answers: vec![],
                     notes: None,
+                    in_reply_to: None,
                 },
                 None,
                 Some("claude"),

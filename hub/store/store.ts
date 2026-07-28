@@ -755,6 +755,20 @@ export class HubStore {
     const messageId = crypto.randomUUID();
     const ts = nowIso();
 
+    const parentId = input.parent_message_id?.trim();
+    if (parentId) {
+      const parentRes = await this.kv.get<ThreadMessage>(
+        this.messageKey(threadId, parentId),
+      );
+      if (!parentRes.value || parentRes.value.thread_id !== threadId) {
+        throw new HubError(
+          "Unknown parent message for this thread",
+          "invalid_reply",
+          400,
+        );
+      }
+    }
+
     let updatedThread: ThreadMeta = {
       ...thread,
       reply_count: thread.reply_count + 1,
@@ -786,6 +800,7 @@ export class HubStore {
       envelope: input.envelope,
       created_at: ts,
       sender_only: thread.kind === "broadcast",
+      ...(parentId ? { parent_message_id: parentId } : {}),
     };
 
     const tx = this.kv.atomic();

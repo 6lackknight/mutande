@@ -334,11 +334,13 @@ impl HubClient {
         envelope: &Envelope,
         from_agent: Option<&str>,
         to_agent: Option<&str>,
+        parent_message_id: Option<&str>,
     ) -> Result<()> {
         let body = ReplyRequest {
             envelope,
             from_agent,
             to_agent,
+            parent_message_id,
         };
         let _: serde_json::Value = self
             .post_json(
@@ -777,6 +779,7 @@ mod tests {
             envelope: &env,
             from_agent: None,
             to_agent: None,
+            parent_message_id: None,
         };
         let json = serde_json::to_value(&req).unwrap();
         assert!(json["envelope"]["wraps"].is_array());
@@ -1097,6 +1100,7 @@ mod tests {
                 envelope: posted,
                 created_at: "2026-01-01T00:00:00Z".into(),
                 sender_only: None,
+                parent_message_id: None,
             }],
         };
 

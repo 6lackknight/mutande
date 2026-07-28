@@ -50,6 +50,11 @@
         }
       }
     },
-    "notes": { "type": "string" }
+    "notes": { "type": "string" },
+    "in_reply_to": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Parent message id for nested thread replies."
+    }
   }
 }

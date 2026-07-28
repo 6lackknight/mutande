@@ -93,6 +93,8 @@ export interface ThreadMessage {
   envelope: Envelope;
   created_at: string;
   sender_only?: boolean;
+  /** Hub-visible reply target (plaintext bundle may also carry in_reply_to). */
+  parent_message_id?: string;
 }
 
 export interface Draft {
@@ -177,6 +179,8 @@ export interface ReplyInput {
   from_agent?: string;
   /** Self-handoff: route thread to another of your agent slots. */
   to_agent?: string;
+  /** Nested reply target message id in this thread. */
+  parent_message_id?: string;
 }
 
 export interface RegisterAgentInput {

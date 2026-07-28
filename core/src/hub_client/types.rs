@@ -64,6 +64,8 @@ pub struct ThreadMessage {
     pub created_at: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sender_only: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_message_id: Option<String>,
 }
 
 /// Org member or synthetic broadcast handle (`@all@org`).
@@ -293,6 +295,8 @@ pub struct ReplyRequest<'a> {
     pub from_agent: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub to_agent: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_message_id: Option<&'a str>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

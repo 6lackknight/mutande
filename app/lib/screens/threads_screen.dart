@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/daemon_client.dart';
 import '../widgets/thinking_orb.dart';
+import '../widgets/thread_message_tree.dart';
 import 'threads_spatial_view.dart';
 
 /// Stitch home threads — filters, list rows, search + new thread footer.
@@ -739,6 +740,22 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
   ThreadDetailResult? _detail;
   final _reply = TextEditingController();
   bool _sending = false;
+  String? _replyToMessageId;
+  String? _replyToHandle;
+
+  void _startReplyTo(ThreadMessageView message) {
+    setState(() {
+      _replyToMessageId = message.id;
+      _replyToHandle = message.fromHandle;
+    });
+  }
+
+  void _clearReplyTarget() {
+    setState(() {
+      _replyToMessageId = null;
+      _replyToHandle = null;
+    });
+  }
 
   @override
   void initState() {
@@ -781,8 +798,10 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
       await widget.daemon.replyToThread(
         threadId: widget.threadId,
         notes: text,
+        inReplyTo: _replyToMessageId,
       );
       _reply.clear();
+      _clearReplyTarget();
       await _load();
     } catch (e) {
       if (!mounted) return;
@@ -860,41 +879,47 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
           Expanded(
             child: ListView(
               children: [
-                ..._detail!.messages.map((m) {
-                  final body = m.displayBody;
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          m.fromHandle,
-                          style:
-                              Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: const Color(0xFF78716C),
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                        ),
-                        Text(
-                          body,
-                          style:
-                              Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                    color: m.openError != null
-                                        ? const Color(0xFF991B1B)
-                                        : const Color(0xFF292524),
-                                  ),
-                        ),
-                      ],
-                    ),
-                  );
-                }),
+                for (final node in flattenThreadMessages(_detail!.messages))
+                  _ThreadMessageTile(
+                    node: node,
+                    onReply: _detail!.status == 'closed'
+                        ? null
+                        : () => _startReplyTo(node.message),
+                  ),
               ],
             ),
           ),
+          if (_replyToHandle != null) ...[
+            const SizedBox(height: 8),
+            Material(
+              color: const Color(0xFFF5F5F4),
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Replying to $_replyToHandle',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: const Color(0xFF57534E),
+                            ),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: _clearReplyTarget,
+                      child: const Text('Cancel'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
           TextField(
             controller: _reply,
-            decoration: const InputDecoration(
-              labelText: 'Reply',
+            decoration: InputDecoration(
+              labelText: _replyToMessageId == null ? 'Reply' : 'Nested reply',
               hintText: 'Short note for their agent',
             ),
             minLines: 2,
@@ -909,6 +934,72 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
           ),
         ],
       ],
+    );
+  }
+}
+
+class _ThreadMessageTile extends StatelessWidget {
+  const _ThreadMessageTile({
+    required this.node,
+    this.onReply,
+  });
+
+  final ThreadMessageNode node;
+  final VoidCallback? onReply;
+
+  @override
+  Widget build(BuildContext context) {
+    final m = node.message;
+    final body = m.displayBody;
+    final indent = 12.0 + (node.depth * 20.0);
+
+    return Padding(
+      padding: EdgeInsets.only(left: indent, bottom: 12, right: 4),
+      child: DecoratedBox(
+        decoration: node.depth > 0
+            ? const BoxDecoration(
+                border: Border(
+                  left: BorderSide(color: Color(0xFFE7E5E4), width: 2),
+                ),
+              )
+            : const BoxDecoration(),
+        child: Padding(
+          padding: EdgeInsets.only(left: node.depth > 0 ? 10 : 0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                m.fromHandle,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: const Color(0xFF78716C),
+                      fontWeight: FontWeight.w500,
+                    ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                body,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: m.openError != null
+                          ? const Color(0xFF991B1B)
+                          : const Color(0xFF292524),
+                    ),
+              ),
+              if (onReply != null) ...[
+                const SizedBox(height: 4),
+                TextButton(
+                  onPressed: onReply,
+                  style: TextButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    minimumSize: const Size(44, 32),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: const Text('Reply'),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
