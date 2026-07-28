@@ -2,6 +2,7 @@
   "version": "5",
   "specifiers": {
     "jsr:@hono/hono@4": "4.12.24",
+    "jsr:@panva/jose@6": "6.2.4",
     "jsr:@std/assert@1": "1.0.16",
     "jsr:@std/internal@^1.0.12": "1.0.12",
     "npm:aws4fetch@1.0.20": "1.0.20"
@@ -9,6 +10,9 @@
   "jsr": {
     "@hono/hono@4.12.24": {
       "integrity": "a74a40f06ae6704ddd0e8e576f6da9d34666c3e1e0f5412a2c1ff800ffd092f4"
+    },
+    "@panva/jose@6.2.4": {
+      "integrity": "a6e790d43948cfa94a5870be132297201f326f7c20e7dce3cff1d2931c79d77a"
     },
     "@std/assert@1.0.16": {
       "integrity": "6a7272ed1eaa77defe76e5ff63ca705d9c495077e2d5fd0126d2b53fc5bd6532",
@@ -28,6 +32,7 @@
   "workspace": {
     "dependencies": [
       "jsr:@hono/hono@4",
+      "jsr:@panva/jose@6",
       "npm:aws4fetch@1.0.20"
     ]
   }

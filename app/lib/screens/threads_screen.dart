@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/daemon_client.dart';
+import '../widgets/thinking_orb.dart';
 
 /// Compact thread list + detail/reply — flows over pixels, no dashboard clutter.
 class ThreadsPanel extends StatefulWidget {
@@ -97,7 +98,7 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
         if (_loading)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 24),
-            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            child: Center(child: MutandeOrb.standard()),
           )
         else if (_error != null)
           Text(
@@ -268,7 +269,7 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
         if (_loading)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 24),
-            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            child: Center(child: MutandeOrb.standard()),
           )
         else if (_detail == null)
           Text(

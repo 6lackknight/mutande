@@ -962,6 +962,7 @@ name = "mutande-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64",
  "chacha20poly1305",
  "clap",
  "crypto_box",

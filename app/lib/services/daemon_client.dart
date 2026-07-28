@@ -22,8 +22,10 @@ import 'package:http/http.dart' as http;
 /// | Method | Purpose |
 /// |--------|---------|
 /// | `health` | Liveness ping; returns `{ ok, service, version? }` |
-/// | `get_status` / `me` | Configured?, handle/org from hub when JWT present |
-/// | `register` / `onboard` | Invite + handle + hub_url → persist JWT |
+/// | `get_status` / `me` | signed_in / needs_onboarding / configured + handle |
+/// | `auth_login` | Auth0 loopback (or injected token) → persist tokens |
+/// | `create_org` | Create team after Auth0 |
+/// | `join_org` / `onboard` | Join via invite after Auth0 |
 /// | `list_contacts` | Org members + synthetic `@all@org` |
 /// | `list_threads` | Filter: `needs_action`, `open`, `closed` |
 /// | `get_thread` | Thread + messages with decrypted `bundle` (or `open_error` without ciphertext) |
@@ -72,29 +74,68 @@ class DaemonClient {
   Future<DaemonStatusResult> getStatus() async {
     final result = await _call('get_status');
     final map = result as Map<String, dynamic>? ?? {};
-    return DaemonStatusResult(
-      configured: map['configured'] == true,
-      hubUrl: map['hub_url'] as String?,
-      handle: map['handle'] as String?,
-      orgId: map['org_id'] as String?,
+    return DaemonStatusResult.fromJson(map);
+  }
+
+  /// Auth0 login via daemon loopback OAuth (or injected [accessToken] for tests).
+  ///
+  /// Opens the system browser; returns status (`signed_in` / `needs_onboarding`).
+  Future<DaemonStatusResult> authLogin({
+    required String hubUrl,
+    String? auth0Domain,
+    String? auth0ClientId,
+    String? auth0Audience,
+    String? accessToken,
+    String? refreshToken,
+    bool openBrowser = true,
+  }) async {
+    final params = <String, dynamic>{
+      'hub_url': hubUrl,
+      'open_browser': openBrowser,
+    };
+    if (auth0Domain != null) params['auth0_domain'] = auth0Domain;
+    if (auth0ClientId != null) params['auth0_client_id'] = auth0ClientId;
+    if (auth0Audience != null) params['auth0_audience'] = auth0Audience;
+    if (accessToken != null) params['access_token'] = accessToken;
+    if (refreshToken != null) params['refresh_token'] = refreshToken;
+    // OAuth can take minutes; use a longer timeout than other RPCs.
+    final result = await _callWithTimeout(
+      'auth_login',
+      params,
+      const Duration(minutes: 4),
+    );
+    final map = result as Map<String, dynamic>? ?? {};
+    return DaemonStatusResult.fromJson(map);
+  }
+
+  /// Create team after Auth0 (`POST /v1/orgs` via daemon).
+  Future<OnboardResult> createOrg({
+    required String slug,
+    String? name,
+    String? handle,
+  }) async {
+    final params = <String, dynamic>{'slug': slug};
+    if (name != null && name.isNotEmpty) params['name'] = name;
+    if (handle != null && handle.isNotEmpty) params['handle'] = handle;
+    final result = await _call('create_org', params);
+    final map = result as Map<String, dynamic>? ?? {};
+    return OnboardResult(
+      handle: map['handle'] as String? ?? '',
+      orgId: map['org_id'] as String? ?? '',
     );
   }
 
-  /// Accept invite and register device pubkey via JSON-RPC `register`
-  /// (alias `onboard`).
-  Future<OnboardResult> register({
+  /// Join via invite after Auth0 (`POST /v1/onboarding/join`).
+  Future<OnboardResult> joinOrg({
     required String inviteCode,
-    required String handle,
-    required String hubUrl,
+    String? handle,
   }) async {
-    final result = await _call('register', {
-      'invite_code': inviteCode,
-      'handle': handle,
-      'hub_url': hubUrl,
-    });
+    final params = <String, dynamic>{'invite_code': inviteCode};
+    if (handle != null && handle.isNotEmpty) params['handle'] = handle;
+    final result = await _call('join_org', params);
     final map = result as Map<String, dynamic>? ?? {};
     return OnboardResult(
-      handle: map['handle'] as String? ?? handle,
+      handle: map['handle'] as String? ?? handle ?? '',
       orgId: map['org_id'] as String? ?? '',
     );
   }
@@ -239,7 +280,18 @@ class DaemonClient {
   }
 
   /// Generic JSON-RPC 2.0 call over HTTP POST to `{base}/rpc`.
-  Future<dynamic> _call(String method, [Map<String, dynamic>? params]) async {
+  Future<dynamic> _call(
+    String method, [
+    Map<String, dynamic>? params,
+  ]) async {
+    return _callWithTimeout(method, params, null);
+  }
+
+  Future<dynamic> _callWithTimeout(
+    String method,
+    Map<String, dynamic>? params,
+    Duration? timeout,
+  ) async {
     final id = ++_jsonRpcId;
     final payload = <String, dynamic>{
       'jsonrpc': '2.0',
@@ -269,7 +321,7 @@ class DaemonClient {
           },
           body: body,
         )
-        .timeout(requestTimeout);
+        .timeout(timeout ?? requestTimeout);
 
     if (response.statusCode == 401) {
       _cachedHttpToken = null;
@@ -356,15 +408,33 @@ class DaemonHealthResult {
 class DaemonStatusResult {
   const DaemonStatusResult({
     required this.configured,
+    this.signedIn = false,
+    this.needsOnboarding = false,
     this.hubUrl,
     this.handle,
     this.orgId,
+    this.email,
   });
 
+  factory DaemonStatusResult.fromJson(Map<String, dynamic> map) {
+    return DaemonStatusResult(
+      configured: map['configured'] == true,
+      signedIn: map['signed_in'] == true,
+      needsOnboarding: map['needs_onboarding'] == true,
+      hubUrl: map['hub_url'] as String?,
+      handle: map['handle'] as String?,
+      orgId: map['org_id'] as String?,
+      email: map['email'] as String?,
+    );
+  }
+
   final bool configured;
+  final bool signedIn;
+  final bool needsOnboarding;
   final String? hubUrl;
   final String? handle;
   final String? orgId;
+  final String? email;
 }
 
 class OnboardResult {

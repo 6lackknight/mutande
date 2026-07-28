@@ -17,11 +17,12 @@ use crate::crypto::{
 #[cfg(target_os = "macos")]
 use crate::crypto::KeychainIdentityStore;
 use crate::hub_client::{
-    Contact, HubClient, ThreadDetail, ThreadFilter, ThreadMessage, ThreadMeta,
+    Contact, HubClient, MeResponse, ThreadDetail, ThreadFilter, ThreadMessage, ThreadMeta,
     pubkey_from_hub_string,
 };
 
 use super::config::{DaemonConfig, config_path, load_config, save_config_at};
+use super::oauth::{self, Auth0NativeConfig};
 
 /// Plaintext draft matching proto/bundle.schema.json (subset used in v1).
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -248,7 +249,7 @@ fn bootstrap_identity() -> Result<Box<dyn IdentityStore>> {
     Ok(Box::new(identity))
 }
 
-/// Result of invite/register onboarding.
+/// Result of create-org / join-invite onboarding.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct OnboardResult {
     pub handle: String,
@@ -258,13 +259,21 @@ pub struct OnboardResult {
 /// Daemon + hub session status (no secrets).
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct StatusResult {
+    /// Onboarded with a handle — ready for E2E mail UI.
     pub configured: bool,
+    /// Auth0 access token + hub_url present.
+    #[serde(default)]
+    pub signed_in: bool,
+    #[serde(default)]
+    pub needs_onboarding: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hub_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub handle: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub org_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
 }
 
 /// Safety-number compare result (no raw pubkey in agent/MCP responses).
@@ -297,11 +306,13 @@ impl DaemonState {
         let loaded = load_config().unwrap_or_default();
         let identity = bootstrap_identity()?;
         let config = Arc::new(Mutex::new(loaded.clone()));
-        let hub = match (&loaded.hub_url, &loaded.jwt) {
+        let hub = match (&loaded.hub_url, &loaded.access_token) {
             (Some(url), Some(token)) => Some(make_hub_client(
                 url,
                 token,
                 loaded.refresh_token.clone(),
+                loaded.auth0_domain.clone(),
+                loaded.auth0_client_id.clone(),
                 Arc::clone(&config),
                 None,
             )?),
@@ -388,88 +399,201 @@ impl DaemonState {
         self.hub.lock().unwrap().clone()
     }
 
-    /// Register device with hub via invite; persist jwt + hub_url.
-    pub async fn register(
+    /// Auth0 login (loopback PKCE or injected access token), then hub `/me`.
+    /// If already onboarded, registers this device pubkey.
+    pub async fn auth_login(
         &self,
-        invite_code: &str,
-        handle: &str,
         hub_url: &str,
-    ) -> Result<OnboardResult> {
-        let invite_code = invite_code.trim();
-        let handle = handle.trim();
+        auth0_domain: Option<&str>,
+        auth0_client_id: Option<&str>,
+        auth0_audience: Option<&str>,
+        access_token: Option<&str>,
+        refresh_token: Option<&str>,
+        open_browser: bool,
+    ) -> Result<StatusResult> {
         let hub_url = hub_url.trim().trim_end_matches('/');
-        if invite_code.is_empty() {
-            bail!("missing param: invite_code");
-        }
-        if handle.is_empty() {
-            bail!("missing param: handle");
-        }
         if hub_url.is_empty() {
             bail!("missing param: hub_url");
         }
 
-        let pubkey = self.device_public()?;
-        // Register is unauthenticated; empty JWT is fine for HubClient.
-        let client = HubClient::new(crate::hub_client::HubConfig::new(hub_url, ""))?;
-        let auth = client.register(invite_code, handle, &pubkey).await?;
+        let domain = resolve_auth0_domain(auth0_domain)?;
+        let client_id = resolve_auth0_client_id(auth0_client_id)?;
+        let audience = resolve_auth0_audience(auth0_audience);
 
+        let (access, refresh) = if let Some(at) = access_token.map(str::trim).filter(|s| !s.is_empty())
+        {
+            (
+                at.to_string(),
+                refresh_token
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+                    .or_else(|| std::env::var("MUTANDE_AUTH0_REFRESH_TOKEN").ok()),
+            )
+        } else if let Ok(env_at) = std::env::var("MUTANDE_AUTH0_ACCESS_TOKEN") {
+            let at = env_at.trim().to_string();
+            if at.is_empty() {
+                bail!("MUTANDE_AUTH0_ACCESS_TOKEN is empty");
+            }
+            (
+                at,
+                std::env::var("MUTANDE_AUTH0_REFRESH_TOKEN")
+                    .ok()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty()),
+            )
+        } else {
+            let tokens = oauth::login_with_loopback(&Auth0NativeConfig {
+                domain: domain.clone(),
+                client_id: client_id.clone(),
+                audience: audience.clone(),
+                open_browser,
+            })
+            .await?;
+            (tokens.access_token, tokens.refresh_token)
+        };
+
+        self.persist_session(
+            hub_url,
+            &access,
+            refresh.as_deref(),
+            Some(&domain),
+            Some(&client_id),
+            Some(&audience),
+        )?;
+
+        let hub = self
+            .hub_client()
+            .context("hub client missing after auth_login")?;
+        let me = hub.me().await.context("GET /v1/me after Auth0 login")?;
+        if me.is_onboarded() {
+            let _ = self.register_local_device(&hub).await;
+        }
+        let hub_url = self.config.lock().unwrap().hub_url.clone();
+        Ok(status_from_me(&hub_url, &me))
+    }
+
+    /// Create org for signed-in Auth0 user, then register device.
+    pub async fn create_org(
+        &self,
+        slug: &str,
+        name: Option<&str>,
+        handle: Option<&str>,
+    ) -> Result<OnboardResult> {
+        let slug = slug.trim();
+        if slug.is_empty() {
+            bail!("missing param: slug");
+        }
+        let hub = self.hub_client().context("not signed in — call auth_login first")?;
+        let me = hub
+            .create_org(slug, name.map(str::trim).filter(|s| !s.is_empty()), handle.map(str::trim).filter(|s| !s.is_empty()))
+            .await?;
+        let _ = self.register_local_device(&hub).await;
+        onboard_from_me(&me)
+    }
+
+    /// Join org via invite for signed-in Auth0 user, then register device.
+    pub async fn join_org(
+        &self,
+        invite_code: &str,
+        handle: Option<&str>,
+    ) -> Result<OnboardResult> {
+        let invite_code = invite_code.trim();
+        if invite_code.is_empty() {
+            bail!("missing param: invite_code");
+        }
+        let hub = self.hub_client().context("not signed in — call auth_login first")?;
+        let me = hub
+            .join_org(
+                invite_code,
+                handle.map(str::trim).filter(|s| !s.is_empty()),
+            )
+            .await?;
+        let _ = self.register_local_device(&hub).await;
+        onboard_from_me(&me)
+    }
+
+    async fn register_local_device(&self, hub: &HubClient) -> Result<()> {
+        let pubkey = self.device_public()?;
+        hub.register_device(&pubkey, "macos").await?;
+        Ok(())
+    }
+
+    fn persist_session(
+        &self,
+        hub_url: &str,
+        access_token: &str,
+        refresh_token: Option<&str>,
+        auth0_domain: Option<&str>,
+        auth0_client_id: Option<&str>,
+        auth0_audience: Option<&str>,
+    ) -> Result<()> {
         let mut cfg = self.config.lock().unwrap();
         cfg.hub_url = Some(hub_url.to_string());
-        cfg.jwt = Some(auth.access_token.clone());
-        cfg.refresh_token = Some(auth.refresh_token.clone());
+        cfg.access_token = Some(access_token.to_string());
+        if let Some(rt) = refresh_token {
+            cfg.refresh_token = Some(rt.to_string());
+        }
+        if let Some(d) = auth0_domain {
+            cfg.auth0_domain = Some(d.to_string());
+        }
+        if let Some(c) = auth0_client_id {
+            cfg.auth0_client_id = Some(c.to_string());
+        }
+        if let Some(a) = auth0_audience {
+            cfg.auth0_audience = Some(a.to_string());
+        }
         let to_save = cfg.clone();
         drop(cfg);
 
-        let path = self
-            .config_path
-            .clone()
-            .unwrap_or_else(config_path);
+        let path = self.config_path.clone().unwrap_or_else(config_path);
         save_config_at(&path, &to_save)?;
 
         let hub = make_hub_client(
             hub_url,
-            &auth.access_token,
-            Some(auth.refresh_token),
+            access_token,
+            to_save.refresh_token.clone(),
+            to_save.auth0_domain.clone(),
+            to_save.auth0_client_id.clone(),
             Arc::clone(&self.config),
             self.config_path.clone(),
         )?;
         *self.hub.lock().unwrap() = Some(hub);
-
-        Ok(OnboardResult {
-            handle: auth.user.handle,
-            org_id: auth.user.org_id,
-        })
+        Ok(())
     }
 
-    /// Whether JWT/hub are configured; when possible, resolve handle via hub `/me`.
+    /// Session status from local tokens + hub `/me` when reachable.
     pub async fn get_status(&self) -> Result<StatusResult> {
         let cfg = self.config.lock().unwrap().clone();
-        let configured = cfg.hub_url.is_some() && cfg.jwt.is_some();
-        if !configured {
+        let signed_in = cfg.hub_url.is_some() && cfg.access_token.is_some();
+        if !signed_in {
             return Ok(StatusResult {
                 configured: false,
+                signed_in: false,
+                needs_onboarding: false,
                 hub_url: cfg.hub_url,
                 handle: None,
                 org_id: None,
+                email: None,
             });
         }
 
         if let Some(hub) = self.hub_client() {
-            if let Ok(user) = hub.me().await {
-                return Ok(StatusResult {
-                    configured: true,
-                    hub_url: cfg.hub_url,
-                    handle: Some(user.handle),
-                    org_id: Some(user.org_id),
-                });
+            if let Ok(me) = hub.me().await {
+                return Ok(status_from_me(&cfg.hub_url, &me));
             }
         }
 
+        // Tokens present but hub unreachable — keep last-known configured=false
+        // for onboarding routing; Flutter treats transport errors separately.
         Ok(StatusResult {
-            configured: true,
+            configured: false,
+            signed_in: true,
+            needs_onboarding: true,
             hub_url: cfg.hub_url,
             handle: None,
             org_id: None,
+            email: None,
         })
     }
 
@@ -811,15 +935,19 @@ impl DaemonState {
         }
         if let Some(hub) = self.hub_client() {
             if let Ok(me) = hub.me().await {
-                if me.handle == handle {
-                    if let Some(pk) = pubkey_from_hub_string(&me.pubkey) {
-                        return Ok(SafetyNumberResult {
-                            handle: handle.to_string(),
-                            fingerprint: safety_number(&pk),
-                            uri: safety_uri(handle, &pk),
-                            verified: None,
-                        });
-                    }
+                if me
+                    .user
+                    .as_ref()
+                    .and_then(|u| u.handle.as_deref())
+                    == Some(handle)
+                {
+                    let pk = self.device_public()?;
+                    return Ok(SafetyNumberResult {
+                        handle: handle.to_string(),
+                        fingerprint: safety_number(&pk),
+                        uri: safety_uri(handle, &pk),
+                        verified: None,
+                    });
                 }
             }
         }
@@ -895,10 +1023,13 @@ impl DaemonState {
 
         if let Some(hub) = self.hub_client() {
             if let Ok(me) = hub.me().await {
-                if me.handle == recipient {
-                    if let Some(pk) = pubkey_from_hub_string(&me.pubkey) {
-                        return Ok(vec![pk]);
-                    }
+                if me
+                    .user
+                    .as_ref()
+                    .and_then(|u| u.handle.as_deref())
+                    == Some(recipient)
+                {
+                    return Ok(vec![self.device_public()?]);
                 }
             }
         }
@@ -920,22 +1051,27 @@ impl DaemonState {
 
 }
 
-/// Hub client that persists refreshed JWTs into config.json + shared in-memory config.
+/// Hub client that persists Auth0 token refreshes into config.json.
 fn make_hub_client(
     hub_url: &str,
     access_token: &str,
     refresh_token: Option<String>,
+    auth0_domain: Option<String>,
+    auth0_client_id: Option<String>,
     config: Arc<Mutex<DaemonConfig>>,
     config_path_override: Option<PathBuf>,
 ) -> Result<HubClient> {
     let path = config_path_override.unwrap_or_else(config_path);
-    let on_token = move |new_jwt: String| {
+    let on_tokens = move |new_access: String, new_refresh: Option<String>| {
         if let Ok(mut guard) = config.lock() {
-            guard.jwt = Some(new_jwt.clone());
+            guard.access_token = Some(new_access);
+            if let Some(rt) = new_refresh {
+                guard.refresh_token = Some(rt);
+            }
             let snapshot = guard.clone();
             drop(guard);
             if let Err(err) = save_config_at(&path, &snapshot) {
-                tracing::error!(error = %err, "failed to persist refreshed jwt");
+                tracing::error!(error = %err, "failed to persist Auth0 tokens");
             }
         }
     };
@@ -943,8 +1079,87 @@ fn make_hub_client(
     HubClient::new(
         crate::hub_client::HubConfig::new(hub_url, access_token)
             .with_refresh_token(refresh_token)
-            .with_on_access_token(on_token),
+            .with_auth0(auth0_domain, auth0_client_id)
+            .with_on_tokens(on_tokens),
     )
+}
+
+fn status_from_me(hub_url: &Option<String>, me: &MeResponse) -> StatusResult {
+    let onboarded = me.is_onboarded();
+    StatusResult {
+        configured: onboarded,
+        signed_in: true,
+        needs_onboarding: !onboarded,
+        hub_url: hub_url.clone(),
+        handle: me.user.as_ref().and_then(|u| u.handle.clone()),
+        org_id: me
+            .user
+            .as_ref()
+            .and_then(|u| u.org_id.clone())
+            .or_else(|| me.org.as_ref().map(|o| o.id.clone())),
+        email: me
+            .email
+            .clone()
+            .or_else(|| me.user.as_ref().and_then(|u| u.email.clone())),
+    }
+}
+
+fn onboard_from_me(me: &MeResponse) -> Result<OnboardResult> {
+    let user = me.user.as_ref().context("onboarding response missing user")?;
+    let handle = user
+        .handle
+        .clone()
+        .context("onboarding response missing handle")?;
+    let org_id = user
+        .org_id
+        .clone()
+        .or_else(|| me.org.as_ref().map(|o| o.id.clone()))
+        .context("onboarding response missing org_id")?;
+    Ok(OnboardResult { handle, org_id })
+}
+
+fn resolve_auth0_domain(explicit: Option<&str>) -> Result<String> {
+    if let Some(d) = explicit.map(str::trim).filter(|s| !s.is_empty()) {
+        return Ok(d.to_string());
+    }
+    if let Ok(d) = std::env::var("AUTH0_DOMAIN") {
+        let d = d.trim().to_string();
+        if !d.is_empty() {
+            return Ok(d);
+        }
+    }
+    bail!(
+        "Auth0 domain required (param auth0_domain or env AUTH0_DOMAIN). \
+         Create a Native app in Auth0 and set AUTH0_NATIVE_CLIENT_ID."
+    );
+}
+
+fn resolve_auth0_client_id(explicit: Option<&str>) -> Result<String> {
+    if let Some(c) = explicit.map(str::trim).filter(|s| !s.is_empty()) {
+        return Ok(c.to_string());
+    }
+    for key in ["AUTH0_NATIVE_CLIENT_ID", "AUTH0_CLIENT_ID"] {
+        if let Ok(c) = std::env::var(key) {
+            let c = c.trim().to_string();
+            if !c.is_empty() {
+                return Ok(c);
+            }
+        }
+    }
+    bail!(
+        "Auth0 native client_id required (param auth0_client_id or env AUTH0_NATIVE_CLIENT_ID)"
+    );
+}
+
+fn resolve_auth0_audience(explicit: Option<&str>) -> String {
+    if let Some(a) = explicit.map(str::trim).filter(|s| !s.is_empty()) {
+        return a.to_string();
+    }
+    std::env::var("AUTH0_AUDIENCE")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "https://hub.mutande.app".into())
 }
 
 #[cfg(test)]

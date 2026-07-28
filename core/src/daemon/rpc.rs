@@ -81,12 +81,49 @@ async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Resu
             "service": "mutande-core",
             "version": env!("CARGO_PKG_VERSION"),
         })),
-        "register" | "onboard" => {
-            let invite_code = param_str(&params, "invite_code")?;
-            let handle = param_str(&params, "handle")?;
+        "auth_login" => {
             let hub_url = param_str(&params, "hub_url")?;
-            let result = state.register(&invite_code, &handle, &hub_url).await?;
+            let auth0_domain = optional_str(&params, "auth0_domain");
+            let auth0_client_id = optional_str(&params, "auth0_client_id");
+            let auth0_audience = optional_str(&params, "auth0_audience");
+            let access_token = optional_str(&params, "access_token");
+            let refresh_token = optional_str(&params, "refresh_token");
+            let open_browser = params
+                .get("open_browser")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            let result = state
+                .auth_login(
+                    &hub_url,
+                    auth0_domain.as_deref(),
+                    auth0_client_id.as_deref(),
+                    auth0_audience.as_deref(),
+                    access_token.as_deref(),
+                    refresh_token.as_deref(),
+                    open_browser,
+                )
+                .await?;
             Ok(serde_json::to_value(result)?)
+        }
+        "create_org" => {
+            let slug = param_str(&params, "slug")?;
+            let name = optional_str(&params, "name");
+            let handle = optional_str(&params, "handle");
+            let result = state
+                .create_org(&slug, name.as_deref(), handle.as_deref())
+                .await?;
+            Ok(serde_json::to_value(result)?)
+        }
+        "join_org" | "onboard" => {
+            let invite_code = param_str(&params, "invite_code")?;
+            let handle = optional_str(&params, "handle");
+            let result = state.join_org(&invite_code, handle.as_deref()).await?;
+            Ok(serde_json::to_value(result)?)
+        }
+        "register" => {
+            anyhow::bail!(
+                "register removed — use auth_login then create_org or join_org (Auth0)"
+            );
         }
         "get_status" | "me" => {
             let status = state.get_status().await?;
@@ -249,6 +286,15 @@ fn param_str(params: &Value, key: &str) -> Result<String> {
         .ok_or_else(|| anyhow::anyhow!("missing param: {key}"))
 }
 
+fn optional_str(params: &Value, key: &str) -> Option<String> {
+    params
+        .get(key)
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -329,7 +375,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn register_persists_config_via_mock_hub() {
+    async fn auth_login_and_create_org_via_mock_hub() {
         use wiremock::matchers::{method, path};
         use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -340,54 +386,115 @@ mod tests {
         );
 
         let server = MockServer::start().await;
+        let me_needs = serde_json::json!({
+            "auth0_sub": "auth0|1",
+            "email": "a@x.com",
+            "needs_onboarding": true,
+            "onboarded": false
+        });
+        let me_ready = serde_json::json!({
+            "auth0_sub": "auth0|1",
+            "email": "a@x.com",
+            "needs_onboarding": false,
+            "onboarded": true,
+            "user": {
+                "id": "u1",
+                "handle": "alice@acme",
+                "org_id": "org-1",
+                "role": "org_admin",
+                "created_at": "2026-01-01T00:00:00Z"
+            },
+            "org": {
+                "id": "org-1",
+                "slug": "acme",
+                "name": "Acme",
+                "created_at": "2026-01-01T00:00:00Z"
+            }
+        });
+
+        Mock::given(method("GET"))
+            .and(path("/v1/me"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&me_needs))
+            .mount(&server)
+            .await;
         Mock::given(method("POST"))
-            .and(path("/v1/auth/register"))
+            .and(path("/v1/orgs"))
+            .respond_with(ResponseTemplate::new(201).set_body_json(&me_ready))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/v1/devices"))
             .respond_with(ResponseTemplate::new(201).set_body_json(&serde_json::json!({
-                "user": {
-                    "id": "u1",
-                    "handle": "alice@acme",
-                    "org_id": "org-1",
+                "device": {
+                    "id": "d1",
+                    "user_id": "u1",
                     "pubkey": "[0]",
+                    "platform": "macos",
                     "created_at": "2026-01-01T00:00:00Z"
-                },
-                "access_token": "access-jwt",
-                "refresh_token": "refresh-jwt"
+                }
             })))
-            .expect(1)
             .mount(&server)
             .await;
 
-        let req = JsonRpcRequest {
+        let login = JsonRpcRequest {
             jsonrpc: Some("2.0".into()),
             id: Some(serde_json::json!(1)),
-            method: "onboard".into(),
+            method: "auth_login".into(),
             params: serde_json::json!({
-                "invite_code": "invite-abc",
-                "handle": "alice@acme",
                 "hub_url": server.uri(),
+                "access_token": "auth0-at",
+                "refresh_token": "auth0-rt",
+                "auth0_domain": "tenant.example",
+                "auth0_client_id": "native-id",
+                "open_browser": false,
             }),
         };
-        let resp = handle_request(&state, req).await;
+        let resp = handle_request(&state, login).await;
         assert!(resp.error.is_none(), "{:?}", resp.error);
         let result = resp.result.unwrap();
-        assert_eq!(result["handle"], "alice@acme");
-        assert_eq!(result["org_id"], "org-1");
+        assert_eq!(result["signed_in"], true);
+        assert_eq!(result["needs_onboarding"], true);
+        assert_eq!(result["configured"], false);
 
         let saved: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&cfg_path).unwrap()).unwrap();
-        assert_eq!(saved["jwt"], "access-jwt");
-        assert_eq!(saved["refresh_token"], "refresh-jwt");
+        assert_eq!(saved["access_token"], "auth0-at");
+        assert_eq!(saved["refresh_token"], "auth0-rt");
         assert_eq!(saved["hub_url"], server.uri());
 
-        // get_status is configured; /me not mocked → handle omitted.
-        let status_req = JsonRpcRequest {
+        // Remount /me as ready for get_status after create_org.
+        let create = JsonRpcRequest {
             jsonrpc: Some("2.0".into()),
             id: Some(serde_json::json!(2)),
-            method: "me".into(),
-            params: serde_json::json!({}),
+            method: "create_org".into(),
+            params: serde_json::json!({
+                "slug": "acme",
+                "name": "Acme",
+                "handle": "alice",
+            }),
         };
-        let status = handle_request(&state, status_req).await;
-        assert!(status.error.is_none());
-        assert_eq!(status.result.unwrap()["configured"], true);
+        let created = handle_request(&state, create).await;
+        assert!(created.error.is_none(), "{:?}", created.error);
+        let body = created.result.unwrap();
+        assert_eq!(body["handle"], "alice@acme");
+        assert_eq!(body["org_id"], "org-1");
+    }
+
+    #[tokio::test]
+    async fn register_rpc_removed() {
+        let state = Arc::new(DaemonState::new_in_memory_for_test().unwrap());
+        let req = JsonRpcRequest {
+            jsonrpc: Some("2.0".into()),
+            id: Some(serde_json::json!(1)),
+            method: "register".into(),
+            params: serde_json::json!({
+                "invite_code": "x",
+                "handle": "a@b",
+                "hub_url": "http://localhost:8000",
+            }),
+        };
+        let resp = handle_request(&state, req).await;
+        assert!(resp.error.is_some());
+        assert!(resp.error.unwrap().message.contains("auth_login"));
     }
 }

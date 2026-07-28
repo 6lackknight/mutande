@@ -1,4 +1,5 @@
 //! HTTPS client for Mutande hub (ciphertext in/out only).
+//! Auth: Auth0 access token as Bearer; refresh via Auth0 `/oauth/token`.
 
 mod types;
 
@@ -18,9 +19,11 @@ pub struct HubConfig {
     pub hub_url: String,
     pub token: String,
     pub refresh_token: Option<String>,
-    /// Invoked with the new access token after a successful refresh (persist to config).
+    pub auth0_domain: Option<String>,
+    pub auth0_client_id: Option<String>,
+    /// Invoked with (access_token, optional new refresh_token) after refresh.
     #[allow(clippy::type_complexity)]
-    pub on_access_token: Option<Arc<dyn Fn(String) + Send + Sync>>,
+    pub on_tokens: Option<Arc<dyn Fn(String, Option<String>) + Send + Sync>>,
 }
 
 impl std::fmt::Debug for HubConfig {
@@ -29,7 +32,9 @@ impl std::fmt::Debug for HubConfig {
             .field("hub_url", &self.hub_url)
             .field("token", &"***")
             .field("refresh_token", &self.refresh_token.as_ref().map(|_| "***"))
-            .field("on_access_token", &self.on_access_token.is_some())
+            .field("auth0_domain", &self.auth0_domain)
+            .field("auth0_client_id", &self.auth0_client_id.as_ref().map(|_| "***"))
+            .field("on_tokens", &self.on_tokens.is_some())
             .finish()
     }
 }
@@ -40,7 +45,9 @@ impl HubConfig {
             hub_url: hub_url.into().trim_end_matches('/').to_string(),
             token: token.into(),
             refresh_token: None,
-            on_access_token: None,
+            auth0_domain: None,
+            auth0_client_id: None,
+            on_tokens: None,
         }
     }
 
@@ -49,11 +56,21 @@ impl HubConfig {
         self
     }
 
-    pub fn with_on_access_token(
+    pub fn with_auth0(
         mut self,
-        cb: impl Fn(String) + Send + Sync + 'static,
+        domain: Option<String>,
+        client_id: Option<String>,
     ) -> Self {
-        self.on_access_token = Some(Arc::new(cb));
+        self.auth0_domain = domain;
+        self.auth0_client_id = client_id;
+        self
+    }
+
+    pub fn with_on_tokens(
+        mut self,
+        cb: impl Fn(String, Option<String>) + Send + Sync + 'static,
+    ) -> Self {
+        self.on_tokens = Some(Arc::new(cb));
         self
     }
 }
@@ -63,8 +80,10 @@ pub struct HubClient {
     client: Client,
     hub_url: String,
     token: Arc<Mutex<String>>,
-    refresh_token: Option<String>,
-    on_access_token: Option<Arc<dyn Fn(String) + Send + Sync>>,
+    refresh_token: Arc<Mutex<Option<String>>>,
+    auth0_domain: Option<String>,
+    auth0_client_id: Option<String>,
+    on_tokens: Option<Arc<dyn Fn(String, Option<String>) + Send + Sync>>,
 }
 
 impl HubClient {
@@ -77,8 +96,10 @@ impl HubClient {
             client,
             hub_url: config.hub_url,
             token: Arc::new(Mutex::new(config.token)),
-            refresh_token: config.refresh_token,
-            on_access_token: config.on_access_token,
+            refresh_token: Arc::new(Mutex::new(config.refresh_token)),
+            auth0_domain: config.auth0_domain,
+            auth0_client_id: config.auth0_client_id,
+            on_tokens: config.on_tokens,
         })
     }
 
@@ -90,57 +111,128 @@ impl HubClient {
         self.token.lock().unwrap().clone()
     }
 
-    pub async fn register(
-        &self,
-        invite_code: &str,
-        handle: &str,
-        pubkey: &DevicePubKey,
-    ) -> Result<AuthResponse> {
-        let body = RegisterRequest {
-            invite_code: invite_code.to_string(),
-            handle: handle.to_string(),
-            pubkey: pubkey_to_hub_string(pubkey),
-        };
-        self.post_json("/v1/auth/register", &body, false).await
+    fn set_tokens(&self, access_token: String, refresh_token: Option<String>) {
+        *self.token.lock().unwrap() = access_token.clone();
+        if let Some(rt) = &refresh_token {
+            *self.refresh_token.lock().unwrap() = Some(rt.clone());
+        }
+        if let Some(cb) = &self.on_tokens {
+            cb(access_token, refresh_token);
+        }
     }
 
-    pub async fn exchange_refresh_token(&self, refresh_token: &str) -> Result<TokenResponse> {
-        #[derive(Serialize)]
-        struct Body<'a> {
-            refresh_token: &'a str,
-        }
-        // Unauthenticated — must not go through the 401-retry loop.
-        self.post_json_no_retry("/v1/auth/token", &Body { refresh_token }, false)
+    /// Exchange Auth0 refresh token for a new access token.
+    pub async fn refresh_auth0_token(&self) -> Result<Auth0TokenResponse> {
+        let domain = self
+            .auth0_domain
+            .as_deref()
+            .context("Auth0 domain required for token refresh")?;
+        let client_id = self
+            .auth0_client_id
+            .as_deref()
+            .context("Auth0 client_id required for token refresh")?;
+        let refresh = self
+            .refresh_token
+            .lock()
+            .unwrap()
+            .clone()
+            .context("no Auth0 refresh token")?;
+        self.exchange_auth0_refresh(domain, client_id, &refresh)
             .await
     }
 
-    fn set_access_token(&self, token: String) {
-        *self.token.lock().unwrap() = token.clone();
-        if let Some(cb) = &self.on_access_token {
-            cb(token);
+    async fn exchange_auth0_refresh(
+        &self,
+        domain: &str,
+        client_id: &str,
+        refresh_token: &str,
+    ) -> Result<Auth0TokenResponse> {
+        let url = auth0_token_endpoint(domain);
+        let body = serde_json::json!({
+            "grant_type": "refresh_token",
+            "client_id": client_id,
+            "refresh_token": refresh_token,
+        });
+        let resp = self
+            .client
+            .post(&url)
+            .json(&body)
+            .send()
+            .await
+            .context("Auth0 refresh token")?;
+        if resp.status().is_success() {
+            resp.json()
+                .await
+                .context("decode Auth0 token response")
+        } else {
+            Err(hub_error(
+                resp.status(),
+                resp.text().await.unwrap_or_default(),
+            ))
         }
     }
 
-    /// On 401 with a stored refresh token: refresh once, update access token, return true.
+    /// On 401 with Auth0 refresh credentials: refresh once, update tokens, return true.
     async fn try_refresh_after_unauthorized(&self) -> bool {
-        let Some(refresh) = self.refresh_token.clone() else {
-            return false;
-        };
-        match self.exchange_refresh_token(&refresh).await {
+        match self.refresh_auth0_token().await {
             Ok(tok) => {
-                self.set_access_token(tok.access_token);
+                self.set_tokens(tok.access_token, tok.refresh_token);
                 true
             }
             Err(err) => {
-                tracing::warn!(error = %err, "hub token refresh failed");
+                tracing::warn!(error = %err, "Auth0 token refresh failed");
                 false
             }
         }
     }
 
-    pub async fn me(&self) -> Result<User> {
-        let resp: MeResponse = self.get_json("/v1/auth/me").await?;
-        Ok(resp.user)
+    /// `GET /v1/me` (Auth0 session + onboarding state).
+    pub async fn me(&self) -> Result<MeResponse> {
+        self.get_json("/v1/me").await
+    }
+
+    /// Compat alias used by older call sites / docs.
+    pub async fn auth_me(&self) -> Result<MeResponse> {
+        self.get_json("/v1/auth/me").await
+    }
+
+    pub async fn create_org(
+        &self,
+        slug: &str,
+        name: Option<&str>,
+        handle: Option<&str>,
+    ) -> Result<MeResponse> {
+        let body = CreateOrgRequest {
+            slug: slug.to_string(),
+            name: name.map(str::to_string),
+            handle: handle.map(str::to_string),
+        };
+        self.post_json("/v1/orgs", &body, true).await
+    }
+
+    pub async fn join_org(
+        &self,
+        invite_code: &str,
+        handle: Option<&str>,
+    ) -> Result<MeResponse> {
+        let body = JoinOrgRequest {
+            invite_code: invite_code.to_string(),
+            handle: handle.map(str::to_string),
+        };
+        self.post_json("/v1/onboarding/join", &body, true).await
+    }
+
+    pub async fn register_device(
+        &self,
+        pubkey: &DevicePubKey,
+        platform: &str,
+    ) -> Result<Device> {
+        let body = RegisterDeviceRequest {
+            pubkey: pubkey_to_hub_string(pubkey),
+            platform: platform.to_string(),
+        };
+        let resp: RegisterDeviceResponse = self.post_json("/v1/devices", &body, true).await?;
+        Ok(resp.device)
     }
 
     pub async fn list_contacts(&self) -> Result<Vec<Contact>> {
@@ -456,6 +548,27 @@ fn is_unauthorized(err: &anyhow::Error) -> bool {
     err.to_string().contains("hub error 401")
 }
 
+/// Auth0 token endpoint. Plain host → `https://{host}/oauth/token`.
+/// Full `http(s)://…` URL (tests / custom) → `{base}/oauth/token`.
+pub fn auth0_token_endpoint(domain: &str) -> String {
+    let d = domain.trim().trim_end_matches('/');
+    if d.starts_with("http://") || d.starts_with("https://") {
+        format!("{d}/oauth/token")
+    } else {
+        format!("https://{d}/oauth/token")
+    }
+}
+
+/// Auth0 authorize endpoint (same host rules as [`auth0_token_endpoint`]).
+pub fn auth0_authorize_endpoint(domain: &str) -> String {
+    let d = domain.trim().trim_end_matches('/');
+    if d.starts_with("http://") || d.starts_with("https://") {
+        format!("{d}/authorize")
+    } else {
+        format!("https://{d}/authorize")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -483,17 +596,48 @@ mod tests {
     }
 
     #[test]
-    fn register_request_uses_hub_field_names() {
-        let req = RegisterRequest {
-            invite_code: "inv".into(),
-            handle: "alice@acme".into(),
-            pubkey: pubkey_to_hub_string(&DevicePubKey([7u8; 32])),
+    fn create_org_request_shape() {
+        let req = CreateOrgRequest {
+            slug: "acme".into(),
+            name: Some("Acme Inc".into()),
+            handle: Some("alice".into()),
         };
         let json = serde_json::to_value(&req).unwrap();
-        assert_eq!(json["invite_code"], "inv");
-        assert_eq!(json["handle"], "alice@acme");
-        assert!(json.get("invite_token").is_none());
-        assert!(json.get("device_pubkey").is_none());
+        assert_eq!(json["slug"], "acme");
+        assert_eq!(json["name"], "Acme Inc");
+        assert_eq!(json["handle"], "alice");
+    }
+
+    #[test]
+    fn me_response_onboarded_helpers() {
+        let needs = MeResponse {
+            auth0_sub: "auth0|1".into(),
+            email: None,
+            needs_onboarding: true,
+            onboarded: Some(false),
+            user: None,
+            org: None,
+        };
+        assert!(!needs.is_onboarded());
+
+        let ready = MeResponse {
+            auth0_sub: "auth0|1".into(),
+            email: Some("a@x.com".into()),
+            needs_onboarding: false,
+            onboarded: Some(true),
+            user: Some(User {
+                id: "u1".into(),
+                auth0_sub: Some("auth0|1".into()),
+                email: None,
+                handle: Some("alice@acme".into()),
+                org_id: Some("o1".into()),
+                role: Some("org_admin".into()),
+                pubkey: None,
+                created_at: "2026-01-01T00:00:00Z".into(),
+            }),
+            org: None,
+        };
+        assert!(ready.is_onboarded());
     }
 
     #[test]
@@ -521,8 +665,8 @@ mod tests {
     #[test]
     fn contacts_response_deserializes_handle_and_pubkey() {
         let json = r#"{"contacts":[
-            {"handle":"@all@acme","pubkey":null},
-            {"handle":"bob@acme","pubkey":"[1,2,3]"}
+            {"handle":"@all@acme","pubkey":null,"devices":[]},
+            {"handle":"bob@acme","pubkey":"[1,2,3]","devices":[{"pubkey":"[1,2,3]","platform":"macos"}]}
         ]}"#;
         let resp: ContactsResponse = serde_json::from_str(json).unwrap();
         assert_eq!(resp.contacts.len(), 2);
@@ -530,6 +674,7 @@ mod tests {
         assert!(resp.contacts[0].pubkey.is_none());
         assert_eq!(resp.contacts[1].handle, "bob@acme");
         assert_eq!(resp.contacts[1].pubkey.as_deref(), Some("[1,2,3]"));
+        assert_eq!(resp.contacts[1].devices.len(), 1);
     }
 
     #[test]
@@ -556,53 +701,150 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unauthorized_retries_once_after_refresh() {
+    async fn unauthorized_retries_once_after_auth0_refresh() {
         use wiremock::matchers::{bearer_token, method, path};
         use wiremock::{Mock, MockServer, ResponseTemplate};
 
-        let server = MockServer::start().await;
+        let auth0 = MockServer::start().await;
+        let hub = MockServer::start().await;
 
         Mock::given(method("GET"))
-            .and(path("/v1/auth/me"))
-            .and(bearer_token("stale-jwt"))
+            .and(path("/v1/me"))
+            .and(bearer_token("stale-at"))
             .respond_with(ResponseTemplate::new(401).set_body_string("expired"))
             .expect(1)
-            .mount(&server)
+            .mount(&hub)
             .await;
 
         Mock::given(method("POST"))
-            .and(path("/v1/auth/token"))
+            .and(path("/oauth/token"))
             .respond_with(ResponseTemplate::new(200).set_body_json(&serde_json::json!({
-                "access_token": "fresh-jwt"
+                "access_token": "fresh-at",
+                "refresh_token": "fresh-rt"
             })))
             .expect(1)
-            .mount(&server)
+            .mount(&auth0)
             .await;
 
         Mock::given(method("GET"))
-            .and(path("/v1/auth/me"))
-            .and(bearer_token("fresh-jwt"))
+            .and(path("/v1/me"))
+            .and(bearer_token("fresh-at"))
             .respond_with(ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                "auth0_sub": "auth0|1",
+                "needs_onboarding": false,
+                "onboarded": true,
                 "user": {
                     "id": "u1",
                     "handle": "alice@acme",
                     "org_id": "o1",
-                    "pubkey": "[0]",
                     "created_at": "2026-01-01T00:00:00Z"
                 }
             })))
             .expect(1)
-            .mount(&server)
+            .mount(&hub)
             .await;
 
         let client = HubClient::new(
-            HubConfig::new(server.uri(), "stale-jwt")
-                .with_refresh_token(Some("refresh-jwt".into())),
+            HubConfig::new(hub.uri(), "stale-at")
+                .with_refresh_token(Some("refresh-rt".into()))
+                .with_auth0(Some(auth0.uri()), Some("native-client".into())),
         )
         .unwrap();
-        let user = client.me().await.unwrap();
-        assert_eq!(user.handle, "alice@acme");
-        assert_eq!(client.access_token(), "fresh-jwt");
+        let me = client.me().await.unwrap();
+        assert_eq!(
+            me.user.as_ref().and_then(|u| u.handle.as_deref()),
+            Some("alice@acme")
+        );
+        assert_eq!(client.access_token(), "fresh-at");
+    }
+
+    #[test]
+    fn auth0_endpoints_accept_plain_host_or_base_url() {
+        assert_eq!(
+            auth0_token_endpoint("tenant.us.auth0.com"),
+            "https://tenant.us.auth0.com/oauth/token"
+        );
+        assert_eq!(
+            auth0_authorize_endpoint("http://127.0.0.1:9999"),
+            "http://127.0.0.1:9999/authorize"
+        );
+    }
+
+    #[tokio::test]
+    async fn me_create_org_join_register_device_wire_shapes() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        let me_json = serde_json::json!({
+            "auth0_sub": "auth0|1",
+            "email": "a@x.com",
+            "needs_onboarding": false,
+            "onboarded": true,
+            "user": {
+                "id": "u1",
+                "auth0_sub": "auth0|1",
+                "handle": "alice@acme",
+                "org_id": "o1",
+                "role": "org_admin",
+                "created_at": "2026-01-01T00:00:00Z"
+            },
+            "org": {
+                "id": "o1",
+                "slug": "acme",
+                "name": "Acme",
+                "created_at": "2026-01-01T00:00:00Z"
+            }
+        });
+
+        Mock::given(method("GET"))
+            .and(path("/v1/me"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&me_json))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/v1/orgs"))
+            .respond_with(ResponseTemplate::new(201).set_body_json(&me_json))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/v1/onboarding/join"))
+            .respond_with(ResponseTemplate::new(201).set_body_json(&me_json))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/v1/devices"))
+            .respond_with(ResponseTemplate::new(201).set_body_json(&serde_json::json!({
+                "device": {
+                    "id": "d1",
+                    "user_id": "u1",
+                    "pubkey": "[0]",
+                    "platform": "macos",
+                    "created_at": "2026-01-01T00:00:00Z"
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        let client = HubClient::new(HubConfig::new(server.uri(), "at")).unwrap();
+        let me = client.me().await.unwrap();
+        assert!(me.is_onboarded());
+        assert_eq!(me.user.as_ref().unwrap().handle.as_deref(), Some("alice@acme"));
+
+        let created = client
+            .create_org("acme", Some("Acme"), Some("alice"))
+            .await
+            .unwrap();
+        assert!(created.is_onboarded());
+
+        let joined = client.join_org("inv-1", Some("alice@acme")).await.unwrap();
+        assert!(joined.is_onboarded());
+
+        let device = client
+            .register_device(&DevicePubKey([7u8; 32]), "macos")
+            .await
+            .unwrap();
+        assert_eq!(device.platform, "macos");
     }
 
     #[tokio::test]
@@ -652,15 +894,15 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires running hub; set MUTANDE_HUB_URL and MUTANDE_JWT"]
+    #[ignore = "requires running hub; set MUTANDE_HUB_URL and MUTANDE_AUTH0_ACCESS_TOKEN"]
     async fn live_me() {
         let cfg = HubConfig::new(
             std::env::var("MUTANDE_HUB_URL").unwrap_or_else(|_| "http://localhost:8000".into()),
-            std::env::var("MUTANDE_JWT").expect("MUTANDE_JWT"),
+            std::env::var("MUTANDE_AUTH0_ACCESS_TOKEN").expect("MUTANDE_AUTH0_ACCESS_TOKEN"),
         );
         let client = HubClient::new(cfg).unwrap();
-        let user = client.me().await.unwrap();
-        assert!(!user.handle.is_empty());
+        let me = client.me().await.unwrap();
+        assert!(!me.auth0_sub.is_empty());
     }
 
     /// Real `seal` → hub accepts createThread JSON → `get_thread` → `open` plaintext.
@@ -705,7 +947,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        let client = HubClient::new(HubConfig::new(server.uri(), "test-jwt")).unwrap();
+        let client = HubClient::new(HubConfig::new(server.uri(), "test-at")).unwrap();
         let created = client.create_thread("bob@acme", &envelope).await.unwrap();
         assert_eq!(created.thread.id, thread_id);
 

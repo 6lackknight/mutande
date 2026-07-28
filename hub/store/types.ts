@@ -5,40 +5,49 @@ export interface Wrap {
   boxed_cek: number[];
 }
 
-/**
- * Hub-visible wire envelope — opaque to the hub (size-checked JSON only).
- * Shape matches `proto/envelope.schema.json` / mutande-core serde (byte arrays).
- */
 export interface Envelope {
   version: number;
   content_nonce: number[];
-  /** Inline AEAD ciphertext; empty when content lives in R2 (`blob_id`). */
   ciphertext: number[];
   wraps: Wrap[];
-  /** R2 object id when payload is a blob (ciphertext uploaded separately). */
   blob_id?: string;
-  /** Hex SHA-256 of the blob ciphertext bytes. */
   sha256?: string;
   [key: string]: unknown;
 }
 
+export type UserRole = "org_admin" | "member";
+export type DevicePlatform = "macos" | "ios" | "web";
+
 export interface User {
   id: string;
-  handle: string;
-  org_id: string;
+  auth0_sub: string;
+  email?: string;
+  handle?: string;
+  org_id?: string;
+  role?: UserRole;
+  pubkey?: string;
+  created_at: string;
+}
+
+export interface Device {
+  id: string;
+  user_id: string;
   pubkey: string;
+  platform: DevicePlatform;
   created_at: string;
 }
 
 export interface Org {
   id: string;
   slug: string;
+  name: string;
   created_at: string;
 }
 
 export interface Invite {
   code: string;
   org_id: string;
+  created_by?: string;
   created_at: string;
   used_by?: string;
 }
@@ -72,7 +81,6 @@ export interface ThreadMessage {
   from_handle: string;
   envelope: Envelope;
   created_at: string;
-  /** Broadcast replies visible to sender only (v1). */
   sender_only?: boolean;
 }
 
@@ -96,14 +104,18 @@ export interface BlobMeta {
 
 export interface Contact {
   handle: string;
-  /** Omitted for synthetic broadcast handle `@all@org`. */
   pubkey: string | null;
+  devices: Array<{ pubkey: string; platform: DevicePlatform }>;
 }
+
+export interface Auth0Claims { sub: string; email?: string; }
 
 export interface AuthContext {
   userId: string;
   orgId: string;
   handle: string;
+  role: UserRole;
+  auth0Sub: string;
 }
 
 export interface RegisterInput {
@@ -112,15 +124,35 @@ export interface RegisterInput {
   pubkey: string;
 }
 
-export interface CreateThreadInput {
-  to: string;
-  envelope: Envelope;
+export interface CreateOrgInput {
+  slug: string;
+  name?: string;
+  handle?: string;
 }
 
-export interface ReplyInput {
-  envelope: Envelope;
+export interface JoinOrgInput {
+  invite_code: string;
+  /** Defaults to email-local@org when omitted. */
+  handle?: string;
 }
 
+export interface RegisterDeviceInput {
+  pubkey: string;
+  platform: DevicePlatform;
+}
+
+export interface MeResponse {
+  auth0_sub: string;
+  email?: string;
+  needs_onboarding: boolean;
+  /** Compat alias for !needs_onboarding. */
+  onboarded?: boolean;
+  user?: User;
+  org?: Org;
+}
+
+export interface CreateThreadInput { to: string; envelope: Envelope; }
+export interface ReplyInput { envelope: Envelope; }
 export type ThreadFilter = "needs_action" | "open" | "closed";
 
 export const MAX_ENVELOPE_BYTES = 60 * 1024;

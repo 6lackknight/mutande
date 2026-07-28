@@ -66,39 +66,122 @@ pub struct Contact {
     pub handle: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pubkey: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub devices: Vec<ContactDevice>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ContactDevice {
+    pub pubkey: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub platform: Option<String>,
+}
+
+/// Onboarded hub user (Auth0-backed).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct User {
     pub id: String,
-    pub handle: String,
-    pub org_id: String,
-    pub pubkey: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth0_sub: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handle: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub org_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pubkey: Option<String>,
     pub created_at: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Org {
+    pub id: String,
+    pub slug: String,
+    pub name: String,
+    pub created_at: String,
+}
+
+/// `GET /v1/me` / `GET /v1/auth/me` (Auth0 Bearer).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MeResponse {
-    pub user: User,
+    pub auth0_sub: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
+    #[serde(default)]
+    pub needs_onboarding: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub onboarded: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user: Option<User>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub org: Option<Org>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RegisterRequest {
+impl MeResponse {
+    pub fn is_onboarded(&self) -> bool {
+        if let Some(onboarded) = self.onboarded {
+            return onboarded;
+        }
+        !self.needs_onboarding
+            && self
+                .user
+                .as_ref()
+                .and_then(|u| u.handle.as_ref())
+                .is_some()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct CreateOrgRequest {
+    pub slug: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub handle: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct JoinOrgRequest {
     pub invite_code: String,
-    pub handle: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub handle: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct RegisterDeviceRequest {
     pub pubkey: String,
+    pub platform: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AuthResponse {
-    pub user: User,
-    pub access_token: String,
-    pub refresh_token: String,
+pub struct Device {
+    pub id: String,
+    pub user_id: String,
+    pub pubkey: String,
+    pub platform: String,
+    pub created_at: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TokenResponse {
+pub struct RegisterDeviceResponse {
+    pub device: Device,
+}
+
+/// Auth0 `/oauth/token` response (native + refresh).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Auth0TokenResponse {
     pub access_token: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refresh_token: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id_token: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires_in: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token_type: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -204,12 +287,12 @@ pub enum ThreadFilter {
     Closed,
 }
 
-/// Encode a device pubkey for hub register (`pubkey` string field).
+/// Encode a device pubkey for hub device registration (`pubkey` string field).
 pub fn pubkey_to_hub_string(pk: &DevicePubKey) -> String {
     serde_json::to_string(&pk.0).expect("pubkey bytes serialize")
 }
 
-/// Decode a hub `User.pubkey` string into a device pubkey when possible.
+/// Decode a hub pubkey string into a device pubkey when possible.
 pub fn pubkey_from_hub_string(s: &str) -> Option<DevicePubKey> {
     let bytes: Vec<u8> = serde_json::from_str(s).ok()?;
     if bytes.len() != 32 {

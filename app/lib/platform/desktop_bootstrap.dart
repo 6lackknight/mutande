@@ -18,7 +18,7 @@ Future<TrayController?> bootstrapDesktopShell() async {
     size: Size(480, 560),
     center: true,
     skipTaskbar: true,
-    title: 'Mutande',
+    title: 'mutande',
   );
 
   final tray = TrayController();

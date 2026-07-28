@@ -66,7 +66,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Mutande'), findsOneWidget);
+    expect(find.text('mutande'), findsOneWidget);
     expect(find.text('alice@acme'), findsOneWidget);
     expect(find.textContaining('Connected'), findsOneWidget);
     expect(find.textContaining('http://localhost:8000'), findsOneWidget);
@@ -145,7 +145,7 @@ void main() {
     expect(find.text('Compare'), findsOneWidget);
   });
 
-  testWidgets('onboarding form smoke test', (WidgetTester tester) async {
+    testWidgets('onboarding sign-in smoke test', (WidgetTester tester) async {
     await tester.pumpWidget(
       MutandeApp(
         config: const AppConfig(hubUrl: 'http://localhost:8000'),
@@ -153,10 +153,27 @@ void main() {
       ),
     );
 
-    expect(find.text('Mutande'), findsOneWidget);
-    expect(find.text('Join with an invite.'), findsOneWidget);
-    expect(find.text('Join'), findsOneWidget);
-    expect(find.text('http://localhost:8000'), findsOneWidget);
+    expect(find.text('mutande'), findsOneWidget);
+    expect(find.text('Sign in'), findsOneWidget);
+    expect(find.text('Sign in with Auth0'), findsOneWidget);
+  });
+
+  testWidgets('onboarding choose step when signed in', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MutandeApp(
+        config: const AppConfig(hubUrl: 'http://localhost:8000'),
+        seedStatus: const DaemonStatusResult(
+          configured: false,
+          signedIn: true,
+          needsOnboarding: true,
+          email: 'a@x.com',
+        ),
+      ),
+    );
+
+    expect(find.text('Create a team'), findsOneWidget);
+    expect(find.text('I have an invite'), findsOneWidget);
+    expect(find.text('a@x.com'), findsOneWidget);
   });
 
   testWidgets('daemon transport failure shows error not Join', (
@@ -176,11 +193,10 @@ void main() {
 
     expect(find.text('Daemon unreachable'), findsOneWidget);
     expect(find.text('Retry'), findsOneWidget);
-    expect(find.text('Join with an invite.'), findsNothing);
-    expect(find.text('Join'), findsNothing);
+    expect(find.text('Sign in with Auth0'), findsNothing);
   });
 
-  test('validateHandle and validateHubUrl', () {
+test('validateHandle and validateHubUrl', () {
     expect(validateHandle('alice@acme'), isNull);
     expect(validateHandle('nope'), isNotNull);
     expect(validateHandle('@acme'), isNotNull);

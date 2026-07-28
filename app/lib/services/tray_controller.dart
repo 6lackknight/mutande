@@ -41,8 +41,9 @@ class TrayController with TrayListener, WindowListener {
     trayManager.addListener(this);
     windowManager.addListener(this);
 
-    await trayManager.setIcon(iconAsset, isTemplate: true);
-    await trayManager.setToolTip('Mutande');
+    // Solid black plate + white mark — not a template (templates strip the fill).
+    await trayManager.setIcon(iconAsset, isTemplate: false);
+    await trayManager.setToolTip('mutande');
     await _refreshMenu();
 
     unawaited(_pollHealth());
@@ -82,7 +83,7 @@ class TrayController with TrayListener, WindowListener {
       items: [
         MenuItem(key: 'status', label: statusLabel, disabled: true),
         MenuItem.separator(),
-        MenuItem(key: 'open', label: 'Open Mutande'),
+        MenuItem(key: 'open', label: 'Open mutande'),
         MenuItem(key: 'connect_hosts', label: 'Connect AI hosts'),
         MenuItem.separator(),
         MenuItem(key: 'quit', label: 'Quit'),

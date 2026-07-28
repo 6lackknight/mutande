@@ -12,7 +12,26 @@ Rust sidecar bundled inside Mutande.app:
 | `crypto` | Keygen, encrypt/decrypt, broadcast multi-wrap |
 | `daemon` | Local socket API for Flutter + MCP |
 | `mcp` | MCP tool surface → daemon |
-| `hub_client` | Hub REST + presigned R2 URLs |
+| `hub_client` | Hub REST (Auth0 Bearer) + presigned R2 URLs |
+| `daemon` oauth | Auth0 Native PKCE loopback (`auth_login`) |
+
+## Auth0 (native)
+
+Mac login uses an Auth0 **Native** application (PKCE + `http://127.0.0.1:<port>/callback`).
+
+See [`docs/AUTH0.md`](../docs/AUTH0.md) and [`core/.env.example`](.env.example):
+
+| Variable | Notes |
+|----------|--------|
+| `AUTH0_DOMAIN` | Tenant host |
+| `AUTH0_NATIVE_CLIENT_ID` | Native app client id |
+| `AUTH0_AUDIENCE` | Same API identifier as hub/web |
+| `MUTANDE_HUB_URL` | Default hub |
+| `MUTANDE_AUTH0_ACCESS_TOKEN` | Optional — skip browser (dev/tests) |
+
+Config (`~/.mutande/config.json`, `0o600`): `hub_url`, `access_token`, `refresh_token`, Auth0 domain/client/audience.
+
+RPC: `auth_login` → `create_org` / `join_org` → device `POST /v1/devices`. Hub JWT register is gone.
 
 ## Build
 

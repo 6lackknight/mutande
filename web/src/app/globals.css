@@ -1,0 +1,126 @@
+@import "tailwindcss";
+
+:root {
+  --stone-50: oklch(0.985 0.004 95);
+  --stone-100: oklch(0.96 0.008 90);
+  --stone-200: oklch(0.91 0.012 85);
+  --stone-300: oklch(0.82 0.016 80);
+  --stone-500: oklch(0.55 0.02 75);
+  --stone-700: oklch(0.38 0.018 70);
+  --stone-800: oklch(0.28 0.016 65);
+  --stone-900: oklch(0.22 0.014 60);
+  --slate-ink: oklch(0.24 0.02 240);
+  --accent: oklch(0.52 0.1 155);
+  --accent-soft: oklch(0.92 0.04 155);
+  --amber: oklch(0.72 0.12 75);
+  --background: var(--stone-50);
+  --foreground: var(--slate-ink);
+  --muted: var(--stone-500);
+  --border: color-mix(in oklch, var(--stone-300) 70%, transparent);
+  --surface: color-mix(in oklch, white 72%, var(--stone-100));
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-surface: var(--surface);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-stone-100: var(--stone-100);
+  --color-stone-200: var(--stone-200);
+  --color-stone-300: var(--stone-300);
+  --color-stone-700: var(--stone-700);
+  --color-stone-800: var(--stone-800);
+  --color-stone-900: var(--stone-900);
+  --font-sans: var(--font-body);
+  --font-display: var(--font-display);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+    min-height: 100%;
+  }
+
+  ::selection {
+    background: color-mix(in oklch, var(--accent) 28%, white);
+  }
+}
+
+@layer utilities {
+  .bg-relay {
+    background-color: var(--stone-50);
+    background-image:
+      radial-gradient(
+        ellipse 80% 55% at 15% 10%,
+        color-mix(in oklch, var(--stone-200) 55%, transparent),
+        transparent 55%
+      ),
+      radial-gradient(
+        ellipse 60% 45% at 90% 80%,
+        color-mix(in oklch, var(--accent) 8%, transparent),
+        transparent 50%
+      ),
+      linear-gradient(
+        165deg,
+        var(--stone-50) 0%,
+        var(--stone-100) 48%,
+        color-mix(in oklch, var(--stone-200) 40%, var(--stone-50)) 100%
+      );
+  }
+
+  .grain {
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.045'/%3E%3C/svg%3E");
+  }
+
+  .fade-up {
+    animation: fade-up 0.7s ease-out both;
+  }
+
+  .fade-up-delay {
+    animation: fade-up 0.8s ease-out 0.12s both;
+  }
+
+  .fade-up-late {
+    animation: fade-up 0.85s ease-out 0.24s both;
+  }
+
+  .seal-pulse {
+    animation: seal-pulse 4.5s ease-in-out infinite;
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes seal-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(1.04);
+  }
+}

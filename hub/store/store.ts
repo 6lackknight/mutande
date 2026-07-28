@@ -1,3 +1,4 @@
+import { createAuth0Verifier, createTestTokenVerifier, type TokenVerifier } from "./auth0.ts";
 import {
   envelopeTooLarge,
   forbidden,
@@ -5,30 +6,35 @@ import {
   notFound,
   conflict,
   quotaExceeded,
+  unauthorized,
 } from "./errors.ts";
-import { randomToken, signJwt, verifyJwt } from "./jwt.ts";
+import { randomToken } from "./jwt.ts";
 import type {
+  Auth0Claims,
   AuthContext,
   BlobMeta,
   Contact,
+  CreateOrgInput,
   CreateThreadInput,
+  Device,
+  DevicePlatform,
   Draft,
   Envelope,
   InboxEntry,
   Invite,
+  JoinOrgInput,
+  MeResponse,
   Org,
-  RegisterInput,
+  RegisterDeviceInput,
   ReplyInput,
   ThreadFilter,
   ThreadMessage,
   ThreadMeta,
   User,
+  UserRole,
 } from "./types.ts";
 import { createBlobUrls } from "./r2.ts";
-import {
-  MAX_ENVELOPE_BYTES,
-  ORG_BLOB_QUOTA_BYTES,
-} from "./types.ts";
+import { MAX_ENVELOPE_BYTES, ORG_BLOB_QUOTA_BYTES } from "./types.ts";
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -46,209 +52,313 @@ function broadcastHandle(orgSlug: string): string {
   return `@all@${orgSlug}`;
 }
 
+function emailLocalPart(email?: string): string | null {
+  if (!email) return null;
+  const at = email.indexOf("@");
+  if (at <= 0) return null;
+  const local = email.slice(0, at).toLowerCase().replace(/[^a-z0-9._-]/g, "");
+  return local || null;
+}
+
+function assertValidSlug(slug: string): void {
+  if (!/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(slug)) {
+    throw new HubError(
+      "Org slug must be lowercase alphanumeric (hyphens allowed)",
+      "invalid_slug",
+    );
+  }
+}
+
+function assertHandleLocal(local: string): void {
+  if (local.toLowerCase() === "@all" || local.toLowerCase().startsWith("@all")) {
+    throw new HubError("Handle cannot use @all broadcast prefix", "invalid_handle");
+  }
+}
+
+function primaryRole(user: User): UserRole {
+  return user.role === "org_admin" ? "org_admin" : "member";
+}
+
+function isOnboarded(user: User | null | undefined): boolean {
+  return Boolean(user?.org_id && user?.handle);
+}
+
+function authContextFromUser(user: User): AuthContext {
+  if (!isOnboarded(user)) {
+    throw forbidden("Onboarding required");
+  }
+  return {
+    userId: user.id,
+    orgId: user.org_id!,
+    handle: user.handle!,
+    role: primaryRole(user),
+    auth0Sub: user.auth0_sub,
+  };
+}
+
 export class HubStore {
   constructor(
     private readonly kv: Deno.Kv,
-    readonly jwtSecret: string,
+    private readonly verifier: TokenVerifier,
   ) {}
 
-  // --- Key helpers ---
-
-  private userKey(id: string) {
-    return ["users", id];
-  }
-  private handleKey(handle: string) {
-    return ["handles", handle];
-  }
-  private orgKey(id: string) {
-    return ["orgs", id];
-  }
-  private orgSlugKey(slug: string) {
-    return ["org_slugs", slug];
-  }
-  private memberKey(orgId: string, userId: string) {
-    return ["org_members", orgId, userId];
-  }
-  private membersPrefix(orgId: string) {
-    return ["org_members", orgId];
-  }
-  private inviteKey(code: string) {
-    return ["invites", code];
-  }
-  private threadKey(id: string) {
-    return ["threads", id];
-  }
-  private inboxKey(userId: string, threadId: string) {
-    return ["inbox", userId, threadId];
-  }
-  private inboxPrefix(userId: string) {
-    return ["inbox", userId];
-  }
-  private messageKey(threadId: string, messageId: string) {
-    return ["messages", threadId, messageId];
-  }
-  private messagesPrefix(threadId: string) {
-    return ["messages", threadId];
-  }
-  private draftKey(userId: string, draftId: string) {
-    return ["drafts", userId, draftId];
-  }
-  private draftsPrefix(userId: string) {
-    return ["drafts", userId];
-  }
-  private blobKey(id: string) {
-    return ["blobs", id];
-  }
-  private orgQuotaKey(orgId: string) {
-    return ["org_blob_quota", orgId];
-  }
-  private refreshKey(token: string) {
-    return ["refresh_tokens", token];
-  }
-
-  // --- Envelope validation ---
+  private userKey(id: string) { return ["users", id]; }
+  private auth0SubKey(sub: string) { return ["auth0_subs", sub]; }
+  private handleKey(handle: string) { return ["handles", handle]; }
+  private orgKey(id: string) { return ["orgs", id]; }
+  private orgSlugKey(slug: string) { return ["org_slugs", slug]; }
+  private memberKey(orgId: string, userId: string) { return ["org_members", orgId, userId]; }
+  private membersPrefix(orgId: string) { return ["org_members", orgId]; }
+  private inviteKey(code: string) { return ["invites", code]; }
+  private orgInviteKey(orgId: string, code: string) { return ["org_invites", orgId, code]; }
+  private orgInvitesPrefix(orgId: string) { return ["org_invites", orgId]; }
+  private deviceKey(id: string) { return ["devices", id]; }
+  private userDeviceKey(userId: string, deviceId: string) { return ["user_devices", userId, deviceId]; }
+  private userDevicesPrefix(userId: string) { return ["user_devices", userId]; }
+  private threadKey(id: string) { return ["threads", id]; }
+  private inboxKey(userId: string, threadId: string) { return ["inbox", userId, threadId]; }
+  private inboxPrefix(userId: string) { return ["inbox", userId]; }
+  private messageKey(threadId: string, messageId: string) { return ["messages", threadId, messageId]; }
+  private messagesPrefix(threadId: string) { return ["messages", threadId]; }
+  private draftKey(userId: string, draftId: string) { return ["drafts", userId, draftId]; }
+  private draftsPrefix(userId: string) { return ["drafts", userId]; }
+  private blobKey(id: string) { return ["blobs", id]; }
+  private orgQuotaKey(orgId: string) { return ["org_blob_quota", orgId]; }
 
   assertEnvelopeSize(envelope: Envelope): void {
     const size = new TextEncoder().encode(JSON.stringify(envelope)).byteLength;
     if (size > MAX_ENVELOPE_BYTES) throw envelopeTooLarge(size);
   }
 
-  // --- Invites (bootstrap / admin) ---
-
-  async createInvite(orgId: string): Promise<Invite> {
-    const org = await this.getOrg(orgId);
-    if (!org) throw notFound("Org");
-    const invite: Invite = {
-      code: randomToken(),
-      org_id: orgId,
-      created_at: nowIso(),
-    };
-    await this.kv.set(this.inviteKey(invite.code), invite);
-    return invite;
+  async verifyAuth0Token(token: string): Promise<Auth0Claims> {
+    return await this.verifier.verifyAccessToken(token);
   }
 
-  async createOrg(slug: string): Promise<Org> {
-    const existing = await this.kv.get<Org>(this.orgSlugKey(slug));
-    if (existing.value) throw conflict(`Org slug '${slug}' already exists`);
-    const org: Org = { id: crypto.randomUUID(), slug, created_at: nowIso() };
+  async getUserByAuth0Sub(sub: string): Promise<User | null> {
+    const mapped = await this.kv.get<string>(this.auth0SubKey(sub));
+    if (!mapped.value) return null;
+    return this.getUser(mapped.value);
+  }
+
+  authContextFromUser(user: User): AuthContext {
+    return authContextFromUser(user);
+  }
+
+  async getMe(claims: Auth0Claims): Promise<MeResponse> {
+    const user = await this.getUserByAuth0Sub(claims.sub);
+    const onboarded = isOnboarded(user);
+    const org = user?.org_id ? await this.getOrg(user.org_id) : null;
+    return {
+      auth0_sub: claims.sub,
+      email: claims.email ?? user?.email,
+      onboarded,
+      needs_onboarding: !onboarded,
+      user: user ?? undefined,
+      org: org ?? undefined,
+    };
+  }
+
+  async verifyAuth0Claims(token: string): Promise<Auth0Claims> {
+    return this.verifyAuth0Token(token);
+  }
+
+  async verifyAccessToken(token: string): Promise<AuthContext> {
+    const claims = await this.verifyAuth0Token(token);
+    const user = await this.getUserByAuth0Sub(claims.sub);
+    if (!isOnboarded(user)) {
+      throw forbidden("Onboarding required");
+    }
+    return authContextFromUser(user!);
+  }
+
+  async createOrgWithAdmin(
+    claims: Auth0Claims,
+    input: CreateOrgInput,
+  ): Promise<{ org: Org; user: User }> {
+    const slug = input.slug.trim().toLowerCase();
+    assertValidSlug(slug);
+    const name = (input.name?.trim() || slug);
+
+    if (await this.getUserByAuth0Sub(claims.sub)) {
+      throw conflict("User already onboarded");
+    }
+
+    const local = input.handle
+      ? parseHandle(input.handle.includes("@") ? input.handle : `${input.handle}@${slug}`).local
+      : (emailLocalPart(claims.email) ?? "admin");
+    assertHandleLocal(local);
+    const handle = `${local}@${slug}`;
+
+    const slugRes = await this.kv.get(this.orgSlugKey(slug));
+    if (slugRes.value) throw conflict(`Org slug '${slug}' already exists`);
+    const handleRes = await this.kv.get(this.handleKey(handle));
+    if (handleRes.value) throw conflict("Handle already registered");
+
+    const org: Org = { id: crypto.randomUUID(), slug, name, created_at: nowIso() };
+    const user: User = {
+      id: crypto.randomUUID(),
+      auth0_sub: claims.sub,
+      handle,
+      org_id: org.id,
+      role: "org_admin",
+      email: claims.email,
+      created_at: nowIso(),
+    };
+
+    const subRes = await this.kv.get(this.auth0SubKey(claims.sub));
     const tx = this.kv.atomic();
+    tx.check(slugRes).check(handleRes).check(subRes);
     tx.set(this.orgKey(org.id), org);
     tx.set(this.orgSlugKey(slug), org);
     tx.set(this.orgQuotaKey(org.id), 0);
+    tx.set(this.userKey(user.id), user);
+    tx.set(this.auth0SubKey(claims.sub), user.id);
+    tx.set(this.handleKey(handle), user.id);
+    tx.set(this.memberKey(org.id, user.id), user.id);
     const res = await tx.commit();
-    if (!res.ok) throw new HubError("Failed to create org", "internal", 500);
-    return org;
+    if (!res.ok) throw conflict("Org create conflict");
+    return { org, user };
   }
 
-  // --- Auth ---
+  async joinOrg(
+    claims: Auth0Claims,
+    input: JoinOrgInput,
+  ): Promise<{ org: Org; user: User }> {
+    if (await this.getUserByAuth0Sub(claims.sub)) {
+      throw conflict("User already onboarded");
+    }
 
-  async register(input: RegisterInput): Promise<{
-    user: User;
-    access_token: string;
-    refresh_token: string;
-  }> {
     const inviteRes = await this.kv.get<Invite>(this.inviteKey(input.invite_code));
     const invite = inviteRes.value;
     if (!invite) throw notFound("Invite");
     if (invite.used_by) throw conflict("Invite already used");
 
-    const { local, orgSlug } = parseHandle(input.handle);
-    if (local.toLowerCase() === "@all" || input.handle.toLowerCase().startsWith("@all@")) {
-      throw new HubError("Handle cannot use @all broadcast prefix", "invalid_handle");
-    }
-    const orgRes = await this.kv.get<Org>(this.orgSlugKey(orgSlug));
-    const org = orgRes.value;
-    if (!org || org.id !== invite.org_id) {
-      throw forbidden("Handle must belong to invite org");
+    const org = await this.getOrg(invite.org_id);
+    if (!org) throw notFound("Org");
+
+    let handle: string;
+    if (input.handle) {
+      const raw = input.handle.includes("@") ? input.handle : `${input.handle}@${org.slug}`;
+      const { local, orgSlug } = parseHandle(raw);
+      assertHandleLocal(local);
+      if (orgSlug !== org.slug) throw forbidden("Handle must belong to invite org");
+      handle = `${local}@${org.slug}`;
+    } else {
+      const local = emailLocalPart(claims.email) ?? "user";
+      assertHandleLocal(local);
+      handle = `${local}@${org.slug}`;
     }
 
-    const handleTaken = await this.kv.get(this.handleKey(input.handle));
-    if (handleTaken.value) throw conflict("Handle already registered");
+    const handleRes = await this.kv.get(this.handleKey(handle));
+    if (handleRes.value) throw conflict("Handle already registered");
 
     const user: User = {
       id: crypto.randomUUID(),
-      handle: input.handle,
+      auth0_sub: claims.sub,
+      handle,
       org_id: org.id,
-      pubkey: input.pubkey,
+      role: "member",
+      email: claims.email,
       created_at: nowIso(),
     };
 
-    const refreshToken = randomToken();
-    const usedInvite: Invite = { ...invite, used_by: user.id };
-
+    const subRes = await this.kv.get(this.auth0SubKey(claims.sub));
     const tx = this.kv.atomic();
-    tx.check(inviteRes).check(handleTaken);
+    tx.check(inviteRes).check(handleRes).check(subRes);
     tx.set(this.userKey(user.id), user);
-    tx.set(this.handleKey(user.handle), user.id);
+    tx.set(this.auth0SubKey(claims.sub), user.id);
+    tx.set(this.handleKey(handle), user.id);
     tx.set(this.memberKey(org.id, user.id), user.id);
-    tx.set(this.inviteKey(invite.code), usedInvite);
-    tx.set(this.refreshKey(refreshToken), {
-      user_id: user.id,
-      created_at: nowIso(),
-    });
+    tx.set(this.inviteKey(invite.code), { ...invite, used_by: user.id });
+    tx.delete(this.orgInviteKey(org.id, invite.code));
     const res = await tx.commit();
-    if (!res.ok) throw conflict("Registration conflict");
-
-    const accessToken = await signJwt(
-      { sub: user.id, org_id: user.org_id, handle: user.handle },
-      this.jwtSecret,
-    );
-
-    return { user, access_token: accessToken, refresh_token: refreshToken };
+    if (!res.ok) throw conflict("Join conflict");
+    return { org, user };
   }
 
-  async refreshToken(refreshToken: string): Promise<{ access_token: string }> {
-    const res = await this.kv.get<{ user_id: string }>(this.refreshKey(refreshToken));
-    if (!res.value) throw forbidden("Invalid refresh token");
-    const user = await this.getUser(res.value.user_id);
-    if (!user) throw notFound("User");
-    const accessToken = await signJwt(
-      { sub: user.id, org_id: user.org_id, handle: user.handle },
-      this.jwtSecret,
-    );
-    return { access_token: accessToken };
-  }
-
-  async getMe(userId: string): Promise<User> {
-    const user = await this.getUser(userId);
-    if (!user) throw notFound("User");
-    return user;
-  }
-
-  authFromJwt(payload: Record<string, unknown>): AuthContext {
-    const userId = payload.sub;
-    const orgId = payload.org_id;
-    const handle = payload.handle;
-    if (typeof userId !== "string" || typeof orgId !== "string" || typeof handle !== "string") {
-      throw forbidden("Invalid token claims");
+  async registerDevice(auth: AuthContext, input: RegisterDeviceInput): Promise<Device> {
+    if (!input.pubkey?.trim()) throw new HubError("pubkey is required", "invalid_pubkey");
+    if (!["macos", "ios", "web"].includes(input.platform)) {
+      throw new HubError("platform must be macos, ios, or web", "invalid_platform");
     }
-    return { userId, orgId, handle };
+    const device: Device = {
+      id: crypto.randomUUID(),
+      user_id: auth.userId,
+      pubkey: input.pubkey.trim(),
+      platform: input.platform,
+      created_at: nowIso(),
+    };
+    const tx = this.kv.atomic();
+    tx.set(this.deviceKey(device.id), device);
+    tx.set(this.userDeviceKey(auth.userId, device.id), device.id);
+    const res = await tx.commit();
+    if (!res.ok) throw conflict("Device register conflict");
+    return device;
   }
 
-  async verifyAccessToken(token: string): Promise<AuthContext> {
-    const payload = await verifyJwt(token, this.jwtSecret);
-    return this.authFromJwt(payload);
+  async listDevices(auth: AuthContext): Promise<{ devices: Device[] }> {
+    const devices: Device[] = [];
+    const iter = this.kv.list<string>({ prefix: this.userDevicesPrefix(auth.userId) });
+    for await (const entry of iter) {
+      const device = await this.kv.get<Device>(this.deviceKey(entry.value));
+      if (device.value) devices.push(device.value);
+    }
+    devices.sort((a, b) => a.created_at.localeCompare(b.created_at));
+    return { devices };
   }
 
-  // --- Contacts ---
+  async createInvite(auth: AuthContext): Promise<Invite> {
+    if (auth.role !== "org_admin") throw forbidden("Org admin required");
+    const org = await this.getOrg(auth.orgId);
+    if (!org) throw notFound("Org");
+    const invite: Invite = {
+      code: randomToken(),
+      org_id: auth.orgId,
+      created_at: nowIso(),
+    };
+    await this.kv.set(this.inviteKey(invite.code), invite);
+    await this.kv.set(this.orgInviteKey(auth.orgId, invite.code), invite.code);
+    return invite;
+  }
+
+  async listInvites(auth: AuthContext): Promise<{ invites: Invite[] }> {
+    if (auth.role !== "org_admin") throw forbidden("Org admin required");
+    const invites: Invite[] = [];
+    const iter = this.kv.list<string>({ prefix: this.orgInvitesPrefix(auth.orgId) });
+    for await (const entry of iter) {
+      const invite = await this.kv.get<Invite>(this.inviteKey(entry.value));
+      if (invite.value && !invite.value.used_by) invites.push(invite.value);
+    }
+    invites.sort((a, b) => b.created_at.localeCompare(a.created_at));
+    return { invites };
+  }
 
   async listContacts(auth: AuthContext): Promise<{ contacts: Contact[] }> {
     const org = await this.getOrg(auth.orgId);
     if (!org) throw notFound("Org");
 
-    const contacts: Contact[] = [{ handle: broadcastHandle(org.slug), pubkey: null }];
+    const contacts: Contact[] = [{
+      handle: broadcastHandle(org.slug),
+      pubkey: null,
+      devices: [],
+    }];
     const iter = this.kv.list<string>({ prefix: this.membersPrefix(auth.orgId) });
     for await (const entry of iter) {
       const memberId = entry.value;
       if (memberId === auth.userId) continue;
       const user = await this.getUser(memberId);
-      if (user) contacts.push({ handle: user.handle, pubkey: user.pubkey });
+      if (!user || !isOnboarded(user)) continue;
+      const { devices } = await this.listDevices(authContextFromUser(user));
+      const mapped = devices.map((d) => ({ pubkey: d.pubkey, platform: d.platform }));
+      contacts.push({
+        handle: user.handle!,
+        pubkey: mapped[0]?.pubkey ?? user.pubkey ?? null,
+        devices: mapped,
+      });
     }
     contacts.sort((a, b) => a.handle.localeCompare(b.handle));
     return { contacts };
   }
-
-  // --- Threads ---
 
   async createThread(auth: AuthContext, input: CreateThreadInput): Promise<{
     thread: ThreadMeta;
@@ -285,7 +395,7 @@ export class HubStore {
       id: threadId,
       kind: isBroadcast ? "broadcast" : "direct",
       status: "open",
-      from: sender.handle,
+      from: sender.handle!,
       from_user_id: sender.id,
       audience,
       org_id: auth.orgId,
@@ -299,7 +409,7 @@ export class HubStore {
       id: messageId,
       thread_id: threadId,
       from_user_id: sender.id,
-      from_handle: sender.handle,
+      from_handle: sender.handle!,
       envelope: input.envelope,
       created_at: ts,
     };
@@ -345,7 +455,7 @@ export class HubStore {
       const enriched: ThreadMeta = {
         ...thread,
         your_status: inbox.your_status,
-      } as ThreadMeta & { your_status: string };
+      };
 
       if (filter === "needs_action") {
         if (inbox.your_status === "pending" && thread.status === "open") {
@@ -386,7 +496,7 @@ export class HubStore {
     messages.sort((a, b) => a.created_at.localeCompare(b.created_at));
 
     return {
-      thread: { ...thread, your_status: inbox.your_status } as ThreadMeta,
+      thread: { ...thread, your_status: inbox.your_status },
       messages,
     };
   }
@@ -410,8 +520,7 @@ export class HubStore {
     const user = await this.getUser(auth.userId);
     if (!user) throw notFound("User");
 
-    const isSender = inbox.role === "sender";
-    if (isSender) {
+    if (inbox.role === "sender") {
       throw new HubError(
         "Sender cannot reply on own thread; start a new thread instead",
         "invalid_reply",
@@ -421,6 +530,8 @@ export class HubStore {
 
     const messageId = crypto.randomUUID();
     const ts = nowIso();
+    if (!user.handle) throw forbidden("Onboarding required");
+
     const message: ThreadMessage = {
       id: messageId,
       thread_id: threadId,
@@ -473,10 +584,8 @@ export class HubStore {
       updated_at: nowIso(),
     };
     await this.kv.set(this.threadKey(threadId), updated);
-    return { thread: { ...updated, your_status: inbox.your_status } as ThreadMeta };
+    return { thread: { ...updated, your_status: inbox.your_status } };
   }
-
-  // --- Drafts ---
 
   async listDrafts(auth: AuthContext): Promise<{ drafts: Draft[] }> {
     const drafts: Draft[] = [];
@@ -528,8 +637,6 @@ export class HubStore {
     await this.kv.delete(this.draftKey(auth.userId, draftId));
   }
 
-  // --- Blobs ---
-
   async createUploadUrl(
     auth: AuthContext,
     sizeBytes: number,
@@ -575,7 +682,6 @@ export class HubStore {
     const res = await this.kv.get<BlobMeta>(this.blobKey(blobId));
     const meta = res.value;
     if (!meta) throw notFound("Blob");
-    // Org-wide ACL: any member may download any org blob by id (narrower ACL later).
     if (meta.org_id !== auth.orgId) throw forbidden("Blob belongs to another org");
 
     const { url, expires_at } = await createBlobUrls(blobId, "GET");
@@ -585,8 +691,6 @@ export class HubStore {
       meta,
     };
   }
-
-  // --- Internal helpers ---
 
   private async getUser(id: string): Promise<User | null> {
     const res = await this.kv.get<User>(this.userKey(id));
@@ -641,13 +745,88 @@ export class HubStore {
     return true;
   }
 
+  async createOrgForUser(claims: Auth0Claims, input: CreateOrgInput): Promise<MeResponse> {
+    await this.createOrgWithAdmin(claims, input);
+    return this.getMe(claims);
+  }
+
+  async joinOrgWithInvite(claims: Auth0Claims, input: JoinOrgInput): Promise<MeResponse> {
+    await this.joinOrg(claims, input);
+    return this.getMe(claims);
+  }
+
+  /** Overload-friendly org-id invite create for tests/bootstrap. */
+  async createInviteByOrgId(orgId: string, createdBy?: string): Promise<Invite> {
+    const org = await this.getOrg(orgId);
+    if (!org) throw notFound("Org");
+    const invite: Invite = {
+      code: randomToken(),
+      org_id: orgId,
+      created_at: nowIso(),
+    };
+    await this.kv.set(this.inviteKey(invite.code), invite);
+    await this.kv.set(this.orgInviteKey(orgId, invite.code), invite.code);
+    return invite;
+  }
+
+  async createInviteAsAdmin(auth: AuthContext): Promise<Invite> {
+    return this.createInvite(auth);
+  }
+
+  async listInvitesAsAdmin(auth: AuthContext): Promise<{ invites: Invite[] }> {
+    return this.listInvites(auth);
+  }
+
+  async createOrg(slug: string, name?: string): Promise<Org> {
+    const normalized = slug.trim().toLowerCase();
+    assertValidSlug(normalized);
+    const existing = await this.kv.get(this.orgSlugKey(normalized));
+    if (existing.value) throw conflict(`Org slug '${normalized}' already exists`);
+    const org: Org = {
+      id: crypto.randomUUID(),
+      slug: normalized,
+      name: name ?? normalized,
+      created_at: nowIso(),
+    };
+    const tx = this.kv.atomic();
+    tx.set(this.orgKey(org.id), org);
+    tx.set(this.orgSlugKey(normalized), org);
+    tx.set(this.orgQuotaKey(org.id), 0);
+    const res = await tx.commit();
+    if (!res.ok) throw new HubError("Failed to create org", "internal", 500);
+    return org;
+  }
+
 }
 
-export function createStore(kv: Deno.Kv, jwtSecret?: string): HubStore {
-  const envSecret = jwtSecret ?? Deno.env.get("JWT_SECRET");
-  if (Deno.env.get("DENO_DEPLOYMENT_ID") && !envSecret) {
-    throw new Error("JWT_SECRET must be set in production");
+
+export function createStore(
+  kv: Deno.Kv,
+  options?: { verifier?: TokenVerifier },
+): HubStore {
+  if (options?.verifier) return new HubStore(kv, options.verifier);
+
+  const domain = Deno.env.get("AUTH0_DOMAIN");
+  const audience = Deno.env.get("AUTH0_AUDIENCE");
+  if (Deno.env.get("DENO_DEPLOYMENT_ID") && (!domain || !audience)) {
+    throw new Error("AUTH0_DOMAIN and AUTH0_AUDIENCE must be set in production");
   }
-  const secret = envSecret ?? "dev-secret-change-me";
-  return new HubStore(kv, secret);
+  if (domain && audience) {
+    return new HubStore(kv, createAuth0Verifier({ domain, audience }));
+  }
+  return new HubStore(kv, {
+    async verifyAccessToken() {
+      throw unauthorized("AUTH0_DOMAIN and AUTH0_AUDIENCE must be configured");
+    },
+  });
 }
+
+export async function createStoreWithTestAuth(kv: Deno.Kv): Promise<{
+  store: HubStore;
+  signToken: (claims: Auth0Claims) => Promise<string>;
+}> {
+  const { verifier, signToken } = await createTestTokenVerifier();
+  return { store: createStore(kv, { verifier }), signToken };
+}
+
+export type { UserRole };

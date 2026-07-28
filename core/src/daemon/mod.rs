@@ -3,6 +3,7 @@
 mod config;
 mod connect_host;
 mod http_bridge;
+mod oauth;
 pub mod rpc;
 mod state;
 
@@ -137,10 +138,11 @@ fn restrict_socket_permissions(socket_path: &Path) -> Result<()> {
 
 /// Build hub client from on-disk config when credentials exist.
 pub fn hub_from_config(config: &DaemonConfig) -> Option<Result<HubClient>> {
-    match (&config.hub_url, &config.jwt) {
+    match (&config.hub_url, &config.access_token) {
         (Some(url), Some(token)) => Some(HubClient::new(
             HubConfig::new(url.clone(), token.clone())
-                .with_refresh_token(config.refresh_token.clone()),
+                .with_refresh_token(config.refresh_token.clone())
+                .with_auth0(config.auth0_domain.clone(), config.auth0_client_id.clone()),
         )),
         _ => None,
     }

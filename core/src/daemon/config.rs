@@ -51,10 +51,21 @@ pub fn write_restricted_file(path: &Path, contents: impl AsRef<[u8]>) -> Result<
 pub struct DaemonConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hub_url: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub jwt: Option<String>,
+    /// Auth0 access token (Bearer for hub). `jwt` alias loads pre-Auth0 configs.
+    #[serde(
+        default,
+        alias = "jwt",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub access_token: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub refresh_token: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth0_domain: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth0_client_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth0_audience: Option<String>,
     /// Absolute path to `mutande-core` for MCP host configs (`connect_host`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mutande_core_path: Option<String>,
@@ -129,5 +140,22 @@ mod tests {
             let parent = fs::metadata(dir.path()).unwrap().permissions();
             assert_eq!(parent.mode() & 0o777, 0o700);
         }
+    }
+
+    #[test]
+    fn config_loads_legacy_jwt_alias() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        std::fs::write(
+            &path,
+            r#"{"hub_url":"https://hub.example","jwt":"legacy-at","refresh_token":"rt"}"#,
+        )
+        .unwrap();
+        let data = std::fs::read_to_string(&path).unwrap();
+        let cfg: DaemonConfig = serde_json::from_str(&data).unwrap();
+        assert_eq!(cfg.access_token.as_deref(), Some("legacy-at"));
+        let saved = serde_json::to_value(&cfg).unwrap();
+        assert!(saved.get("access_token").is_some());
+        assert!(saved.get("jwt").is_none());
     }
 }

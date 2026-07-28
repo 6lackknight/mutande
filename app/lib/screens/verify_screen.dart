@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../services/daemon_client.dart';
+import '../widgets/thinking_orb.dart';
 
 /// Minimal safety-number verify: show fingerprint + QR-payload stub, compare paste.
 class VerifyContactPanel extends StatefulWidget {
@@ -232,7 +233,16 @@ class _VerifyContactPanelState extends State<VerifyContactPanel> {
         const SizedBox(height: 8),
         FilledButton(
           onPressed: _loading ? null : _verify,
-          child: Text(_loading ? 'Checking…' : 'Compare'),
+          child: _loading
+              ? const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    MutandeOrb.loading(semanticLabel: 'Checking…'),
+                    SizedBox(width: 8),
+                    Text('Checking…'),
+                  ],
+                )
+              : const Text('Compare'),
         ),
         if (_verified != null) ...[
           const SizedBox(height: 12),

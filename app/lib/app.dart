@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 
 import 'config/app_config.dart';
+import 'screens/join_screen.dart';
 import 'screens/threads_screen.dart';
 import 'screens/verify_screen.dart';
 import 'services/app_actions.dart';
 import 'services/daemon_client.dart';
+import 'widgets/thinking_orb.dart';
 
 /// Stone/slate neutrals with a muted bronze accent — mythic, not flashy.
 ThemeData mutandeTheme() {
@@ -43,6 +45,8 @@ ThemeData mutandeTheme() {
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       fillColor: stoneSurface,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      hintStyle: const TextStyle(color: Color(0xFFA8A29E)),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
         borderSide: const BorderSide(color: Color(0xFFE7E5E4)),
@@ -53,7 +57,11 @@ ThemeData mutandeTheme() {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: Color(0xFF92400E)),
+        borderSide: const BorderSide(color: Color(0xFF92400E), width: 1.5),
+      ),
+      disabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: const BorderSide(color: Color(0xFFE7E5E4)),
       ),
     ),
   );
@@ -78,7 +86,7 @@ class MutandeApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Mutande',
+      title: 'mutande',
       theme: mutandeTheme(),
       home: RootScreen(
         config: config,
@@ -242,7 +250,7 @@ class _RootScreenState extends State<RootScreen> {
   Widget build(BuildContext context) {
     if (_loading) {
       return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+        body: Center(child: MutandeOrb.standard()),
       );
     }
 
@@ -257,11 +265,13 @@ class _RootScreenState extends State<RootScreen> {
 
     // Had status before; daemon blipped — keep showing last-known route,
     // but surface a banner when we know about the error.
-    final configured = _status?.configured ?? false;
+    final status = _status;
+    final configured = status?.configured ?? false;
     if (!configured) {
       return OnboardingScreen(
         config: widget.config,
         daemon: _daemon,
+        status: status,
         onOnboarded: _onOnboarded,
       );
     }
@@ -306,7 +316,7 @@ class DaemonErrorScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
-                  'Mutande',
+                  'mutande',
                   style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                     color: const Color(0xFF292524),
                     fontWeight: FontWeight.w600,
@@ -340,171 +350,6 @@ class DaemonErrorScreen extends StatelessWidget {
                 FilledButton(
                   onPressed: onRetry,
                   child: const Text('Retry'),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class OnboardingScreen extends StatefulWidget {
-  const OnboardingScreen({
-    super.key,
-    required this.config,
-    required this.daemon,
-    required this.onOnboarded,
-  });
-
-  final AppConfig config;
-  final DaemonClient daemon;
-  final void Function(DaemonStatusResult status) onOnboarded;
-
-  @override
-  State<OnboardingScreen> createState() => _OnboardingScreenState();
-}
-
-class _OnboardingScreenState extends State<OnboardingScreen> {
-  late final TextEditingController _invite;
-  late final TextEditingController _handle;
-  late final TextEditingController _hubUrl;
-  bool _submitting = false;
-  String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    _invite = TextEditingController();
-    _handle = TextEditingController();
-    _hubUrl = TextEditingController(text: widget.config.hubUrl);
-  }
-
-  @override
-  void dispose() {
-    _invite.dispose();
-    _handle.dispose();
-    _hubUrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _submit() async {
-    final invite = _invite.text.trim();
-    final handle = _handle.text.trim();
-    final hubUrl = _hubUrl.text.trim();
-    if (invite.isEmpty) {
-      setState(() => _error = 'Invite code is required.');
-      return;
-    }
-    final handleErr = validateHandle(handle);
-    if (handleErr != null) {
-      setState(() => _error = handleErr);
-      return;
-    }
-    final hubErr = validateHubUrl(hubUrl);
-    if (hubErr != null) {
-      setState(() => _error = hubErr);
-      return;
-    }
-
-    setState(() {
-      _submitting = true;
-      _error = null;
-    });
-    try {
-      await widget.daemon.register(
-        inviteCode: invite,
-        handle: handle,
-        hubUrl: hubUrl,
-      );
-      final status = await widget.daemon.getStatus();
-      if (!mounted) return;
-      widget.onOnboarded(status);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _submitting = false;
-        _error = e.toString();
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(32),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 400),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  'Mutande',
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    color: const Color(0xFF292524),
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: -0.5,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Join with an invite.',
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: const Color(0xFF78716C),
-                  ),
-                ),
-                const SizedBox(height: 28),
-                TextField(
-                  controller: _invite,
-                  decoration: const InputDecoration(
-                    labelText: 'Invite code',
-                  ),
-                  textInputAction: TextInputAction.next,
-                  enabled: !_submitting,
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _handle,
-                  decoration: const InputDecoration(
-                    labelText: 'Handle',
-                    hintText: 'alice@acme',
-                  ),
-                  textInputAction: TextInputAction.next,
-                  enabled: !_submitting,
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _hubUrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Hub URL',
-                  ),
-                  keyboardType: TextInputType.url,
-                  textInputAction: TextInputAction.done,
-                  onSubmitted: (_) => _submit(),
-                  enabled: !_submitting,
-                ),
-                if (_error != null) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    _error!,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: const Color(0xFF991B1B),
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 20),
-                FilledButton(
-                  onPressed: _submitting ? null : _submit,
-                  child: _submitting
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Join'),
                 ),
               ],
             ),
@@ -581,7 +426,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final handle = widget.status.handle;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Mutande')),
+      appBar: AppBar(title: const Text('mutande')),
       body: Padding(
         padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
         child: ConstrainedBox(
@@ -677,11 +522,7 @@ class _SessionPanel extends StatelessWidget {
         FilledButton.icon(
           onPressed: checking ? null : onCheckDaemon,
           icon: checking
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
+              ? const MutandeOrb.loading(semanticLabel: 'Checking…')
               : const Icon(Icons.refresh),
           label: Text(checking ? 'Checking…' : 'Check daemon'),
         ),
@@ -689,11 +530,7 @@ class _SessionPanel extends StatelessWidget {
         OutlinedButton.icon(
           onPressed: connecting ? null : onConnectHosts,
           icon: connecting
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
+              ? const MutandeOrb.loading(semanticLabel: 'Connecting…')
               : const Icon(Icons.link),
           label: Text(connecting ? 'Connecting…' : 'Connect AI hosts'),
         ),

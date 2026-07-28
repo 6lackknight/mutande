@@ -30,13 +30,33 @@ Xcode Run Script: `macos/Runner/Scripts/bundle_mutande_core.sh`.
 | Connect AI hosts | Show window + run connect flow |
 | Quit | Tear down tray and exit |
 
+## Auth (Auth0)
+
+Same Auth0 user as `web/` ([https://mutande.vercel.app](https://mutande.vercel.app) until `mutande.ai`). Flow: **Sign in with Auth0** → daemon opens browser (PKCE loopback) → create team or join invite → home.
+
+Dart-defines (optional; daemon can also read env):
+
+| Define | Default |
+|--------|---------|
+| `MUTANDE_HUB_URL` | `https://mutande.6lackknight.deno.net` |
+| `AUTH0_DOMAIN` | (from daemon env if unset) |
+| `AUTH0_NATIVE_CLIENT_ID` | (from daemon env if unset) |
+| `AUTH0_AUDIENCE` | `https://hub.mutande.app` |
+
+Tenant checklist: [`docs/AUTH0.md`](../docs/AUTH0.md). Core env sample: [`core/.env.example`](../core/.env.example).
+
 ## Run
 
 ```bash
 cd app
 flutter pub get
-flutter run -d macos
+flutter run -d macos \
+  --dart-define=AUTH0_DOMAIN=chevrondigital.auth0.com \
+  --dart-define=AUTH0_NATIVE_CLIENT_ID=2cbPq8c2JelRxBRkvKlSHTmrM91ItUUm \
+  --dart-define=AUTH0_AUDIENCE=https://hub.mutande.app
 ```
+
+Or export the same vars / use `core/.env` (see `core/.env.example`) before starting the daemon.
 
 Look for the Mutande status item in the menu bar (template icon). Click it for the tray menu.
 

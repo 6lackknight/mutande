@@ -33,7 +33,7 @@ export function loadR2Config(
   return { accountId, accessKeyId, secretAccessKey, bucket, publicBase };
 }
 
-/** Hard-fail on Deno Deploy when R2 is unset (mirrors JWT_SECRET guard). */
+/** Hard-fail on Deno Deploy when R2 is unset. */
 export function assertR2ConfiguredForDeploy(
   env: { get(key: string): string | undefined } = Deno.env,
 ): void {

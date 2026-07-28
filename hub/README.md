@@ -4,10 +4,17 @@ Blind courier API on Deno Deploy: Hono + Deno KV (+ R2 for blobs in production).
 
 Stores ciphertext envelopes, thread metadata, and public keys. Never stores private keys or plaintext.
 
+Auth is **Auth0-first**: the hub validates Auth0 access tokens via JWKS. Self-serve onboarding is create-team or join-with-invite.
+
+Tenant / app setup (API, web, Mac, env vars): see [`docs/AUTH0.md`](../docs/AUTH0.md).
+
+**Prod URLs:** hub `https://mutande.6lackknight.deno.net`; web `https://mutande.vercel.app` (until `mutande.ai`).
+
 ## Local dev
 
 ```bash
-export JWT_SECRET=dev-secret
+export AUTH0_DOMAIN=your-tenant.us.auth0.com
+export AUTH0_AUDIENCE=https://hub.mutande.app
 deno task dev
 curl http://localhost:8000/health
 ```
@@ -24,17 +31,30 @@ deno task check
 | Method | Path | Auth |
 |--------|------|------|
 | GET | `/health` | — |
-| POST | `/v1/auth/register` | invite + handle + pubkey |
-| POST | `/v1/auth/token` | refresh_token |
-| GET | `/v1/auth/me` | Bearer JWT |
-| GET | `/v1/contacts` | Bearer JWT |
-| GET/POST | `/v1/threads` | Bearer JWT |
-| GET | `/v1/threads/:id` | Bearer JWT |
-| POST | `/v1/threads/:id/replies` | Bearer JWT |
-| POST | `/v1/threads/:id/close` | Bearer JWT |
-| CRUD | `/v1/drafts` | Bearer JWT |
-| POST | `/v1/blobs/upload-url` | Bearer JWT |
-| POST | `/v1/blobs/:id/download-url` | Bearer JWT |
+| GET | `/v1/me` | Auth0 Bearer |
+| GET | `/v1/auth/me` | Auth0 Bearer (alias) |
+| POST | `/v1/orgs` | Auth0 Bearer (not yet onboarded) |
+| POST | `/v1/onboarding/join` | Auth0 Bearer (not yet onboarded) |
+| POST | `/v1/devices` | Auth0 Bearer (onboarded) |
+| GET/POST | `/v1/admin/invites` | Auth0 Bearer + `org_admin` |
+| GET | `/v1/contacts` | Auth0 Bearer (onboarded) |
+| GET/POST | `/v1/threads` | Auth0 Bearer (onboarded) |
+| GET | `/v1/threads/:id` | Auth0 Bearer (onboarded) |
+| POST | `/v1/threads/:id/replies` | Auth0 Bearer (onboarded) |
+| POST | `/v1/threads/:id/close` | Auth0 Bearer (onboarded) |
+| CRUD | `/v1/drafts` | Auth0 Bearer (onboarded) |
+| POST | `/v1/blobs/upload-url` | Auth0 Bearer (onboarded) |
+| POST | `/v1/blobs/:id/download-url` | Auth0 Bearer (onboarded) |
+
+### Auth0 contract (summary)
+
+1. Client sends `Authorization: Bearer <Auth0 access token>`.
+2. `GET /v1/me` → `{ auth0_sub, email?, onboarded, needs_onboarding?, user?, org? }`.
+3. If not `onboarded`:
+   - **Create team:** `POST /v1/orgs` `{ slug, name?, handle? }` → creator becomes `org_admin`; default handle `email-local@slug`.
+   - **Join:** `POST /v1/onboarding/join` `{ invite_code, handle? }` → `member`; invite burned.
+4. `POST /v1/devices` `{ pubkey, platform }` (`macos` \| `ios` \| `web`).
+5. Org admins: `GET/POST /v1/admin/invites` (hub stores codes; email delivery is web-side / Plunk).
 
 Inline envelopes limited to ~60KB serialized. Blobs use R2 presigned PUT/GET when configured; otherwise mock `https://blobs.mutande.app/{id}` URLs with the same response shape. Per-org 500MB quota is tracked in KV.
 
@@ -42,7 +62,8 @@ Inline envelopes limited to ~60KB serialized. Blobs use R2 presigned PUT/GET whe
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `JWT_SECRET` | prod | HS256 secret for access tokens |
+| `AUTH0_DOMAIN` | prod | Auth0 tenant domain (JWKS issuer host) |
+| `AUTH0_AUDIENCE` | prod | Auth0 API audience for access tokens |
 | `R2_ACCOUNT_ID` | for real blobs | Cloudflare account id |
 | `R2_ACCESS_KEY_ID` | for real blobs | R2 API token access key |
 | `R2_SECRET_ACCESS_KEY` | for real blobs | R2 API token secret |
@@ -53,8 +74,12 @@ When any of `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_
 
 ## Deploy
 
+1. Copy values from `hub/.env.example` (or a local `hub/.env`) into the Deno Deploy project **Settings → Environment Variables**:
+   `AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, plus R2 vars.
+2. Then:
+
 ```bash
-deno task deploy
+cd hub && deno task deploy
 ```
 
-Set `JWT_SECRET` (and R2 vars for production blobs) in Deno Deploy project env.
+`deployctl` targets project `mutande`. Do not commit secrets.
