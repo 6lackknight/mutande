@@ -49,6 +49,7 @@ export interface Invite {
   code: string;
   org_id: string;
   created_at: string;
+  email?: string;
 }
 
 export interface CreateInviteResponse {

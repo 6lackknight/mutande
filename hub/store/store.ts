@@ -475,14 +475,20 @@ export class HubStore {
     return updated;
   }
 
-  async createInvite(auth: AuthContext): Promise<Invite> {
+  async createInvite(
+    auth: AuthContext,
+    opts?: { email?: string },
+  ): Promise<Invite> {
     if (auth.role !== "org_admin") throw forbidden("Org admin required");
     const org = await this.getOrg(auth.orgId);
     if (!org) throw notFound("Org");
+    const email = opts?.email?.trim().toLowerCase() || undefined;
     const invite: Invite = {
       code: randomToken(),
       org_id: auth.orgId,
+      created_by: auth.userId,
       created_at: nowIso(),
+      ...(email ? { email } : {}),
     };
     await this.kv.set(this.inviteKey(invite.code), invite);
     await this.kv.set(this.orgInviteKey(auth.orgId, invite.code), invite.code);
@@ -1235,8 +1241,11 @@ export class HubStore {
     return invite;
   }
 
-  async createInviteAsAdmin(auth: AuthContext): Promise<Invite> {
-    return this.createInvite(auth);
+  async createInviteAsAdmin(
+    auth: AuthContext,
+    opts?: { email?: string },
+  ): Promise<Invite> {
+    return this.createInvite(auth, opts);
   }
 
   async listInvitesAsAdmin(auth: AuthContext): Promise<{ invites: Invite[] }> {

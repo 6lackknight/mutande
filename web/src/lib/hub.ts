@@ -116,10 +116,10 @@ export async function listInvites(): Promise<ListInvitesResponse> {
   return { invites: [] };
 }
 
-export async function createInvite(): Promise<CreateInviteResponse> {
+export async function createInvite(email?: string): Promise<CreateInviteResponse> {
   return hubFetch<CreateInviteResponse>("/v1/admin/invites", {
     method: "POST",
-    body: JSON.stringify({}),
+    body: JSON.stringify(email ? { email } : {}),
   });
 }
 

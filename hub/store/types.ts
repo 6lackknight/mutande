@@ -49,6 +49,8 @@ export interface Invite {
   org_id: string;
   created_by?: string;
   created_at: string;
+  /** Optional email the invite was sent / addressed to. */
+  email?: string;
   used_by?: string;
 }
 

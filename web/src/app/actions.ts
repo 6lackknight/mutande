@@ -15,6 +15,7 @@ export type ActionState = {
   error?: string;
   ok?: string;
   inviteCode?: string;
+  inviteEmail?: string;
   joinUrl?: string;
   emailSkipped?: string;
 };
@@ -86,8 +87,9 @@ export async function createInviteAction(
   const email = String(formData.get("email") ?? "").trim();
 
   try {
-    const { invite } = await createInvite();
+    const { invite } = await createInvite(email || undefined);
     const joinUrl = joinUrlForCode(invite.code);
+    const inviteEmail = invite.email ?? (email || undefined);
 
     if (email) {
       const me = await getMe();
@@ -103,6 +105,7 @@ export async function createInviteAction(
         return {
           ok: "Invite created. Email failed — copy the link below.",
           inviteCode: invite.code,
+          inviteEmail,
           joinUrl,
           error: sent.error,
         };
@@ -112,6 +115,7 @@ export async function createInviteAction(
         return {
           ok: "Invite created.",
           inviteCode: invite.code,
+          inviteEmail,
           joinUrl,
           emailSkipped: sent.reason,
         };
@@ -120,6 +124,7 @@ export async function createInviteAction(
       return {
         ok: `Invite created and emailed to ${email}.`,
         inviteCode: invite.code,
+        inviteEmail,
         joinUrl,
       };
     }
@@ -127,6 +132,7 @@ export async function createInviteAction(
     return {
       ok: "Invite created.",
       inviteCode: invite.code,
+      inviteEmail,
       joinUrl,
     };
   } catch (err) {

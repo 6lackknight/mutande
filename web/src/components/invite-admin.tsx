@@ -28,10 +28,11 @@ export function InviteAdmin({
         code: state.inviteCode,
         org_id: "",
         created_at: new Date().toISOString(),
+        email: state.inviteEmail,
       },
       ...initialInvites,
     ];
-  }, [initialInvites, state.inviteCode]);
+  }, [initialInvites, state.inviteCode, state.inviteEmail]);
 
   async function copy(text: string, id: string) {
     try {
@@ -104,7 +105,10 @@ export function InviteAdmin({
                   className="flex flex-col gap-2 py-4 sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div>
-                    <div className="font-medium tracking-wide text-stone-800">
+                    <div className="font-medium text-stone-800">
+                      {invite.email?.trim() || "No email"}
+                    </div>
+                    <div className="mt-0.5 break-all font-mono text-xs text-muted">
                       {invite.code}
                     </div>
                     <div className="mt-0.5 text-xs text-muted">
