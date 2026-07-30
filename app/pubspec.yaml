@@ -36,6 +36,8 @@ dependencies:
   http: ^1.6.0
   tray_manager: ^0.5.3
   window_manager: ^0.5.2
+  macos_ui: ^2.2.2
+  flutter_resizable_container: ^4.2.0
 
 dev_dependencies:
   flutter_test:

@@ -1,13 +1,25 @@
 /* Keep the Nextra content shell at full available width even when article
    copy is short (no long table/code lines). Without this, `mx-auto flex`
    shrink-wraps under body.flex and the sidebar position jumps. */
+html {
+  scrollbar-gutter: stable;
+}
+
 body div.x\:mx-auto.x\:flex {
   width: 100%;
+  max-width: var(--nextra-content-width, 90rem);
   box-sizing: border-box;
+  flex-shrink: 0;
 }
 
 body article.x\:w-full {
   flex: 1 1 auto;
   width: 100%;
   min-width: 0;
+}
+
+/* Fixed side columns so short pages don't pull the flex row inward. */
+body .nextra-sidebar,
+body .nextra-toc {
+  flex-shrink: 0;
 }

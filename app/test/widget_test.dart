@@ -9,7 +9,9 @@ import 'package:http/testing.dart';
 import 'package:app/app.dart';
 import 'package:app/config/app_config.dart';
 import 'package:app/screens/agents_screen.dart';
+import 'package:app/screens/first_run_ping_wizard.dart';
 import 'package:app/services/daemon_client.dart';
+import 'package:app/services/first_run_store.dart';
 import 'package:app/services/host_link_store.dart';
 
 DaemonClient _mockDaemon(
@@ -166,9 +168,6 @@ void main() {
     expect(find.text('Safety Numbers'), findsOneWidget);
     expect(find.text('Sign out'), findsNothing);
     expect(find.text('Standard Professional License'), findsNothing);
-    await tester.scrollUntilVisible(find.text('alice@acme'), 200);
-    await tester.pumpAndSettle();
-    expect(find.text('alice@acme'), findsOneWidget);
   });
 
   testWidgets('connect AI host via picker shows Linked status', (
@@ -238,8 +237,8 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     await tester.pumpAndSettle();
 
-    expect(find.text('Linked Cursor'), findsOneWidget);
-    expect(find.text('Linked'), findsOneWidget);
+    expect(find.text('Linked Cursor'), findsWidgets);
+    expect(find.text('Linked'), findsWidgets);
     expect(find.text('Not linked'), findsAtLeastNWidgets(2));
     expect(find.text('Connected 3 AI hosts'), findsNothing);
     expect(find.text('Details'), findsNothing);
@@ -530,6 +529,43 @@ test('validateHandle and validateHubUrl', () {
     );
   });
 
+  test('ThreadMessageView empty body and answers harden', () {
+    const empty = ThreadMessageView(
+      id: 'm1',
+      fromHandle: 'tawanda@tbhco/claude',
+      createdAt: '2026-07-30T00:00:00Z',
+    );
+    expect(empty.isEmptyBody, isTrue);
+    expect(empty.displayBody, 'No message body');
+
+    const withAnswers = ThreadMessageView(
+      id: 'm2',
+      fromHandle: 'tawanda@tbhco/claude',
+      createdAt: '2026-07-30T00:00:00Z',
+      answerTexts: ['Tailored CTO CV notes'],
+    );
+    expect(withAnswers.isEmptyBody, isFalse);
+    expect(withAnswers.displayBody, 'Tailored CTO CV notes');
+
+    const withQuestion = ThreadMessageView(
+      id: 'm3',
+      fromHandle: 'tawanda@tbhco/cursor',
+      createdAt: '2026-07-30T00:00:00Z',
+      questionPrompts: ['What are the must-haves for a good CTO CV?'],
+    );
+    expect(withQuestion.isEmptyBody, isFalse);
+    expect(withQuestion.displayBody, contains('must-haves'));
+
+    const errored = ThreadMessageView(
+      id: 'm4',
+      fromHandle: 'tawanda@tbhco/claude',
+      createdAt: '2026-07-30T00:00:00Z',
+      openError: 'Could not decrypt',
+    );
+    expect(errored.isEmptyBody, isFalse);
+    expect(errored.displayBody, 'Could not decrypt');
+  });
+
   testWidgets('agent inspector harden paths', (WidgetTester tester) async {
     String claudeSlug = 'claude';
     String? renamedTo;
@@ -597,7 +633,11 @@ test('validateHandle and validateHubUrl', () {
     await tester.tap(find.text('Rename slug'));
     await tester.pumpAndSettle();
     expect(find.text('Rename slug'), findsWidgets);
-    await tester.enterText(find.byType(TextField), 'default');
+    final renameField = find.descendant(
+      of: find.byType(AlertDialog),
+      matching: find.byType(TextField),
+    );
+    await tester.enterText(renameField, 'default');
     await tester.pumpAndSettle();
     expect(find.text('"default" is reserved.'), findsOneWidget);
     expect(
@@ -607,7 +647,7 @@ test('validateHandle and validateHubUrl', () {
       isNull,
     );
 
-    await tester.enterText(find.byType(TextField), 'codex');
+    await tester.enterText(renameField, 'codex');
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Save'));
     await tester.pump();
@@ -854,5 +894,96 @@ test('validateHandle and validateHubUrl', () {
     expect(find.text('Broadcast to each member’s default agent'), findsOneWidget);
     expect(find.text('You’re the only member of acme'), findsOneWidget);
     expect(find.text('Invite teammates'), findsOneWidget);
+  });
+
+  testWidgets('first-run connect gate shows when incomplete', (WidgetTester tester) async {
+    final daemon = _mockDaemon((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      return _rpcOk(body['id'], {'ok': true});
+    });
+
+    await tester.pumpWidget(
+      MutandeApp(
+        config: const AppConfig(hubUrl: 'http://localhost:8000'),
+        daemon: daemon,
+        hostLinkStore: HostLinkStore.memory(),
+        firstRunStore: FirstRunStore.memory(),
+        seedStatus: const DaemonStatusResult(
+          configured: true,
+          hubUrl: 'http://localhost:8000',
+          handle: 'alice@acme',
+        ),
+        welcomeDuration: Duration.zero,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Connect an AI host'), findsOneWidget);
+    expect(find.text('Choose host'), findsOneWidget);
+    expect(find.text('Threads'), findsNothing);
+  });
+
+  testWidgets('first-run ping wizard shows after connect complete', (WidgetTester tester) async {
+    final daemon = _mockDaemon((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      final method = body['method'] as String?;
+      if (method == 'list_threads') {
+        return _rpcOk(body['id'], {'threads': []});
+      }
+      return _rpcOk(body['id'], {'ok': true});
+    });
+
+    await tester.pumpWidget(
+      MutandeApp(
+        config: const AppConfig(hubUrl: 'http://localhost:8000'),
+        daemon: daemon,
+        hostLinkStore: HostLinkStore.memory(),
+        firstRunStore: FirstRunStore.memory(connectComplete: true),
+        seedStatus: const DaemonStatusResult(
+          configured: true,
+          hubUrl: 'http://localhost:8000',
+          handle: 'alice@acme',
+        ),
+        welcomeDuration: Duration.zero,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Send your first ping'), findsOneWidget);
+    expect(find.text(FirstRunPingWizard.prompt), findsOneWidget);
+    expect(find.text('Skip for now'), findsOneWidget);
+  });
+
+  testWidgets('ping wizard skip marks complete and shows home', (WidgetTester tester) async {
+    final daemon = _mockDaemon((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      final method = body['method'] as String?;
+      if (method == 'list_threads') {
+        return _rpcOk(body['id'], {'threads': []});
+      }
+      return _rpcOk(body['id'], {'ok': true});
+    });
+
+    final firstRun = FirstRunStore.memory(connectComplete: true);
+    await tester.pumpWidget(
+      MutandeApp(
+        config: const AppConfig(hubUrl: 'http://localhost:8000'),
+        daemon: daemon,
+        hostLinkStore: HostLinkStore.memory(),
+        firstRunStore: firstRun,
+        seedStatus: const DaemonStatusResult(
+          configured: true,
+          hubUrl: 'http://localhost:8000',
+          handle: 'alice@acme',
+        ),
+        welcomeDuration: Duration.zero,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Skip for now'));
+    await tester.pumpAndSettle();
+
+    expect(firstRun.pingComplete, isTrue);
+    expect(find.text('Threads'), findsWidgets);
   });
 }

@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_resizable_container/flutter_resizable_container.dart';
 
 import '../services/daemon_client.dart';
+import '../theme/mutande_macos_theme.dart';
 import '../util/address_display.dart';
 import '../widgets/ai_host_icon.dart';
 import '../widgets/thinking_orb.dart';
 import '../widgets/thread_message_tree.dart';
-import 'threads_spatial_view.dart';
 
 /// Stitch home threads — filters, list rows, search + new thread footer.
 class ThreadsPanel extends StatefulWidget {
@@ -37,15 +38,29 @@ class ThreadsPanel extends StatefulWidget {
 
 class _ThreadsPanelState extends State<ThreadsPanel> {
   String _filter = 'needs_action';
-  bool _spatial = false;
   bool _loading = true;
   String? _error;
   List<ThreadSummary> _threads = const [];
-  AgentListResult? _agents;
   String? _openId;
   bool _composeOpen = false;
   String? _composePrefillRecipient;
-  String _query = '';
+  int? _hotDivider;
+
+  ResizableDivider _splitDivider(int id) {
+    final hot = _hotDivider == id;
+    return ResizableDivider(
+      thickness: hot ? 2 : 1,
+      padding: 3,
+      color: hot ? MutandeColors.bronze : MutandeColors.stone200,
+      cursor: SystemMouseCursors.resizeColumn,
+      onHoverEnter: () => setState(() => _hotDivider = id),
+      onHoverExit: () {
+        if (_hotDivider == id) setState(() => _hotDivider = null);
+      },
+      onDragStart: () => setState(() => _hotDivider = id),
+      onDragEnd: () => setState(() => _hotDivider = null),
+    );
+  }
 
   @override
   void initState() {
@@ -102,18 +117,9 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
     });
     try {
       final threads = await widget.daemon.listThreads(filter: _filter);
-      AgentListResult? agents;
-      if (_spatial) {
-        try {
-          agents = await widget.daemon.listAgents();
-        } catch (_) {
-          agents = null;
-        }
-      }
       if (!mounted) return;
       setState(() {
         _threads = threads;
-        _agents = agents;
         _loading = false;
       });
     } catch (e) {
@@ -125,204 +131,180 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
     }
   }
 
-  List<ThreadSummary> get _visible {
-    final q = _query.trim().toLowerCase();
-    if (q.isEmpty) return _threads;
-    return _threads
-        .where(
-          (t) =>
-              t.from.toLowerCase().contains(q) ||
-              t.audience.toLowerCase().contains(q) ||
-              t.kind.toLowerCase().contains(q) ||
-              (t.agentBadge?.toLowerCase().contains(q) ?? false),
-        )
-        .toList();
-  }
+  List<ThreadSummary> get _visible => _threads;
 
   @override
   Widget build(BuildContext context) {
-    if (_openId != null) {
-      return ThreadDetailPanel(
-        daemon: widget.daemon,
-        threadId: _openId!,
-        myHandle: widget.myHandle,
-        onBack: () {
-          setState(() => _openId = null);
-          _reload();
-        },
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _ThreadsToolbar(
-          filter: _filter,
-          spatial: _spatial,
-          query: _query,
-          onFilterChanged: (v) {
-            setState(() => _filter = v);
-            _reload();
-          },
-          onSpatialChanged: (v) {
-            setState(() => _spatial = v);
-            _reload();
-          },
-          onQueryChanged: (v) => setState(() => _query = v),
-        ),
-        if (_composeOpen) ...[
-          const SizedBox(height: 8),
-          _ComposePanel(
-            daemon: widget.daemon,
-            initialRecipient: _composePrefillRecipient,
-            onSent: () {
-              setState(() {
-                _composeOpen = false;
-                _composePrefillRecipient = null;
-              });
+    final listPane = Padding(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _ThreadsToolbar(
+            filter: _filter,
+            onFilterChanged: (v) {
+              setState(() => _filter = v);
               _reload();
             },
-            onCancel: () => setState(() {
-              _composeOpen = false;
-              _composePrefillRecipient = null;
-            }),
+          ),
+          if (_composeOpen) ...[
+            const SizedBox(height: 12),
+            _ComposePanel(
+              daemon: widget.daemon,
+              initialRecipient: _composePrefillRecipient,
+              onSent: () {
+                setState(() {
+                  _composeOpen = false;
+                  _composePrefillRecipient = null;
+                });
+                _reload();
+              },
+              onCancel: () => setState(() {
+                _composeOpen = false;
+                _composePrefillRecipient = null;
+              }),
+            ),
+          ],
+          const SizedBox(height: 8),
+          Expanded(child: _buildListPane(context)),
+          const SizedBox(height: 8),
+          _ThreadsFooter(
+            onNewThread: () => setState(() => _composeOpen = true),
           ),
         ],
-        Expanded(
-          child: _loading
-              ? const Center(
-                  child: MutandeOrb.standard(
-                    semanticLabel: 'Loading threads…',
-                  ),
-                )
-              : _error != null
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 24),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              _error!,
-                              textAlign: TextAlign.center,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodyMedium
-                                  ?.copyWith(
-                                    color: const Color(0xFF57534E),
-                                    height: 1.35,
-                                  ),
-                            ),
-                            const SizedBox(height: 14),
-                            OutlinedButton(
-                              onPressed: _reload,
-                              child: const Text('Retry'),
-                            ),
-                          ],
-                        ),
-                      ),
-                    )
-                  : _visible.isEmpty && !_spatial
-                      ? Center(
-                          child: Text(
-                            'No threads.',
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodyMedium
-                                ?.copyWith(color: const Color(0xFF78716C)),
-                          ),
-                        )
-                      : _spatial
-                          ? ThreadsSpatialView(
-                              threads: _visible,
-                              agents: _agents,
-                              myHandle: widget.myHandle,
-                              onOpenThread: (id) =>
-                                  setState(() => _openId = id),
-                            )
-                          : Align(
-                              alignment: Alignment.topCenter,
-                              child: ConstrainedBox(
-                                constraints:
-                                    const BoxConstraints(maxWidth: 720),
-                                child: ListView.separated(
-                                  padding: EdgeInsets.zero,
-                                  itemCount: _visible.length,
-                                  separatorBuilder: (_, _) => const Divider(
-                                    height: 1,
-                                    thickness: 1,
-                                    color: Color(0xFFE7E5E4),
-                                  ),
-                                  itemBuilder: (context, i) {
-                                    final t = _visible[i];
-                                    return _ThreadRow(
-                                      thread: t,
-                                      myHandle: widget.myHandle,
-                                      onTap: () =>
-                                          setState(() => _openId = t.id),
-                                    );
-                                  },
-                                ),
-                              ),
-                            ),
+      ),
+    );
+
+    final reading = _openId == null
+        ? const _EmptyReadingPane()
+        : ThreadDetailPanel(
+            daemon: widget.daemon,
+            threadId: _openId!,
+            myHandle: widget.myHandle,
+            embedded: true,
+            onBack: () {
+              setState(() => _openId = null);
+              _reload();
+            },
+          );
+
+    // Cursor-style drag splits: list · reading · (stats lives inside detail).
+    return ResizableContainer(
+      direction: Axis.horizontal,
+      children: [
+        ResizableChild(
+          size: const ResizableSize.pixels(304, min: 220, max: 480),
+          divider: _splitDivider(0),
+          child: listPane,
         ),
-        Align(
-          alignment: Alignment.center,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 720),
-            child: _ThreadsFooter(
-              onNewThread: () => setState(() => _composeOpen = true),
-            ),
-          ),
+        ResizableChild(
+          size: const ResizableSize.expand(),
+          child: reading,
         ),
       ],
     );
   }
+
+  Widget _buildListPane(BuildContext context) {
+    if (_loading) {
+      return const Center(
+        child: MutandeOrb.standard(semanticLabel: 'Loading threads…'),
+      );
+    }
+    if (_error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                _error!,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: const Color(0xFF57534E),
+                      height: 1.35,
+                    ),
+              ),
+              const SizedBox(height: 14),
+              OutlinedButton(onPressed: _reload, child: const Text('Retry')),
+            ],
+          ),
+        ),
+      );
+    }
+    if (_visible.isEmpty) {
+      return Center(
+        child: Text(
+          'No threads.',
+          style: Theme.of(context)
+              .textTheme
+              .bodyMedium
+              ?.copyWith(color: const Color(0xFF78716C)),
+        ),
+      );
+    }
+    return ListView.builder(
+      padding: EdgeInsets.zero,
+      itemCount: _visible.length,
+      itemBuilder: (context, i) {
+        final t = _visible[i];
+        return _ThreadRow(
+          thread: t,
+          myHandle: widget.myHandle,
+          selected: t.id == _openId,
+          onTap: () => setState(() => _openId = t.id),
+        );
+      },
+    );
+  }
 }
 
-/// Search-first toolbar: query field with filter scope + view menu.
-class _ThreadsToolbar extends StatefulWidget {
+class _EmptyReadingPane extends StatelessWidget {
+  const _EmptyReadingPane();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 48),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Select a thread',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: const Color(0xFF57534E),
+                    fontWeight: FontWeight.w600,
+                  ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Replies stay nested on the right — list never leaves.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: const Color(0xFFA8A29E),
+                    height: 1.4,
+                  ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Inbox filter scope (search lives on the home chrome strip).
+class _ThreadsToolbar extends StatelessWidget {
   const _ThreadsToolbar({
     required this.filter,
-    required this.spatial,
-    required this.query,
     required this.onFilterChanged,
-    required this.onSpatialChanged,
-    required this.onQueryChanged,
   });
 
   final String filter;
-  final bool spatial;
-  final String query;
   final ValueChanged<String> onFilterChanged;
-  final ValueChanged<bool> onSpatialChanged;
-  final ValueChanged<String> onQueryChanged;
 
-  @override
-  State<_ThreadsToolbar> createState() => _ThreadsToolbarState();
-}
-
-class _ThreadsToolbarState extends State<_ThreadsToolbar> {
-  late final TextEditingController _controller =
-      TextEditingController(text: widget.query);
-
-  @override
-  void didUpdateWidget(covariant _ThreadsToolbar oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.query != _controller.text) {
-      _controller.text = widget.query;
-      _controller.selection =
-          TextSelection.collapsed(offset: widget.query.length);
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  String get _filterLabel => switch (widget.filter) {
+  String get _filterLabel => switch (filter) {
         'open' => 'Open',
         'closed' => 'Closed',
         _ => 'Needs you',
@@ -330,131 +312,41 @@ class _ThreadsToolbarState extends State<_ThreadsToolbar> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 2, bottom: 8),
-      child: Row(
-        children: [
-          Expanded(
-            child: Container(
-              height: 44,
-              decoration: BoxDecoration(
-                color: const Color(0xFFFAFAF9),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFFE7E5E4)),
-              ),
-              child: Row(
-                children: [
-                  const SizedBox(width: 12),
-                  const Icon(Icons.search, size: 18, color: Color(0xFFA8A29E)),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextField(
-                      controller: _controller,
-                      onChanged: widget.onQueryChanged,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: const Color(0xFF292524),
-                          ),
-                      decoration: const InputDecoration(
-                        hintText: 'Search threads…',
-                        isDense: true,
-                        border: InputBorder.none,
-                        contentPadding: EdgeInsets.symmetric(vertical: 12),
-                      ),
-                    ),
-                  ),
-                  Container(
-                    width: 1,
-                    height: 22,
-                    color: const Color(0xFFE7E5E4),
-                  ),
-                  PopupMenuButton<String>(
-                    tooltip: 'Filter scope',
-                    onSelected: widget.onFilterChanged,
-                    itemBuilder: (context) => const [
-                      PopupMenuItem(
-                        value: 'needs_action',
-                        child: Text('Needs you'),
-                      ),
-                      PopupMenuItem(value: 'open', child: Text('Open')),
-                      PopupMenuItem(value: 'closed', child: Text('Closed')),
-                    ],
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 10,
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            _filterLabel,
-                            style: Theme.of(context)
-                                .textTheme
-                                .labelMedium
-                                ?.copyWith(
-                                  color: const Color(0xFF57534E),
-                                  fontWeight: FontWeight.w600,
-                                ),
-                          ),
-                          const Icon(
-                            Icons.expand_more,
-                            size: 16,
-                            color: Color(0xFF78716C),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: PopupMenuButton<String>(
+        tooltip: 'Filter scope',
+        padding: EdgeInsets.zero,
+        onSelected: onFilterChanged,
+        itemBuilder: (context) => const [
+          PopupMenuItem(
+            value: 'needs_action',
+            child: Text('Needs you'),
           ),
-          const SizedBox(width: 6),
-          PopupMenuButton<bool>(
-            tooltip: 'View',
-            onSelected: widget.onSpatialChanged,
-            itemBuilder: (context) => [
-              CheckedPopupMenuItem(
-                value: false,
-                checked: !widget.spatial,
-                child: const Text('List'),
+          PopupMenuItem(value: 'open', child: Text('Open')),
+          PopupMenuItem(value: 'closed', child: Text('Closed')),
+        ],
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                _filterLabel,
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: const Color(0xFF57534E),
+                      fontWeight: FontWeight.w600,
+                    ),
               ),
-              CheckedPopupMenuItem(
-                value: true,
-                checked: widget.spatial,
-                child: const Text('Spatial'),
+              const SizedBox(width: 2),
+              const Icon(
+                Icons.expand_more,
+                size: 16,
+                color: Color(0xFFA8A29E),
               ),
             ],
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    widget.spatial
-                        ? Icons.hub_outlined
-                        : Icons.view_agenda_outlined,
-                    size: 18,
-                    color: const Color(0xFF78716C),
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    widget.spatial ? 'Spatial' : 'List',
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                          color: const Color(0xFF78716C),
-                          fontWeight: FontWeight.w500,
-                        ),
-                  ),
-                  const Icon(
-                    Icons.expand_more,
-                    size: 16,
-                    color: Color(0xFFA8A29E),
-                  ),
-                ],
-              ),
-            ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -467,35 +359,17 @@ class _ThreadsFooter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Divider(
-          height: 1,
-          thickness: 1,
-          color: Color(0xFFE7E5E4),
+    return Align(
+      alignment: Alignment.centerRight,
+      child: TextButton.icon(
+        onPressed: onNewThread,
+        icon: const Icon(Icons.add, size: 16),
+        label: const Text('New'),
+        style: TextButton.styleFrom(
+          foregroundColor: const Color(0xFF57534E),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
         ),
-        Padding(
-          padding: const EdgeInsets.only(top: 10),
-          child: Align(
-            alignment: Alignment.centerRight,
-            child: OutlinedButton.icon(
-              onPressed: onNewThread,
-              icon: const Icon(Icons.add, size: 16),
-              label: const Text('New Thread'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFF57534E),
-                side: const BorderSide(color: Color(0xFFD6D3D1)),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 12,
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
+      ),
     );
   }
 }
@@ -505,11 +379,13 @@ class _ThreadRow extends StatelessWidget {
     required this.thread,
     required this.onTap,
     this.myHandle,
+    this.selected = false,
   });
 
   final ThreadSummary thread;
   final VoidCallback onTap;
   final String? myHandle;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
@@ -517,57 +393,68 @@ class _ThreadRow extends StatelessWidget {
     final meta = _rowMeta(thread);
     final status = _quietStatus(thread);
 
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            _ThreadMark(thread: thread, label: title),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Material(
+        color: selected ? const Color(0xFFF5F5F4) : Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 10, 8, 10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                _ThreadMark(thread: thread, label: title),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: const Color(0xFF292524),
+                              fontWeight: FontWeight.w600,
+                              height: 1.2,
+                            ),
+                      ),
+                      if (meta.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          meta,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style:
+                              Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: const Color(0xFFA8A29E),
+                                    height: 1.2,
+                                  ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                if (status.isNotEmpty) ...[
+                  const SizedBox(width: 8),
                   Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: const Color(0xFF292524),
-                          fontWeight: FontWeight.w600,
+                    status,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: thread.yourStatus == 'pending'
+                              ? const Color(0xFFB45309)
+                              : const Color(0xFFA8A29E),
+                          fontWeight: thread.yourStatus == 'pending'
+                              ? FontWeight.w600
+                              : FontWeight.w400,
                         ),
                   ),
-                  if (meta.isNotEmpty) ...[
-                    const SizedBox(height: 1),
-                    Text(
-                      meta,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: const Color(0xFF78716C),
-                          ),
-                    ),
-                  ],
                 ],
-              ),
+              ],
             ),
-            if (status.isNotEmpty) ...[
-              const SizedBox(width: 12),
-              Text(
-                status,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: thread.yourStatus == 'pending'
-                          ? const Color(0xFFB45309)
-                          : const Color(0xFFA8A29E),
-                      fontWeight: thread.yourStatus == 'pending'
-                          ? FontWeight.w500
-                          : FontWeight.w400,
-                    ),
-              ),
-            ],
-          ],
+          ),
         ),
       ),
     );
@@ -851,12 +738,15 @@ class ThreadDetailPanel extends StatefulWidget {
     required this.threadId,
     required this.onBack,
     this.myHandle,
+    this.embedded = false,
   });
 
   final DaemonClient daemon;
   final String threadId;
   final VoidCallback onBack;
   final String? myHandle;
+  /// Side-panel mode: close control instead of full-page back chrome.
+  final bool embedded;
 
   @override
   State<ThreadDetailPanel> createState() => _ThreadDetailPanelState();
@@ -871,6 +761,23 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
   String? _replyToMessageId;
   String? _replyToHandle;
   String? _upvotingMessageId;
+  int? _hotDivider;
+
+  ResizableDivider _splitDivider(int id) {
+    final hot = _hotDivider == id;
+    return ResizableDivider(
+      thickness: hot ? 2 : 1,
+      padding: 3,
+      color: hot ? MutandeColors.bronze : MutandeColors.stone200,
+      cursor: SystemMouseCursors.resizeColumn,
+      onHoverEnter: () => setState(() => _hotDivider = id),
+      onHoverExit: () {
+        if (_hotDivider == id) setState(() => _hotDivider = null);
+      },
+      onDragStart: () => setState(() => _hotDivider = id),
+      onDragEnd: () => setState(() => _hotDivider = null),
+    );
+  }
 
   Future<void> _toggleUpvote(ThreadMessageView message) async {
     if (_upvotingMessageId != null) return;
@@ -898,7 +805,11 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not update upvote: $e')),
+        SnackBar(
+          content: Text(
+            friendlyDaemonError(e, what: 'Upvote'),
+          ),
+        ),
       );
     } finally {
       if (mounted) setState(() => _upvotingMessageId = null);
@@ -923,6 +834,17 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant ThreadDetailPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.threadId != widget.threadId) {
+      _reply.clear();
+      _replyToMessageId = null;
+      _replyToHandle = null;
+      _load();
+    }
   }
 
   @override
@@ -954,14 +876,18 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
 
   Future<void> _sendReply() async {
     final text = _reply.text.trim();
-    if (text.isEmpty) return;
-    setState(() => _sending = true);
+    if (text.isEmpty || _sending) return;
+    setState(() {
+      _sending = true;
+      _error = null;
+    });
     try {
       await widget.daemon.replyToThread(
         threadId: widget.threadId,
         notes: text,
         inReplyTo: _replyToMessageId,
       );
+      if (!mounted) return;
       _reply.clear();
       _clearReplyTarget();
       await _load();
@@ -975,35 +901,36 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    final pane = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            IconButton(
-              tooltip: 'Back to threads',
-              onPressed: widget.onBack,
-              icon: const Icon(Icons.arrow_back, size: 20),
-              color: const Color(0xFF57534E),
-              visualDensity: VisualDensity.compact,
-            ),
-            Text(
-              'Thread',
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: const Color(0xFF78716C),
-                    fontWeight: FontWeight.w600,
-                  ),
-            ),
-            const Spacer(),
-            IconButton(
-              tooltip: 'Refresh',
-              onPressed: _loading ? null : _load,
-              icon: const Icon(Icons.refresh, size: 20),
-              color: const Color(0xFF78716C),
-              visualDensity: VisualDensity.compact,
-            ),
-          ],
-        ),
+        if (!widget.embedded)
+          Row(
+            children: [
+              IconButton(
+                tooltip: 'Back to threads',
+                onPressed: widget.onBack,
+                icon: const Icon(Icons.arrow_back, size: 20),
+                color: const Color(0xFF57534E),
+                visualDensity: VisualDensity.compact,
+              ),
+              Text(
+                'Thread',
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: const Color(0xFF78716C),
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+              const Spacer(),
+              IconButton(
+                tooltip: 'Refresh',
+                onPressed: _loading ? null : _load,
+                icon: const Icon(Icons.refresh, size: 20),
+                color: const Color(0xFF78716C),
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
+          ),
         if (_loading)
           const Expanded(
             child: Center(
@@ -1023,9 +950,13 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
             ),
           )
         else ...[
-          _ThreadDetailHeader(detail: _detail!, myHandle: widget.myHandle),
+          _ThreadDetailHeader(
+            detail: _detail!,
+            myHandle: widget.myHandle,
+            onRefresh: widget.embedded && !_loading ? _load : null,
+          ),
           if (_error != null) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
             Text(
               _error!,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -1033,15 +964,16 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
                   ),
             ),
           ],
-          const SizedBox(height: 20),
+          const SizedBox(height: 28),
           Expanded(
             child: ListView(
-              padding: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.only(bottom: 16),
               children: [
                 for (final node in flattenThreadMessages(_detail!.messages))
                   _ThreadMessageTile(
                     node: node,
                     myHandle: widget.myHandle,
+                    opHandle: _detail!.from,
                     onReply: _detail!.status == 'closed'
                         ? null
                         : () => _startReplyTo(node.message),
@@ -1067,14 +999,159 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
         ],
       ],
     );
+
+    if (!widget.embedded) return pane;
+
+    if (_loading || _detail == null) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+        child: pane,
+      );
+    }
+
+    // Reading (left-aligned) · stats — drag the divider like Cursor.
+    return ResizableContainer(
+      direction: Axis.horizontal,
+      children: [
+        ResizableChild(
+          size: const ResizableSize.expand(),
+          divider: _splitDivider(1),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 12, 16),
+            child: pane,
+          ),
+        ),
+        ResizableChild(
+          size: const ResizableSize.pixels(240, min: 180, max: 360),
+          child: _ThreadStatsPanel(
+            detail: _detail!,
+            myHandle: widget.myHandle,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ThreadStatsPanel extends StatelessWidget {
+  const _ThreadStatsPanel({
+    required this.detail,
+    this.myHandle,
+  });
+
+  final ThreadDetailResult detail;
+  final String? myHandle;
+
+  String get _statusLabel {
+    if (detail.yourStatus == 'pending') return 'needs you';
+    if (detail.status == 'closed') return 'closed';
+    if (detail.yourStatus == 'replied') return 'waiting';
+    return detail.status.isEmpty ? 'open' : detail.status;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final participants = <String>{};
+    for (final m in detail.messages) {
+      if (m.fromHandle.isNotEmpty) participants.add(m.fromHandle);
+    }
+    if (detail.from.isNotEmpty) participants.add(detail.from);
+    if (detail.audience.isNotEmpty) participants.add(detail.audience);
+
+    var upvoteTotal = 0;
+    for (final m in detail.messages) {
+      upvoteTotal += m.upvotes?.count ?? 0;
+    }
+
+    final labelStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: MutandeColors.stone500,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.3,
+        );
+    final valueStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
+          color: MutandeColors.stone800,
+          height: 1.35,
+        );
+
+    Widget row(String label, String value, {Color? valueColor}) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label.toUpperCase(), style: labelStyle),
+            const SizedBox(height: 4),
+            Text(
+              value,
+              style: valueStyle?.copyWith(color: valueColor ?? valueStyle.color),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        color: MutandeColors.stone50,
+      ),
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+        children: [
+          Text(
+            'Thread',
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  color: MutandeColors.stone800,
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
+          const SizedBox(height: 16),
+          row(
+            'Status',
+            _statusLabel,
+            valueColor: detail.yourStatus == 'pending'
+                ? MutandeColors.amber
+                : null,
+          ),
+          row('Kind', detail.kind.isEmpty ? '—' : detail.kind),
+          row(
+            'From',
+            formatMailAddress(detail.from, myHandle: myHandle),
+          ),
+          if (detail.audience.isNotEmpty && detail.audience != detail.from)
+            row(
+              'Audience',
+              formatMailAddress(detail.audience, myHandle: myHandle),
+            ),
+          row('Messages', '${detail.messages.length}'),
+          row('Upvotes', '$upvoteTotal'),
+          const SizedBox(height: 4),
+          Text('PARTICIPANTS', style: labelStyle),
+          const SizedBox(height: 8),
+          ...participants.map(
+            (p) => Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Text(
+                formatMailAddress(p, myHandle: myHandle),
+                style: valueStyle,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
 class _ThreadDetailHeader extends StatelessWidget {
-  const _ThreadDetailHeader({required this.detail, this.myHandle});
+  const _ThreadDetailHeader({
+    required this.detail,
+    this.myHandle,
+    this.onRefresh,
+  });
 
   final ThreadDetailResult detail;
   final String? myHandle;
+  final VoidCallback? onRefresh;
 
   String get _title {
     final primary = detail.audience.isNotEmpty && detail.audience != detail.from
@@ -1100,16 +1177,16 @@ class _ThreadDetailHeader extends StatelessWidget {
     final status = _statusLabel;
     final metaParts = <String>[
       if (showFrom) 'from $fromLabel',
-      if (status != null) status,
+      ?status,
     ];
 
     final metaStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: const Color(0xFF78716C),
-          height: 1.3,
+          color: const Color(0xFFA8A29E),
+          height: 1.35,
         );
     final statusStyle = metaStyle?.copyWith(
       color: detail.yourStatus == 'pending'
-          ? const Color(0xFF92400E)
+          ? const Color(0xFFB45309)
           : detail.status == 'closed'
               ? const Color(0xFFA8A29E)
               : const Color(0xFF78716C),
@@ -1119,22 +1196,39 @@ class _ThreadDetailHeader extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          _title,
-          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                color: const Color(0xFF292524),
-                fontWeight: FontWeight.w700,
-                height: 1.15,
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Text(
+                _title,
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      color: const Color(0xFF1C1917),
+                      fontWeight: FontWeight.w700,
+                      height: 1.15,
+                      fontSize: 26,
+                    ),
               ),
+            ),
+            if (onRefresh != null)
+              IconButton(
+                tooltip: 'Refresh',
+                onPressed: onRefresh,
+                icon: const Icon(Icons.refresh, size: 18),
+                color: const Color(0xFFA8A29E),
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              ),
+          ],
         ),
         if (metaParts.isNotEmpty) ...[
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
           Text.rich(
             TextSpan(
               children: [
                 for (var i = 0; i < metaParts.length; i++) ...[
-                  if (i > 0)
-                    TextSpan(text: '  ·  ', style: metaStyle),
+                  if (i > 0) TextSpan(text: '  ·  ', style: metaStyle),
                   TextSpan(
                     text: metaParts[i],
                     style: metaParts[i] == status ? statusStyle : metaStyle,
@@ -1174,13 +1268,13 @@ class _ThreadReplyComposer extends StatelessWidget {
       decoration: const BoxDecoration(
         border: Border(top: BorderSide(color: Color(0xFFE7E5E4))),
       ),
-      padding: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.only(top: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (replyToHandle != null)
             Padding(
-              padding: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.only(bottom: 10),
               child: Material(
                 color: const Color(0xFFF5F5F4),
                 borderRadius: BorderRadius.circular(8),
@@ -1194,6 +1288,8 @@ class _ThreadReplyComposer extends StatelessWidget {
                       Expanded(
                         child: Text(
                           'Replying to $replyToHandle',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style:
                               Theme.of(context).textTheme.bodySmall?.copyWith(
                                     color: const Color(0xFF57534E),
@@ -1216,11 +1312,11 @@ class _ThreadReplyComposer extends StatelessWidget {
             ),
           Container(
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: const Color(0xFFFAFAF9),
               borderRadius: BorderRadius.circular(10),
               border: Border.all(color: const Color(0xFFE7E5E4)),
             ),
-            padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+            padding: const EdgeInsets.fromLTRB(14, 6, 14, 6),
             child: TextField(
               controller: controller,
               decoration: InputDecoration(
@@ -1234,11 +1330,20 @@ class _ThreadReplyComposer extends StatelessWidget {
                 contentPadding: const EdgeInsets.symmetric(vertical: 10),
               ),
               minLines: 2,
-              maxLines: 5,
+              maxLines: 8,
+              maxLength: 12000,
+              buildCounter: (
+                context, {
+                required currentLength,
+                required isFocused,
+                maxLength,
+              }) =>
+                  null,
               enabled: !sending && !closed,
+              textInputAction: TextInputAction.newline,
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           Row(
             children: [
               if (closed)
@@ -1278,6 +1383,7 @@ class _ThreadMessageTile extends StatelessWidget {
   const _ThreadMessageTile({
     required this.node,
     this.myHandle,
+    this.opHandle,
     this.onReply,
     this.onUpvote,
     this.upvoting = false,
@@ -1285,6 +1391,8 @@ class _ThreadMessageTile extends StatelessWidget {
 
   final ThreadMessageNode node;
   final String? myHandle;
+  /// Thread originator (`detail.from`) — shown as OP when it matches.
+  final String? opHandle;
   final VoidCallback? onReply;
   final VoidCallback? onUpvote;
   final bool upvoting;
@@ -1293,92 +1401,155 @@ class _ThreadMessageTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final m = node.message;
     final body = m.displayBody;
-    final indent = node.depth * 20.0;
+    final empty = m.isEmptyBody;
+    final hasError = m.openError != null && m.openError!.trim().isNotEmpty;
+    // Cap nest indent so deep trees stay readable in the reading pane.
+    final depth = node.depth.clamp(0, 5);
+    final indent = depth * 18.0;
     final upvotes = m.upvotes;
     final count = upvotes?.count ?? 0;
     final youUpvoted = upvotes?.youUpvoted ?? false;
     final fromLabel = formatMailAddress(m.fromHandle, myHandle: myHandle);
     final host = _hostSlugFromHandle(m.fromHandle, myHandle: myHandle);
+    final isOp = _isOpHandle(m.fromHandle, opHandle);
+
+    // OP gets more air below; nested replies stay denser.
+    final bottomGap = depth == 0 ? 20.0 : 14.0;
 
     return Padding(
-      padding: EdgeInsets.only(left: indent, bottom: 10, right: 0),
-      child: Container(
-        decoration: BoxDecoration(
-          color: node.depth > 0
-              ? const Color(0xFFFAFAF9)
-              : Colors.white,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: node.depth > 0
-                ? const Color(0xFFE7E5E4)
-                : const Color(0xFFE7E5E4),
-          ),
-        ),
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      padding: EdgeInsets.only(left: indent, bottom: bottomGap),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              children: [
-                _MessageAvatar(label: fromLabel, host: host),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    fromLabel,
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                          color: const Color(0xFF44403C),
-                          fontWeight: FontWeight.w600,
+            if (depth > 0) ...[
+              Container(
+                width: 2,
+                margin: const EdgeInsets.only(right: 12, top: 2, bottom: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE7E5E4),
+                  borderRadius: BorderRadius.circular(1),
+                ),
+              ),
+            ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      _MessageAvatar(label: fromLabel, host: host),
+                      const SizedBox(width: 10),
+                      Flexible(
+                        child: Text(
+                          fromLabel,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style:
+                              Theme.of(context).textTheme.labelLarge?.copyWith(
+                                    color: const Color(0xFF292524),
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                        ),
+                      ),
+                      if (isOp) ...[
+                        const SizedBox(width: 8),
+                        const _OpBadge(),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  SelectableText(
+                    body,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: hasError
+                              ? const Color(0xFF991B1B)
+                              : empty
+                                  ? const Color(0xFFA8A29E)
+                                  : const Color(0xFF1C1917),
+                          height: 1.5,
+                          fontStyle:
+                              empty ? FontStyle.italic : FontStyle.normal,
                         ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              body,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: m.openError != null
-                        ? const Color(0xFF991B1B)
-                        : const Color(0xFF292524),
-                    height: 1.45,
-                  ),
-            ),
-            if (onUpvote != null || count > 0 || onReply != null) ...[
-              const SizedBox(height: 10),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  _MessageActionGroup(
-                    count: count,
-                    upvoted: youUpvoted,
-                    upvoting: upvoting,
-                    onUpvote: onUpvote,
-                    onReply: onReply,
-                    showUpvote: onUpvote != null || count > 0,
-                  ),
-                  if (upvotes != null && upvotes.upvotes.isNotEmpty) ...[
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Wrap(
-                        spacing: 4,
-                        runSpacing: 4,
-                        children: [
-                          for (final vote in upvotes.upvotes)
-                            _AgentVoteChip(
-                              label: formatMailAddress(
-                                vote.fromHandle,
-                                myHandle: myHandle,
-                              ),
+                  if (onUpvote != null || count > 0 || onReply != null) ...[
+                    const SizedBox(height: 10),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        _MessageActionGroup(
+                          count: count,
+                          upvoted: youUpvoted,
+                          upvoting: upvoting,
+                          onUpvote: onUpvote,
+                          onReply: onReply,
+                          showUpvote: onUpvote != null || count > 0,
+                        ),
+                        if (upvotes != null &&
+                            upvotes.upvotes.isNotEmpty) ...[
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Wrap(
+                              spacing: 4,
+                              runSpacing: 4,
+                              children: [
+                                for (final vote
+                                    in upvotes.upvotes.take(8))
+                                  _AgentVoteChip(
+                                    label: formatMailAddress(
+                                      vote.fromHandle,
+                                      myHandle: myHandle,
+                                    ),
+                                  ),
+                                if (upvotes.upvotes.length > 8)
+                                  _AgentVoteChip(
+                                    label:
+                                        '+${upvotes.upvotes.length - 8}',
+                                  ),
+                              ],
                             ),
+                          ),
                         ],
-                      ),
+                      ],
                     ),
                   ],
                 ],
               ),
-            ],
+            ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// True when [from] is the thread originator (exact or same agent address).
+bool _isOpHandle(String from, String? op) {
+  if (op == null || op.isEmpty) return false;
+  if (from == op) return true;
+  // Same handle/agent path after display normalization noise.
+  return from.toLowerCase() == op.toLowerCase();
+}
+
+class _OpBadge extends StatelessWidget {
+  const _OpBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      decoration: BoxDecoration(
+        color: const Color(0xFFDBEAFE),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        'OP',
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: const Color(0xFF1D4ED8),
+              fontWeight: FontWeight.w700,
+              fontSize: 10,
+              letterSpacing: 0.3,
+            ),
       ),
     );
   }

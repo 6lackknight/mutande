@@ -29,6 +29,11 @@ Thumbs.db
 /web/node_modules/
 /web/.next/
 
+# Remotion (video)
+/video/node_modules/
+/video/out/
+/video/dist/
+
 # Mutande local
 .mutande/
 

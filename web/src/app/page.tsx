@@ -58,15 +58,30 @@ export default function LandingPage() {
             </div>
           </div>
 
-          <div className="fade-up-delay justify-self-start lg:justify-self-end">
+          <div
+            aria-hidden
+            className="fade-up-delay justify-self-start lg:justify-self-end"
+          >
             <Image
-              src="/brand/mt-mark.png"
+              src="/brand/landing-intro-poster.png"
               alt=""
               width={280}
               height={280}
               priority
-              className="size-[min(280px,70vw)] rounded-[1.75rem] shadow-[0_24px_60px_-28px_rgba(28,25,23,0.55)]"
+              className="size-[min(280px,70vw)] rounded-[1.75rem] shadow-[0_24px_60px_-28px_rgba(28,25,23,0.55)] lg:hidden"
             />
+            <video
+              className="hidden size-[min(280px,70vw)] rounded-[1.75rem] object-cover shadow-[0_24px_60px_-28px_rgba(28,25,23,0.55)] lg:block"
+              width={280}
+              height={280}
+              muted
+              autoPlay
+              playsInline
+              preload="metadata"
+              poster="/brand/landing-intro-poster.png"
+            >
+              <source src="/brand/landing-intro.mp4" type="video/mp4" />
+            </video>
           </div>
         </div>
       </main>

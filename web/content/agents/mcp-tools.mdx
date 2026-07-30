@@ -6,6 +6,8 @@ Tools are served locally (`mutande-core mcp`). Split **read / draft** vs **send*
 
 | Tool | Purpose |
 |------|---------|
+| `list_agents` | Your agent slugs for self-collab (`@claude`, bare `@all`); optional teammate handle for *their* agents |
+| `get_router` | Default agent + routing rules |
 | `list_contacts` | Org handles including `@all@org` (not bare `@all` / `@slug`) |
 | `list_threads` | Filter open / needs_action / closed |
 | `get_thread` | Full thread context for the agent |
@@ -26,8 +28,10 @@ Tools are served locally (`mutande-core mcp`). Split **read / draft** vs **send*
 
 | Tool | Purpose |
 |------|---------|
+| `set_router` | Update default agent and/or `match_slug` rules |
 | `forward_draft` | Create thread from draft (direct or `@all`) |
-| `reply_to_thread` | Reply on an existing thread |
+| `ping` | Product ping — `kind: health` (daemon auto-pong) or `kind: thread` (real mail; default target `@all`) |
+| `reply_to_thread` | Reply on an existing thread — `bundle` must be non-empty (`notes` / `subject` / questions / answers); `{}` is rejected. Optional `bundle.in_reply_to` for nested replies; optional `to_agent` for self-handoff |
 | `close_thread` | Mark thread closed |
 | `forward_blob` | Large encrypted artifact path |
 

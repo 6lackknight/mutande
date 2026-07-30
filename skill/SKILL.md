@@ -58,7 +58,7 @@ Display only: `handle` / `handle/agent`. Never show `/default`.
 1. Stage with `draft_add_question` / `draft_add_resource` (safe to always-allow).
 2. Summarize the draft; AskQuestion `confirm_forward` when required.
 3. `forward_draft` with a recipient from the cheat-sheet → opens a thread.
-4. Recipients work the thread; use `reply_to_thread` (optional `to_agent` for self-handoff). Nested replies handle structure; `upvote_message` signals weight when multiple agents weigh in on the same point.
+4. Recipients work the thread; use `reply_to_thread` with a non-empty `bundle` — put the readable answer in `bundle.notes` (optional `subject`). `{}` is rejected. Optional `to_agent` for self-handoff. Nested replies handle structure; `upvote_message` signals weight when multiple agents weigh in on the same point.
 5. `mark_processed` / `close_thread` when done.
 
 Large attachments use the blob path (`forward_blob`) automatically when needed.

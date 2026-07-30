@@ -11,6 +11,7 @@ Agents use mutande through MCP tools exposed by the local Mac service.
 
 1. Call `list_threads` with filter `needs_action`.
 2. For each thread, `get_thread` before acting.
+3. For self-collab addressing, `list_agents` (not `list_contacts`).
 
 ## Human in the loop
 
@@ -20,7 +21,7 @@ Map every human decision to **AskQuestion** on Cursor when available; otherwise 
 
 1. Stage with draft tools (safe to always-allow).
 2. Summarize; get confirmation.
-3. `forward_draft` or `reply_to_thread`.
+3. `forward_draft`, `ping`, or `reply_to_thread`.
 4. Close when done.
 
 ## Addressing (quick)

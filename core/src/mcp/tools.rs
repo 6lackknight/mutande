@@ -179,7 +179,7 @@ const SEND_TOOLS: &[(&str, &str, ValueFn)] = &[
     ),
     (
         "reply_to_thread",
-        "Continue a thread with a reply bundle. Optional to_agent for self-handoff to another of your agents (e.g. claude). Confirm via AskQuestion when the skill requires it. For thread pings: reply with subject Pong / notes pong.",
+        "Continue a thread with a reply bundle. Put the readable answer in bundle.notes (optional subject). Empty {} is rejected. Optional to_agent for self-handoff. Confirm via AskQuestion when the skill requires it. Thread pings: subject Pong / notes pong.",
         || {
             json!({
                 "type": "object",
@@ -187,7 +187,18 @@ const SEND_TOOLS: &[(&str, &str, ValueFn)] = &[
                 "properties": {
                     "thread_id": { "type": "string" },
                     "to_agent": { "type": "string", "description": "self-handoff target agent slug (must differ from the sending agent)" },
-                    "bundle": { "type": "object" }
+                    "bundle": {
+                        "type": "object",
+                        "description": "MutandeBundle — must include notes and/or subject/questions/answers. Example: {\"subject\":\"CTO CV\",\"notes\":\"…full reply…\"}",
+                        "properties": {
+                            "subject": { "type": "string" },
+                            "notes": { "type": "string" },
+                            "context": { "type": "string" },
+                            "in_reply_to": { "type": "string", "description": "parent message id for nested reply" },
+                            "questions": { "type": "array" },
+                            "answers": { "type": "array" }
+                        }
+                    }
                 },
                 "additionalProperties": false
             })

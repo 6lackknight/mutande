@@ -1070,13 +1070,7 @@ impl DaemonState {
         agent_slug: Option<&str>,
     ) -> Result<ForwardThreadsResult> {
         let bundle = self.get_draft_plain();
-        if bundle.questions.is_empty()
-            && bundle.resource_requests.is_empty()
-            && bundle.resources.is_empty()
-            && bundle.subject.is_none()
-            && bundle.context.is_none()
-            && bundle.notes.as_ref().is_none_or(|n| n.trim().is_empty())
-        {
+        if bundle_is_empty(&bundle) {
             bail!("draft is empty");
         }
 
@@ -1182,6 +1176,12 @@ impl DaemonState {
         to_agent: Option<&str>,
         agent_slug: Option<&str>,
     ) -> Result<()> {
+        if bundle_is_empty(&bundle) {
+            bail!(
+                "reply bundle is empty — put the answer in bundle.notes (and optional subject), \
+                 not only in chat. Example: {{\"notes\":\"…\"}}"
+            );
+        }
         // Fetch without auto-pong to avoid re-entry when health pings reply.
         let detail = self.fetch_and_open_thread(thread_id).await?;
         self.reply_to_opened_thread(thread_id, &detail, bundle, to_agent, agent_slug)
@@ -1682,6 +1682,17 @@ fn thread_visible_for_agent(
     } else {
         agent_matches_display(&thread.audience, slug, default_slug)
     }
+}
+
+fn bundle_is_empty(bundle: &MutandeBundle) -> bool {
+    bundle.questions.is_empty()
+        && bundle.resource_requests.is_empty()
+        && bundle.resources.is_empty()
+        && bundle.answers.is_empty()
+        && bundle.subject.as_ref().is_none_or(|s| s.trim().is_empty())
+        && bundle.context.as_ref().is_none_or(|c| c.trim().is_empty())
+        && bundle.notes.as_ref().is_none_or(|n| n.trim().is_empty())
+        && bundle.ping_kind.is_none()
 }
 
 fn onboard_from_me(me: &MeResponse) -> Result<OnboardResult> {
@@ -2525,6 +2536,19 @@ mod tests {
             )
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn reply_rejects_empty_bundle() {
+        let state = DaemonState::new_in_memory_for_test().unwrap();
+        let err = state
+            .reply_to_thread("t-empty", MutandeBundle::default(), None, Some("claude"))
+            .await
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("reply bundle is empty"),
+            "got: {err}"
+        );
     }
 
     #[tokio::test]

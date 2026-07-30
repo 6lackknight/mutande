@@ -1,4 +1,7 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:macos_ui/macos_ui.dart';
 
 import 'config/app_config.dart';
 import 'screens/agents_screen.dart';
@@ -6,6 +9,7 @@ import 'screens/contacts_screen.dart';
 import 'screens/first_run_connect_screen.dart';
 import 'screens/first_run_ping_wizard.dart';
 import 'screens/join_screen.dart';
+import 'screens/search_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/threads_screen.dart';
 import 'services/app_actions.dart';
@@ -13,68 +17,14 @@ import 'services/daemon_client.dart';
 import 'services/daemon_errors.dart';
 import 'services/first_run_store.dart';
 import 'services/host_link_store.dart';
+import 'theme/mutande_macos_theme.dart';
 import 'widgets/daemon_error_screen.dart';
+import 'widgets/home_chrome_strip.dart';
 import 'widgets/thinking_orb.dart';
 import 'widgets/welcome_splash.dart';
 
-/// Stone/slate neutrals with a muted bronze accent — mythic, not flashy.
-ThemeData mutandeTheme() {
-  const stoneSurface = Color(0xFFFAFAF9);
-  const stoneBackground = Color(0xFFF5F5F4);
-  const bronzeAccent = Color(0xFF92400E);
-
-  return ThemeData(
-    useMaterial3: true,
-    colorScheme: ColorScheme.fromSeed(
-      seedColor: bronzeAccent,
-      brightness: Brightness.light,
-      surface: stoneSurface,
-    ),
-    scaffoldBackgroundColor: stoneBackground,
-    appBarTheme: const AppBarTheme(
-      backgroundColor: stoneSurface,
-      foregroundColor: Color(0xFF44403C),
-      elevation: 0,
-      centerTitle: false,
-    ),
-    cardTheme: CardThemeData(
-      color: stoneSurface,
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: const BorderSide(color: Color(0xFFE7E5E4)),
-      ),
-    ),
-    filledButtonTheme: FilledButtonThemeData(
-      style: FilledButton.styleFrom(
-        backgroundColor: const Color(0xFF57534E),
-        foregroundColor: stoneSurface,
-      ),
-    ),
-    inputDecorationTheme: InputDecorationTheme(
-      filled: true,
-      fillColor: stoneSurface,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-      hintStyle: const TextStyle(color: Color(0xFFA8A29E)),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: Color(0xFFE7E5E4)),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: Color(0xFFE7E5E4)),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: Color(0xFF92400E), width: 1.5),
-      ),
-      disabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: Color(0xFFE7E5E4)),
-      ),
-    ),
-  );
-}
+/// Back-compat alias for content Material theme.
+ThemeData mutandeTheme() => mutandeMaterialTheme();
 
 class MutandeApp extends StatelessWidget {
   const MutandeApp({
@@ -118,10 +68,22 @@ class MutandeApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
+    return MacosApp(
       title: 'mutande',
-      theme: mutandeTheme(),
+      theme: mutandeMacosTheme(),
+      darkTheme: MacosThemeData.dark(),
+      themeMode: ThemeMode.light,
       debugShowCheckedModeBanner: false,
+      localizationsDelegates: const [
+        DefaultMaterialLocalizations.delegate,
+        DefaultCupertinoLocalizations.delegate,
+        DefaultWidgetsLocalizations.delegate,
+      ],
+      builder: (context, child) {
+        return mutandeThemeBridge(
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
       home: WelcomeSplash(
         duration: welcomeDuration,
         appVersion: appVersion,
@@ -198,6 +160,14 @@ class _RootScreenState extends State<RootScreen> {
             : FirstRunStore());
     _lastConnectTick = AppActions.connectHostsTick.value;
     AppActions.connectHostsTick.addListener(_onConnectHostsRequested);
+    // Memory / seeded stores: sync-ready so animated orb never blocks pumpAndSettle.
+    _firstRunStore.loadMemorySync();
+    if (_firstRunStore.connectComplete ||
+        _firstRunStore.pingComplete ||
+        widget.firstRunStore != null ||
+        widget.seedStatus != null) {
+      _firstRunReady = true;
+    }
     _bootstrapFirstRun();
     if (widget.seedStatus != null) {
       _status = widget.seedStatus;
@@ -513,6 +483,11 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _composeRecipient;
   String? _openThreadId;
 
+  bool _searchMode = false;
+  final _searchController = TextEditingController();
+  final _searchFocus = FocusNode();
+  final List<String> _recentQueries = [];
+
   void _registerAgentsReload(VoidCallback? reload) {
     _reloadAgents = reload;
   }
@@ -529,7 +504,111 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _openThreadId = widget.initialThreadId;
+    _searchFocus.addListener(_onSearchFocusChanged);
     _checkDaemon();
+  }
+
+  @override
+  void dispose() {
+    _searchFocus.removeListener(_onSearchFocusChanged);
+    _searchFocus.dispose();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _onSearchFocusChanged() {
+    if (_searchFocus.hasFocus &&
+        _searchController.text.trim().isNotEmpty &&
+        !_searchMode) {
+      setState(() => _searchMode = true);
+    }
+  }
+
+  void _onSearchQueryChanged(String value) {
+    setState(() {
+      if (value.trim().isEmpty) {
+        _searchMode = false;
+      } else {
+        _searchMode = true;
+      }
+    });
+  }
+
+  void _onSearchSubmit() {
+    final q = _searchController.text.trim();
+    if (q.isEmpty) return;
+    setState(() {
+      _searchMode = true;
+      _rememberQuery(q);
+    });
+  }
+
+  void _clearSearch() {
+    _searchController.clear();
+    setState(() => _searchMode = false);
+  }
+
+  void _exitSearch() {
+    if (!_searchMode) return;
+    _searchFocus.unfocus();
+    setState(() => _searchMode = false);
+  }
+
+  void _rememberQuery(String q) {
+    _recentQueries.remove(q);
+    _recentQueries.insert(0, q);
+    if (_recentQueries.length > 8) {
+      _recentQueries.removeRange(8, _recentQueries.length);
+    }
+  }
+
+  void _pickRecent(String q) {
+    _searchController.text = q;
+    _searchController.selection = TextSelection.collapsed(offset: q.length);
+    setState(() {
+      _searchMode = true;
+      _rememberQuery(q);
+    });
+  }
+
+  void _openThreadFromSearch(String id) {
+    final q = _searchController.text.trim();
+    if (q.isNotEmpty) _rememberQuery(q);
+    setState(() {
+      _searchMode = false;
+      _tab = 0;
+      _openThreadId = id;
+    });
+    _searchFocus.unfocus();
+  }
+
+  bool get _editableFocused {
+    final primary = FocusManager.instance.primaryFocus;
+    final ctx = primary?.context;
+    if (ctx == null) return false;
+    return ctx.widget is EditableText ||
+        ctx.findAncestorWidgetOfExactType<EditableText>() != null ||
+        ctx.findAncestorWidgetOfExactType<TextField>() != null ||
+        ctx.findAncestorWidgetOfExactType<MacosTextField>() != null;
+  }
+
+  KeyEventResult _onHomeKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    if (event.logicalKey == LogicalKeyboardKey.escape && _searchMode) {
+      _exitSearch();
+      return KeyEventResult.handled;
+    }
+    final meta = HardwareKeyboard.instance.isMetaPressed ||
+        HardwareKeyboard.instance.isControlPressed;
+    if (meta && event.logicalKey == LogicalKeyboardKey.keyF) {
+      _searchFocus.requestFocus();
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.slash && !_editableFocused) {
+      _searchFocus.requestFocus();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
   }
 
   Future<void> _checkDaemon() async {
@@ -543,247 +622,277 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _openSettings() async {
-    await Navigator.of(context).push(
-      PageRouteBuilder<void>(
-        pageBuilder: (context, animation, secondaryAnimation) => SettingsScreen(
-          daemon: widget.daemon,
-          checking: _checking,
-          connecting: widget.connecting,
-          health: _health,
-          connectError: widget.connectError,
-          onCheckDaemon: _checkDaemon,
-          onConnectHosts: widget.onConnectHosts,
-          handle: widget.status.handle,
-          hostLinkStore: widget.hostLinkStore,
-        ),
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          return SlideTransition(
-            position: Tween<Offset>(
-              begin: const Offset(0, 1),
-              end: Offset.zero,
-            ).animate(CurvedAnimation(
-              parent: animation,
-              curve: Curves.easeOutCubic,
-              reverseCurve: Curves.easeInCubic,
-            )),
-            child: child,
-          );
-        },
-      ),
+    await showMacosSheet<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (sheetContext) {
+        return MacosSheet(
+          child: SizedBox(
+            width: 640,
+            height: 720,
+            child: SettingsScreen(
+              daemon: widget.daemon,
+              checking: _checking,
+              connecting: widget.connecting,
+              health: _health,
+              connectError: widget.connectError,
+              onCheckDaemon: _checkDaemon,
+              onConnectHosts: widget.onConnectHosts,
+              handle: widget.status.handle,
+              hostLinkStore: widget.hostLinkStore,
+            ),
+          ),
+        );
+      },
     );
     if (_tab == 1) _reloadAgents?.call();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final handle = widget.status.handle ?? 'Agent-to-agent mail';
-
-    return Scaffold(
-      body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _HomeHeader(
-              handle: handle,
-              tab: _tab,
-              onTab: (i) {
-                setState(() => _tab = i);
-                if (i == 2) _reloadContacts?.call();
-              },
-              onSettings: _openSettings,
-            ),
-            if (widget.statusError != null)
-              Material(
-                color: const Color(0xFFFEF3C7),
-                child: InkWell(
-                  onTap: widget.onRetryStatus,
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    child: Text(
-                      'Daemon blip — tap to retry status',
-                      style: TextStyle(
-                        color: Color(0xFF92400E),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                child: _tab == 0
-                    ? ThreadsPanel(
-                        daemon: widget.daemon,
-                        myHandle: widget.status.handle,
-                        onReloadReady: _registerThreadsReload,
-                        composeRecipient: _composeRecipient,
-                        onComposeRecipientHandled: () {
-                          if (_composeRecipient != null) {
-                            setState(() => _composeRecipient = null);
-                          }
-                        },
-                        initialThreadId: _openThreadId,
-                        onInitialThreadHandled: () {
-                          if (_openThreadId != null) {
-                            setState(() => _openThreadId = null);
-                          }
-                        },
-                      )
-                    : _tab == 1
-                        ? AgentsPanel(
-                            daemon: widget.daemon,
-                            handle: widget.status.handle,
-                            onViewThreads: () => setState(() => _tab = 0),
-                            hostLinkStore: widget.hostLinkStore,
-                            onReloadReady: _registerAgentsReload,
-                          )
-                            : ContactsPanel(
-                                daemon: widget.daemon,
-                                handle: widget.status.handle,
-                                inviteWebUrl: widget.config.webAppUrl,
-                                onReloadReady: _registerContactsReload,
-                                onStartThread: (handle) {
-                                  setState(() {
-                                    _tab = 0;
-                                    _composeRecipient = handle;
-                                  });
-                                },
-                              ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+  void _selectTab(int i) {
+    setState(() {
+      _tab = i;
+      if (_searchMode) _searchMode = false;
+    });
+    if (i == 0) _reloadThreads?.call();
+    if (i == 1) _reloadAgents?.call();
+    if (i == 2) _reloadContacts?.call();
   }
-}
 
-/// Segmented primary nav — quiet brand whisper, capsule tabs, utilities right.
-class _HomeHeader extends StatelessWidget {
-  const _HomeHeader({
-    required this.handle,
-    required this.tab,
-    required this.onTab,
-    required this.onSettings,
-  });
-
-  final String handle;
-  final int tab;
-  final ValueChanged<int> onTab;
-  final VoidCallback onSettings;
-
-  @override
-  Widget build(BuildContext context) {
-    final initial = handle.isNotEmpty && handle != 'Agent-to-agent mail'
-        ? handle[0].toUpperCase()
-        : 'M';
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 12, 10),
-      child: Row(
-        children: [
-          Tooltip(
-            message: 'mutande',
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.asset(
-                'assets/tray_icon.png',
-                width: 32,
-                height: 32,
-                filterQuality: FilterQuality.medium,
-                semanticLabel: 'mutande',
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          _SegmentedTabs(tab: tab, onTab: onTab),
-          const Spacer(),
-          IconButton(
-            tooltip: 'Settings',
-            onPressed: onSettings,
-            visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.settings_outlined, size: 18),
-            color: const Color(0xFF78716C),
-          ),
-          Tooltip(
-            message: handle,
-            child: CircleAvatar(
-              radius: 12,
-              backgroundColor: const Color(0xFFE7E5E4),
-              child: Text(
-                initial,
-                style: const TextStyle(
-                  color: Color(0xFF57534E),
-                  fontWeight: FontWeight.w700,
-                  fontSize: 11,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SegmentedTabs extends StatelessWidget {
-  const _SegmentedTabs({required this.tab, required this.onTab});
-
-  final int tab;
-  final ValueChanged<int> onTab;
-
-  @override
-  Widget build(BuildContext context) {
-    Widget seg(String label, int i) {
-      final selected = tab == i;
-      return InkWell(
-        onTap: () => onTab(i),
-        borderRadius: BorderRadius.circular(7),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 140),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: selected ? const Color(0xFFFAFAF9) : Colors.transparent,
-            borderRadius: BorderRadius.circular(7),
-            boxShadow: selected
-                ? const [
-                    BoxShadow(
-                      color: Color(0x14000000),
-                      blurRadius: 2,
-                      offset: Offset(0, 1),
-                    ),
-                  ]
-                : null,
-          ),
-          child: Text(
-            label,
-            style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  color: selected
-                      ? const Color(0xFF292524)
-                      : const Color(0xFF78716C),
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                ),
-          ),
-        ),
+  Widget _tabBody() {
+    if (_tab == 0) {
+      return ThreadsPanel(
+        daemon: widget.daemon,
+        myHandle: widget.status.handle,
+        onReloadReady: _registerThreadsReload,
+        composeRecipient: _composeRecipient,
+        onComposeRecipientHandled: () {
+          if (_composeRecipient != null) {
+            setState(() => _composeRecipient = null);
+          }
+        },
+        initialThreadId: _openThreadId,
+        onInitialThreadHandled: () {
+          if (_openThreadId != null) {
+            setState(() => _openThreadId = null);
+          }
+        },
       );
     }
+    if (_tab == 1) {
+      return AgentsPanel(
+        daemon: widget.daemon,
+        handle: widget.status.handle,
+        onViewThreads: () => _selectTab(0),
+        hostLinkStore: widget.hostLinkStore,
+        onReloadReady: _registerAgentsReload,
+      );
+    }
+    return ContactsPanel(
+      daemon: widget.daemon,
+      handle: widget.status.handle,
+      inviteWebUrl: widget.config.webAppUrl,
+      onReloadReady: _registerContactsReload,
+      onStartThread: (handle) {
+        setState(() {
+          _tab = 0;
+          _composeRecipient = handle;
+        });
+      },
+    );
+  }
 
-    return Container(
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: const Color(0xFFE7E5E4),
-        borderRadius: BorderRadius.circular(9),
+  Widget _contentBody() {
+    if (_searchMode) {
+      return SearchScreen(
+        daemon: widget.daemon,
+        query: _searchController.text,
+        recentQueries: List.unmodifiable(_recentQueries),
+        onPickRecent: _pickRecent,
+        onOpenThread: _openThreadFromSearch,
+        myHandle: widget.status.handle,
+      );
+    }
+    return _tabBody();
+  }
+
+  Widget _chromeStrip() {
+    return HomeChromeStrip(
+      tab: _tab,
+      onTab: _selectTab,
+      searchController: _searchController,
+      searchFocus: _searchFocus,
+      onQueryChanged: _onSearchQueryChanged,
+      onSearchSubmit: _onSearchSubmit,
+      onClearSearch: _clearSearch,
+    );
+  }
+
+  Widget? _statusBanner() {
+    if (widget.statusError == null) return null;
+    return Material(
+      color: const Color(0xFFFEF3C7),
+      child: InkWell(
+        onTap: widget.onRetryStatus,
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Text(
+            'Daemon blip — tap to retry status',
+            style: TextStyle(
+              color: MutandeColors.bronze,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          seg('Threads', 0),
-          seg('Agents', 1),
-          seg('Contacts', 2),
-        ],
-      ),
+    );
+  }
+
+  /// True only under `flutter test` (TestWidgetsFlutterBinding), not debug runs.
+  bool get _inWidgetTest =>
+      WidgetsBinding.instance.runtimeType.toString().contains('Test');
+
+  @override
+  Widget build(BuildContext context) {
+    final handle = widget.status.handle ?? 'mutande';
+    final initial = handle.isNotEmpty ? handle[0].toUpperCase() : 'M';
+    final banner = _statusBanner();
+
+    final shell = _inWidgetTest
+        ? Scaffold(
+            body: SafeArea(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 10, 12, 4),
+                    child: Row(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(7),
+                          child: Image.asset(
+                            'assets/tray_icon.png',
+                            width: 28,
+                            height: 28,
+                            semanticLabel: 'mutande',
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'mutande',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 16,
+                          ),
+                        ),
+                        const Spacer(),
+                        IconButton(
+                          tooltip: 'Settings',
+                          onPressed: _openSettings,
+                          icon: const Icon(Icons.settings_outlined, size: 18),
+                        ),
+                        Tooltip(
+                          message: handle,
+                          child: CircleAvatar(
+                            radius: 12,
+                            backgroundColor: MutandeColors.stone200,
+                            child: Text(
+                              initial,
+                              style: const TextStyle(
+                                color: MutandeColors.stone600,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  _chromeStrip(),
+                  if (banner != null) banner,
+                  Expanded(
+                    child: Padding(
+                      padding: _searchMode
+                          ? EdgeInsets.zero
+                          : (_tab == 0
+                              ? const EdgeInsets.fromLTRB(0, 4, 0, 0)
+                              : const EdgeInsets.fromLTRB(16, 8, 16, 12)),
+                      child: _contentBody(),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          )
+        : MacosWindow(
+            backgroundColor: MutandeColors.stone100,
+            disableWallpaperTinting: true,
+            child: MacosScaffold(
+              backgroundColor: MutandeColors.stone100,
+              toolBar: ToolBar(
+                title: Row(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: Image.asset(
+                        'assets/tray_icon.png',
+                        width: 22,
+                        height: 22,
+                        semanticLabel: 'mutande',
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'mutande',
+                      style: MacosTheme.of(context).typography.headline.copyWith(
+                            color: MutandeColors.stone800,
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                  ],
+                ),
+                titleWidth: 140,
+                actions: [
+                  ToolBarIconButton(
+                    label: 'Settings',
+                    icon: const MacosIcon(CupertinoIcons.settings),
+                    onPressed: _openSettings,
+                    showLabel: false,
+                    tooltipMessage: 'Settings',
+                  ),
+                ],
+              ),
+              children: [
+                ContentArea(
+                  builder: (context, _) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (banner != null) banner,
+                        _chromeStrip(),
+                        Expanded(
+                          child: Padding(
+                            padding: (!_searchMode && _tab == 0)
+                                ? const EdgeInsets.fromLTRB(0, 4, 0, 0)
+                                : (!_searchMode
+                                    ? const EdgeInsets.fromLTRB(16, 8, 16, 12)
+                                    : EdgeInsets.zero),
+                            child: _contentBody(),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ],
+            ),
+          );
+
+    return Focus(
+      autofocus: true,
+      onKeyEvent: _onHomeKey,
+      child: shell,
     );
   }
 }

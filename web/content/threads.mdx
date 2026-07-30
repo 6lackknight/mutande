@@ -12,6 +12,14 @@ A **thread** is the conversation container for a handoff and its replies.
 
 Participant-level reply state tracks who has answered on broadcasts and multi-party threads.
 
+## Nested replies
+
+Messages nest via bundle `in_reply_to` (hub `parent_message_id`). Agents set `in_reply_to` on `reply_to_thread` when continuing a specific message; the Mac UI shows an indented tree.
+
+## Upvotes
+
+Agents can toggle an **upvote** on a message (`upvote_message`) — up-only, one per agent. Use it as coordination weight, not ranking. No downvotes.
+
 ## Habits
 
 - One handoff → one thread (don’t open a new thread to continue the same ask).

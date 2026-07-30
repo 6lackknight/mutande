@@ -241,6 +241,14 @@ class DaemonClient {
             })
             .where((d) => d.trim().isNotEmpty)
             .toList();
+        final answersRaw = bundle?['answers'] as List<dynamic>? ?? const [];
+        final answers = answersRaw
+            .map((a) {
+              final map = a as Map<String, dynamic>? ?? const {};
+              return map['answer'] as String? ?? '';
+            })
+            .where((a) => a.trim().isNotEmpty)
+            .toList();
         return ThreadMessageView(
           id: m['id'] as String? ?? '',
           fromHandle: m['from_handle'] as String? ?? '',
@@ -253,6 +261,7 @@ class DaemonClient {
           pingKind: bundle?['ping_kind'] as String?,
           questionPrompts: questions,
           resourceRequests: resources,
+          answerTexts: answers,
           openError: m['open_error'] as String?,
           upvotes: MessageUpvoteSummaryView.fromJson(
             m['upvotes'] as Map<String, dynamic>?,
@@ -269,10 +278,14 @@ class DaemonClient {
     String? toAgent,
     String? inReplyTo,
   }) async {
+    final trimmed = notes.trim();
+    if (trimmed.isEmpty) {
+      throw ArgumentError('Reply cannot be empty');
+    }
     await _call('reply_to_thread', {
       'thread_id': threadId,
       'bundle': {
-        'notes': notes,
+        'notes': trimmed,
         if (inReplyTo != null) 'in_reply_to': inReplyTo,
       },
       if (toAgent != null) 'to_agent': toAgent,
@@ -804,6 +817,7 @@ class ThreadMessageView {
     this.pingKind,
     this.questionPrompts = const [],
     this.resourceRequests = const [],
+    this.answerTexts = const [],
     this.openError,
     this.upvotes,
   });
@@ -819,6 +833,7 @@ class ThreadMessageView {
   final String? pingKind;
   final List<String> questionPrompts;
   final List<String> resourceRequests;
+  final List<String> answerTexts;
   final String? openError;
   final MessageUpvoteSummaryView? upvotes;
 
@@ -834,6 +849,7 @@ class ThreadMessageView {
       pingKind: pingKind,
       questionPrompts: questionPrompts,
       resourceRequests: resourceRequests,
+      answerTexts: answerTexts,
       openError: openError,
       upvotes: upvotes,
     );
@@ -842,20 +858,32 @@ class ThreadMessageView {
   /// Resolved parent for tree layout (hub metadata preferred).
   String? get replyParentId => parentMessageId ?? inReplyTo;
 
-  /// Prefer notes/subject, then questions — never hide a decrypted question-only handoff.
+  /// True when decrypt succeeded but the bundle has no displayable content.
+  bool get isEmptyBody {
+    if (openError != null && openError!.trim().isNotEmpty) return false;
+    return _contentParts.isEmpty;
+  }
+
+  List<String> get _contentParts => [
+        if (bundleSubject != null && bundleSubject!.trim().isNotEmpty)
+          bundleSubject!.trim(),
+        if (bundleNotes != null && bundleNotes!.trim().isNotEmpty)
+          bundleNotes!.trim(),
+        ...questionPrompts.map((q) => q.trim()).where((q) => q.isNotEmpty),
+        ...answerTexts.map((a) => a.trim()).where((a) => a.isNotEmpty),
+        ...resourceRequests
+            .map((r) => r.trim())
+            .where((r) => r.isNotEmpty)
+            .map((r) => 'Resource: $r'),
+      ];
+
+  /// Prefer notes/subject, then questions/answers — never hide question-only handoffs.
   String get displayBody {
     if (openError != null && openError!.trim().isNotEmpty) {
       return openError!;
     }
-    final parts = <String>[
-      if (bundleSubject != null && bundleSubject!.trim().isNotEmpty)
-        bundleSubject!.trim(),
-      if (bundleNotes != null && bundleNotes!.trim().isNotEmpty)
-        bundleNotes!.trim(),
-      ...questionPrompts.map((q) => q.trim()),
-      ...resourceRequests.map((r) => 'Resource: ${r.trim()}'),
-    ];
-    if (parts.isEmpty) return '(empty handoff)';
+    final parts = _contentParts;
+    if (parts.isEmpty) return 'No message body';
     return parts.join('\n\n');
   }
 }

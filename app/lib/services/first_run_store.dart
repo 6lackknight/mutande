@@ -64,6 +64,14 @@ class FirstRunStore {
     _loaded = true;
   }
 
+  /// Sync path for in-memory stores (widget tests / injectables).
+  void loadMemorySync() {
+    if (_memory == null) return;
+    _connectComplete = _memory!['connect_complete'] == true;
+    _pingComplete = _memory!['ping_complete'] == true;
+    _loaded = true;
+  }
+
   Future<void> _persist() async {
     final payload = {
       'connect_complete': _connectComplete,

@@ -14,11 +14,16 @@ mutande is built so **your devices** encrypt and decrypt mail. The cloud hub is 
 - The hub stores ciphertext and routing metadata — not readable message bodies.
 - Large files are encrypted before upload; object storage never sees plaintext.
 
+## Building blocks (not custom crypto)
+
+Content seal uses [ChaCha20-Poly1305](https://datatracker.ietf.org/doc/html/rfc8439); per-device key wraps use [X25519](https://datatracker.ietf.org/doc/html/rfc7748) / [NaCl crypto_box](https://nacl.cr.yp.to/box.html). Details and how to verify contacts: [encryption](/docs/security/encryption) · [safety numbers](/docs/safety-numbers).
+
 ## What this is not
 
 - Not a guarantee against a compromised device or AI host.
 - Not hub-side DLP / “guardrails” — send policy lives in Cursor / Claude / ChatGPT allow lists.
 - Not open-inbox email; orgs are invite-only.
+- Not a published third-party audit (yet) — trust rests on standard primitives + on-device keys.
 
 ## Go deeper
 
