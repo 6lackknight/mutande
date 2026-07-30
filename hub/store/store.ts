@@ -653,14 +653,20 @@ export class HubStore {
     const tx = this.kv.atomic();
     tx.set(this.threadKey(threadId), thread);
     tx.set(this.messageKey(threadId, messageId), message);
+
+    // Self-collab (own agent / bare @all / sole-member @all@org): recipientIds
+    // includes the sender. One inbox key per user — keep Waiting (replied) and
+    // role=recipient so own agents can still reply. Do not clobber to pending.
+    const selfDelivery = recipientIds.includes(sender.id);
     tx.set(this.inboxKey(sender.id, threadId), {
       thread_id: threadId,
       your_status: "replied",
-      role: "sender",
+      role: selfDelivery ? "recipient" : "sender",
       updated_at: ts,
     } satisfies InboxEntry);
 
     for (const rid of recipientIds) {
+      if (rid === sender.id) continue;
       tx.set(this.inboxKey(rid, threadId), {
         thread_id: threadId,
         your_status: "pending",
@@ -690,11 +696,11 @@ export class HubStore {
 
       const enriched: ThreadMeta = {
         ...thread,
-        your_status: inbox.your_status,
+        your_status: this.effectiveYourStatus(auth, thread, inbox),
       };
 
       if (filter === "needs_action") {
-        if (inbox.your_status === "pending" && thread.status === "open") {
+        if (enriched.your_status === "pending" && thread.status === "open") {
           threads.push(enriched);
         }
       } else if (filter === "open") {
@@ -739,7 +745,10 @@ export class HubStore {
     );
 
     return {
-      thread: { ...thread, your_status: inbox.your_status },
+      thread: {
+        ...thread,
+        your_status: this.effectiveYourStatus(auth, thread, inbox),
+      },
       messages: enriched,
     };
   }
@@ -926,10 +935,18 @@ export class HubStore {
       your_status: "replied",
       updated_at: ts,
     });
-    tx.set(this.inboxKey(thread.from_user_id, threadId), {
-      ...(await this.getInboxEntry(thread.from_user_id, threadId) ?? inbox),
-      updated_at: ts,
-    });
+    // Self-collab shares one inbox key — do not re-read+write the same key
+    // (that clobbers replied back to a stale pending).
+    if (thread.from_user_id !== auth.userId) {
+      const senderInbox = await this.getInboxEntry(thread.from_user_id, threadId);
+      if (senderInbox) {
+        tx.set(this.inboxKey(thread.from_user_id, threadId), {
+          ...senderInbox,
+          your_status: "pending",
+          updated_at: ts,
+        });
+      }
+    }
     const res = await tx.commit();
     if (!res.ok) throw new HubError("Failed to post reply", "internal", 500);
 
@@ -943,10 +960,14 @@ export class HubStore {
     const threadRes = await this.kv.get<ThreadMeta>(this.threadKey(threadId));
     const thread = threadRes.value;
     if (!thread || thread.org_id !== auth.orgId) throw notFound("Thread");
-    if (thread.from_user_id !== auth.userId) {
-      throw forbidden("Only the sender can close a thread");
+    if (thread.status === "closed") {
+      return {
+        thread: {
+          ...thread,
+          your_status: this.effectiveYourStatus(auth, thread, inbox),
+        },
+      };
     }
-    if (thread.status === "closed") return { thread };
 
     const updated: ThreadMeta = {
       ...thread,
@@ -954,7 +975,80 @@ export class HubStore {
       updated_at: nowIso(),
     };
     await this.kv.set(this.threadKey(threadId), updated);
-    return { thread: { ...updated, your_status: inbox.your_status } };
+    return {
+      thread: {
+        ...updated,
+        your_status: this.effectiveYourStatus(auth, updated, inbox),
+      },
+    };
+  }
+
+  /**
+   * Remove thread from the caller's inbox.
+   * Sender also purges messages + thread and clears every org member's inbox
+   * for this thread. If the thread body is already gone, still drops the
+   * caller's orphan inbox row (so recipients can dismiss after a sender purge).
+   */
+  async deleteThread(auth: AuthContext, threadId: string): Promise<{ ok: true }> {
+    const inbox = await this.getInboxEntry(auth.userId, threadId);
+    if (!inbox) throw forbidden("Not a thread participant");
+
+    const threadRes = await this.kv.get<ThreadMeta>(this.threadKey(threadId));
+    const thread = threadRes.value;
+
+    // Orphan inbox (sender already purged body) — just drop our row.
+    if (!thread) {
+      await this.kv.delete(this.inboxKey(auth.userId, threadId));
+      return { ok: true };
+    }
+    if (thread.org_id !== auth.orgId) throw notFound("Thread");
+
+    if (thread.from_user_id === auth.userId) {
+      // Collect keys, then delete in atomic batches (inboxes first so a
+      // mid-purge crash never leaves recipients pointing at a missing body).
+      const memberIds = await this.listMemberIds(auth.orgId);
+      const inboxUserIds = new Set<string>([auth.userId, thread.from_user_id, ...memberIds]);
+      const inboxKeys: Deno.KvKey[] = [...inboxUserIds].map((uid) =>
+        this.inboxKey(uid, threadId)
+      );
+
+      const bodyKeys: Deno.KvKey[] = [];
+      const msgIter = this.kv.list<ThreadMessage>({
+        prefix: this.messagesPrefix(threadId),
+      });
+      for await (const entry of msgIter) {
+        const messageId = entry.key[entry.key.length - 1] as string;
+        const upvoteIter = this.kv.list({
+          prefix: this.messageUpvotesPrefix(threadId, messageId),
+        });
+        for await (const upvote of upvoteIter) {
+          bodyKeys.push(upvote.key);
+        }
+        bodyKeys.push(entry.key);
+      }
+      bodyKeys.push(this.threadKey(threadId));
+
+      await this.deleteKeysAtomic(inboxKeys);
+      await this.deleteKeysAtomic(bodyKeys);
+    } else {
+      await this.kv.delete(this.inboxKey(auth.userId, threadId));
+    }
+
+    return { ok: true };
+  }
+
+  /** Deno KV allows ≤1000 mutations per atomic; batch larger purges. */
+  private async deleteKeysAtomic(keys: Deno.KvKey[]): Promise<void> {
+    const batchSize = 500;
+    for (let i = 0; i < keys.length; i += batchSize) {
+      const chunk = keys.slice(i, i + batchSize);
+      let tx = this.kv.atomic();
+      for (const key of chunk) {
+        tx = tx.delete(key);
+      }
+      const res = await tx.commit();
+      if (!res.ok) throw conflict("Thread delete raced; retry");
+    }
   }
 
   async listDrafts(auth: AuthContext): Promise<{ drafts: Draft[] }> {
@@ -1081,6 +1175,38 @@ export class HubStore {
   private async getInboxEntry(userId: string, threadId: string): Promise<InboxEntry | null> {
     const res = await this.kv.get<InboxEntry>(this.inboxKey(userId, threadId));
     return res.value;
+  }
+
+  /**
+   * User-scoped inbox status for the Mac UI.
+   * Self-collab outbound (own agent / bare @all / sole-member broadcast) must
+   * read as Waiting — not Needs you — while unreplied. Agent MCP remaps
+   * audience-ball pending in the daemon.
+   */
+  private effectiveYourStatus(
+    auth: AuthContext,
+    thread: ThreadMeta,
+    inbox: InboxEntry,
+  ): "pending" | "replied" {
+    // One inbox key per user cannot express per-agent pending. Self-collab
+    // (own agents / @all) is Waiting for the human Mac inbox — heal stale
+    // pending rows from older create/reply clobbers.
+    if (
+      inbox.your_status === "pending" &&
+      thread.from_user_id === auth.userId &&
+      this.isSelfCollabOutbound(thread)
+    ) {
+      return "replied";
+    }
+    return inbox.your_status;
+  }
+
+  private isSelfCollabOutbound(thread: ThreadMeta): boolean {
+    if (thread.kind === "direct") {
+      return stripAgentSuffix(thread.from) === stripAgentSuffix(thread.audience);
+    }
+    // Bare @all, or org @all@slug delivered only to self (sole member).
+    return thread.audience === myAgentsHandle() || thread.audience.startsWith("@all@");
   }
 
   private async listMemberIds(orgId: string, excludeUserId?: string): Promise<string[]> {

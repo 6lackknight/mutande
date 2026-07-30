@@ -79,6 +79,73 @@ Deno.test("thread inbox filters", async () => {
   });
 });
 
+Deno.test("any participant can close; delete removes inbox", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth, bobAuth } = await setupOrgWithUsers(store);
+    const { thread } = await store.createThread(aliceAuth, {
+      to: "bob@acme",
+      envelope: sampleEnvelope("del"),
+    });
+    await store.closeThread(bobAuth, thread.id);
+    assertEquals((await store.listThreads(bobAuth, "closed")).threads.length, 1);
+
+    await store.deleteThread(bobAuth, thread.id);
+    assertEquals((await store.listThreads(bobAuth)).threads.length, 0);
+    // Sender still has an inbox row, but thread body is intact until they delete.
+    assertEquals((await store.listThreads(aliceAuth, "closed")).threads.length, 1);
+
+    await store.deleteThread(aliceAuth, thread.id);
+    assertEquals((await store.listThreads(aliceAuth)).threads.length, 0);
+  });
+});
+
+Deno.test("sender purge clears every org member inbox", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth, bobAuth, carolAuth } = await setupOrgWithUsers(store);
+    const { thread } = await store.createThread(aliceAuth, {
+      to: "@all@acme",
+      envelope: sampleEnvelope("purge-all"),
+    });
+    assertEquals((await store.listThreads(bobAuth, "needs_action")).threads.length, 1);
+    assertEquals((await store.listThreads(carolAuth, "needs_action")).threads.length, 1);
+
+    await store.deleteThread(aliceAuth, thread.id);
+
+    assertEquals((await store.listThreads(aliceAuth)).threads.length, 0);
+    assertEquals((await store.listThreads(bobAuth)).threads.length, 0);
+    assertEquals((await store.listThreads(carolAuth)).threads.length, 0);
+    await assertRejects(
+      () => store.deleteThread(bobAuth, thread.id),
+      HubError,
+      "Not a thread participant",
+    );
+  });
+});
+
+Deno.test("orphan inbox dismisses when thread body is gone", async () => {
+  const kv = await Deno.openKv(":memory:");
+  const { store } = await createStoreWithTestAuth(kv);
+  try {
+    const { aliceAuth, bobAuth } = await setupOrgWithUsers(store);
+    const { thread } = await store.createThread(aliceAuth, {
+      to: "bob@acme",
+      envelope: sampleEnvelope("orphan"),
+    });
+    // Pre-fix shape: body deleted, recipient inbox left behind.
+    await kv.delete(["threads", thread.id]);
+    assertEquals((await store.listThreads(bobAuth)).threads.length, 0);
+
+    await store.deleteThread(bobAuth, thread.id);
+    await assertRejects(
+      () => store.deleteThread(bobAuth, thread.id),
+      HubError,
+      "Not a thread participant",
+    );
+  } finally {
+    kv.close();
+  }
+});
+
 Deno.test("broadcast fan-out", async () => {
   await withTestStore(async ({ store }) => {
     const { aliceAuth, bobAuth, carolAuth } = await setupOrgWithUsers(store);
@@ -105,7 +172,9 @@ Deno.test("sole-member @all delivers to self", async () => {
     });
     assertEquals(thread.kind, "broadcast");
     assertEquals(thread.audience, "@all@tbhco");
-    assertEquals((await store.listThreads(auth, "needs_action")).threads.length, 1);
+    // Self-delivery stays Waiting for the human inbox (agent MCP remaps).
+    assertEquals((await store.listThreads(auth, "needs_action")).threads.length, 0);
+    assertEquals((await store.listThreads(auth, "open")).threads[0]?.your_status, "replied");
   });
 });
 
@@ -120,7 +189,21 @@ Deno.test("self agent handoff allowed", async () => {
     });
     assertEquals(thread.from, "alice@acme/cursor");
     assertEquals(thread.audience, "alice@acme/claude");
-    assertEquals((await store.listThreads(aliceAuth, "needs_action")).threads.length, 1);
+    // Outbound self-collab is Waiting, not Needs you.
+    assertEquals((await store.listThreads(aliceAuth, "needs_action")).threads.length, 0);
+    const listed = await store.listThreads(aliceAuth, "open");
+    assertEquals(listed.threads[0]?.your_status, "replied");
+    const got = await store.getThread(aliceAuth, thread.id);
+    assertEquals(got.thread.your_status, "replied");
+    // Own agents can still reply (role allows recipient).
+    await store.postReply(aliceAuth, thread.id, {
+      envelope: sampleEnvelope("self-reply"),
+      from_agent: "claude",
+    });
+    assertEquals((await store.getThread(aliceAuth, thread.id)).messages.length, 2);
+    // Reply must not clobber Waiting back to Needs you on the shared inbox key.
+    assertEquals((await store.getThread(aliceAuth, thread.id)).thread.your_status, "replied");
+    assertEquals((await store.listThreads(aliceAuth, "needs_action")).threads.length, 0);
   });
 });
 
@@ -209,7 +292,8 @@ Deno.test("@claude shorthand expands to self agent", async () => {
     assertEquals(thread.from, "alice@acme/cursor");
     assertEquals(thread.audience, "alice@acme/claude");
     assertEquals(thread.audience_wire_path, "acme/alice/claude");
-    assertEquals((await store.listThreads(aliceAuth, "needs_action")).threads.length, 1);
+    assertEquals((await store.listThreads(aliceAuth, "needs_action")).threads.length, 0);
+    assertEquals((await store.listThreads(aliceAuth, "open")).threads[0]?.your_status, "replied");
   });
 });
 
@@ -240,7 +324,9 @@ Deno.test("bare @all fans out to my agents", async () => {
     assertEquals(thread.kind, "broadcast");
     assertEquals(thread.audience, "@all");
     assertEquals(thread.audience_agent_id, undefined);
-    assertEquals((await store.listThreads(aliceAuth, "needs_action")).threads.length, 1);
+    // Human inbox: Waiting on own agents (not Needs you).
+    assertEquals((await store.listThreads(aliceAuth, "needs_action")).threads.length, 0);
+    assertEquals((await store.listThreads(aliceAuth, "open")).threads[0]?.your_status, "replied");
     // Org members do not receive bare @all (that's @all@org).
     assertEquals((await store.listThreads(bobAuth, "needs_action")).threads.length, 0);
   });

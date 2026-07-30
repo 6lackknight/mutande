@@ -22,7 +22,7 @@ use crate::crypto::{
 use crate::crypto::KeychainIdentityStore;
 use crate::hub_client::{
     Agent, Contact, HubClient, MeResponse, ThreadDetail, ThreadFilter, ThreadKind, ThreadMessage,
-    ThreadMeta, pubkey_from_hub_string,
+    ThreadMeta, ThreadStatus, YourStatus, pubkey_from_hub_string,
 };
 
 use super::config::{DaemonConfig, config_path, load_config, save_config_at};
@@ -660,19 +660,22 @@ impl DaemonState {
         threads: Vec<ThreadMeta>,
         agent_slug: Option<&str>,
     ) -> Result<Vec<ThreadMeta>> {
+        // Only scope when the caller names an agent (MCP injects MUTANDE_AGENT_SLUG).
+        // Mac UI / bare RPC omit it and must see the full inbox — never fall back to
+        // connected_agent_slug (last host to register would hide everyone else's mail).
+        let Some(slug) = agent_slug.map(str::trim).filter(|s| !s.is_empty()) else {
+            return Ok(threads);
+        };
         let Some(hub) = self.hub_client() else {
             return Ok(threads);
         };
         let me = hub.me().await?;
         let user_id = me.user.as_ref().map(|u| u.id.as_str()).unwrap_or("");
         let default_slug = self.default_agent_slug().await;
-        let Some(slug) = self.effective_agent_slug(agent_slug).await else {
-            return Ok(threads);
-        };
-        let default_slug = default_slug.as_deref().unwrap_or(&slug);
+        let default_slug = default_slug.as_deref().unwrap_or(slug);
         Ok(threads
             .into_iter()
-            .filter(|t| thread_visible_for_agent(t, user_id, &slug, default_slug))
+            .filter(|t| thread_visible_for_agent(t, user_id, slug, default_slug))
             .collect())
     }
 
@@ -847,8 +850,66 @@ impl DaemonState {
         agent_slug: Option<&str>,
     ) -> Result<Vec<ThreadMeta>> {
         if let Some(hub) = self.hub_client() {
-            let threads = hub.list_threads(filter).await?;
-            let threads = self.filter_threads_for_agent(threads, agent_slug).await?;
+            let agent = agent_slug.map(str::trim).filter(|s| !s.is_empty());
+
+            // Hub your_status is user-scoped (outbound self-collab → Waiting).
+            // Agent MCP needs audience-ball pending, so merge open + needs_action
+            // then remap before filtering.
+            let mut threads = if matches!(filter, Some(ThreadFilter::NeedsAction)) && agent.is_some()
+            {
+                let mut merged = hub.list_threads(Some(ThreadFilter::NeedsAction)).await?;
+                for t in hub.list_threads(Some(ThreadFilter::Open)).await? {
+                    if !merged.iter().any(|p| p.id == t.id) {
+                        merged.push(t);
+                    }
+                }
+                merged
+            } else {
+                hub.list_threads(filter).await?
+            };
+
+            threads = self.filter_threads_for_agent(threads, agent_slug).await?;
+
+            if let Some(slug) = agent {
+                let me = hub.me().await?;
+                let user_id = me.user.as_ref().map(|u| u.id.as_str()).unwrap_or("");
+                let default_slug = self.default_agent_slug().await;
+                let default_slug = default_slug.as_deref().unwrap_or(slug);
+                for t in &mut threads {
+                    t.your_status = Some(agent_your_status(t, user_id, slug, default_slug));
+                }
+                if matches!(filter, Some(ThreadFilter::NeedsAction)) {
+                    threads.retain(|t| {
+                        t.status == ThreadStatus::Open
+                            && t.your_status == Some(YourStatus::Pending)
+                    });
+                }
+            } else {
+                // Mac UI: Needs you = unanswered human decisions only
+                // (approval / verify / questions to the bare human handle).
+                // Agent-to-agent waiting is never Needs you.
+                for t in &mut threads {
+                    if t.status != ThreadStatus::Open {
+                        continue;
+                    }
+                    let needs_human = match self.fetch_and_open_thread(&t.id).await {
+                        Ok(detail) => thread_needs_human(&detail),
+                        Err(_) => false,
+                    };
+                    t.your_status = Some(if needs_human {
+                        YourStatus::Pending
+                    } else {
+                        YourStatus::Replied
+                    });
+                }
+                if matches!(filter, Some(ThreadFilter::NeedsAction)) {
+                    threads.retain(|t| {
+                        t.status == ThreadStatus::Open
+                            && t.your_status == Some(YourStatus::Pending)
+                    });
+                }
+            }
+
             // Health pings: auto-pong on inbox poll so hosts don't need an LLM turn.
             if matches!(filter, Some(ThreadFilter::NeedsAction)) {
                 for t in &threads {
@@ -870,10 +931,43 @@ impl DaemonState {
         Ok(self.open_thread_detail_async(detail).await)
     }
 
-    pub async fn get_thread(&self, thread_id: &str) -> Result<OpenedThreadDetail> {
-        let detail = self.fetch_and_open_thread(thread_id).await?;
+    pub async fn get_thread(
+        &self,
+        thread_id: &str,
+        agent_slug: Option<&str>,
+    ) -> Result<OpenedThreadDetail> {
+        let mut detail = self.fetch_and_open_thread(thread_id).await?;
         if self.maybe_auto_pong_health(&detail).await? {
-            return self.fetch_and_open_thread(thread_id).await;
+            detail = self.fetch_and_open_thread(thread_id).await?;
+        }
+        if detail.thread.status != ThreadStatus::Open {
+            return Ok(detail);
+        }
+        if let Some(slug) = agent_slug.map(str::trim).filter(|s| !s.is_empty()) {
+            let user_id = if let Some(hub) = self.hub_client() {
+                hub.me()
+                    .await
+                    .ok()
+                    .and_then(|me| me.user.map(|u| u.id))
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            };
+            let default_slug = self.default_agent_slug().await;
+            let default_slug = default_slug.as_deref().unwrap_or(slug);
+            detail.thread.your_status = Some(agent_your_status(
+                &detail.thread,
+                &user_id,
+                slug,
+                default_slug,
+            ));
+        } else {
+            // Mac / human: Needs you only for outstanding human decisions.
+            detail.thread.your_status = Some(if thread_needs_human(&detail) {
+                YourStatus::Pending
+            } else {
+                YourStatus::Replied
+            });
         }
         Ok(detail)
     }
@@ -1391,6 +1485,13 @@ impl DaemonState {
         Ok(())
     }
 
+    pub async fn delete_thread(&self, thread_id: &str) -> Result<()> {
+        let hub = self.hub_client().context("hub not configured")?;
+        hub.delete_thread(thread_id).await?;
+        self.processed_threads.lock().unwrap().remove(thread_id);
+        Ok(())
+    }
+
     pub fn mark_processed(&self, thread_id: &str) {
         self.processed_threads.lock().unwrap().insert(thread_id.to_string());
     }
@@ -1654,6 +1755,85 @@ fn agent_matches_display(display: &str, slug: &str, default_slug: &str) -> bool 
         Some(s) => s == slug,
         None => slug == default_slug,
     }
+}
+
+/// True when the thread still needs a human decision (approval / verify /
+/// question addressed to the person, not an agent slot).
+fn thread_needs_human(detail: &OpenedThreadDetail) -> bool {
+    if detail.thread.status != ThreadStatus::Open {
+        return false;
+    }
+    let mut open_ids: HashSet<String> = HashSet::new();
+    let mut answered: HashSet<String> = HashSet::new();
+    let audience_is_human = human_decision_targets_person(&detail.thread);
+
+    for msg in &detail.messages {
+        let Some(bundle) = msg.bundle.as_ref() else {
+            continue;
+        };
+        for q in &bundle.questions {
+            if human_decision_kind_needs_you(&q.kind, audience_is_human) {
+                open_ids.insert(q.id.clone());
+            }
+        }
+        for a in &bundle.answers {
+            answered.insert(a.question_id.clone());
+        }
+    }
+    open_ids.difference(&answered).next().is_some()
+}
+
+fn human_decision_kind_needs_you(kind: &str, audience_is_human: bool) -> bool {
+    match kind {
+        "confirm_forward" | "verify_contact" => true,
+        // Freeform questions to a bare handle are for the person; /agent is for agents.
+        "question" => audience_is_human,
+        _ => false,
+    }
+}
+
+fn human_decision_targets_person(thread: &ThreadMeta) -> bool {
+    match thread.kind {
+        ThreadKind::Broadcast => false,
+        ThreadKind::Direct => agent_suffix(&thread.audience).is_none(),
+    }
+}
+
+/// Per-agent inbox status. Hub stores one row per user; self-collab outbound
+/// reads as Waiting for the Mac UI. The audience agent still needs action.
+fn agent_your_status(
+    thread: &ThreadMeta,
+    my_user_id: &str,
+    slug: &str,
+    default_slug: &str,
+) -> YourStatus {
+    if thread.status != ThreadStatus::Open {
+        return thread.your_status.unwrap_or(YourStatus::Replied);
+    }
+
+    // Direct: ball is with the audience agent until the first reply.
+    if thread.kind == ThreadKind::Direct
+        && agent_matches_display(&thread.audience, slug, default_slug)
+        && thread.reply_count == 0
+    {
+        return YourStatus::Pending;
+    }
+
+    // Bare @all: every own agent except the sender acts while unreplied.
+    if thread.kind == ThreadKind::Broadcast
+        && is_my_agents_handle(&thread.audience)
+        && thread.from_user_id == my_user_id
+        && !agent_matches_display(&thread.from, slug, default_slug)
+        && thread.reply_count == 0
+    {
+        return YourStatus::Pending;
+    }
+
+    if thread.from_user_id != my_user_id {
+        return thread.your_status.unwrap_or(YourStatus::Pending);
+    }
+
+    YourStatus::Replied
 }
 
 fn thread_visible_for_agent(
@@ -2278,6 +2458,36 @@ mod tests {
     }
 
     #[test]
+    fn agent_your_status_self_handoff_audience_pending_sender_waiting() {
+        // Hub may report replied (Waiting) for the human; chatgpt still needs action.
+        let thread = ThreadMeta {
+            id: "t-self".into(),
+            kind: ThreadKind::Direct,
+            status: ThreadStatus::Open,
+            from: "solo@tbhco/cursor".into(),
+            from_user_id: "u-solo".into(),
+            from_agent_id: Some("a-cursor".into()),
+            audience: "solo@tbhco/chatgpt".into(),
+            audience_agent_id: Some("a-chatgpt".into()),
+            audience_wire_path: Some("tbhco/solo/chatgpt".into()),
+            org_id: "org-solo".into(),
+            participant_count: 2,
+            reply_count: 0,
+            your_status: Some(YourStatus::Replied),
+            created_at: "2026-01-01T00:00:00Z".into(),
+            updated_at: "2026-01-01T00:00:00Z".into(),
+        };
+        assert_eq!(
+            agent_your_status(&thread, "u-solo", "chatgpt", "cursor"),
+            YourStatus::Pending
+        );
+        assert_eq!(
+            agent_your_status(&thread, "u-solo", "cursor", "cursor"),
+            YourStatus::Replied
+        );
+    }
+
+    #[test]
     fn my_agents_broadcast_visible_to_all_own_agents() {
         let thread = ThreadMeta {
             id: "t-all".into(),
@@ -2745,9 +2955,161 @@ mod tests {
         state.attach_hub_for_test(HubClient::new(HubConfig::new(server.uri(), "tok")).unwrap());
         state.set_connected_agent_slug_for_test(Some("cursor"));
 
-        let opened = state.get_thread("t-health").await.unwrap();
+        let opened = state.get_thread("t-health", None).await.unwrap();
         assert_eq!(opened.messages.len(), 1);
         assert!(state.is_processed("t-health"));
+    }
+
+    #[test]
+    fn thread_needs_human_confirm_and_bare_question_only() {
+        let base = ThreadMeta {
+            id: "t1".into(),
+            kind: ThreadKind::Direct,
+            status: ThreadStatus::Open,
+            from: "alice@acme/cursor".into(),
+            from_user_id: "u1".into(),
+            from_agent_id: None,
+            audience: "alice@acme/claude".into(),
+            audience_agent_id: None,
+            audience_wire_path: None,
+            org_id: "o1".into(),
+            participant_count: 2,
+            reply_count: 0,
+            your_status: None,
+            created_at: "t".into(),
+            updated_at: "t".into(),
+        };
+
+        // Agent-targeted question → not Needs you.
+        let agent_q = OpenedThreadDetail {
+            thread: base.clone(),
+            messages: vec![OpenedThreadMessage {
+                id: "m1".into(),
+                thread_id: "t1".into(),
+                from_user_id: "u1".into(),
+                from_handle: "alice@acme/cursor".into(),
+                created_at: "t".into(),
+                sender_only: None,
+                parent_message_id: None,
+                bundle: Some(MutandeBundle {
+                    questions: vec![HumanDecision {
+                        id: "q1".into(),
+                        kind: "question".into(),
+                        prompt: "agent work?".into(),
+                        options: None,
+                    }],
+                    ..Default::default()
+                }),
+                envelope: None,
+                open_error: None,
+                upvotes: None,
+            }],
+        };
+        assert!(!thread_needs_human(&agent_q));
+
+        // confirm_forward → Needs you even on agent-addressed thread.
+        let confirm = OpenedThreadDetail {
+            thread: base.clone(),
+            messages: vec![OpenedThreadMessage {
+                id: "m2".into(),
+                thread_id: "t1".into(),
+                from_user_id: "u1".into(),
+                from_handle: "alice@acme/cursor".into(),
+                created_at: "t".into(),
+                sender_only: None,
+                parent_message_id: None,
+                bundle: Some(MutandeBundle {
+                    questions: vec![HumanDecision {
+                        id: "c1".into(),
+                        kind: "confirm_forward".into(),
+                        prompt: "Send this?".into(),
+                        options: None,
+                    }],
+                    ..Default::default()
+                }),
+                envelope: None,
+                open_error: None,
+                upvotes: None,
+            }],
+        };
+        assert!(thread_needs_human(&confirm));
+
+        // Bare-handle question → Needs you.
+        let mut bare = base.clone();
+        bare.audience = "bob@acme".into();
+        let human_q = OpenedThreadDetail {
+            thread: bare,
+            messages: vec![OpenedThreadMessage {
+                id: "m3".into(),
+                thread_id: "t1".into(),
+                from_user_id: "u1".into(),
+                from_handle: "alice@acme/cursor".into(),
+                created_at: "t".into(),
+                sender_only: None,
+                parent_message_id: None,
+                bundle: Some(MutandeBundle {
+                    questions: vec![HumanDecision {
+                        id: "q2".into(),
+                        kind: "question".into(),
+                        prompt: "Approve roadmap?".into(),
+                        options: None,
+                    }],
+                    ..Default::default()
+                }),
+                envelope: None,
+                open_error: None,
+                upvotes: None,
+            }],
+        };
+        assert!(thread_needs_human(&human_q));
+
+        // Answered confirm → not Needs you.
+        let answered = OpenedThreadDetail {
+            thread: base,
+            messages: vec![
+                OpenedThreadMessage {
+                    id: "m4".into(),
+                    thread_id: "t1".into(),
+                    from_user_id: "u1".into(),
+                    from_handle: "alice@acme/cursor".into(),
+                    created_at: "t".into(),
+                    sender_only: None,
+                    parent_message_id: None,
+                    bundle: Some(MutandeBundle {
+                        questions: vec![HumanDecision {
+                            id: "c2".into(),
+                            kind: "confirm_forward".into(),
+                            prompt: "Send?".into(),
+                            options: None,
+                        }],
+                        ..Default::default()
+                    }),
+                    envelope: None,
+                    open_error: None,
+                    upvotes: None,
+                },
+                OpenedThreadMessage {
+                    id: "m5".into(),
+                    thread_id: "t1".into(),
+                    from_user_id: "u1".into(),
+                    from_handle: "alice@acme".into(),
+                    created_at: "t2".into(),
+                    sender_only: None,
+                    parent_message_id: Some("m4".into()),
+                    bundle: Some(MutandeBundle {
+                        answers: vec![BundleAnswer {
+                            question_id: "c2".into(),
+                            answer: "yes".into(),
+                        }],
+                        ..Default::default()
+                    }),
+                    envelope: None,
+                    open_error: None,
+                    upvotes: None,
+                },
+            ],
+        };
+        assert!(!thread_needs_human(&answered));
     }
 
     #[test]

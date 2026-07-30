@@ -35,6 +35,13 @@ http.Response _rpcOk(Object? id, Map<String, dynamic> result) {
   );
 }
 
+Future<void> _openAgentsTab(WidgetTester tester) async {
+  final agents = find.text('Agents');
+  expect(agents, findsWidgets);
+  await tester.tap(agents.first);
+  await tester.pumpAndSettle();
+}
+
 void main() {
   testWidgets('home shell shows threads tab', (WidgetTester tester) async {
     final daemon = _mockDaemon((request) async {
@@ -82,7 +89,7 @@ void main() {
     expect(find.text('Contacts'), findsOneWidget);
     expect(find.text('bob@acme'), findsOneWidget);
     expect(find.byTooltip('alice@acme'), findsOneWidget);
-    expect(find.text('needs you'), findsOneWidget);
+    expect(find.text('All'), findsWidgets);
     expect(find.textContaining('ACTION REQUIRED'), findsNothing);
   });
 
@@ -156,11 +163,14 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('Settings'));
+    await tester.tap(find.byTooltip('Settings').first);
     await tester.pumpAndSettle();
     expect(find.text('Settings'), findsWidgets);
     expect(find.text('Local courier'), findsOneWidget);
+    expect(find.text('Agents & routing'), findsOneWidget);
+    await tester.ensureVisible(find.text('Check daemon'));
     expect(find.text('Check daemon'), findsOneWidget);
+    await tester.ensureVisible(find.text('Connect new host'));
     expect(find.text('Connect new host'), findsOneWidget);
     expect(find.text('Connected'), findsOneWidget);
     expect(find.text('CONNECTED'), findsNothing);
@@ -303,14 +313,13 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Agents'));
-    await tester.pumpAndSettle();
+    await _openAgentsTab(tester);
     expect(
       find.text('Add an AI host for your primary agent.'),
       findsOneWidget,
     );
 
-    await tester.tap(find.byIcon(Icons.add));
+    await tester.tap(find.byIcon(Icons.add).last);
     await tester.pumpAndSettle();
     expect(find.text('Add AI host'), findsOneWidget);
     expect(find.text('Cursor'), findsOneWidget);
@@ -324,7 +333,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(connectedHost, 'cursor');
-    expect(find.text('Added Cursor'), findsOneWidget);
+    expect(find.text('Added Cursor'), findsWidgets);
     expect(find.text('cursor'), findsWidgets);
     expect(
       find.text('Connect an AI host in Settings, then return here to Add.'),
@@ -364,8 +373,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('Settings'));
+    await tester.tap(find.byTooltip('Settings').first);
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Safety Numbers'));
     expect(find.text('Safety Numbers'), findsOneWidget);
     expect(find.text('Compare safety numbers'), findsOneWidget);
     expect(find.text('11111'), findsOneWidget);
@@ -529,6 +539,23 @@ test('validateHandle and validateHubUrl', () {
     );
   });
 
+  test('friendlyDaemonError splits local daemon vs hub auth', () {
+    expect(
+      friendlyDaemonError('Missing HTTP token at ~/.mutande/daemon_http_token'),
+      contains('local mutande daemon'),
+    );
+    expect(
+      friendlyDaemonError(
+        'HTTP 401 unauthorized — check ~/.mutande/daemon_http_token matches the running daemon',
+      ),
+      contains('local mutande daemon'),
+    );
+    expect(
+      friendlyDaemonError('hub error 401: expired'),
+      allOf(contains('Sign-in'), isNot(contains('local mutande daemon'))),
+    );
+  });
+
   test('ThreadMessageView empty body and answers harden', () {
     const empty = ThreadMessageView(
       id: 'm1',
@@ -615,8 +642,7 @@ test('validateHandle and validateHubUrl', () {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Agents'));
-    await tester.pumpAndSettle();
+    await _openAgentsTab(tester);
 
     await tester.tap(find.text('claude').first);
     await tester.pumpAndSettle();
@@ -707,8 +733,7 @@ test('validateHandle and validateHubUrl', () {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Agents'));
-    await tester.pumpAndSettle();
+    await _openAgentsTab(tester);
     await tester.tap(find.text('claude').first);
     await tester.pumpAndSettle();
 
@@ -717,7 +742,7 @@ test('validateHandle and validateHubUrl', () {
     await tester.pump();
     await tester.pumpAndSettle();
     expect(connectedHost, 'claude');
-    expect(find.text('Linked Claude Desktop'), findsOneWidget);
+    expect(find.text('Linked Claude Desktop'), findsWidgets);
     expect(find.text('Agent Inspector'), findsNothing);
 
     await tester.tap(find.text('claude').first);
@@ -781,8 +806,7 @@ test('validateHandle and validateHubUrl', () {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Agents'));
-    await tester.pumpAndSettle();
+    await _openAgentsTab(tester);
     await tester.tap(find.text('claude').first);
     await tester.pumpAndSettle();
 
@@ -836,8 +860,7 @@ test('validateHandle and validateHubUrl', () {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Agents'));
-    await tester.pumpAndSettle();
+    await _openAgentsTab(tester);
     await tester.tap(find.text('cursor').first);
     await tester.pumpAndSettle();
 

@@ -4,9 +4,9 @@ Square hero proof for the marketing site: Alice’s agents collaborate, then a s
 
 ## Spec (locked)
 
-- **24s** play-once @ **1080×1080 / 60fps**, then hold on MT mark
+- **26s** play-once @ **1080×1080 / 60fps**, then hold on MT mark
 - Stone/relay + bronze field; soft Foley later (visual-first)
-- Compose in Claude Desktop: ask `@chatgpt` to critique (file via attachment chip) → collaborative critique → seal → fan-out
+- Compose in Claude → mutande thread (orb rail + pings with replies/upvote) → seal → fan-out
 - Cinematic per-scene camera (YC-style push-ins)
 - Ship static WebM/MP4 + poster into `web/public/brand/`; landing uses `<video muted>`
 

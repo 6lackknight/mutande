@@ -219,6 +219,20 @@ const SEND_TOOLS: &[(&str, &str, ValueFn)] = &[
         },
     ),
     (
+        "delete_thread",
+        "Remove a thread from your inbox (sender also purges the thread body). Confirm via AskQuestion when the skill requires it.",
+        || {
+            json!({
+                "type": "object",
+                "required": ["thread_id"],
+                "properties": {
+                    "thread_id": { "type": "string" }
+                },
+                "additionalProperties": false
+            })
+        },
+    ),
+    (
         "mark_processed",
         "Mark a thread as processed by this agent session (local bookkeeping).",
         || {
@@ -313,6 +327,7 @@ pub fn daemon_method_for_tool(name: &str) -> Option<&'static str> {
         "forward_blob" => Some("forward_blob"),
         "reply_to_thread" => Some("reply_to_thread"),
         "close_thread" => Some("close_thread"),
+        "delete_thread" => Some("delete_thread"),
         "mark_processed" => Some("mark_processed"),
         "upvote_message" => Some("toggle_message_upvote"),
         "verify_contact" => Some("verify_contact"),

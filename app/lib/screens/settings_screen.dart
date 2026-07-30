@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../config/app_config.dart';
 import '../services/daemon_client.dart';
 import '../services/host_link_store.dart';
 import '../widgets/ai_host_icon.dart';
@@ -18,8 +19,10 @@ class SettingsScreen extends StatefulWidget {
     required this.health,
     this.connectError,
     required this.onCheckDaemon,
-    required this.onConnectHosts,
     this.handle,
+    this.appVersion = AppConfig.appVersion,
+    this.onOpenThreads,
+    this.onOpenAgents,
     HostLinkStore? hostLinkStore,
   }) : hostLinkStore = hostLinkStore ?? HostLinkStore();
 
@@ -29,8 +32,12 @@ class SettingsScreen extends StatefulWidget {
   final DaemonHealthResult? health;
   final String? connectError;
   final VoidCallback onCheckDaemon;
-  final VoidCallback onConnectHosts;
   final String? handle;
+  final String appVersion;
+  /// Close settings and jump home Threads (e.g. from agent inspector).
+  final VoidCallback? onOpenThreads;
+  /// Close settings and jump home Agents graph.
+  final VoidCallback? onOpenAgents;
   final HostLinkStore hostLinkStore;
 
   @override
@@ -47,7 +54,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _loadingSafety = true;
   Map<String, HostLinkRecord> _hostLinks = const {};
   bool _loadingLinks = true;
-
   static const _bronze = Color(0xFF8B6914);
   static const _stone400 = Color(0xFFA8A29E);
   static const _stone50 = Color(0xFFFAFAF9);
@@ -130,7 +136,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       await _loadHostLinks();
       if (!mounted) return;
       setState(() => _connecting = false);
-      widget.onConnectHosts();
 
       final label = AiHostIcon.displayName(host);
       if (write == null) {
@@ -197,69 +202,118 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         title: const Text('Settings'),
       ),
-      body: ListView(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(20, 4, 20, 32),
-        children: [
-          _sectionHeader(
-            context,
-            'DAEMON',
-            trailing: Text(
-              connected ? 'Connected' : 'Unreachable',
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: connected ? _green : const Color(0xFF991B1B),
-                    fontWeight: FontWeight.w600,
-                  ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          _DaemonCard(
-            health: _health,
-            checking: _checking,
-            lastPingAt: _lastPingAt,
-            connected: connected,
-            onCheck: _check,
-            onRetry: _check,
-          ),
-          const SizedBox(height: 28),
-          _sectionHeader(
-            context,
-            'AI HOSTS',
-            trailing: TextButton(
-              onPressed: _connecting ? null : _pickAndConnect,
-              style: TextButton.styleFrom(
-                foregroundColor: _bronze,
-                padding: EdgeInsets.zero,
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _sectionHeader(
+              context,
+              'DAEMON',
+              trailing: Text(
+                connected ? 'Connected' : 'Unreachable',
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: connected ? _green : const Color(0xFF991B1B),
+                      fontWeight: FontWeight.w600,
+                    ),
               ),
-              child: Text(
-                _connecting ? 'Connecting…' : 'Connect new host',
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13,
+            ),
+            const SizedBox(height: 8),
+            _DaemonCard(
+              health: _health,
+              checking: _checking,
+              lastPingAt: _lastPingAt,
+              connected: connected,
+              onCheck: _check,
+              onRetry: _check,
+            ),
+            const SizedBox(height: 28),
+            _sectionHeader(context, 'AGENTS'),
+            const SizedBox(height: 8),
+            Material(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () {
+                  if (widget.onOpenAgents != null) {
+                    widget.onOpenAgents!();
+                  }
+                },
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Agents & routing',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                                color: Color(0xFF292524),
+                              ),
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              'Open the Agents graph tab',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFFA8A29E),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Icon(Icons.chevron_right, color: Color(0xFFA8A29E)),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-          const SizedBox(height: 8),
-          _HostsCard(links: _hostLinks, loading: _loadingLinks),
-          if (_connectError != null) ...[
-            const SizedBox(height: 10),
-            _ErrorBanner(message: _connectError!),
+            const SizedBox(height: 28),
+            _sectionHeader(
+              context,
+              'AI HOSTS',
+              trailing: TextButton(
+                onPressed: _connecting ? null : _pickAndConnect,
+                style: TextButton.styleFrom(
+                  foregroundColor: _bronze,
+                  padding: EdgeInsets.zero,
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: Text(
+                  _connecting ? 'Connecting…' : 'Connect new host',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            _HostsCard(links: _hostLinks, loading: _loadingLinks),
+            if (_connectError != null) ...[
+              const SizedBox(height: 10),
+              _ErrorBanner(message: _connectError!),
+            ],
+            const SizedBox(height: 28),
+            _sectionHeader(context, 'SECURITY VERIFICATION'),
+            const SizedBox(height: 8),
+            _SafetyCard(
+              ours: _ours,
+              loading: _loadingSafety,
+              onCompare: _openCompare,
+            ),
+            const SizedBox(height: 28),
+            _sectionHeader(context, 'ACCOUNT'),
+            const SizedBox(height: 8),
+            _AccountCard(handle: widget.handle),
           ],
-          const SizedBox(height: 28),
-          _sectionHeader(context, 'SECURITY VERIFICATION'),
-          const SizedBox(height: 8),
-          _SafetyCard(
-            ours: _ours,
-            loading: _loadingSafety,
-            onCompare: _openCompare,
-          ),
-          const SizedBox(height: 28),
-          _sectionHeader(context, 'ACCOUNT'),
-          const SizedBox(height: 8),
-          _AccountCard(handle: widget.handle),
-        ],
+        ),
       ),
     );
   }

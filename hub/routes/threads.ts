@@ -66,5 +66,10 @@ export function createThreadRoutes(store: HubStore) {
     return c.json(result);
   });
 
+  threadRoutes.delete("/:id", async (c) => {
+    const result = await store.deleteThread(c.get("auth"), c.req.param("id"));
+    return c.json(result);
+  });
+
   return threadRoutes;
 }

@@ -27,7 +27,7 @@ import 'package:http/http.dart' as http;
 /// | `create_org` | Create team after Auth0 |
 /// | `join_org` / `onboard` | Join via invite after Auth0 |
 /// | `list_contacts` | Org members + synthetic `@all@org` |
-/// | `list_threads` | Filter: `needs_action`, `open`, `closed` |
+/// | `list_threads` | Filter: omit/`null` = all; `needs_action`, `open`, `closed` |
 /// | `get_thread` | Thread + messages with decrypted `bundle` (or `open_error` without ciphertext) |
 /// | `get_draft` | Current self-draft (plain after hub sync) |
 /// | `draft_add_question` | Merge human decision into draft |
@@ -35,6 +35,7 @@ import 'package:http/http.dart' as http;
 /// | `forward_draft` | Send draft to recipient; opens thread |
 /// | `reply_to_thread` | Encrypted reply on existing thread |
 /// | `close_thread` | Mark thread closed |
+/// | `delete_thread` | Remove from inbox (sender purges body) |
 /// | `mark_processed` | Clear local pending / processed flags |
 /// | `connect_host` | Write MCP configs (`host`: cursor\|claude\|chatgpt\|all) |
 ///
@@ -369,6 +370,16 @@ class DaemonClient {
     });
     final map = result as Map<String, dynamic>? ?? {};
     return map['thread_id'] as String? ?? '';
+  }
+
+  /// Mark a thread closed via JSON-RPC `close_thread`.
+  Future<void> closeThread(String threadId) async {
+    await _call('close_thread', {'thread_id': threadId});
+  }
+
+  /// Remove a thread from the inbox via JSON-RPC `delete_thread`.
+  Future<void> deleteThread(String threadId) async {
+    await _call('delete_thread', {'thread_id': threadId});
   }
 
   Future<SafetyNumberResult> getSafetyNumber() async {
@@ -1011,9 +1022,13 @@ String friendlyDaemonError(Object error, {String what = 'That'}) {
       lower.contains('connection refused') ||
       lower.contains('failed host lookup') ||
       lower.contains('socketexception') ||
-      lower.contains('401') ||
-      lower.contains('unauthorized')) {
+      lower.contains('matches the running daemon')) {
     return "Can't reach the local mutande daemon. Open Settings and tap Check daemon.";
+  }
+  if (lower.contains('401') ||
+      lower.contains('unauthorized') ||
+      lower.contains('hub error 401')) {
+    return 'Sign-in expired or was rejected. Open Settings and sign in again.';
   }
   if (lower.contains('404') || lower.contains('not found')) {
     return "Couldn't load $what. Check you're signed in, then retry.";

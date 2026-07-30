@@ -12,7 +12,9 @@ abstract final class MutandeColors {
   static const stone800 = Color(0xFF292524);
   static const bronze = Color(0xFF92400E);
   static const amber = Color(0xFFB45309);
+  static const amberSoft = Color(0xFFFEF3C7);
   static const emerald = Color(0xFF166534);
+  static const emeraldSoft = Color(0xFFECFDF5);
 }
 
 /// Material theme for Threads / Agents / Contacts content (mutande stone).
@@ -103,7 +105,14 @@ Widget mutandeThemeBridge({required Widget child}) {
         child: Material(
           // Material ink/text fields need an ancestor Material.
           color: MutandeColors.stone100,
-          child: ScaffoldMessenger(child: child),
+          // ScaffoldMessenger needs a descendant Scaffold to host SnackBars;
+          // home uses MacosScaffold, which is not a Material Scaffold.
+          child: ScaffoldMessenger(
+            child: Scaffold(
+              backgroundColor: Colors.transparent,
+              body: child,
+            ),
+          ),
         ),
       ),
     ),

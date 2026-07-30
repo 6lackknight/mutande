@@ -378,6 +378,38 @@ impl HubClient {
         Ok(resp.thread)
     }
 
+    pub async fn delete_thread(&self, thread_id: &str) -> Result<()> {
+        let path = format!("/v1/threads/{thread_id}");
+        let mut attempted_refresh = false;
+        loop {
+            let token = self.access_token();
+            let resp = self
+                .client
+                .delete(self.url(&path))
+                .bearer_auth(&token)
+                .send()
+                .await
+                .with_context(|| format!("DELETE {path}"))?;
+
+            // Hub returns 200 for inbox dismiss / sender purge / orphan cleanup.
+            // Do not treat 404 as success — that masks org-mismatch / real misses.
+            if resp.status().is_success() {
+                return Ok(());
+            }
+            if resp.status() == StatusCode::UNAUTHORIZED
+                && !attempted_refresh
+                && self.try_refresh_after_unauthorized().await
+            {
+                attempted_refresh = true;
+                continue;
+            }
+            return Err(hub_error(
+                resp.status(),
+                resp.text().await.unwrap_or_default(),
+            ));
+        }
+    }
+
     pub async fn list_drafts(&self) -> Result<Vec<Draft>> {
         let resp: DraftListResponse = self.get_json("/v1/drafts").await?;
         Ok(resp.drafts)

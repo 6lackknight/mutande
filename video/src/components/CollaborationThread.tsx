@@ -8,7 +8,7 @@ import {
   useVideoConfig,
 } from "remotion";
 import { colors, FONT } from "../theme";
-import { beats, critiquePasses, DRAFT_FILENAME } from "../timing";
+import { beats, threadBeats, DRAFT_FILENAME } from "../timing";
 import { BrandId } from "./BrandMark";
 
 type RowProps = {
@@ -126,21 +126,22 @@ export const CollaborationThread: React.FC = () => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
+  const fadeIn = interpolate(
+    frame,
+    [beats.critique.start - 8, beats.critique.start + 20],
+    [0, 1],
+    { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
+  );
   const fadeOut = interpolate(
     frame,
     [beats.finalDoc.start - 16, beats.finalDoc.start + 36],
     [1, 0],
     { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
   );
-  if (frame < beats.critique.start - 4 || fadeOut < 0.02) return null;
+  if (frame < beats.critique.start - 10 || fadeOut < 0.02) return null;
 
-  // After Claude's follow-up — ChatGPT upvotes (last beat)
-  const upvoteAt = Math.min(
-    critiquePasses[2].start + 90,
-    beats.critique.end - 40,
-  );
   const upvote = spring({
-    frame: Math.max(0, frame - upvoteAt),
+    frame: Math.max(0, frame - threadBeats.upvote),
     fps,
     config: { damping: 12, stiffness: 160 },
   });
@@ -156,8 +157,8 @@ export const CollaborationThread: React.FC = () => {
     <div
       style={{
         width: 640,
-        opacity: fadeOut * windowEnter,
-        transform: `translateY(${(1 - windowEnter) * 24}px) scale(${0.96 + windowEnter * 0.04})`,
+        opacity: fadeOut * fadeIn * windowEnter,
+        transform: `translateY(${(1 - windowEnter) * 18}px) scale(${0.97 + windowEnter * 0.03})`,
         fontFamily: FONT,
         borderRadius: 16,
         overflow: "hidden",
@@ -259,7 +260,7 @@ export const CollaborationThread: React.FC = () => {
         <ThreadRow
           brand="claude"
           handle="@claude"
-          appearAt={critiquePasses[0].start}
+          appearAt={threadBeats.claudeAsk}
           body={
             <>
               <div style={{ marginBottom: 10 }}>
@@ -299,7 +300,7 @@ export const CollaborationThread: React.FC = () => {
           brand="chatgpt"
           handle="@chatgpt"
           indent={28}
-          appearAt={critiquePasses[1].start}
+          appearAt={threadBeats.chatgptReply}
           body="Happy to help — I've marked the sections to tighten and trimmed the fluff."
         />
 
@@ -308,7 +309,7 @@ export const CollaborationThread: React.FC = () => {
           brand="claude"
           handle="@claude"
           indent={56}
-          appearAt={critiquePasses[2].start}
+          appearAt={threadBeats.claudeSeal}
           body={`Applied — sealing ${DRAFT_FILENAME} now.`}
         >
           <div
@@ -326,8 +327,12 @@ export const CollaborationThread: React.FC = () => {
               fontWeight: 600,
               color: upvote > 0.25 ? colors.accent : colors.stone500,
               opacity: Math.max(0.12, upvote),
-              transform: `scale(${0.85 + upvote * 0.15})`,
+              transform: `scale(${0.82 + upvote * 0.28})`,
               transformOrigin: "left center",
+              boxShadow:
+                upvote > 0.4
+                  ? `0 0 ${10 + upvote * 14}px ${colors.accent}55`
+                  : undefined,
             }}
           >
             <span style={{ fontSize: 13, lineHeight: 1 }}>▲</span>

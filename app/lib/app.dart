@@ -488,12 +488,12 @@ class _HomeScreenState extends State<HomeScreen> {
   final _searchFocus = FocusNode();
   final List<String> _recentQueries = [];
 
-  void _registerAgentsReload(VoidCallback? reload) {
-    _reloadAgents = reload;
-  }
-
   void _registerThreadsReload(VoidCallback? reload) {
     _reloadThreads = reload;
+  }
+
+  void _registerAgentsReload(VoidCallback? reload) {
+    _reloadAgents = reload;
   }
 
   void _registerContactsReload(VoidCallback? reload) {
@@ -628,7 +628,7 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (sheetContext) {
         return MacosSheet(
           child: SizedBox(
-            width: 640,
+            width: 720,
             height: 720,
             child: SettingsScreen(
               daemon: widget.daemon,
@@ -637,15 +637,21 @@ class _HomeScreenState extends State<HomeScreen> {
               health: _health,
               connectError: widget.connectError,
               onCheckDaemon: _checkDaemon,
-              onConnectHosts: widget.onConnectHosts,
               handle: widget.status.handle,
               hostLinkStore: widget.hostLinkStore,
+              onOpenThreads: () {
+                Navigator.of(sheetContext).pop();
+                _selectTab(0);
+              },
+              onOpenAgents: () {
+                Navigator.of(sheetContext).pop();
+                _selectTab(1);
+              },
             ),
           ),
         );
       },
     );
-    if (_tab == 1) _reloadAgents?.call();
   }
 
   void _selectTab(int i) {
@@ -682,9 +688,10 @@ class _HomeScreenState extends State<HomeScreen> {
       return AgentsPanel(
         daemon: widget.daemon,
         handle: widget.status.handle,
-        onViewThreads: () => _selectTab(0),
+        appVersion: AppConfig.appVersion,
         hostLinkStore: widget.hostLinkStore,
         onReloadReady: _registerAgentsReload,
+        onViewThreads: () => _selectTab(0),
       );
     }
     return ContactsPanel(

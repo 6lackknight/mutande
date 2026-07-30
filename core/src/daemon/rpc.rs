@@ -143,7 +143,10 @@ async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Resu
         }
         "get_thread" => {
             let thread_id = param_str(&params, "thread_id")?;
-            let detail = state.get_thread(&thread_id).await?;
+            let agent_slug = optional_str(&params, "agent_slug");
+            let detail = state
+                .get_thread(&thread_id, agent_slug.as_deref())
+                .await?;
             Ok(serde_json::to_value(detail)?)
         }
         "get_draft" => {
@@ -218,6 +221,11 @@ async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Resu
         "close_thread" => {
             let thread_id = param_str(&params, "thread_id")?;
             state.close_thread(&thread_id).await?;
+            Ok(serde_json::json!({ "ok": true }))
+        }
+        "delete_thread" => {
+            let thread_id = param_str(&params, "thread_id")?;
+            state.delete_thread(&thread_id).await?;
             Ok(serde_json::json!({ "ok": true }))
         }
         "mark_processed" => {

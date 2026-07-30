@@ -7,6 +7,42 @@ import '../util/address_display.dart';
 import '../widgets/ai_host_icon.dart';
 import '../widgets/thinking_orb.dart';
 import '../widgets/thread_message_tree.dart';
+import '../widgets/thread_status_badge.dart';
+
+Future<bool?> confirmThreadAction(
+  BuildContext context, {
+  required String title,
+  required String body,
+  required String confirmLabel,
+  bool destructive = false,
+}) {
+  return showDialog<bool>(
+    context: context,
+    barrierColor: const Color(0x660C0A09),
+    builder: (context) => AlertDialog(
+      backgroundColor: const Color(0xFFFAFAF9),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      title: Text(title),
+      content: Text(body),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, true),
+          style: destructive
+              ? FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFFB91C1C),
+                  foregroundColor: Colors.white,
+                )
+              : null,
+          child: Text(confirmLabel),
+        ),
+      ],
+    ),
+  );
+}
 
 /// Stitch home threads — filters, list rows, search + new thread footer.
 class ThreadsPanel extends StatefulWidget {
@@ -37,7 +73,7 @@ class ThreadsPanel extends StatefulWidget {
 }
 
 class _ThreadsPanelState extends State<ThreadsPanel> {
-  String _filter = 'needs_action';
+  String _filter = 'all';
   bool _loading = true;
   String? _error;
   List<ThreadSummary> _threads = const [];
@@ -69,7 +105,6 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
     final initial = widget.initialThreadId?.trim();
     if (initial != null && initial.isNotEmpty) {
       _openId = initial;
-      _filter = 'open';
       WidgetsBinding.instance.addPostFrameCallback((_) {
         widget.onInitialThreadHandled?.call();
       });
@@ -97,7 +132,6 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
     if (openNext != null && openNext.isNotEmpty && openNext != openPrev) {
       setState(() {
         _openId = openNext;
-        _filter = 'open';
       });
       widget.onInitialThreadHandled?.call();
     }
@@ -116,7 +150,9 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
       _error = null;
     });
     try {
-      final threads = await widget.daemon.listThreads(filter: _filter);
+      final threads = await widget.daemon.listThreads(
+        filter: _filter == 'all' ? null : _filter,
+      );
       if (!mounted) return;
       setState(() {
         _threads = threads;
@@ -132,6 +168,50 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
   }
 
   List<ThreadSummary> get _visible => _threads;
+
+  Future<void> _closeThreadFromList(String threadId) async {
+    final ok = await confirmThreadAction(
+      context,
+      title: 'Close thread?',
+      body: 'This marks the thread closed. You can still find it under Closed.',
+      confirmLabel: 'Close',
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await widget.daemon.closeThread(threadId);
+      if (!mounted) return;
+      if (_openId == threadId) setState(() => _openId = null);
+      await _reload();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyDaemonError(e, what: 'Close thread'))),
+      );
+    }
+  }
+
+  Future<void> _deleteThreadFromList(String threadId) async {
+    final ok = await confirmThreadAction(
+      context,
+      title: 'Delete thread?',
+      body:
+          'This removes the thread from your inbox. If you started it, the messages are purged.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await widget.daemon.deleteThread(threadId);
+      if (!mounted) return;
+      if (_openId == threadId) setState(() => _openId = null);
+      await _reload();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyDaemonError(e, what: 'Delete thread'))),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -151,6 +231,7 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
             const SizedBox(height: 12),
             _ComposePanel(
               daemon: widget.daemon,
+              myHandle: widget.myHandle,
               initialRecipient: _composePrefillRecipient,
               onSent: () {
                 setState(() {
@@ -183,6 +264,11 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
             myHandle: widget.myHandle,
             embedded: true,
             onBack: () {
+              setState(() => _openId = null);
+              _reload();
+            },
+            onListChanged: _reload,
+            onGone: () {
               setState(() => _openId = null);
               _reload();
             },
@@ -254,6 +340,10 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
           myHandle: widget.myHandle,
           selected: t.id == _openId,
           onTap: () => setState(() => _openId = t.id),
+          onClose: t.status == 'closed'
+              ? null
+              : () => _closeThreadFromList(t.id),
+          onDelete: () => _deleteThreadFromList(t.id),
         );
       },
     );
@@ -305,9 +395,10 @@ class _ThreadsToolbar extends StatelessWidget {
   final ValueChanged<String> onFilterChanged;
 
   String get _filterLabel => switch (filter) {
+        'needs_action' => 'Needs you',
         'open' => 'Open',
         'closed' => 'Closed',
-        _ => 'Needs you',
+        _ => 'All',
       };
 
   @override
@@ -319,6 +410,7 @@ class _ThreadsToolbar extends StatelessWidget {
         padding: EdgeInsets.zero,
         onSelected: onFilterChanged,
         itemBuilder: (context) => const [
+          PopupMenuItem(value: 'all', child: Text('All')),
           PopupMenuItem(
             value: 'needs_action',
             child: Text('Needs you'),
@@ -380,18 +472,22 @@ class _ThreadRow extends StatelessWidget {
     required this.onTap,
     this.myHandle,
     this.selected = false,
+    this.onClose,
+    this.onDelete,
   });
 
   final ThreadSummary thread;
   final VoidCallback onTap;
   final String? myHandle;
   final bool selected;
+  final VoidCallback? onClose;
+  final VoidCallback? onDelete;
 
   @override
   Widget build(BuildContext context) {
     final title = _rowTitle(thread, myHandle: myHandle);
     final meta = _rowMeta(thread);
-    final status = _quietStatus(thread);
+    final status = _rowStatus(thread);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 2),
@@ -400,6 +496,31 @@ class _ThreadRow extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         child: InkWell(
           onTap: onTap,
+          onSecondaryTapDown: (details) {
+            final items = <PopupMenuEntry<String>>[
+              if (onClose != null)
+                const PopupMenuItem(value: 'close', child: Text('Close')),
+              if (onDelete != null)
+                const PopupMenuItem(
+                  value: 'delete',
+                  child: Text('Delete'),
+                ),
+            ];
+            if (items.isEmpty) return;
+            showMenu<String>(
+              context: context,
+              position: RelativeRect.fromLTRB(
+                details.globalPosition.dx,
+                details.globalPosition.dy,
+                details.globalPosition.dx,
+                details.globalPosition.dy,
+              ),
+              items: items,
+            ).then((value) {
+              if (value == 'close') onClose?.call();
+              if (value == 'delete') onDelete?.call();
+            });
+          },
           borderRadius: BorderRadius.circular(8),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(8, 10, 8, 10),
@@ -438,20 +559,8 @@ class _ThreadRow extends StatelessWidget {
                     ],
                   ),
                 ),
-                if (status.isNotEmpty) ...[
-                  const SizedBox(width: 8),
-                  Text(
-                    status,
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: thread.yourStatus == 'pending'
-                              ? const Color(0xFFB45309)
-                              : const Color(0xFFA8A29E),
-                          fontWeight: thread.yourStatus == 'pending'
-                              ? FontWeight.w600
-                              : FontWeight.w400,
-                        ),
-                  ),
-                ],
+                const SizedBox(width: 8),
+                ThreadStatusBadge(kind: status, compact: true),
               ],
             ),
           ),
@@ -470,13 +579,13 @@ class _ThreadMark extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final host = _hostSlug(thread.agentBadge);
-    final pending = thread.yourStatus == 'pending';
-    final plate = pending
-        ? const Color(0xFFFDE68A).withValues(alpha: 0.35)
-        : const Color(0xFFF5F5F4);
-    final border = pending
-        ? const Color(0xFFFDE68A).withValues(alpha: 0.6)
-        : const Color(0xFFE7E5E4);
+    final needsYou = _rowStatus(thread) == ThreadStatusKind.needsYou;
+    final plate = needsYou
+        ? MutandeColors.amberSoft.withValues(alpha: 0.65)
+        : MutandeColors.stone100;
+    final border = needsYou
+        ? MutandeColors.amber.withValues(alpha: 0.28)
+        : MutandeColors.stone200;
 
     Widget mark;
     if (host != null) {
@@ -507,12 +616,25 @@ class _ThreadMark extends StatelessWidget {
   }
 }
 
-/// Quiet status for the right column — no shouty chips.
-String _quietStatus(ThreadSummary t) {
-  if (t.yourStatus == 'pending') return 'needs you';
-  if (t.status == 'closed') return 'closed';
-  if (t.yourStatus == 'replied') return 'waiting';
-  return 'open';
+/// List-row status — always show so open/closed read at a glance.
+ThreadStatusKind _rowStatus(ThreadSummary t) {
+  return ThreadStatusKindX.resolve(
+    status: t.status,
+    yourStatus: t.yourStatus,
+  );
+}
+
+/// Header/stats: only surface when it changes what you should do.
+ThreadStatusKind? _actionStatus({
+  required String status,
+  String? yourStatus,
+}) {
+  final resolved = ThreadStatusKindX.resolve(
+    status: status,
+    yourStatus: yourStatus,
+  );
+  if (resolved == ThreadStatusKind.open) return null;
+  return resolved;
 }
 
 String _rowTitle(ThreadSummary t, {String? myHandle}) {
@@ -564,12 +686,14 @@ String? _selfCollabTitle(ThreadSummary t) {
 class _ComposePanel extends StatefulWidget {
   const _ComposePanel({
     required this.daemon,
+    this.myHandle,
     this.initialRecipient,
     required this.onSent,
     required this.onCancel,
   });
 
   final DaemonClient daemon;
+  final String? myHandle;
   final String? initialRecipient;
   final VoidCallback onSent;
   final VoidCallback onCancel;
@@ -594,22 +718,36 @@ class _ComposePanelState extends State<_ComposePanel> {
   Future<List<String>> _recipientOptions(String input) async {
     final trimmed = input.trim();
     final lower = trimmed.toLowerCase();
+    final orgAll = _orgBroadcastFromHandle(widget.myHandle);
 
-    // Self-collaboration shorthand: @cursor, @claude, @all, …
-    if (trimmed.isEmpty || trimmed.startsWith('@')) {
+    // Self-collaboration shorthand: @cursor, @claude, @all —
+    // not @all@org (second @ means org broadcast / handle path below).
+    final selfShorthand = trimmed.isEmpty ||
+        (trimmed.startsWith('@') && !trimmed.substring(1).contains('@'));
+    if (selfShorthand) {
       try {
         final list = await widget.daemon.listAgents();
         final suggestions = <String>[
           '@all',
+          if (orgAll != null) orgAll,
           ...list.agents.map((a) => '@${a.slug}'),
         ];
         if (trimmed.isEmpty || lower == '@') return suggestions;
         return suggestions.where((s) => s.startsWith(lower)).toList();
       } catch (_) {
         if (trimmed.isEmpty || lower.startsWith('@')) {
-          return const ['@all'];
+          return [
+            '@all',
+            if (orgAll != null) orgAll,
+          ];
         }
       }
+    }
+
+    // Org broadcast: @all@acme (gated out of self-shorthand by the second @).
+    if (orgAll != null &&
+        (orgAll.startsWith(lower) || lower.startsWith('@all@'))) {
+      return [orgAll];
     }
 
     final bare = _bareHandleFromInput(trimmed);
@@ -620,6 +758,18 @@ class _ComposePanelState extends State<_ComposePanel> {
     } catch (_) {
       return [bare];
     }
+  }
+
+  /// `alice@acme` / `alice@acme/cursor` → `@all@acme`.
+  static String? _orgBroadcastFromHandle(String? handle) {
+    if (handle == null || handle.isEmpty) return null;
+    final at = handle.lastIndexOf('@');
+    if (at < 0 || at >= handle.length - 1) return null;
+    var org = handle.substring(at + 1);
+    final slash = org.indexOf('/');
+    if (slash >= 0) org = org.substring(0, slash);
+    if (org.isEmpty) return null;
+    return '@all@$org';
   }
 
   String? _bareHandleFromInput(String input) {
@@ -739,6 +889,8 @@ class ThreadDetailPanel extends StatefulWidget {
     required this.onBack,
     this.myHandle,
     this.embedded = false,
+    this.onListChanged,
+    this.onGone,
   });
 
   final DaemonClient daemon;
@@ -747,6 +899,10 @@ class ThreadDetailPanel extends StatefulWidget {
   final String? myHandle;
   /// Side-panel mode: close control instead of full-page back chrome.
   final bool embedded;
+  /// Refresh the thread list (e.g. after close) without clearing selection.
+  final VoidCallback? onListChanged;
+  /// Clear selection + reload after delete.
+  final VoidCallback? onGone;
 
   @override
   State<ThreadDetailPanel> createState() => _ThreadDetailPanelState();
@@ -899,6 +1055,49 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
     }
   }
 
+  Future<void> _closeThread() async {
+    final ok = await confirmThreadAction(
+      context,
+      title: 'Close thread?',
+      body: 'This marks the thread closed. You can still find it under Closed.',
+      confirmLabel: 'Close',
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await widget.daemon.closeThread(widget.threadId);
+      if (!mounted) return;
+      await _load();
+      widget.onListChanged?.call();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = friendlyDaemonError(e, what: 'Close thread'));
+    }
+  }
+
+  Future<void> _deleteThread() async {
+    final ok = await confirmThreadAction(
+      context,
+      title: 'Delete thread?',
+      body:
+          'This removes the thread from your inbox. If you started it, the messages are purged.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await widget.daemon.deleteThread(widget.threadId);
+      if (!mounted) return;
+      if (widget.onGone != null) {
+        widget.onGone!();
+      } else {
+        widget.onBack();
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = friendlyDaemonError(e, what: 'Delete thread'));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final pane = Column(
@@ -929,6 +1128,25 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
                 color: const Color(0xFF78716C),
                 visualDensity: VisualDensity.compact,
               ),
+              if (_detail != null)
+                PopupMenuButton<String>(
+                  tooltip: 'Thread actions',
+                  onSelected: (value) {
+                    if (value == 'close') _closeThread();
+                    if (value == 'delete') _deleteThread();
+                  },
+                  itemBuilder: (context) => [
+                    if (_detail!.status != 'closed')
+                      const PopupMenuItem(
+                        value: 'close',
+                        child: Text('Close'),
+                      ),
+                    const PopupMenuItem(
+                      value: 'delete',
+                      child: Text('Delete'),
+                    ),
+                  ],
+                ),
             ],
           ),
         if (_loading)
@@ -954,6 +1172,24 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
             detail: _detail!,
             myHandle: widget.myHandle,
             onRefresh: widget.embedded && !_loading ? _load : null,
+            onClose: _detail!.status == 'closed' ? null : _closeThread,
+            onDelete: _deleteThread,
+            onReplyOp: _detail!.status == 'closed'
+                ? null
+                : () {
+                    final op = _rootOpMessage(_detail!);
+                    if (op != null) _startReplyTo(op);
+                  },
+            onUpvoteOp: _detail!.status == 'closed'
+                ? null
+                : () {
+                    final op = _rootOpMessage(_detail!);
+                    if (op != null) _toggleUpvote(op);
+                  },
+            upvotingOp: () {
+              final op = _rootOpMessage(_detail!);
+              return op != null && _upvotingMessageId == op.id;
+            }(),
           ),
           if (_error != null) ...[
             const SizedBox(height: 12),
@@ -970,18 +1206,19 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
               padding: const EdgeInsets.only(bottom: 16),
               children: [
                 for (final node in flattenThreadMessages(_detail!.messages))
-                  _ThreadMessageTile(
-                    node: node,
-                    myHandle: widget.myHandle,
-                    opHandle: _detail!.from,
-                    onReply: _detail!.status == 'closed'
-                        ? null
-                        : () => _startReplyTo(node.message),
-                    onUpvote: _detail!.status == 'closed'
-                        ? null
-                        : () => _toggleUpvote(node.message),
-                    upvoting: _upvotingMessageId == node.message.id,
-                  ),
+                  if (!_isRootOpNode(node, _detail!))
+                    _ThreadMessageTile(
+                      node: node,
+                      myHandle: widget.myHandle,
+                      opHandle: _detail!.from,
+                      onReply: _detail!.status == 'closed'
+                          ? null
+                          : () => _startReplyTo(node.message),
+                      onUpvote: _detail!.status == 'closed'
+                          ? null
+                          : () => _toggleUpvote(node.message),
+                      upvoting: _upvotingMessageId == node.message.id,
+                    ),
               ],
             ),
           ),
@@ -1042,13 +1279,6 @@ class _ThreadStatsPanel extends StatelessWidget {
   final ThreadDetailResult detail;
   final String? myHandle;
 
-  String get _statusLabel {
-    if (detail.yourStatus == 'pending') return 'needs you';
-    if (detail.status == 'closed') return 'closed';
-    if (detail.yourStatus == 'replied') return 'waiting';
-    return detail.status.isEmpty ? 'open' : detail.status;
-  }
-
   @override
   Widget build(BuildContext context) {
     final participants = <String>{};
@@ -1073,22 +1303,21 @@ class _ThreadStatsPanel extends StatelessWidget {
           height: 1.35,
         );
 
-    Widget row(String label, String value, {Color? valueColor}) {
+    Widget row(String label, Widget value) {
       return Padding(
         padding: const EdgeInsets.only(bottom: 14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(label.toUpperCase(), style: labelStyle),
-            const SizedBox(height: 4),
-            Text(
-              value,
-              style: valueStyle?.copyWith(color: valueColor ?? valueStyle.color),
-            ),
+            const SizedBox(height: 6),
+            value,
           ],
         ),
       );
     }
+
+    Widget textValue(String value) => Text(value, style: valueStyle);
 
     return DecoratedBox(
       decoration: const BoxDecoration(
@@ -1107,23 +1336,27 @@ class _ThreadStatsPanel extends StatelessWidget {
           const SizedBox(height: 16),
           row(
             'Status',
-            _statusLabel,
-            valueColor: detail.yourStatus == 'pending'
-                ? MutandeColors.amber
-                : null,
+            ThreadStatusBadge(
+              kind: ThreadStatusKindX.resolve(
+                status: detail.status,
+                yourStatus: detail.yourStatus,
+              ),
+            ),
           ),
-          row('Kind', detail.kind.isEmpty ? '—' : detail.kind),
+          row('Kind', textValue(detail.kind.isEmpty ? '—' : detail.kind)),
           row(
             'From',
-            formatMailAddress(detail.from, myHandle: myHandle),
+            textValue(formatMailAddress(detail.from, myHandle: myHandle)),
           ),
           if (detail.audience.isNotEmpty && detail.audience != detail.from)
             row(
               'Audience',
-              formatMailAddress(detail.audience, myHandle: myHandle),
+              textValue(
+                formatMailAddress(detail.audience, myHandle: myHandle),
+              ),
             ),
-          row('Messages', '${detail.messages.length}'),
-          row('Upvotes', '$upvoteTotal'),
+          row('Messages', textValue('${detail.messages.length}')),
+          row('Upvotes', textValue('$upvoteTotal')),
           const SizedBox(height: 4),
           Text('PARTICIPANTS', style: labelStyle),
           const SizedBox(height: 8),
@@ -1142,72 +1375,135 @@ class _ThreadStatsPanel extends StatelessWidget {
   }
 }
 
+/// Root OP message for the reading-pane header (excluded from the reply list).
+ThreadMessageView? _rootOpMessage(ThreadDetailResult detail) {
+  final nodes = flattenThreadMessages(detail.messages);
+  for (final n in nodes) {
+    if (n.depth == 0 && _isOpHandle(n.message.fromHandle, detail.from)) {
+      return n.message;
+    }
+  }
+  for (final n in nodes) {
+    if (n.depth == 0) return n.message;
+  }
+  return null;
+}
+
+bool _isRootOpNode(ThreadMessageNode node, ThreadDetailResult detail) {
+  final op = _rootOpMessage(detail);
+  return op != null && node.message.id == op.id;
+}
+
+/// OP name + message as header; audience shown as quiet `to @…` meta.
 class _ThreadDetailHeader extends StatelessWidget {
   const _ThreadDetailHeader({
     required this.detail,
     this.myHandle,
     this.onRefresh,
+    this.onClose,
+    this.onDelete,
+    this.onReplyOp,
+    this.onUpvoteOp,
+    this.upvotingOp = false,
   });
 
   final ThreadDetailResult detail;
   final String? myHandle;
   final VoidCallback? onRefresh;
+  final VoidCallback? onClose;
+  final VoidCallback? onDelete;
+  final VoidCallback? onReplyOp;
+  final VoidCallback? onUpvoteOp;
+  final bool upvotingOp;
 
-  String get _title {
-    final primary = detail.audience.isNotEmpty && detail.audience != detail.from
-        ? detail.audience
-        : detail.from;
-    return formatMailAddress(primary, myHandle: myHandle);
-  }
-
-  /// Only surface status when it changes what you should do.
-  String? get _statusLabel {
-    if (detail.yourStatus == 'pending') return 'needs you';
-    if (detail.status == 'closed') return 'closed';
-    if (detail.yourStatus == 'replied') return 'waiting';
-    return null;
-  }
+  ThreadStatusKind? get _statusKind => _actionStatus(
+        status: detail.status,
+        yourStatus: detail.yourStatus,
+      );
 
   @override
   Widget build(BuildContext context) {
-    final fromLabel = formatMailAddress(detail.from, myHandle: myHandle);
-    final showFrom = detail.audience.isNotEmpty &&
-        detail.audience != detail.from &&
-        fromLabel != _title;
-    final status = _statusLabel;
-    final metaParts = <String>[
-      if (showFrom) 'from $fromLabel',
-      ?status,
-    ];
-
-    final metaStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: const Color(0xFFA8A29E),
-          height: 1.35,
-        );
-    final statusStyle = metaStyle?.copyWith(
-      color: detail.yourStatus == 'pending'
-          ? const Color(0xFFB45309)
-          : detail.status == 'closed'
-              ? const Color(0xFFA8A29E)
-              : const Color(0xFF78716C),
-      fontWeight: detail.yourStatus == 'pending' ? FontWeight.w600 : null,
+    final op = _rootOpMessage(detail);
+    final opLabel = formatMailAddress(
+      op?.fromHandle ?? detail.from,
+      myHandle: myHandle,
     );
+    final host = _hostSlugFromHandle(
+      op?.fromHandle ?? detail.from,
+      myHandle: myHandle,
+    );
+    final audienceLabel = detail.audience.isNotEmpty
+        ? formatMailAddress(detail.audience, myHandle: myHandle)
+        : null;
+    final showTo = audienceLabel != null &&
+        audienceLabel != opLabel &&
+        detail.audience != detail.from;
+    final status = _statusKind;
+    const iconSize = 44.0;
+    final metaStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: MutandeColors.stone400,
+          height: 1.15,
+          fontSize: 11,
+        );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
+            _MessageAvatar(label: opLabel, host: host, size: iconSize),
+            const SizedBox(width: 10),
             Expanded(
-              child: Text(
-                _title,
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      color: const Color(0xFF1C1917),
-                      fontWeight: FontWeight.w700,
-                      height: 1.15,
-                      fontSize: 26,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: iconSize),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            opLabel,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleSmall
+                                ?.copyWith(
+                                  color: MutandeColors.stone800,
+                                  fontWeight: FontWeight.w700,
+                                  height: 1.1,
+                                ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        const _OpBadge(),
+                      ],
                     ),
+                    if (showTo || status != null) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          if (showTo)
+                            Flexible(
+                              child: Text(
+                                'to $audienceLabel',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: metaStyle,
+                              ),
+                            ),
+                          if (showTo && status != null)
+                            const SizedBox(width: 8),
+                          if (status != null)
+                            ThreadStatusBadge(kind: status, compact: true),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
               ),
             ),
             if (onRefresh != null)
@@ -1215,30 +1511,144 @@ class _ThreadDetailHeader extends StatelessWidget {
                 tooltip: 'Refresh',
                 onPressed: onRefresh,
                 icon: const Icon(Icons.refresh, size: 18),
-                color: const Color(0xFFA8A29E),
+                color: MutandeColors.stone400,
                 visualDensity: VisualDensity.compact,
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
               ),
+            if (onClose != null || onDelete != null)
+              PopupMenuButton<String>(
+                tooltip: 'Thread actions',
+                padding: EdgeInsets.zero,
+                onSelected: (value) {
+                  if (value == 'close') onClose?.call();
+                  if (value == 'delete') onDelete?.call();
+                },
+                itemBuilder: (context) => [
+                  if (onClose != null)
+                    const PopupMenuItem(value: 'close', child: Text('Close')),
+                  if (onDelete != null)
+                    const PopupMenuItem(
+                      value: 'delete',
+                      child: Text('Delete'),
+                    ),
+                ],
+                child: const Padding(
+                  padding: EdgeInsets.all(6),
+                  child: Icon(
+                    Icons.more_horiz,
+                    size: 18,
+                    color: MutandeColors.stone400,
+                  ),
+                ),
+              ),
           ],
         ),
-        if (metaParts.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Text.rich(
-            TextSpan(
-              children: [
-                for (var i = 0; i < metaParts.length; i++) ...[
-                  if (i > 0) TextSpan(text: '  ·  ', style: metaStyle),
-                  TextSpan(
-                    text: metaParts[i],
-                    style: metaParts[i] == status ? statusStyle : metaStyle,
-                  ),
-                ],
-              ],
+        if (op != null) ...[
+          const SizedBox(height: 12),
+          _ReadMoreText(text: op.displayBody),
+          if (onReplyOp != null || onUpvoteOp != null) ...[
+            const SizedBox(height: 10),
+            _MessageActionGroup(
+              count: op.upvotes?.count ?? 0,
+              upvoted: op.upvotes?.youUpvoted ?? false,
+              upvoting: upvotingOp,
+              onUpvote: onUpvoteOp,
+              onReply: onReplyOp,
+              showUpvote: onUpvoteOp != null || (op.upvotes?.count ?? 0) > 0,
             ),
-          ),
+          ],
         ],
       ],
+    );
+  }
+}
+
+class _ReadMoreText extends StatefulWidget {
+  const _ReadMoreText({required this.text});
+
+  final String text;
+  static const maxLines = 3;
+
+  @override
+  State<_ReadMoreText> createState() => _ReadMoreTextState();
+}
+
+class _ReadMoreTextState extends State<_ReadMoreText> {
+  bool _expanded = false;
+  bool _overflows = false;
+
+  @override
+  void didUpdateWidget(covariant _ReadMoreText oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.text != widget.text) {
+      _expanded = false;
+      _overflows = false;
+    }
+  }
+
+  void _measure(double maxWidth, TextStyle? style) {
+    final painter = TextPainter(
+      text: TextSpan(text: widget.text, style: style),
+      textDirection: TextDirection.ltr,
+      maxLines: _ReadMoreText.maxLines,
+    )..layout(maxWidth: maxWidth);
+    final overflows = painter.didExceedMaxLines;
+    if (overflows != _overflows) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _overflows = overflows);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final empty = widget.text.trim().isEmpty;
+    final style = Theme.of(context).textTheme.bodyMedium?.copyWith(
+          color: empty ? MutandeColors.stone400 : MutandeColors.stone800,
+          height: 1.5,
+          fontStyle: empty ? FontStyle.italic : FontStyle.normal,
+        );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (!empty) _measure(constraints.maxWidth, style);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              empty ? '(no notes)' : widget.text,
+              maxLines: _expanded ? null : _ReadMoreText.maxLines,
+              overflow:
+                  _expanded ? TextOverflow.visible : TextOverflow.ellipsis,
+              style: style,
+            ),
+            if (_overflows) ...[
+              const SizedBox(height: 4),
+              GestureDetector(
+                onTap: () => setState(() => _expanded = !_expanded),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _expanded ? 'Show less' : 'Read more',
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                            color: MutandeColors.stone600,
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                    Icon(
+                      _expanded ? Icons.expand_less : Icons.expand_more,
+                      size: 16,
+                      color: MutandeColors.stone500,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        );
+      },
     );
   }
 }
@@ -1570,23 +1980,28 @@ String? _hostSlugFromHandle(String handle, {String? myHandle}) {
 }
 
 class _MessageAvatar extends StatelessWidget {
-  const _MessageAvatar({required this.label, this.host});
+  const _MessageAvatar({
+    required this.label,
+    this.host,
+    this.size = 26,
+  });
 
   final String label;
   final String? host;
+  final double size;
 
   @override
   Widget build(BuildContext context) {
     if (host != null) {
-      return AiHostIcon(host!, size: 26, showPlate: true);
+      return AiHostIcon(host!, size: size, showPlate: true);
     }
     return Container(
-      width: 26,
-      height: 26,
+      width: size,
+      height: size,
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: const Color(0xFFF5F5F4),
-        borderRadius: BorderRadius.circular(7),
+        borderRadius: BorderRadius.circular(size * 0.27),
         border: Border.all(color: const Color(0xFFE7E5E4)),
       ),
       child: Text(
@@ -1594,6 +2009,7 @@ class _MessageAvatar extends StatelessWidget {
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
               color: const Color(0xFF78716C),
               fontWeight: FontWeight.w700,
+              fontSize: size * 0.34,
             ),
       ),
     );

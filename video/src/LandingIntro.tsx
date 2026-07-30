@@ -10,6 +10,7 @@ import {
 } from "remotion";
 import { getCameraPose } from "./camera";
 import { AgentOrb } from "./components/AgentOrb";
+import { AgentsBridge } from "./components/AgentsBridge";
 import { CollaborationThread } from "./components/CollaborationThread";
 import { DocSheets } from "./components/DocSheets";
 import { EncryptedTransit } from "./components/EncryptedTransit";
@@ -54,7 +55,7 @@ export const LandingIntro: React.FC = () => {
   );
   const agentWorldOpacity = interpolate(
     frame,
-    [beats.compose.end - 40, beats.compose.end + 8],
+    [beats.compose.end - 40, beats.critique.start + 12],
     [0, 1],
     { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
   );
@@ -90,9 +91,7 @@ export const LandingIntro: React.FC = () => {
     { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
   );
   const showDocInAlice =
-    frame >= beats.critique.start - 12 &&
-    docLift < 0.92 &&
-    scene !== "compose";
+    scene === "doc" && docLift < 0.92;
 
   const receiveDoc = interpolate(
     frame,
@@ -127,9 +126,6 @@ export const LandingIntro: React.FC = () => {
   const sceneFade = 1 - hold * 0.94;
 
   const inCollab = scene === "critique";
-  const aliceOrbSize = inCollab
-    ? 52
-    : interpolate(wide, [0, 1], [72, 44]);
 
   const docScale =
     scene === "doc"
@@ -144,8 +140,7 @@ export const LandingIntro: React.FC = () => {
   const i0 = passIntensity(frame, 0);
   const i1 = passIntensity(frame, 1);
   const i2 = passIntensity(frame, 2);
-  const claudeActive =
-    frame < beats.critique.start || i0 > 0.05 || i2 > 0.05;
+  const claudeActive = i0 > 0.05 || i2 > 0.05;
   const chatgptActive = i1 > 0.05 || (i2 > 0.05 && i2 < 0.85);
 
   // Alice chrome only on wide / handover
@@ -155,18 +150,8 @@ export const LandingIntro: React.FC = () => {
   });
   const hugChrome = aliceChrome > 0.2 || scene === "transit";
 
-  // Compact agent strip during thread; emphasize doc in doc scene
-  const orbsOpacity = interpolate(
-    frame,
-    [
-      beats.critique.start,
-      beats.critique.start + 30,
-      beats.finalDoc.start - 10,
-      beats.finalDoc.start + 30,
-    ],
-    [1, 0.85, 0.85, scene === "doc" ? 0.35 : 1],
-    { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
-  );
+  const orbsOpacity = scene === "doc" || scene === "transit" ? 1 : 0;
+  const aliceOrbSize = interpolate(wide, [0, 1], [72, 44]);
 
   return (
     <AbsoluteFill
@@ -218,7 +203,17 @@ export const LandingIntro: React.FC = () => {
           (frame >= beats.critique.start &&
             frame < beats.finalDoc.start + 40 &&
             wide < 0.5) ? (
-            <CollaborationThread />
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <AgentsBridge />
+              <CollaborationThread />
+            </div>
           ) : (
             <EnvPlate
               title="Alice"

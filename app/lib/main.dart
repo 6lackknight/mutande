@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import 'app.dart';
 import 'config/app_config.dart';
@@ -16,9 +17,16 @@ Future<void> main() async {
   final tray = await bootstrapDesktopShell();
   tray?.attachSidecar(sidecar);
 
+  // `--dart-define=APP_VERSION=` wins; otherwise pubspec via package_info.
+  const definedVersion = String.fromEnvironment('APP_VERSION');
+  final appVersion = definedVersion.isNotEmpty
+      ? definedVersion
+      : (await PackageInfo.fromPlatform()).version;
+
   runApp(
     MutandeApp(
       config: AppConfig.fromEnvironment(),
+      appVersion: appVersion,
       onRestartCourier: () async {
         final result = await sidecar.restart();
         if (result.ok || result.stillStarting) return null;

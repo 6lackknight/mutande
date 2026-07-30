@@ -9,10 +9,10 @@ export type CameraPose = {
 
 const ease = Easing.bezier(0.4, 0, 0.2, 1);
 
-/** Piecewise cinematic camera — compose → collaboration thread → fan-out. */
+/** Piecewise cinematic camera — compose → threaded collab → fan-out. */
 export const getCameraPose = (frame: number): CameraPose => {
   // Compose: settle on the typing window
-  if (frame < beats.compose.end - 40) {
+  if (frame < beats.compose.end - 36) {
     const t = interpolate(frame, [0, 40], [0, 1], {
       extrapolateLeft: "clamp",
       extrapolateRight: "clamp",
@@ -25,28 +25,28 @@ export const getCameraPose = (frame: number): CameraPose => {
     };
   }
 
-  // Compose → collaboration: gentle push into the thread (not extreme)
-  if (frame < beats.critique.start + 40) {
+  // Compose → thread stage
+  if (frame < beats.critique.start + 48) {
     const t = interpolate(
       frame,
-      [beats.compose.end - 40, beats.critique.start + 36],
+      [beats.compose.end - 36, beats.critique.start + 36],
       [0, 1],
       { extrapolateLeft: "clamp", extrapolateRight: "clamp", easing: ease },
     );
     return {
-      scale: interpolate(t, [0, 1], [1.12, 1.28]),
+      scale: interpolate(t, [0, 1], [1.12, 1.18]),
       x: 0,
-      y: interpolate(t, [0, 1], [0, -2]),
+      y: interpolate(t, [0, 1], [0, -1]),
     };
   }
 
-  // Collaboration thread: hold moderate zoom, slight breathe
+  // Collaboration — hold on rail + thread while replies / upvote fire
   if (frame < beats.finalDoc.start) {
-    const breathe = 1 + Math.sin((frame - beats.critique.start) * 0.035) * 0.01;
+    const breathe = 1 + Math.sin((frame - beats.critique.start) * 0.03) * 0.008;
     return {
-      scale: 1.28 * breathe,
+      scale: 1.18 * breathe,
       x: 0,
-      y: -2,
+      y: -1,
     };
   }
 
@@ -54,14 +54,14 @@ export const getCameraPose = (frame: number): CameraPose => {
   if (frame < beats.transit.start) {
     const t = interpolate(
       frame,
-      [beats.finalDoc.start, beats.finalDoc.start + 50],
+      [beats.finalDoc.start, beats.finalDoc.start + 40],
       [0, 1],
       { extrapolateLeft: "clamp", extrapolateRight: "clamp", easing: ease },
     );
     return {
-      scale: interpolate(t, [0, 1], [1.28, 1.35]),
+      scale: interpolate(t, [0, 1], [1.18, 1.32]),
       x: 0,
-      y: interpolate(t, [0, 1], [-2, 8]),
+      y: interpolate(t, [0, 1], [-1, 6]),
     };
   }
 
@@ -74,9 +74,9 @@ export const getCameraPose = (frame: number): CameraPose => {
       { extrapolateLeft: "clamp", extrapolateRight: "clamp", easing: ease },
     );
     return {
-      scale: interpolate(t, [0, 1], [1.35, 1.0]),
+      scale: interpolate(t, [0, 1], [1.32, 1.0]),
       x: 0,
-      y: interpolate(t, [0, 1], [8, 0]),
+      y: interpolate(t, [0, 1], [6, 0]),
     };
   }
 

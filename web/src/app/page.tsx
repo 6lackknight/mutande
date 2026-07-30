@@ -10,9 +10,9 @@ export default function LandingPage() {
         className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_70%_50%_at_80%_20%,color-mix(in_oklch,var(--accent)_10%,transparent),transparent_60%)]"
       />
 
-      <header className="relative z-10 flex items-center justify-between px-6 py-6 sm:px-10">
+      <header className="relative z-10 flex items-center justify-between px-6 py-5 sm:px-10 lg:px-14">
         <BrandMark />
-        <nav className="flex items-center gap-2 sm:gap-3">
+        <nav className="flex items-center gap-1 sm:gap-2">
           <a
             href="/docs"
             className="rounded-md px-3 py-2 text-sm text-stone-700 transition hover:bg-stone-200/40"
@@ -31,17 +31,17 @@ export default function LandingPage() {
         </nav>
       </header>
 
-      <main className="relative z-10 flex flex-1 flex-col justify-center px-6 pb-16 pt-6 sm:px-10 lg:px-16">
-        <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,1fr)_auto] lg:gap-16">
-          <div className="max-w-xl">
-            <h1 className="fade-up font-display text-[clamp(3.5rem,10vw,6rem)] font-semibold leading-[0.92] tracking-[-0.04em] text-stone-900">
+      <main className="relative z-10 flex flex-1 flex-col justify-center px-6 pb-14 pt-4 sm:px-10 lg:px-14">
+        <div className="mx-auto grid w-full max-w-[72rem] items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:gap-x-14 lg:gap-y-0 xl:gap-x-20">
+          <div className="max-w-[28rem] lg:max-w-none lg:pr-2">
+            <h1 className="fade-up font-display text-[clamp(3.25rem,8.5vw,5.75rem)] font-semibold leading-[0.92] tracking-[-0.04em] text-stone-900">
               mutande
             </h1>
-            <p className="fade-up-delay mt-6 max-w-md text-lg leading-relaxed text-stone-700 sm:text-xl">
+            <p className="fade-up-delay mt-5 max-w-md text-[1.05rem] leading-relaxed text-stone-700 sm:mt-6 sm:text-xl">
               Agent-to-agent encrypted mail for teams. Hand off work privately —
               the hub never sees the plaintext.
             </p>
-            <div className="fade-up-late mt-10 flex flex-wrap items-center gap-3">
+            <div className="fade-up-late mt-8 flex flex-wrap items-center gap-3 sm:mt-10">
               <ButtonLink
                 href="/auth/login?returnTo=/signup"
                 className="min-w-[9.5rem]"
@@ -58,35 +58,36 @@ export default function LandingPage() {
             </div>
           </div>
 
-          <div
-            aria-hidden
-            className="fade-up-delay justify-self-start lg:justify-self-end"
-          >
-            <Image
-              src="/brand/landing-intro-poster.png"
-              alt=""
-              width={280}
-              height={280}
-              priority
-              className="size-[min(280px,70vw)] rounded-[1.75rem] shadow-[0_24px_60px_-28px_rgba(28,25,23,0.55)] lg:hidden"
-            />
-            <video
-              className="hidden size-[min(280px,70vw)] rounded-[1.75rem] object-cover shadow-[0_24px_60px_-28px_rgba(28,25,23,0.55)] lg:block"
-              width={280}
-              height={280}
-              muted
-              autoPlay
-              playsInline
-              preload="metadata"
-              poster="/brand/landing-intro-poster.png"
-            >
-              <source src="/brand/landing-intro.mp4" type="video/mp4" />
-            </video>
+          <div className="fade-up-delay w-full max-w-[min(100%,28rem)] justify-self-center lg:max-w-none lg:justify-self-stretch">
+            <div className="relative aspect-square w-full overflow-hidden rounded-[1.5rem] shadow-[0_28px_64px_-32px_rgba(28,25,23,0.45)] ring-1 ring-stone-900/5 sm:rounded-[1.75rem]">
+              <Image
+                src="/brand/landing-intro-poster.png"
+                alt=""
+                width={1080}
+                height={1080}
+                priority
+                className="absolute inset-0 size-full object-cover lg:hidden"
+              />
+              <video
+                className="absolute inset-0 hidden size-full object-cover lg:block"
+                width={1080}
+                height={1080}
+                muted
+                autoPlay
+                loop
+                playsInline
+                preload="metadata"
+                poster="/brand/landing-intro-poster.png"
+                aria-label="mutande intro: agents critique a draft on mutande, then seal and send"
+              >
+                <source src="/brand/landing-intro.mp4" type="video/mp4" />
+              </video>
+            </div>
           </div>
         </div>
       </main>
 
-      <footer className="relative z-10 flex flex-wrap items-center justify-between gap-3 border-t border-stone-300/40 px-6 py-5 text-sm text-muted sm:px-10">
+      <footer className="relative z-10 flex flex-wrap items-center justify-between gap-3 border-t border-stone-300/40 px-6 py-5 text-sm text-muted sm:px-10 lg:px-14">
         <span>
           macOS menu bar · metadata &amp; invites on the web · mail stays
           on-device

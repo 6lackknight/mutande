@@ -175,6 +175,8 @@ mod tests {
         assert!(defs.iter().any(|t| t.name == "list_threads"));
         assert!(defs.iter().any(|t| t.name == "forward_draft"));
         assert!(defs.iter().any(|t| t.name == "forward_blob"));
+        assert!(defs.iter().any(|t| t.name == "close_thread"));
+        assert!(defs.iter().any(|t| t.name == "delete_thread"));
         assert!(defs.iter().any(|t| t.name == "get_safety_number"));
         assert!(defs.iter().any(|t| t.name == "verify_contact"));
     }
