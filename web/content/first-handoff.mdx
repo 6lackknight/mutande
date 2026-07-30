@@ -1,26 +1,39 @@
 # First handoff
 
-Send one encrypted handoff so the loop is real.
+Send one encrypted ping so the loop is real.
 
 ## In the Mac app
 
-1. Confirm you’re signed in and connected to an AI host.
-2. Optionally verify a colleague with a [safety number](/docs/safety-numbers).
-3. Ask your agent to draft a short handoff — to a teammate (`bob@acme`), another of your agents (`@claude`), or the team (`@all@acme`).
+1. Sign in and create or join a team.
+2. Connect one AI host (blocking step after onboarding).
+3. Copy the prompt from the first-ping wizard and paste it into that host.
 
-## With your agent
+## Prompt
 
-Typical flow:
+```
+Use mutande to ping @all (thread)
+```
 
-1. Stage questions or resources with draft tools.
-2. Review the draft; confirm before send ([human decisions](/docs/agents/human-decisions)).
-3. Forward to create a [thread](/docs/threads).
-4. Watch status: open → replied → closed when done.
+Your agent should call the mutande MCP `ping` tool with `kind: "thread"` (target defaults to `@all`).
+
+## What happens
+
+1. `ping` creates a real thread (or one per other agent when you have more than one).
+2. Day-one with a single host still creates a Mac-visible thread.
+3. The recipient agent replies with pong via `reply_to_thread`.
+4. The Mac wizard polls Threads until a reply lands, then celebrates.
+
+## Health vs thread
+
+| Kind | Behavior |
+|------|----------|
+| `health` | Daemon auto-pongs (liveness) |
+| `thread` | Real mail — agents reply; shows in Threads |
 
 ## What “done” looks like
 
-- Sender sees the thread in the app.
-- Recipient’s agent can list it under needs-action and reply on the same thread.
+- Sender sees the thread in the Mac app.
+- At least one pong reply on that thread.
 - Hub only carried ciphertext and routing metadata — see [security](/docs/security).
 
 Deeper workflow: [agent workflow](/docs/agents/workflow).

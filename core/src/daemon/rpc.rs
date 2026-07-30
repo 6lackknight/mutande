@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::state::{HumanDecision, MutandeBundle, ResourceRequest};
+use super::state::{HumanDecision, MutandeBundle, PingKind, ResourceRequest};
 use super::DaemonState;
 
 pub const PARSE_ERROR: i32 = -32700;
@@ -181,6 +181,24 @@ async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Resu
                 "thread_id": thread_id,
                 "thread_ids": result.thread_ids,
                 "recipients": result.recipients,
+            }))
+        }
+        "ping" => {
+            let kind_raw = param_str(&params, "kind")?;
+            let kind = PingKind::parse(&kind_raw)?;
+            let target = optional_str(&params, "target").unwrap_or_else(|| "@all".into());
+            let agent_slug = optional_str(&params, "agent_slug");
+            let result = state.ping(&target, kind.clone(), agent_slug.as_deref()).await?;
+            let thread_id = result
+                .thread_ids
+                .first()
+                .cloned()
+                .context("ping produced no threads")?;
+            Ok(serde_json::json!({
+                "thread_id": thread_id,
+                "thread_ids": result.thread_ids,
+                "recipients": result.recipients,
+                "ping_kind": kind.as_str(),
             }))
         }
         "reply_to_thread" => {

@@ -1,26 +1,29 @@
 {
   "version": 1,
   "transcripts": {
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/0174ae14-a438-4477-a118-299a3ac30b55/0174ae14-a438-4477-a118-299a3ac30b55.jsonl": {
-      "mtime": 1785255494.0350602
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/aaca24b9-71b1-4109-9574-e640faaeac3e/aaca24b9-71b1-4109-9574-e640faaeac3e.jsonl": {
+      "mtime": 1785237931.455615
     },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/07b89f92-a1ef-4569-9310-754258482def/subagents/08b9cfdc-056f-4b02-b408-742df2b0dbf5.jsonl": {
-      "mtime": 1785243046.1130476
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/62df64d6-d580-455a-a27a-4f4cd14d90ff/subagents/f15bdad6-dd8f-4f4c-9c33-9bc97dd1d127.jsonl": {
+      "mtime": 1785243180.6007018
     },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/0a4b7ea1-cff1-4e81-8b49-f8b9d8ac2b80/0a4b7ea1-cff1-4e81-8b49-f8b9d8ac2b80.jsonl": {
-      "mtime": 1785269333.2874172
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/0a60e5e0-12d9-4411-883a-556c5c292615/0a60e5e0-12d9-4411-883a-556c5c292615.jsonl": {
-      "mtime": 1785244384.6959536
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/0a60e5e0-12d9-4411-883a-556c5c292615/subagents/b0a49d3a-d242-4318-bb09-bc4c7fbb98e9.jsonl": {
-      "mtime": 1785243734.4954495
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/15627f03-dda7-47e2-a307-56fe1680140b/15627f03-dda7-47e2-a307-56fe1680140b.jsonl": {
-      "mtime": 1785245973.015107
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/8094b42a-6fd8-4d7f-822d-94cf0e4ed648/8094b42a-6fd8-4d7f-822d-94cf0e4ed648.jsonl": {
+      "mtime": 1785271280.3683755
     },
     "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/35783842-cdc1-4520-a4ac-2dcc26e62559/35783842-cdc1-4520-a4ac-2dcc26e62559.jsonl": {
-      "mtime": 1785276588.1335216
+      "mtime": 1785312779.489332
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/35783842-cdc1-4520-a4ac-2dcc26e62559/subagents/dffee44c-e392-4b90-b080-86eb9e44b792.jsonl": {
+      "mtime": 1785256750.5527363
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/35783842-cdc1-4520-a4ac-2dcc26e62559/subagents/fcbd8dad-b8cf-4dca-a7ac-aae846f15811.jsonl": {
+      "mtime": 1785312802.3291426
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/35783842-cdc1-4520-a4ac-2dcc26e62559/subagents/99c46c62-f841-4509-9e65-26972f6f8bfa.jsonl": {
+      "mtime": 1785276681.5334287
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/35783842-cdc1-4520-a4ac-2dcc26e62559/subagents/69699ce3-e7fd-452b-b185-596004df1cfb.jsonl": {
+      "mtime": 1785244112.627376
     },
     "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/35783842-cdc1-4520-a4ac-2dcc26e62559/subagents/133b6119-0d6c-4cb3-808c-6c8a3c2bd795.jsonl": {
       "mtime": 1785241598.6614425
@@ -28,29 +31,41 @@
     "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/35783842-cdc1-4520-a4ac-2dcc26e62559/subagents/1c1ce652-e194-4fc5-be1c-0346e9220948.jsonl": {
       "mtime": 1785269389.6134412
     },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/35783842-cdc1-4520-a4ac-2dcc26e62559/subagents/69699ce3-e7fd-452b-b185-596004df1cfb.jsonl": {
-      "mtime": 1785244112.627376
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/d5b6f00e-708f-4fa0-bbf8-9ed951807d49/d5b6f00e-708f-4fa0-bbf8-9ed951807d49.jsonl": {
+      "mtime": 1785171985.8369725
     },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/35783842-cdc1-4520-a4ac-2dcc26e62559/subagents/99c46c62-f841-4509-9e65-26972f6f8bfa.jsonl": {
-      "mtime": 1785276602.5342653
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/6ae499c1-f51f-4faf-b8d2-f46202afc095/6ae499c1-f51f-4faf-b8d2-f46202afc095.jsonl": {
+      "mtime": 1785308727.7380931
     },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/35783842-cdc1-4520-a4ac-2dcc26e62559/subagents/dffee44c-e392-4b90-b080-86eb9e44b792.jsonl": {
-      "mtime": 1785256750.5527363
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/6ae499c1-f51f-4faf-b8d2-f46202afc095/subagents/8d29b5cf-b127-471c-8ce3-aca186b0484b.jsonl": {
+      "mtime": 1785277092.560979
     },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/3b13ac81-50f3-4c7f-97f3-c667d88b9f9c/3b13ac81-50f3-4c7f-97f3-c667d88b9f9c.jsonl": {
-      "mtime": 1785265475.301255
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/0a60e5e0-12d9-4411-883a-556c5c292615/0a60e5e0-12d9-4411-883a-556c5c292615.jsonl": {
+      "mtime": 1785244384.6959536
     },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/3d29f408-9283-42cd-b3f2-c90f910350a6/3d29f408-9283-42cd-b3f2-c90f910350a6.jsonl": {
-      "mtime": 1785246242.6192827
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/0a60e5e0-12d9-4411-883a-556c5c292615/subagents/b0a49d3a-d242-4318-bb09-bc4c7fbb98e9.jsonl": {
+      "mtime": 1785243734.4954495
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/0174ae14-a438-4477-a118-299a3ac30b55/0174ae14-a438-4477-a118-299a3ac30b55.jsonl": {
+      "mtime": 1785255494.0350602
     },
     "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/49383ffd-d145-4c2f-afb1-d4d802edbf7b/49383ffd-d145-4c2f-afb1-d4d802edbf7b.jsonl": {
       "mtime": 1785246653.853384
     },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e47c023e-f6ab-465f-bf8c-84952ad65814/e47c023e-f6ab-465f-bf8c-84952ad65814.jsonl": {
+      "mtime": 1785254476.5057728
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/714a0d8a-51f8-4c58-8e87-df5a30cb954d/subagents/b365a0b7-a5dc-44fd-a199-30a2bce305b9.jsonl": {
+      "mtime": 1785256625.7793946
+    },
     "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/54a4ebab-a755-44f7-9951-68c460fdb035/54a4ebab-a755-44f7-9951-68c460fdb035.jsonl": {
       "mtime": 1785274434.39951
     },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/54a4ebab-a755-44f7-9951-68c460fdb035/subagents/8f7a16d2-6fc9-4318-a2c6-ea25b5c216f2.jsonl": {
-      "mtime": 1785254423.7979472
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/54a4ebab-a755-44f7-9951-68c460fdb035/subagents/e345465e-bb6a-40ec-bcf1-b2bca8b0c3cd.jsonl": {
+      "mtime": 1785274406.2780023
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/54a4ebab-a755-44f7-9951-68c460fdb035/subagents/d4ab3384-af94-4279-9c60-e6b62836426d.jsonl": {
+      "mtime": 1785266968.432958
     },
     "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/54a4ebab-a755-44f7-9951-68c460fdb035/subagents/a4d710fb-6e64-49d5-9ce9-efd4dece7b91.jsonl": {
       "mtime": 1785267593.229024
@@ -58,206 +73,128 @@
     "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/54a4ebab-a755-44f7-9951-68c460fdb035/subagents/c1c84c22-766c-498d-8bdb-b28ffb452aee.jsonl": {
       "mtime": 1785262854.4396224
     },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/54a4ebab-a755-44f7-9951-68c460fdb035/subagents/d4ab3384-af94-4279-9c60-e6b62836426d.jsonl": {
-      "mtime": 1785266968.432958
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/54a4ebab-a755-44f7-9951-68c460fdb035/subagents/8f7a16d2-6fc9-4318-a2c6-ea25b5c216f2.jsonl": {
+      "mtime": 1785254423.7979472
     },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/54a4ebab-a755-44f7-9951-68c460fdb035/subagents/e345465e-bb6a-40ec-bcf1-b2bca8b0c3cd.jsonl": {
-      "mtime": 1785274406.2780023
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/5a14ef2b-b0bb-4236-a1ac-e9e70bce51c9/5a14ef2b-b0bb-4236-a1ac-e9e70bce51c9.jsonl": {
-      "mtime": 1785257811.2569196
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/62df64d6-d580-455a-a27a-4f4cd14d90ff/subagents/f15bdad6-dd8f-4f4c-9c33-9bc97dd1d127.jsonl": {
-      "mtime": 1785243180.6007018
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/64f077b9-6288-49c0-aaaa-5cb47b98a899/64f077b9-6288-49c0-aaaa-5cb47b98a899.jsonl": {
-      "mtime": 1785268147.3360088
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/67a97836-85a1-48e6-8543-b97b549ce10f/67a97836-85a1-48e6-8543-b97b549ce10f.jsonl": {
-      "mtime": 1785172171.3391268
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/6ae499c1-f51f-4faf-b8d2-f46202afc095/6ae499c1-f51f-4faf-b8d2-f46202afc095.jsonl": {
-      "mtime": 1785276668.23696
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/6ae499c1-f51f-4faf-b8d2-f46202afc095/subagents/8d29b5cf-b127-471c-8ce3-aca186b0484b.jsonl": {
-      "mtime": 1785276670.654311
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/714a0d8a-51f8-4c58-8e87-df5a30cb954d/subagents/b365a0b7-a5dc-44fd-a199-30a2bce305b9.jsonl": {
-      "mtime": 1785256625.7793946
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/8094b42a-6fd8-4d7f-822d-94cf0e4ed648/8094b42a-6fd8-4d7f-822d-94cf0e4ed648.jsonl": {
-      "mtime": 1785271280.3683755
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/91a54d7c-0108-429e-9440-5421e0f625cf/91a54d7c-0108-429e-9440-5421e0f625cf.jsonl": {
-      "mtime": 1785246086.7492154
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/9541b73e-a315-42de-bef3-2b66eeb4dd62/9541b73e-a315-42de-bef3-2b66eeb4dd62.jsonl": {
-      "mtime": 1785172846.8371327
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/aaca24b9-71b1-4109-9574-e640faaeac3e/aaca24b9-71b1-4109-9574-e640faaeac3e.jsonl": {
-      "mtime": 1785237931.455615
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/d5b6f00e-708f-4fa0-bbf8-9ed951807d49/d5b6f00e-708f-4fa0-bbf8-9ed951807d49.jsonl": {
-      "mtime": 1785171985.8369725
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/dbb4db68-5956-4581-842d-56923020ca15/dbb4db68-5956-4581-842d-56923020ca15.jsonl": {
-      "mtime": 1785275049.2952185
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/dbb4db68-5956-4581-842d-56923020ca15/subagents/e8fe2c2b-eaea-4863-9e57-ce0529ef6d5b.jsonl": {
-      "mtime": 1785262027.7025948
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/15627f03-dda7-47e2-a307-56fe1680140b/15627f03-dda7-47e2-a307-56fe1680140b.jsonl": {
+      "mtime": 1785245973.015107
     },
     "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/dca14440-36d2-4b67-932a-be94470ada69/subagents/a6eed93c-9b9e-4df0-a9b9-4aa8ba60e365.jsonl": {
       "mtime": 1785168298.311523
     },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/dd674c76-db18-42d6-9a2d-03fabddc56c2/dd674c76-db18-42d6-9a2d-03fabddc56c2.jsonl": {
-      "mtime": 1785254035.6173718
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/67a97836-85a1-48e6-8543-b97b549ce10f/67a97836-85a1-48e6-8543-b97b549ce10f.jsonl": {
+      "mtime": 1785172171.3391268
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/0a4b7ea1-cff1-4e81-8b49-f8b9d8ac2b80/0a4b7ea1-cff1-4e81-8b49-f8b9d8ac2b80.jsonl": {
+      "mtime": 1785269333.2874172
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/5a14ef2b-b0bb-4236-a1ac-e9e70bce51c9/5a14ef2b-b0bb-4236-a1ac-e9e70bce51c9.jsonl": {
+      "mtime": 1785257811.2569196
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/3b13ac81-50f3-4c7f-97f3-c667d88b9f9c/3b13ac81-50f3-4c7f-97f3-c667d88b9f9c.jsonl": {
+      "mtime": 1785265475.301255
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/07b89f92-a1ef-4569-9310-754258482def/subagents/08b9cfdc-056f-4b02-b408-742df2b0dbf5.jsonl": {
+      "mtime": 1785243046.1130476
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/91a54d7c-0108-429e-9440-5421e0f625cf/91a54d7c-0108-429e-9440-5421e0f625cf.jsonl": {
+      "mtime": 1785246086.7492154
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/fac2589b-59cb-4454-bb07-5f77a6d4ab64/subagents/afb51fee-1425-46d7-b7a7-97708771e134.jsonl": {
+      "mtime": 1785170901.5951257
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/9541b73e-a315-42de-bef3-2b66eeb4dd62/9541b73e-a315-42de-bef3-2b66eeb4dd62.jsonl": {
+      "mtime": 1785172846.8371327
     },
     "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/e229349a-c207-487f-b23f-9ab2324ddba2.jsonl": {
       "mtime": 1785274433.8496394
     },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/07b89f92-a1ef-4569-9310-754258482def.jsonl": {
-      "mtime": 1785243546.7810333
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/41b1c4dc-2489-444a-82b8-65dd1a47ff42.jsonl": {
+      "mtime": 1785171556.8389194
     },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/0898f8cb-94e0-492f-add4-6bb06b37be77.jsonl": {
-      "mtime": 1785258046.1939585
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/0974a76e-1140-4b10-8177-26d682d44b95.jsonl": {
-      "mtime": 1785176324.0169258
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/0a60e5e0-12d9-4411-883a-556c5c292615.jsonl": {
-      "mtime": 1785244368.088644
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/0b1895d8-d930-4639-afa9-f13907e5e6b0.jsonl": {
-      "mtime": 1785170422.040963
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/121e5666-707b-459b-b648-044af0f84391.jsonl": {
-      "mtime": 1785266805.132715
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/1472e744-9262-4ede-8ad4-7dcd1daab1e4.jsonl": {
-      "mtime": 1785265975.7571378
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/15627f03-dda7-47e2-a307-56fe1680140b.jsonl": {
-      "mtime": 1785245894.2135212
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/1720106c-672d-482f-b660-f23ec4b861ce.jsonl": {
-      "mtime": 1785254172.7815416
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/ce8901ef-4ee2-4089-828b-9c0fdafb0658.jsonl": {
+      "mtime": 1785172796.6891825
     },
     "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/1a020b01-2737-45bf-9491-dce9ae8ace5b.jsonl": {
       "mtime": 1785258122.509284
     },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/23fca176-3db5-4ab8-ac5f-b2cbe261adfb.jsonl": {
-      "mtime": 1785243805.260917
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/283332fc-cb01-4493-89a8-b43d21a1e13c.jsonl": {
-      "mtime": 1785247987.113992
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/287b357c-8a70-4cbb-88f8-1ddea8389530.jsonl": {
-      "mtime": 1785173229.5569034
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/3396bed7-1c0a-4e26-ae48-f3b77f961f54.jsonl": {
-      "mtime": 1785265941.5452461
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/34cdb102-a6e7-4396-8068-37e31d4e73d5.jsonl": {
-      "mtime": 1785171629.7366917
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/38117ba3-8661-427d-ab51-bcbc204fe66a.jsonl": {
-      "mtime": 1785272470.407074
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/3a6294fe-1f1f-4986-a1d0-25ca25ebb615.jsonl": {
-      "mtime": 1785264588.0283475
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/3b13ac81-50f3-4c7f-97f3-c667d88b9f9c.jsonl": {
-      "mtime": 1785265446.0603275
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/3d29f408-9283-42cd-b3f2-c90f910350a6.jsonl": {
-      "mtime": 1785246234.169783
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/3e7edb0c-fcea-4f24-936e-f427b6e62aa8.jsonl": {
-      "mtime": 1785254940.8716877
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/4109baf0-6bb7-4d36-975d-d7d8124e1458.jsonl": {
-      "mtime": 1785258080.5147784
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/41b1c4dc-2489-444a-82b8-65dd1a47ff42.jsonl": {
-      "mtime": 1785171556.8389194
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/437085e9-f2fd-4117-9b82-4f5a7cd06dd9.jsonl": {
-      "mtime": 1785171791.7579453
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/49383ffd-d145-4c2f-afb1-d4d802edbf7b.jsonl": {
-      "mtime": 1785246644.9613252
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/4c4124d6-a275-4936-bd8b-1cd2b09321b9.jsonl": {
-      "mtime": 1785263278.9439075
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/51878427-5c57-40e0-8d2c-c5c8d0b24838.jsonl": {
-      "mtime": 1785179286.0767295
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/58101d1a-6e68-4791-b9e7-48b6fd4fc3c7.jsonl": {
-      "mtime": 1785244936.4020975
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/5a14ef2b-b0bb-4236-a1ac-e9e70bce51c9.jsonl": {
-      "mtime": 1785248518.1423762
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/5d4e902f-2b47-467c-a941-f56cead02adb.jsonl": {
-      "mtime": 1785243619.9463534
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/62df64d6-d580-455a-a27a-4f4cd14d90ff.jsonl": {
-      "mtime": 1785243538.7825587
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/639e452f-a173-46b3-bae1-68dd9ed131b6.jsonl": {
-      "mtime": 1785245157.0218291
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/a91cfed9-2aea-43cb-8752-50d4cf2ebc0a.jsonl": {
+      "mtime": 1785263688.8610058
     },
     "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/6587a892-47ef-4921-80f1-0afd50423e85.jsonl": {
       "mtime": 1785172523.6787517
     },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/6683238c-3b0b-4906-b767-f5346e2db758.jsonl": {
-      "mtime": 1785231464.5165145
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/8d86595f-90e9-4d40-b9c9-1341d7de322d.jsonl": {
+      "mtime": 1785172134.3284883
     },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/67a97836-85a1-48e6-8543-b97b549ce10f.jsonl": {
-      "mtime": 1785172161.6475646
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/9956d711-3dfe-425d-9e4d-7816ad569e1a.jsonl": {
+      "mtime": 1785243321.5316317
     },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/6a936555-9a16-4d50-9f46-5ec024e454b1.jsonl": {
-      "mtime": 1785170429.7964406
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/51878427-5c57-40e0-8d2c-c5c8d0b24838.jsonl": {
+      "mtime": 1785179286.0767295
     },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/6b1416e2-2791-4b7d-b7c7-9d86d0d7548c.jsonl": {
-      "mtime": 1785172843.6788354
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/d38a2a16-ea28-41c6-b8d4-482cded4d023.jsonl": {
+      "mtime": 1785172532.808661
     },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/6b3a0eb1-f028-491f-a75a-997009a5a2a4.jsonl": {
-      "mtime": 1785270751.8668652
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/62df64d6-d580-455a-a27a-4f4cd14d90ff.jsonl": {
+      "mtime": 1785243538.7825587
     },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/714a0d8a-51f8-4c58-8e87-df5a30cb954d.jsonl": {
-      "mtime": 1785256905.307706
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/0974a76e-1140-4b10-8177-26d682d44b95.jsonl": {
+      "mtime": 1785176324.0169258
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/9e57a794-c032-4fcb-9ba8-2702ec0440f0.jsonl": {
+      "mtime": 1785172547.740175
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/ef3138ba-fb5d-4c1f-951b-f0fa8f5b431a.jsonl": {
+      "mtime": 1785273483.944707
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/b9465e71-f052-42d5-af0f-9bc7ecae4ddd.jsonl": {
+      "mtime": 1785272607.0344446
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/e030889f-b30a-4f23-8fc8-caa0e435fdf3.jsonl": {
+      "mtime": 1785271997.101455
     },
     "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/73d55814-c131-4a8f-aa34-3c2ac3bb999a.jsonl": {
       "mtime": 1785168298.9504488
     },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/7a52f26f-1c35-47dc-b246-3f961dd458fd.jsonl": {
-      "mtime": 1785236758.255819
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/ee51b31e-96f5-42f0-a7fa-1f825138ca24.jsonl": {
+      "mtime": 1785172904.0269735
     },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/7cd26c00-f933-48c9-a6e9-2f103c17e57b.jsonl": {
-      "mtime": 1785245292.2617815
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/67a97836-85a1-48e6-8543-b97b549ce10f.jsonl": {
+      "mtime": 1785172161.6475646
     },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/7e35a944-3b10-4ee0-830e-0c2b78998909.jsonl": {
-      "mtime": 1785170509.9430592
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/d14e36f3-2118-4ceb-aa1e-8ed5b3e50cb9.jsonl": {
+      "mtime": 1785173423.513091
     },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/7fd3369a-62f2-44c5-b2cf-01add5d5426c.jsonl": {
-      "mtime": 1785170294.4367518
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/6683238c-3b0b-4906-b767-f5346e2db758.jsonl": {
+      "mtime": 1785231464.5165145
     },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/8094b42a-6fd8-4d7f-822d-94cf0e4ed648.jsonl": {
-      "mtime": 1785271273.0643604
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/cdff1622-f83b-43b8-b0ad-72b8c760ccc8.jsonl": {
+      "mtime": 1785265501.76358
     },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/87420933-159f-436b-b437-9be2ddad254c.jsonl": {
-      "mtime": 1785255264.3925977
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/bdf510f2-647c-4b50-897f-2fa0c7c0131e.jsonl": {
+      "mtime": 1785270725.4975557
     },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/8afaa254-fdfa-49c0-8519-a73cb8503cc0.jsonl": {
-      "mtime": 1785236747.149733
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/3d29f408-9283-42cd-b3f2-c90f910350a6.jsonl": {
+      "mtime": 1785246234.169783
     },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/8b245eb1-dc68-4d9f-8c89-ae229e9637ea.jsonl": {
-      "mtime": 1785256971.3209589
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/fac2589b-59cb-4454-bb07-5f77a6d4ab64.jsonl": {
+      "mtime": 1785170941.7624416
     },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/8d86595f-90e9-4d40-b9c9-1341d7de322d.jsonl": {
-      "mtime": 1785172134.3284883
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/a9ced4a1-e325-470f-ac98-d38de67aa806.jsonl": {
+      "mtime": 1785273879.207965
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/283332fc-cb01-4493-89a8-b43d21a1e13c.jsonl": {
+      "mtime": 1785247987.113992
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/34cdb102-a6e7-4396-8068-37e31d4e73d5.jsonl": {
+      "mtime": 1785171629.7366917
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/dd674c76-db18-42d6-9a2d-03fabddc56c2.jsonl": {
+      "mtime": 1785254025.7674298
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/1472e744-9262-4ede-8ad4-7dcd1daab1e4.jsonl": {
+      "mtime": 1785265975.7571378
     },
     "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/91a54d7c-0108-429e-9440-5421e0f625cf.jsonl": {
       "mtime": 1785246078.101875
@@ -265,128 +202,194 @@
     "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/9541b73e-a315-42de-bef3-2b66eeb4dd62.jsonl": {
       "mtime": 1785172837.0786495
     },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/973f04fc-8aae-4e63-88df-9114ed392efc.jsonl": {
-      "mtime": 1785274420.1408904
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/9956d711-3dfe-425d-9e4d-7816ad569e1a.jsonl": {
-      "mtime": 1785243321.5316317
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/9bbd9a30-c75f-4188-9b81-501886ef07d0.jsonl": {
-      "mtime": 1785263268.830739
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/9ca9f7ba-827e-44bb-8e93-e338eedab7a7.jsonl": {
-      "mtime": 1785243531.819611
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/9e57a794-c032-4fcb-9ba8-2702ec0440f0.jsonl": {
-      "mtime": 1785172547.740175
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/9fbe190b-ba31-4ef9-9652-358342760bd1.jsonl": {
-      "mtime": 1785257302.3002622
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/a2a9adaa-33d4-48d2-8f0d-9175afd02ec6.jsonl": {
-      "mtime": 1785266754.3772855
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/a635acd3-7d2e-4263-9e2d-b2ff55cb7f9c.jsonl": {
-      "mtime": 1785168343.5942538
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/a7503667-f113-445c-8a2a-a83926fe3b3f.jsonl": {
-      "mtime": 1785243401.9754996
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/a91cfed9-2aea-43cb-8752-50d4cf2ebc0a.jsonl": {
-      "mtime": 1785263688.8610058
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/a9ced4a1-e325-470f-ac98-d38de67aa806.jsonl": {
-      "mtime": 1785273879.207965
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/aaca24b9-71b1-4109-9574-e640faaeac3e.jsonl": {
-      "mtime": 1785237925.1817355
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/b198a9fd-5777-4e84-b708-dd6f185bb990.jsonl": {
-      "mtime": 1785171811.1125262
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/b6609567-8b46-4eb8-8536-110df812f1f1.jsonl": {
-      "mtime": 1785246587.9750683
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/b9465e71-f052-42d5-af0f-9bc7ecae4ddd.jsonl": {
-      "mtime": 1785272607.0344446
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/bdf510f2-647c-4b50-897f-2fa0c7c0131e.jsonl": {
-      "mtime": 1785270725.4975557
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/bfa7ccb3-786a-42bd-a083-7f9e1480ae65.jsonl": {
-      "mtime": 1785254372.934435
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/c0ef11d7-e8fb-430b-b4ad-9c40461bdf6f.jsonl": {
-      "mtime": 1785177571.1285708
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/c451dcbe-b2b0-48f3-92fa-e061ccb68d9b.jsonl": {
-      "mtime": 1785237175.6603901
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/cdff1622-f83b-43b8-b0ad-72b8c760ccc8.jsonl": {
-      "mtime": 1785265501.76358
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/ce8901ef-4ee2-4089-828b-9c0fdafb0658.jsonl": {
-      "mtime": 1785172796.6891825
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/d135c2d2-8741-48b2-b98c-3c0c3af111f3.jsonl": {
-      "mtime": 1785172214.8929746
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/d14e36f3-2118-4ceb-aa1e-8ed5b3e50cb9.jsonl": {
-      "mtime": 1785173423.513091
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/d38a2a16-ea28-41c6-b8d4-482cded4d023.jsonl": {
-      "mtime": 1785172532.808661
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/d5b6f00e-708f-4fa0-bbf8-9ed951807d49.jsonl": {
-      "mtime": 1785171970.5914905
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/d979b606-8931-4255-991a-c8b4e916efc6.jsonl": {
-      "mtime": 1785246647.0228245
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/db0697bd-06d8-4b58-b423-37b7c1e68e01.jsonl": {
-      "mtime": 1785172125.0507584
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/db398174-565d-4989-a6d2-6e0d92a19ab6.jsonl": {
-      "mtime": 1785263702.3768034
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/dca14440-36d2-4b67-932a-be94470ada69.jsonl": {
-      "mtime": 1785168384.7976303
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/dd674c76-db18-42d6-9a2d-03fabddc56c2.jsonl": {
-      "mtime": 1785254025.7674298
-    },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/e030889f-b30a-4f23-8fc8-caa0e435fdf3.jsonl": {
-      "mtime": 1785271997.101455
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/3e7edb0c-fcea-4f24-936e-f427b6e62aa8.jsonl": {
+      "mtime": 1785254940.8716877
     },
     "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/e47c023e-f6ab-465f-bf8c-84952ad65814.jsonl": {
       "mtime": 1785254428.5068715
     },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/e80ed348-eb51-4694-b8fe-7bbfee4af3cf.jsonl": {
-      "mtime": 1785246942.3245506
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/121e5666-707b-459b-b648-044af0f84391.jsonl": {
+      "mtime": 1785266805.132715
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/1720106c-672d-482f-b660-f23ec4b861ce.jsonl": {
+      "mtime": 1785254172.7815416
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/5d4e902f-2b47-467c-a941-f56cead02adb.jsonl": {
+      "mtime": 1785243619.9463534
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/8afaa254-fdfa-49c0-8519-a73cb8503cc0.jsonl": {
+      "mtime": 1785236747.149733
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/38117ba3-8661-427d-ab51-bcbc204fe66a.jsonl": {
+      "mtime": 1785272470.407074
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/8094b42a-6fd8-4d7f-822d-94cf0e4ed648.jsonl": {
+      "mtime": 1785271273.0643604
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/437085e9-f2fd-4117-9b82-4f5a7cd06dd9.jsonl": {
+      "mtime": 1785171791.7579453
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/23fca176-3db5-4ab8-ac5f-b2cbe261adfb.jsonl": {
+      "mtime": 1785243805.260917
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/bfa7ccb3-786a-42bd-a083-7f9e1480ae65.jsonl": {
+      "mtime": 1785254372.934435
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/b6609567-8b46-4eb8-8536-110df812f1f1.jsonl": {
+      "mtime": 1785246587.9750683
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/6b3a0eb1-f028-491f-a75a-997009a5a2a4.jsonl": {
+      "mtime": 1785270751.8668652
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/639e452f-a173-46b3-bae1-68dd9ed131b6.jsonl": {
+      "mtime": 1785245157.0218291
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/87420933-159f-436b-b437-9be2ddad254c.jsonl": {
+      "mtime": 1785255264.3925977
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/9ca9f7ba-827e-44bb-8e93-e338eedab7a7.jsonl": {
+      "mtime": 1785243531.819611
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/c451dcbe-b2b0-48f3-92fa-e061ccb68d9b.jsonl": {
+      "mtime": 1785237175.6603901
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/a635acd3-7d2e-4263-9e2d-b2ff55cb7f9c.jsonl": {
+      "mtime": 1785168343.5942538
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/6a936555-9a16-4d50-9f46-5ec024e454b1.jsonl": {
+      "mtime": 1785170429.7964406
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/3b13ac81-50f3-4c7f-97f3-c667d88b9f9c.jsonl": {
+      "mtime": 1785265446.0603275
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/3396bed7-1c0a-4e26-ae48-f3b77f961f54.jsonl": {
+      "mtime": 1785265941.5452461
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/973f04fc-8aae-4e63-88df-9114ed392efc.jsonl": {
+      "mtime": 1785274420.1408904
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/db398174-565d-4989-a6d2-6e0d92a19ab6.jsonl": {
+      "mtime": 1785263702.3768034
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/8b245eb1-dc68-4d9f-8c89-ae229e9637ea.jsonl": {
+      "mtime": 1785256971.3209589
     },
     "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/ea60a87e-4153-446a-a167-112dde166cb9.jsonl": {
       "mtime": 1785170301.110437
     },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/3a6294fe-1f1f-4986-a1d0-25ca25ebb615.jsonl": {
+      "mtime": 1785264588.0283475
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/5a14ef2b-b0bb-4236-a1ac-e9e70bce51c9.jsonl": {
+      "mtime": 1785248518.1423762
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/d5b6f00e-708f-4fa0-bbf8-9ed951807d49.jsonl": {
+      "mtime": 1785171970.5914905
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/4109baf0-6bb7-4d36-975d-d7d8124e1458.jsonl": {
+      "mtime": 1785258080.5147784
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/4c4124d6-a275-4936-bd8b-1cd2b09321b9.jsonl": {
+      "mtime": 1785263278.9439075
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/287b357c-8a70-4cbb-88f8-1ddea8389530.jsonl": {
+      "mtime": 1785173229.5569034
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/d135c2d2-8741-48b2-b98c-3c0c3af111f3.jsonl": {
+      "mtime": 1785172214.8929746
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/7a52f26f-1c35-47dc-b246-3f961dd458fd.jsonl": {
+      "mtime": 1785236758.255819
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/0898f8cb-94e0-492f-add4-6bb06b37be77.jsonl": {
+      "mtime": 1785258046.1939585
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/49383ffd-d145-4c2f-afb1-d4d802edbf7b.jsonl": {
+      "mtime": 1785246644.9613252
+    },
     "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/eada0408-186d-410f-b9b2-c570b73bcff0.jsonl": {
       "mtime": 1785171800.412765
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/a7503667-f113-445c-8a2a-a83926fe3b3f.jsonl": {
+      "mtime": 1785243401.9754996
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/db0697bd-06d8-4b58-b423-37b7c1e68e01.jsonl": {
+      "mtime": 1785172125.0507584
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/e80ed348-eb51-4694-b8fe-7bbfee4af3cf.jsonl": {
+      "mtime": 1785246942.3245506
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/0a60e5e0-12d9-4411-883a-556c5c292615.jsonl": {
+      "mtime": 1785244368.088644
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/dca14440-36d2-4b67-932a-be94470ada69.jsonl": {
+      "mtime": 1785168384.7976303
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/714a0d8a-51f8-4c58-8e87-df5a30cb954d.jsonl": {
+      "mtime": 1785256905.307706
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/aaca24b9-71b1-4109-9574-e640faaeac3e.jsonl": {
+      "mtime": 1785237925.1817355
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/07b89f92-a1ef-4569-9310-754258482def.jsonl": {
+      "mtime": 1785243546.7810333
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/15627f03-dda7-47e2-a307-56fe1680140b.jsonl": {
+      "mtime": 1785245894.2135212
     },
     "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/eb324c10-4677-4c8c-93dc-563924622692.jsonl": {
       "mtime": 1785167849.1844904
     },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/ee51b31e-96f5-42f0-a7fa-1f825138ca24.jsonl": {
-      "mtime": 1785172904.0269735
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/7cd26c00-f933-48c9-a6e9-2f103c17e57b.jsonl": {
+      "mtime": 1785245292.2617815
     },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/ef3138ba-fb5d-4c1f-951b-f0fa8f5b431a.jsonl": {
-      "mtime": 1785273483.944707
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/7fd3369a-62f2-44c5-b2cf-01add5d5426c.jsonl": {
+      "mtime": 1785170294.4367518
     },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/fac2589b-59cb-4454-bb07-5f77a6d4ab64.jsonl": {
-      "mtime": 1785170941.7624416
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/d979b606-8931-4255-991a-c8b4e916efc6.jsonl": {
+      "mtime": 1785246647.0228245
     },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e47c023e-f6ab-465f-bf8c-84952ad65814/e47c023e-f6ab-465f-bf8c-84952ad65814.jsonl": {
-      "mtime": 1785254476.5057728
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/a2a9adaa-33d4-48d2-8f0d-9175afd02ec6.jsonl": {
+      "mtime": 1785266754.3772855
     },
-    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/fac2589b-59cb-4454-bb07-5f77a6d4ab64/subagents/afb51fee-1425-46d7-b7a7-97708771e134.jsonl": {
-      "mtime": 1785170901.5951257
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/9bbd9a30-c75f-4188-9b81-501886ef07d0.jsonl": {
+      "mtime": 1785263268.830739
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/58101d1a-6e68-4791-b9e7-48b6fd4fc3c7.jsonl": {
+      "mtime": 1785244936.4020975
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/0b1895d8-d930-4639-afa9-f13907e5e6b0.jsonl": {
+      "mtime": 1785170422.040963
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/b198a9fd-5777-4e84-b708-dd6f185bb990.jsonl": {
+      "mtime": 1785171811.1125262
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/6b1416e2-2791-4b7d-b7c7-9d86d0d7548c.jsonl": {
+      "mtime": 1785172843.6788354
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/7e35a944-3b10-4ee0-830e-0c2b78998909.jsonl": {
+      "mtime": 1785170509.9430592
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/9fbe190b-ba31-4ef9-9652-358342760bd1.jsonl": {
+      "mtime": 1785257302.3002622
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/e229349a-c207-487f-b23f-9ab2324ddba2/subagents/c0ef11d7-e8fb-430b-b4ad-9c40461bdf6f.jsonl": {
+      "mtime": 1785177571.1285708
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/3d29f408-9283-42cd-b3f2-c90f910350a6/3d29f408-9283-42cd-b3f2-c90f910350a6.jsonl": {
+      "mtime": 1785246242.6192827
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/64f077b9-6288-49c0-aaaa-5cb47b98a899/64f077b9-6288-49c0-aaaa-5cb47b98a899.jsonl": {
+      "mtime": 1785268147.3360088
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/dbb4db68-5956-4581-842d-56923020ca15/dbb4db68-5956-4581-842d-56923020ca15.jsonl": {
+      "mtime": 1785275049.2952185
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/dbb4db68-5956-4581-842d-56923020ca15/subagents/e8fe2c2b-eaea-4863-9e57-ce0529ef6d5b.jsonl": {
+      "mtime": 1785262027.7025948
+    },
+    "/Users/tawandabrandon/.cursor/projects/Users-tawandabrandon-GitHub-mutande/agent-transcripts/dd674c76-db18-42d6-9a2d-03fabddc56c2/dd674c76-db18-42d6-9a2d-03fabddc56c2.jsonl": {
+      "mtime": 1785254035.6173718
     }
   }
 }

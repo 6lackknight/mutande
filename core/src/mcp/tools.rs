@@ -156,8 +156,30 @@ const SEND_TOOLS: &[(&str, &str, ValueFn)] = &[
         },
     ),
     (
+        "ping",
+        "Send a product ping to your agents. kind=health → daemon auto-pongs (liveness). kind=thread → creates a real thread; recipients should reply_to_thread with pong (first-run / teaching loop). Default target=@all (your agents). Day-one with one host: thread ping still creates a Mac-visible thread.",
+        || {
+            json!({
+                "type": "object",
+                "required": ["kind"],
+                "properties": {
+                    "kind": {
+                        "type": "string",
+                        "enum": ["health", "thread"],
+                        "description": "health = auto-pong; thread = agent mail reply expected"
+                    },
+                    "target": {
+                        "type": "string",
+                        "description": "Default @all. Also @claude / @cursor / @chatgpt or handle/agent."
+                    }
+                },
+                "additionalProperties": false
+            })
+        },
+    ),
+    (
         "reply_to_thread",
-        "Continue a thread with a reply bundle. Optional to_agent for self-handoff to another of your agents (e.g. claude). Confirm via AskQuestion when the skill requires it.",
+        "Continue a thread with a reply bundle. Optional to_agent for self-handoff to another of your agents (e.g. claude). Confirm via AskQuestion when the skill requires it. For thread pings: reply with subject Pong / notes pong.",
         || {
             json!({
                 "type": "object",
@@ -276,6 +298,7 @@ pub fn daemon_method_for_tool(name: &str) -> Option<&'static str> {
         "draft_add_question" => Some("draft_add_question"),
         "draft_add_resource" => Some("draft_add_resource"),
         "forward_draft" => Some("forward_draft"),
+        "ping" => Some("ping"),
         "forward_blob" => Some("forward_blob"),
         "reply_to_thread" => Some("reply_to_thread"),
         "close_thread" => Some("close_thread"),

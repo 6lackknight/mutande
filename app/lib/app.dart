@@ -3,12 +3,15 @@ import 'package:flutter/material.dart';
 import 'config/app_config.dart';
 import 'screens/agents_screen.dart';
 import 'screens/contacts_screen.dart';
+import 'screens/first_run_connect_screen.dart';
+import 'screens/first_run_ping_wizard.dart';
 import 'screens/join_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/threads_screen.dart';
 import 'services/app_actions.dart';
 import 'services/daemon_client.dart';
 import 'services/daemon_errors.dart';
+import 'services/first_run_store.dart';
 import 'services/host_link_store.dart';
 import 'widgets/daemon_error_screen.dart';
 import 'widgets/thinking_orb.dart';
@@ -80,6 +83,7 @@ class MutandeApp extends StatelessWidget {
     this.daemon,
     this.seedStatus,
     this.hostLinkStore,
+    this.firstRunStore,
     this.welcomeDuration = const Duration(seconds: 3),
     this.appVersion = AppConfig.appVersion,
     this.startupRetryAttempts = 15,
@@ -96,6 +100,9 @@ class MutandeApp extends StatelessWidget {
 
   /// Injectable for tests; defaults to file-backed store.
   final HostLinkStore? hostLinkStore;
+
+  /// Injectable for tests; defaults to file-backed first-run flags.
+  final FirstRunStore? firstRunStore;
 
   /// Dark orb welcome hold. Pass [Duration.zero] to skip (tests).
   final Duration welcomeDuration;
@@ -123,6 +130,7 @@ class MutandeApp extends StatelessWidget {
           daemon: daemon,
           seedStatus: seedStatus,
           hostLinkStore: hostLinkStore,
+          firstRunStore: firstRunStore,
           startupRetryAttempts: startupRetryAttempts,
           onRestartCourier: onRestartCourier,
         ),
@@ -138,6 +146,7 @@ class RootScreen extends StatefulWidget {
     this.daemon,
     this.seedStatus,
     this.hostLinkStore,
+    this.firstRunStore,
     this.startupRetryAttempts = 15,
     this.onRestartCourier,
   });
@@ -146,6 +155,7 @@ class RootScreen extends StatefulWidget {
   final DaemonClient? daemon;
   final DaemonStatusResult? seedStatus;
   final HostLinkStore? hostLinkStore;
+  final FirstRunStore? firstRunStore;
   final int startupRetryAttempts;
   final Future<String?> Function()? onRestartCourier;
 
@@ -156,6 +166,8 @@ class RootScreen extends StatefulWidget {
 class _RootScreenState extends State<RootScreen> {
   late final DaemonClient _daemon;
   late final bool _ownsDaemon;
+  late final HostLinkStore _hostLinkStore;
+  late final FirstRunStore _firstRunStore;
   bool _loading = true;
   String? _loadingHint;
   DaemonStatusResult? _status;
@@ -169,19 +181,49 @@ class _RootScreenState extends State<RootScreen> {
   ConnectHostResult? _connectResult;
   String? _connectError;
 
+  bool _firstRunReady = false;
+  bool _hasLinkedHost = false;
+  String? _openThreadId;
+
   @override
   void initState() {
     super.initState();
     _ownsDaemon = widget.daemon == null;
     _daemon = widget.daemon ?? DaemonClient();
+    _hostLinkStore = widget.hostLinkStore ?? HostLinkStore();
+    // Widget tests that seed status skip the gate unless they inject a store.
+    _firstRunStore = widget.firstRunStore ??
+        (widget.seedStatus != null
+            ? FirstRunStore.memory(connectComplete: true, pingComplete: true)
+            : FirstRunStore());
     _lastConnectTick = AppActions.connectHostsTick.value;
     AppActions.connectHostsTick.addListener(_onConnectHostsRequested);
+    _bootstrapFirstRun();
     if (widget.seedStatus != null) {
       _status = widget.seedStatus;
       _loading = false;
     } else {
       _refreshStatus(bootstrap: true);
     }
+  }
+
+  Future<void> _bootstrapFirstRun() async {
+    await _firstRunStore.load();
+    final links = await _hostLinkStore.load();
+    if (!mounted) return;
+    setState(() {
+      _hasLinkedHost = links.values.any((r) => r.ok);
+      _firstRunReady = true;
+    });
+  }
+
+  Future<void> _refreshFirstRunGate() async {
+    await _firstRunStore.load();
+    final links = await _hostLinkStore.load();
+    if (!mounted) return;
+    setState(() {
+      _hasLinkedHost = links.values.any((r) => r.ok);
+    });
   }
 
   @override
@@ -378,6 +420,41 @@ class _RootScreenState extends State<RootScreen> {
       );
     }
 
+    if (!_firstRunReady) {
+      return const Scaffold(
+        body: Center(
+          child: MutandeOrb.standard(semanticLabel: 'Loading…'),
+        ),
+      );
+    }
+
+    final connectDone =
+        _firstRunStore.connectComplete || _hasLinkedHost;
+    if (!connectDone) {
+      return FirstRunConnectScreen(
+        daemon: _daemon,
+        firstRunStore: _firstRunStore,
+        hostLinkStore: _hostLinkStore,
+        onComplete: () {
+          _refreshFirstRunGate();
+        },
+      );
+    }
+
+    // Only users who finished the connect gate (not grandfathered links) get the ping wizard.
+    if (_firstRunStore.connectComplete && !_firstRunStore.pingComplete) {
+      return FirstRunPingWizard(
+        daemon: _daemon,
+        firstRunStore: _firstRunStore,
+        onComplete: (threadId) {
+          setState(() {
+            _openThreadId = threadId;
+          });
+          _refreshFirstRunGate();
+        },
+      );
+    }
+
     return HomeScreen(
       config: widget.config,
       daemon: _daemon,
@@ -388,7 +465,8 @@ class _RootScreenState extends State<RootScreen> {
       connectResult: _connectResult,
       connectError: _connectError,
       onConnectHosts: _runConnectHosts,
-      hostLinkStore: widget.hostLinkStore,
+      hostLinkStore: _hostLinkStore,
+      initialThreadId: _openThreadId,
     );
   }
 }
@@ -406,6 +484,7 @@ class HomeScreen extends StatefulWidget {
     this.connectError,
     required this.onConnectHosts,
     this.hostLinkStore,
+    this.initialThreadId,
   });
 
   final AppConfig config;
@@ -418,6 +497,7 @@ class HomeScreen extends StatefulWidget {
   final String? connectError;
   final VoidCallback onConnectHosts;
   final HostLinkStore? hostLinkStore;
+  final String? initialThreadId;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -431,6 +511,7 @@ class _HomeScreenState extends State<HomeScreen> {
   VoidCallback? _reloadAgents;
   VoidCallback? _reloadContacts;
   String? _composeRecipient;
+  String? _openThreadId;
 
   void _registerAgentsReload(VoidCallback? reload) {
     _reloadAgents = reload;
@@ -447,6 +528,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _openThreadId = widget.initialThreadId;
     _checkDaemon();
   }
 
@@ -540,6 +622,12 @@ class _HomeScreenState extends State<HomeScreen> {
                         onComposeRecipientHandled: () {
                           if (_composeRecipient != null) {
                             setState(() => _composeRecipient = null);
+                          }
+                        },
+                        initialThreadId: _openThreadId,
+                        onInitialThreadHandled: () {
+                          if (_openThreadId != null) {
+                            setState(() => _openThreadId = null);
                           }
                         },
                       )

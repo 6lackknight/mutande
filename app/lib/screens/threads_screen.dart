@@ -16,6 +16,8 @@ class ThreadsPanel extends StatefulWidget {
     this.myHandle,
     this.composeRecipient,
     this.onComposeRecipientHandled,
+    this.initialThreadId,
+    this.onInitialThreadHandled,
   });
 
   final DaemonClient daemon;
@@ -25,6 +27,9 @@ class ThreadsPanel extends StatefulWidget {
   /// When set, opens compose addressed to this handle.
   final String? composeRecipient;
   final VoidCallback? onComposeRecipientHandled;
+  /// When set, opens this thread (e.g. after first-run ping).
+  final String? initialThreadId;
+  final VoidCallback? onInitialThreadHandled;
 
   @override
   State<ThreadsPanel> createState() => _ThreadsPanelState();
@@ -46,6 +51,14 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
   void initState() {
     super.initState();
     widget.onReloadReady?.call(_reload);
+    final initial = widget.initialThreadId?.trim();
+    if (initial != null && initial.isNotEmpty) {
+      _openId = initial;
+      _filter = 'open';
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        widget.onInitialThreadHandled?.call();
+      });
+    }
     _reload();
   }
 
@@ -63,6 +76,15 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
         _composePrefillRecipient = next;
       });
       widget.onComposeRecipientHandled?.call();
+    }
+    final openNext = widget.initialThreadId?.trim();
+    final openPrev = oldWidget.initialThreadId?.trim();
+    if (openNext != null && openNext.isNotEmpty && openNext != openPrev) {
+      setState(() {
+        _openId = openNext;
+        _filter = 'open';
+      });
+      widget.onInitialThreadHandled?.call();
     }
   }
 
@@ -958,14 +980,27 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
       children: [
         Row(
           children: [
-            TextButton(
+            IconButton(
+              tooltip: 'Back to threads',
               onPressed: widget.onBack,
-              child: const Text('← Threads'),
+              icon: const Icon(Icons.arrow_back, size: 20),
+              color: const Color(0xFF57534E),
+              visualDensity: VisualDensity.compact,
+            ),
+            Text(
+              'Thread',
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: const Color(0xFF78716C),
+                    fontWeight: FontWeight.w600,
+                  ),
             ),
             const Spacer(),
             IconButton(
+              tooltip: 'Refresh',
               onPressed: _loading ? null : _load,
               icon: const Icon(Icons.refresh, size: 20),
+              color: const Color(0xFF78716C),
+              visualDensity: VisualDensity.compact,
             ),
           ],
         ),
@@ -976,39 +1011,19 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
             ),
           )
         else if (_detail == null)
-          Text(
-            _error ?? 'Thread unavailable',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: const Color(0xFF991B1B),
-                ),
+          Expanded(
+            child: Center(
+              child: Text(
+                _error ?? 'Thread unavailable',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: const Color(0xFF991B1B),
+                    ),
+              ),
+            ),
           )
         else ...[
-          Text(
-            formatMailAddress(
-              _detail!.audience.isNotEmpty &&
-                      _detail!.audience != _detail!.from
-                  ? _detail!.audience
-                  : _detail!.from,
-              myHandle: widget.myHandle,
-            ),
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: const Color(0xFF292524),
-                  fontWeight: FontWeight.w600,
-                ),
-          ),
-          Text(
-            [
-              if (_detail!.audience.isNotEmpty &&
-                  _detail!.audience != _detail!.from)
-                'from ${formatMailAddress(_detail!.from, myHandle: widget.myHandle)}',
-              _detail!.kind,
-              _detail!.status,
-              if (_detail!.yourStatus != null) _detail!.yourStatus!,
-            ].join(' · '),
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: const Color(0xFF78716C),
-                ),
-          ),
+          _ThreadDetailHeader(detail: _detail!, myHandle: widget.myHandle),
           if (_error != null) ...[
             const SizedBox(height: 8),
             Text(
@@ -1018,9 +1033,10 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
                   ),
             ),
           ],
-          const SizedBox(height: 16),
+          const SizedBox(height: 20),
           Expanded(
             child: ListView(
+              padding: const EdgeInsets.only(bottom: 8),
               children: [
                 for (final node in flattenThreadMessages(_detail!.messages))
                   _ThreadMessageTile(
@@ -1037,51 +1053,223 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
               ],
             ),
           ),
-          if (_replyToHandle != null) ...[
-            const SizedBox(height: 8),
-            Material(
-              color: const Color(0xFFF5F5F4),
-              borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Replying to ${formatMailAddress(_replyToHandle!, myHandle: widget.myHandle)}',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: const Color(0xFF57534E),
-                            ),
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: _clearReplyTarget,
-                      child: const Text('Cancel'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-          TextField(
+          _ThreadReplyComposer(
             controller: _reply,
-            decoration: InputDecoration(
-              labelText: _replyToMessageId == null ? 'Reply' : 'Nested reply',
-              hintText: 'Short note for their agent',
-            ),
-            minLines: 2,
-            maxLines: 4,
-            enabled: !_sending && _detail!.status != 'closed',
-          ),
-          const SizedBox(height: 8),
-          FilledButton(
-            onPressed:
-                _sending || _detail!.status == 'closed' ? null : _sendReply,
-            child: Text(_sending ? 'Sending…' : 'Send reply'),
+            sending: _sending,
+            closed: _detail!.status == 'closed',
+            nested: _replyToMessageId != null,
+            replyToHandle: _replyToHandle == null
+                ? null
+                : formatMailAddress(_replyToHandle!, myHandle: widget.myHandle),
+            onClearTarget: _clearReplyTarget,
+            onSend: _sendReply,
           ),
         ],
       ],
+    );
+  }
+}
+
+class _ThreadDetailHeader extends StatelessWidget {
+  const _ThreadDetailHeader({required this.detail, this.myHandle});
+
+  final ThreadDetailResult detail;
+  final String? myHandle;
+
+  String get _title {
+    final primary = detail.audience.isNotEmpty && detail.audience != detail.from
+        ? detail.audience
+        : detail.from;
+    return formatMailAddress(primary, myHandle: myHandle);
+  }
+
+  /// Only surface status when it changes what you should do.
+  String? get _statusLabel {
+    if (detail.yourStatus == 'pending') return 'needs you';
+    if (detail.status == 'closed') return 'closed';
+    if (detail.yourStatus == 'replied') return 'waiting';
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fromLabel = formatMailAddress(detail.from, myHandle: myHandle);
+    final showFrom = detail.audience.isNotEmpty &&
+        detail.audience != detail.from &&
+        fromLabel != _title;
+    final status = _statusLabel;
+    final metaParts = <String>[
+      if (showFrom) 'from $fromLabel',
+      if (status != null) status,
+    ];
+
+    final metaStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: const Color(0xFF78716C),
+          height: 1.3,
+        );
+    final statusStyle = metaStyle?.copyWith(
+      color: detail.yourStatus == 'pending'
+          ? const Color(0xFF92400E)
+          : detail.status == 'closed'
+              ? const Color(0xFFA8A29E)
+              : const Color(0xFF78716C),
+      fontWeight: detail.yourStatus == 'pending' ? FontWeight.w600 : null,
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          _title,
+          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                color: const Color(0xFF292524),
+                fontWeight: FontWeight.w700,
+                height: 1.15,
+              ),
+        ),
+        if (metaParts.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text.rich(
+            TextSpan(
+              children: [
+                for (var i = 0; i < metaParts.length; i++) ...[
+                  if (i > 0)
+                    TextSpan(text: '  ·  ', style: metaStyle),
+                  TextSpan(
+                    text: metaParts[i],
+                    style: metaParts[i] == status ? statusStyle : metaStyle,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _ThreadReplyComposer extends StatelessWidget {
+  const _ThreadReplyComposer({
+    required this.controller,
+    required this.sending,
+    required this.closed,
+    required this.nested,
+    this.replyToHandle,
+    required this.onClearTarget,
+    required this.onSend,
+  });
+
+  final TextEditingController controller;
+  final bool sending;
+  final bool closed;
+  final bool nested;
+  final String? replyToHandle;
+  final VoidCallback onClearTarget;
+  final VoidCallback onSend;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        border: Border(top: BorderSide(color: Color(0xFFE7E5E4))),
+      ),
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (replyToHandle != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Material(
+                color: const Color(0xFFF5F5F4),
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.reply, size: 14, color: Color(0xFF78716C)),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'Replying to $replyToHandle',
+                          style:
+                              Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: const Color(0xFF57534E),
+                                  ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: onClearTarget,
+                        style: TextButton.styleFrom(
+                          padding: EdgeInsets.zero,
+                          minimumSize: const Size(44, 28),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: const Text('Cancel'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFFE7E5E4)),
+            ),
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+            child: TextField(
+              controller: controller,
+              decoration: InputDecoration(
+                hintText: closed
+                    ? 'Thread closed'
+                    : nested
+                        ? 'Nested reply…'
+                        : 'Reply to thread…',
+                border: InputBorder.none,
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(vertical: 10),
+              ),
+              minLines: 2,
+              maxLines: 5,
+              enabled: !sending && !closed,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              if (closed)
+                Text(
+                  'This thread is closed',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: const Color(0xFFA8A29E),
+                      ),
+                ),
+              const Spacer(),
+              FilledButton(
+                onPressed: sending || closed ? null : onSend,
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF292524),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 10,
+                  ),
+                  minimumSize: const Size(0, 36),
+                  textStyle: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                child: Text(sending ? 'Sending…' : 'Send reply'),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1105,132 +1293,292 @@ class _ThreadMessageTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final m = node.message;
     final body = m.displayBody;
-    final indent = 12.0 + (node.depth * 20.0);
+    final indent = node.depth * 20.0;
     final upvotes = m.upvotes;
     final count = upvotes?.count ?? 0;
     final youUpvoted = upvotes?.youUpvoted ?? false;
+    final fromLabel = formatMailAddress(m.fromHandle, myHandle: myHandle);
+    final host = _hostSlugFromHandle(m.fromHandle, myHandle: myHandle);
 
     return Padding(
-      padding: EdgeInsets.only(left: indent, bottom: 12, right: 4),
-      child: DecoratedBox(
-        decoration: node.depth > 0
-            ? const BoxDecoration(
-                border: Border(
-                  left: BorderSide(color: Color(0xFFE7E5E4), width: 2),
-                ),
-              )
-            : const BoxDecoration(),
-        child: Padding(
-          padding: EdgeInsets.only(left: node.depth > 0 ? 10 : 0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                formatMailAddress(m.fromHandle, myHandle: myHandle),
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: const Color(0xFF78716C),
-                      fontWeight: FontWeight.w500,
-                    ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                body,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: m.openError != null
-                          ? const Color(0xFF991B1B)
-                          : const Color(0xFF292524),
-                    ),
-              ),
-              if (onUpvote != null || count > 0) ...[
-                const SizedBox(height: 6),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (onUpvote != null)
-                      TextButton.icon(
-                        onPressed: upvoting ? null : onUpvote,
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 2,
-                          ),
-                          minimumSize: const Size(44, 32),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          foregroundColor: youUpvoted
-                              ? const Color(0xFF44403C)
-                              : const Color(0xFF78716C),
-                        ),
-                        icon: Icon(
-                          youUpvoted
-                              ? Icons.arrow_upward
-                              : Icons.arrow_upward_outlined,
-                          size: 16,
-                        ),
-                        label: Text(count > 0 ? '$count' : 'Upvote'),
-                      )
-                    else if (count > 0)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text(
-                          '$count',
-                          style:
-                              Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: const Color(0xFF78716C),
-                                  ),
-                        ),
-                      ),
-                    if (upvotes != null && upvotes.upvotes.isNotEmpty) ...[
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Wrap(
-                          spacing: 4,
-                          runSpacing: 4,
-                          children: [
-                            for (final vote in upvotes.upvotes)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 2,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF5F5F4),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text(
-                                  formatMailAddress(
-                                    vote.fromHandle,
-                                    myHandle: myHandle,
-                                  ),
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .labelSmall
-                                      ?.copyWith(
-                                        color: const Color(0xFF57534E),
-                                      ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ],
-              if (onReply != null) ...[
-                const SizedBox(height: 2),
-                TextButton(
-                  onPressed: onReply,
-                  style: TextButton.styleFrom(
-                    padding: EdgeInsets.zero,
-                    minimumSize: const Size(44, 32),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  child: const Text('Reply'),
-                ),
-              ],
-            ],
+      padding: EdgeInsets.only(left: indent, bottom: 10, right: 0),
+      child: Container(
+        decoration: BoxDecoration(
+          color: node.depth > 0
+              ? const Color(0xFFFAFAF9)
+              : Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: node.depth > 0
+                ? const Color(0xFFE7E5E4)
+                : const Color(0xFFE7E5E4),
           ),
         ),
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                _MessageAvatar(label: fromLabel, host: host),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    fromLabel,
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          color: const Color(0xFF44403C),
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              body,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: m.openError != null
+                        ? const Color(0xFF991B1B)
+                        : const Color(0xFF292524),
+                    height: 1.45,
+                  ),
+            ),
+            if (onUpvote != null || count > 0 || onReply != null) ...[
+              const SizedBox(height: 10),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  _MessageActionGroup(
+                    count: count,
+                    upvoted: youUpvoted,
+                    upvoting: upvoting,
+                    onUpvote: onUpvote,
+                    onReply: onReply,
+                    showUpvote: onUpvote != null || count > 0,
+                  ),
+                  if (upvotes != null && upvotes.upvotes.isNotEmpty) ...[
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Wrap(
+                        spacing: 4,
+                        runSpacing: 4,
+                        children: [
+                          for (final vote in upvotes.upvotes)
+                            _AgentVoteChip(
+                              label: formatMailAddress(
+                                vote.fromHandle,
+                                myHandle: myHandle,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String? _hostSlugFromHandle(String handle, {String? myHandle}) {
+  final formatted = formatMailAddress(handle, myHandle: myHandle);
+  if (formatted.startsWith('@') && !formatted.substring(1).contains('@')) {
+    final slug = formatted.substring(1).toLowerCase();
+    if (AiHostIcon.assetFor(slug) != null) return slug;
+  }
+  final slash = handle.indexOf('/');
+  if (slash >= 0 && slash < handle.length - 1) {
+    final slug = handle.substring(slash + 1).toLowerCase();
+    if (AiHostIcon.assetFor(slug) != null) return slug;
+  }
+  return null;
+}
+
+class _MessageAvatar extends StatelessWidget {
+  const _MessageAvatar({required this.label, this.host});
+
+  final String label;
+  final String? host;
+
+  @override
+  Widget build(BuildContext context) {
+    if (host != null) {
+      return AiHostIcon(host!, size: 26, showPlate: true);
+    }
+    return Container(
+      width: 26,
+      height: 26,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F5F4),
+        borderRadius: BorderRadius.circular(7),
+        border: Border.all(color: const Color(0xFFE7E5E4)),
+      ),
+      child: Text(
+        _initialsFor(label),
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: const Color(0xFF78716C),
+              fontWeight: FontWeight.w700,
+            ),
+      ),
+    );
+  }
+}
+
+class _MessageActionGroup extends StatelessWidget {
+  const _MessageActionGroup({
+    required this.count,
+    required this.upvoted,
+    required this.upvoting,
+    required this.showUpvote,
+    this.onUpvote,
+    this.onReply,
+  });
+
+  final int count;
+  final bool upvoted;
+  final bool upvoting;
+  final bool showUpvote;
+  final VoidCallback? onUpvote;
+  final VoidCallback? onReply;
+
+  @override
+  Widget build(BuildContext context) {
+    final showReply = onReply != null;
+    if (!showUpvote && !showReply) return const SizedBox.shrink();
+
+    return Container(
+      height: 32,
+      decoration: BoxDecoration(
+        border: Border.all(color: const Color(0xFFE7E5E4)),
+        borderRadius: BorderRadius.circular(8),
+        color: Colors.white,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (showUpvote) ...[
+            _ActionIconCell(
+              icon: upvoted ? Icons.arrow_upward : Icons.arrow_upward_outlined,
+              label: count > 0 ? '$count' : null,
+              active: upvoted,
+              tooltip: 'Upvote',
+              enabled: !upvoting && onUpvote != null,
+              onTap: onUpvote,
+              roundedLeft: true,
+            ),
+            if (showReply)
+              Container(
+                width: 1,
+                height: 18,
+                color: const Color(0xFFE7E5E4),
+              ),
+          ],
+          if (showReply)
+            _ActionIconCell(
+              icon: Icons.reply_outlined,
+              tooltip: 'Reply',
+              onTap: onReply,
+              roundedRight: true,
+              roundedLeft: !showUpvote,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActionIconCell extends StatelessWidget {
+  const _ActionIconCell({
+    required this.icon,
+    required this.tooltip,
+    this.label,
+    this.active = false,
+    this.enabled = true,
+    this.onTap,
+    this.roundedLeft = false,
+    this.roundedRight = false,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final String? label;
+  final bool active;
+  final bool enabled;
+  final VoidCallback? onTap;
+  final bool roundedLeft;
+  final bool roundedRight;
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = active ? const Color(0xFF292524) : const Color(0xFF78716C);
+    final bg = active ? const Color(0xFFF5F5F4) : Colors.transparent;
+
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: bg,
+        borderRadius: BorderRadius.horizontal(
+          left: roundedLeft ? const Radius.circular(7) : Radius.zero,
+          right: roundedRight ? const Radius.circular(7) : Radius.zero,
+        ),
+        child: InkWell(
+          onTap: enabled ? onTap : null,
+          borderRadius: BorderRadius.horizontal(
+            left: roundedLeft ? const Radius.circular(7) : Radius.zero,
+            right: roundedRight ? const Radius.circular(7) : Radius.zero,
+          ),
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: label != null ? 10 : 9,
+              vertical: 6,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 16, color: enabled ? fg : const Color(0xFFA8A29E)),
+                if (label != null) ...[
+                  const SizedBox(width: 4),
+                  Text(
+                    label!,
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                          color: enabled ? fg : const Color(0xFFA8A29E),
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AgentVoteChip extends StatelessWidget {
+  const _AgentVoteChip({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F5F4),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: const Color(0xFF57534E),
+              fontWeight: FontWeight.w500,
+            ),
       ),
     );
   }

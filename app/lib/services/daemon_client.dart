@@ -250,6 +250,7 @@ class DaemonClient {
           bundleSubject: bundle?['subject'] as String?,
           bundleNotes:
               bundle?['notes'] as String? ?? bundle?['context'] as String?,
+          pingKind: bundle?['ping_kind'] as String?,
           questionPrompts: questions,
           resourceRequests: resources,
           openError: m['open_error'] as String?,
@@ -800,6 +801,7 @@ class ThreadMessageView {
     this.inReplyTo,
     this.bundleSubject,
     this.bundleNotes,
+    this.pingKind,
     this.questionPrompts = const [],
     this.resourceRequests = const [],
     this.openError,
@@ -813,6 +815,8 @@ class ThreadMessageView {
   final String? inReplyTo;
   final String? bundleSubject;
   final String? bundleNotes;
+  /// Bundle `ping_kind`: `health` | `thread`, when present.
+  final String? pingKind;
   final List<String> questionPrompts;
   final List<String> resourceRequests;
   final String? openError;
@@ -827,6 +831,7 @@ class ThreadMessageView {
       inReplyTo: inReplyTo,
       bundleSubject: bundleSubject,
       bundleNotes: bundleNotes,
+      pingKind: pingKind,
       questionPrompts: questionPrompts,
       resourceRequests: resourceRequests,
       openError: openError,

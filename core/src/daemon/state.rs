@@ -28,6 +28,31 @@ use crate::hub_client::{
 use super::config::{DaemonConfig, config_path, load_config, save_config_at};
 use super::oauth::{self, Auth0NativeConfig};
 
+/// Product ping kinds — `health` gets daemon auto-pong; `thread` expects agent mail reply.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PingKind {
+    Health,
+    Thread,
+}
+
+impl PingKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            PingKind::Health => "health",
+            PingKind::Thread => "thread",
+        }
+    }
+
+    pub fn parse(s: &str) -> Result<Self> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "health" => Ok(PingKind::Health),
+            "thread" => Ok(PingKind::Thread),
+            other => bail!("invalid ping kind: {other} (expected health|thread)"),
+        }
+    }
+}
+
 /// Plaintext draft matching proto/bundle.schema.json (subset used in v1).
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MutandeBundle {
@@ -45,6 +70,8 @@ pub struct MutandeBundle {
     pub answers: Vec<BundleAnswer>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ping_kind: Option<PingKind>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub in_reply_to: Option<String>,
 }
@@ -821,17 +848,69 @@ impl DaemonState {
     ) -> Result<Vec<ThreadMeta>> {
         if let Some(hub) = self.hub_client() {
             let threads = hub.list_threads(filter).await?;
-            return self.filter_threads_for_agent(threads, agent_slug).await;
+            let threads = self.filter_threads_for_agent(threads, agent_slug).await?;
+            // Health pings: auto-pong on inbox poll so hosts don't need an LLM turn.
+            if matches!(filter, Some(ThreadFilter::NeedsAction)) {
+                for t in &threads {
+                    if let Ok(detail) = self.fetch_and_open_thread(&t.id).await {
+                        let _ = self.maybe_auto_pong_health(&detail).await;
+                    }
+                }
+            }
+            return Ok(threads);
         }
         Ok(vec![])
     }
 
-    pub async fn get_thread(&self, thread_id: &str) -> Result<OpenedThreadDetail> {
+    async fn fetch_and_open_thread(&self, thread_id: &str) -> Result<OpenedThreadDetail> {
         let Some(hub) = self.hub_client() else {
             bail!("hub not configured");
         };
         let detail = hub.get_thread(thread_id).await?;
         Ok(self.open_thread_detail_async(detail).await)
+    }
+
+    pub async fn get_thread(&self, thread_id: &str) -> Result<OpenedThreadDetail> {
+        let detail = self.fetch_and_open_thread(thread_id).await?;
+        if self.maybe_auto_pong_health(&detail).await? {
+            return self.fetch_and_open_thread(thread_id).await;
+        }
+        Ok(detail)
+    }
+
+    /// Auto-reply to health pings (daemon-side). Thread pings stay for agents.
+    async fn maybe_auto_pong_health(&self, detail: &OpenedThreadDetail) -> Result<bool> {
+        if self.is_processed(&detail.thread.id) {
+            return Ok(false);
+        }
+        let Some(root) = detail
+            .messages
+            .iter()
+            .find(|m| m.parent_message_id.is_none())
+        else {
+            return Ok(false);
+        };
+        let Some(bundle) = root.bundle.as_ref() else {
+            return Ok(false);
+        };
+        if bundle.ping_kind != Some(PingKind::Health) {
+            return Ok(false);
+        }
+        // Already has a reply — nothing to do.
+        if detail.messages.len() > 1 {
+            return Ok(false);
+        }
+        let pong = MutandeBundle {
+            subject: Some("Pong".into()),
+            notes: Some("auto".into()),
+            ping_kind: Some(PingKind::Health),
+            in_reply_to: Some(root.id.clone()),
+            ..Default::default()
+        };
+        self.reply_to_opened_thread(&detail.thread.id, detail, pong, None, None)
+            .await?;
+        self.mark_processed(&detail.thread.id);
+        Ok(true)
     }
 
     /// Attempt to open each message envelope; succeed with `bundle`, else `open_error` + meta only
@@ -1103,9 +1182,22 @@ impl DaemonState {
         to_agent: Option<&str>,
         agent_slug: Option<&str>,
     ) -> Result<()> {
+        // Fetch without auto-pong to avoid re-entry when health pings reply.
+        let detail = self.fetch_and_open_thread(thread_id).await?;
+        self.reply_to_opened_thread(thread_id, &detail, bundle, to_agent, agent_slug)
+            .await
+    }
+
+    async fn reply_to_opened_thread(
+        &self,
+        thread_id: &str,
+        detail: &OpenedThreadDetail,
+        bundle: MutandeBundle,
+        to_agent: Option<&str>,
+        agent_slug: Option<&str>,
+    ) -> Result<()> {
         let plain = serde_json::to_vec(&bundle)?;
-        let detail = self.get_thread(thread_id).await?;
-        let recipients = self.resolve_reply_recipients(&detail).await?;
+        let recipients = self.resolve_reply_recipients(detail).await?;
         let env = self.seal_inline_or_blob(&plain, &recipients).await?;
 
         if let Some(hub) = self.hub_client() {
@@ -1120,6 +1212,80 @@ impl DaemonState {
             .await?;
         }
         Ok(())
+    }
+
+    /// Product ping — creates real threads. `health` → daemon auto-pong; `thread` → agent reply.
+    /// Solo `@all` (no other agents) falls back to bare-handle inbox for `thread` kind only.
+    pub async fn ping(
+        &self,
+        target: &str,
+        kind: PingKind,
+        agent_slug: Option<&str>,
+    ) -> Result<ForwardThreadsResult> {
+        let target = {
+            let t = target.trim();
+            if t.is_empty() {
+                "@all"
+            } else {
+                t
+            }
+        };
+        let notes = match kind {
+            PingKind::Health => "health ping",
+            PingKind::Thread => "thread ping — please reply with pong",
+        };
+        let bundle = MutandeBundle {
+            subject: Some("Ping".into()),
+            notes: Some(notes.into()),
+            ping_kind: Some(kind.clone()),
+            ..Default::default()
+        };
+
+        self.assert_recipient_allowed(target, agent_slug).await?;
+        let plain = serde_json::to_vec(&bundle)?;
+        let seal_keys = self.resolve_recipient_pubkeys(target).await?;
+        let env = self.seal_inline_or_blob(&plain, &seal_keys).await?;
+
+        let hub_tos = match self.expand_hub_recipients(target, agent_slug).await {
+            Ok(tos) => tos,
+            Err(err)
+                if kind == PingKind::Thread
+                    && (is_my_agents_handle(target) || target.eq_ignore_ascii_case("@all")) =>
+            {
+                // Day-one: only one agent connected — still create a Mac-visible thread.
+                let bare = self.my_bare_handle().await?;
+                tracing::info!(
+                    target = %target,
+                    fallback = %bare,
+                    "ping @all solo fallback: {err}"
+                );
+                vec![bare]
+            }
+            Err(err) => return Err(err),
+        };
+
+        if let Some(hub) = self.hub_client() {
+            let from_agent = self.from_agent_for_send(agent_slug);
+            let mut thread_ids = Vec::with_capacity(hub_tos.len());
+            for to in &hub_tos {
+                let resp = hub
+                    .create_thread(to, &env, from_agent.as_deref())
+                    .await?;
+                thread_ids.push(resp.thread.id);
+            }
+            if thread_ids.is_empty() {
+                bail!("ping produced no threads");
+            }
+            Ok(ForwardThreadsResult {
+                recipients: hub_tos,
+                thread_ids,
+            })
+        } else {
+            Ok(ForwardThreadsResult {
+                recipients: vec![target.to_string()],
+                thread_ids: vec![uuid::Uuid::new_v4().to_string()],
+            })
+        }
     }
 
     /// Toggle agent upvote on a thread message (coordination weight, not ranking).
@@ -1574,7 +1740,7 @@ fn resolve_auth0_audience(explicit: Option<&str>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hub_client::{ThreadKind, ThreadStatus};
+    use crate::hub_client::{ThreadKind, ThreadStatus, YourStatus};
 
     #[test]
     fn auth0_resolvers_prefer_explicit_params() {
@@ -2352,18 +2518,227 @@ mod tests {
                 "t-reply",
                 MutandeBundle {
                     subject: Some("from claude".into()),
-                    context: None,
-                    questions: vec![],
-                    resource_requests: vec![],
-                    resources: vec![],
-                    answers: vec![],
-                    notes: None,
-                    in_reply_to: None,
+                    ..Default::default()
                 },
                 None,
                 Some("claude"),
             )
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn ping_thread_fans_out_via_all() {
+        use crate::hub_client::HubConfig;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let state = DaemonState::new_in_memory_for_test().unwrap();
+        let server = MockServer::start().await;
+        mock_solo_hub(&server).await;
+
+        let create_count = Arc::new(AtomicUsize::new(0));
+        let create_count2 = create_count.clone();
+        Mock::given(method("POST"))
+            .and(path("/v1/threads"))
+            .respond_with(move |_req: &wiremock::Request| {
+                let n = create_count2.fetch_add(1, Ordering::SeqCst) + 1;
+                ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                    "thread": {
+                        "id": format!("t-ping-{n}"),
+                        "kind": "direct",
+                        "status": "open",
+                        "from": "solo@tbhco/cursor",
+                        "from_user_id": "u-solo",
+                        "audience": "solo@tbhco/claude",
+                        "org_id": "org-solo",
+                        "participant_count": 2,
+                        "reply_count": 0,
+                        "created_at": "2026-01-01T00:00:00Z",
+                        "updated_at": "2026-01-01T00:00:00Z"
+                    },
+                    "message_id": format!("m-ping-{n}")
+                }))
+            })
+            .mount(&server)
+            .await;
+
+        state.attach_hub_for_test(HubClient::new(HubConfig::new(server.uri(), "tok")).unwrap());
+        state.set_connected_agent_slug_for_test(Some("cursor"));
+
+        let result = state
+            .ping("@all", PingKind::Thread, None)
+            .await
+            .unwrap();
+        assert_eq!(result.recipients, vec!["solo@tbhco/claude".to_string()]);
+        assert_eq!(result.thread_ids.len(), 1);
+        assert_eq!(create_count.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn ping_thread_solo_all_falls_back_to_bare_handle() {
+        use crate::hub_client::HubConfig;
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let state = DaemonState::new_in_memory_for_test().unwrap();
+        let server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/v1/me"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                "auth0_sub": "auth0|solo",
+                "needs_onboarding": false,
+                "onboarded": true,
+                "user": {
+                    "id": "u-solo",
+                    "handle": "solo@tbhco",
+                    "org_id": "org-solo",
+                    "created_at": "2026-01-01T00:00:00Z"
+                },
+                "org": {
+                    "id": "org-solo",
+                    "slug": "tbhco",
+                    "name": "TBH",
+                    "created_at": "2026-01-01T00:00:00Z"
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        // Only the sending agent registered — expand @all would fail without fallback.
+        Mock::given(method("GET"))
+            .and(path("/v1/agents"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                "agents": [
+                    { "id": "a-cursor", "user_id": "u-solo", "slug": "cursor", "created_at": "2026-01-01T00:00:00Z" }
+                ],
+                "default_agent_id": "a-cursor"
+            })))
+            .mount(&server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/threads"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                "thread": {
+                    "id": "t-solo-ping",
+                    "kind": "direct",
+                    "status": "open",
+                    "from": "solo@tbhco/cursor",
+                    "from_user_id": "u-solo",
+                    "audience": "solo@tbhco",
+                    "org_id": "org-solo",
+                    "participant_count": 1,
+                    "reply_count": 0,
+                    "created_at": "2026-01-01T00:00:00Z",
+                    "updated_at": "2026-01-01T00:00:00Z"
+                },
+                "message_id": "m-solo-ping"
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        state.attach_hub_for_test(HubClient::new(HubConfig::new(server.uri(), "tok")).unwrap());
+        state.set_connected_agent_slug_for_test(Some("cursor"));
+
+        let result = state
+            .ping("@all", PingKind::Thread, None)
+            .await
+            .unwrap();
+        assert_eq!(result.recipients, vec!["solo@tbhco".to_string()]);
+        assert_eq!(result.thread_ids, vec!["t-solo-ping".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn health_ping_auto_pongs_on_get_thread() {
+        use crate::hub_client::HubConfig;
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let state = DaemonState::new_in_memory_for_test().unwrap();
+        let server = MockServer::start().await;
+        mock_solo_hub(&server).await;
+
+        let ping_bundle = MutandeBundle {
+            subject: Some("Ping".into()),
+            notes: Some("health ping".into()),
+            ping_kind: Some(PingKind::Health),
+            ..Default::default()
+        };
+        let plain = serde_json::to_vec(&ping_bundle).unwrap();
+        let env = state.seal_to_self(&plain).unwrap();
+
+        let detail = ThreadDetail {
+            thread: ThreadMeta {
+                id: "t-health".into(),
+                kind: ThreadKind::Direct,
+                status: ThreadStatus::Open,
+                from: "solo@tbhco/claude".into(),
+                from_user_id: "u-solo".into(),
+                from_agent_id: None,
+                audience: "solo@tbhco/cursor".into(),
+                audience_agent_id: None,
+                audience_wire_path: None,
+                org_id: "org-solo".into(),
+                participant_count: 2,
+                reply_count: 0,
+                your_status: Some(YourStatus::Pending),
+                created_at: "2026-01-01T00:00:00Z".into(),
+                updated_at: "2026-01-01T00:00:00Z".into(),
+            },
+            messages: vec![ThreadMessage {
+                id: "m-health".into(),
+                thread_id: "t-health".into(),
+                from_user_id: "u-solo".into(),
+                from_handle: "solo@tbhco/claude".into(),
+                envelope: env,
+                created_at: "2026-01-01T00:00:00Z".into(),
+                sender_only: None,
+                parent_message_id: None,
+                upvotes: None,
+            }],
+        };
+
+        Mock::given(method("GET"))
+            .and(path("/v1/threads/t-health"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&detail))
+            .mount(&server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/threads/t-health/replies"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                "message_id": "m-pong"
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        state.attach_hub_for_test(HubClient::new(HubConfig::new(server.uri(), "tok")).unwrap());
+        state.set_connected_agent_slug_for_test(Some("cursor"));
+
+        let opened = state.get_thread("t-health").await.unwrap();
+        assert_eq!(opened.messages.len(), 1);
+        assert!(state.is_processed("t-health"));
+    }
+
+    #[test]
+    fn ping_kind_parse_and_serde() {
+        assert_eq!(PingKind::parse("health").unwrap(), PingKind::Health);
+        assert_eq!(PingKind::parse("thread").unwrap(), PingKind::Thread);
+        assert!(PingKind::parse("nope").is_err());
+        let b = MutandeBundle {
+            ping_kind: Some(PingKind::Thread),
+            subject: Some("Ping".into()),
+            ..Default::default()
+        };
+        let v = serde_json::to_value(&b).unwrap();
+        assert_eq!(v["ping_kind"], "thread");
+        let back: MutandeBundle = serde_json::from_value(v).unwrap();
+        assert_eq!(back.ping_kind, Some(PingKind::Thread));
     }
 }

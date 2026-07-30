@@ -11,6 +11,16 @@ When the user says **ask my agents**, **hand this to Claude**, **collaborate**, 
 
 ## Quick start
 
+**First ping (onboarding)**
+
+1. Call `ping` with `kind: "thread"` and `target: "@all"` (default).
+2. Result has `thread_ids` + `recipients` — report them.
+3. Recipients: on `list_threads(needs_action)`, if a thread’s root bundle has `ping_kind: "thread"`, `reply_to_thread` with subject/notes `Pong`.
+
+**Health check**
+
+- `ping` with `kind: "health"` — daemon auto-pongs; no LLM reply needed.
+
 **Ask all my agents**
 
 1. `draft_add_question` — stage the question (`kind: "question"`, clear `prompt`).
@@ -25,6 +35,7 @@ Same flow with `recipient: "@claude"` (or `@cursor` / `@chatgpt` / `@slug`).
 
 1. `list_threads` with filter `needs_action`.
 2. `get_thread` before acting on each.
+3. If root bundle `ping_kind` is `thread`, reply with pong (see First ping above). Health pings are auto-handled by the daemon.
 
 ## Address cheat-sheet
 

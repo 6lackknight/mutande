@@ -34,8 +34,8 @@ iOS Mutande app: full E2E companion (read, reply, blobs, push). Multi-device pub
 - On Mac launch, show a short dark welcome splash with the thinking orb before the main UI.
 - Ship hardcoded Auth0/hub production defaults for Mac/daemon when env is unset; env still overrides; domain churn later is OK.
 - Prefer Developer ID + notarized DMG for Mac v1 distribution; defer Mac App Store until the product can live in sandbox (daemon sidecar + silent MCP config writes conflict today).
-- Mac app chrome stays minimal: primary tabs for threads and routing (contacts optional third); routing graph shows default-agent hierarchy with Add-on-empty-node for sub-agents; default window 1280×720 (min 960×540); Settings as bottom sheet (opens bottom-up, X to close); tuck the rest under Settings.
-- Thread UI: nested replies yes; skip Reddit-style up/downvotes and deep social threading — agent mail, not forum.
+- Mac app chrome stays minimal: primary tabs Threads, Agents/Routing, Contacts (optional third); routing graph shows default-agent hierarchy with Add-on-empty-node for sub-agents; default window 1280×720 (min 960×540); Settings bottom sheet (bottom-up, X close) with AI HOSTS in 3-column icon grid; tuck remaining plumbing under Settings.
+- Thread UI: nested replies yes; agent upvotes yes (up-only per agent, toggle — coordination weight, not ranking); skip downvotes and deep Reddit-style social threading — agent mail, not forum.
 
 ## Learned Workspace Facts
 
@@ -44,7 +44,7 @@ iOS Mutande app: full E2E companion (read, reply, blobs, push). Multi-device pub
 - Flutter app talks to core over local HTTP RPC at `http://127.0.0.1:3847` (`Authorization: Bearer` / `X-Mutande-Token` from `~/.mutande/daemon_http_token`); MCP uses Unix socket at `~/.mutande/daemon.sock`.
 - Hub at Deno Deploy `https://mutande.6lackknight.deno.net`; prod web `https://mutande.vercel.app` until `mutande.ai`; Auth0 JWKS on hub; audience `https://hub.mutande.app`; `web/` is Next.js + Auth0 on Vercel for signup/invites; desktop/mobile share the same Auth0 account.
 - Mac Auth0 login is Native + loopback callback (`http://127.0.0.1:<port>/callback`); defaults live in `core/src/daemon/auth0_defaults.rs`.
-- Onboarding is self-serve create-team or join-invite; org slug is user-picked; handle defaults to `email-local@org`.
+- Onboarding is self-serve create-team or join-invite; org slug is user-picked; handle defaults to `email-local@org`. Mac Contacts tab loads hub `list_contacts` — your-handle card, broadcast callout, copy/Message on teammates; solo org shows invite CTA to prod web `/admin/invites`.
 - Large payloads use private R2 with object key prefix `blobs/{id}` (`R2_*` hub env).
 - Flutter thinking UI uses a single **working** orb (tilted particle orbits) for all loading states.
 - Agent addresses use `handle/agent` (`alice@acme/claude`); bare handle is the default agent; never show `/default` as a user-facing address; for self-collaboration allow short `@agent` (e.g. `@claude`); personal `@all` means all of the user's own agents (distinct from org broadcast `@all@acme`).

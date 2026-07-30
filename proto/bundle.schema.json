@@ -51,6 +51,11 @@
       }
     },
     "notes": { "type": "string" },
+    "ping_kind": {
+      "type": "string",
+      "enum": ["health", "thread"],
+      "description": "Marks a product ping: health gets daemon auto-pong; thread expects agent reply_to_thread."
+    },
     "in_reply_to": {
       "type": "string",
       "format": "uuid",
