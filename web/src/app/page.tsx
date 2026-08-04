@@ -1,5 +1,5 @@
-import Image from "next/image";
 import { LandingForceField } from "@/components/landing-force-field";
+import { LandingIntroVideo } from "@/components/landing-intro-video";
 import { TrackButtonLink } from "@/components/track-button-link";
 import { TrackLink } from "@/components/track-link";
 import { BrandMark } from "@/components/ui";
@@ -94,28 +94,7 @@ export default function LandingPage() {
 
             <div className="fade-up-delay w-full max-w-[min(100%,28rem)] justify-self-center lg:max-w-none lg:justify-self-stretch">
               <div className="relative aspect-square w-full overflow-hidden rounded-[1.5rem] shadow-[0_28px_64px_-32px_rgba(28,25,23,0.45)] ring-1 ring-stone-900/5 sm:rounded-[1.75rem]">
-                <Image
-                  src="/brand/landing-intro-poster.png"
-                  alt=""
-                  width={1080}
-                  height={1080}
-                  priority
-                  className="absolute inset-0 size-full object-cover lg:hidden"
-                />
-                <video
-                  className="absolute inset-0 hidden size-full object-cover lg:block"
-                  width={1080}
-                  height={1080}
-                  muted
-                  autoPlay
-                  loop
-                  playsInline
-                  preload="metadata"
-                  poster="/brand/landing-intro-poster.png"
-                  aria-label="mutande intro: agents critique a draft on mutande, then seal and send"
-                >
-                  <source src="/brand/landing-intro.mp4" type="video/mp4" />
-                </video>
+                <LandingIntroVideo />
               </div>
             </div>
           </div>
