@@ -108,6 +108,12 @@ export interface ThreadMeta {
   your_status?: "pending" | "replied";
   created_at: string;
   updated_at: string;
+  /** Daemon-only after local open — not stored on hub. */
+  last_from?: string;
+  /** Daemon-only after local open — list title subject (latest, else OP). */
+  last_subject?: string;
+  /** Daemon-only after local open — list body preview (notes/etc). */
+  last_preview?: string;
 }
 
 export interface InboxEntry {

@@ -106,15 +106,20 @@ curl -s -X POST http://127.0.0.1:3847/rpc \
 
 Command resolution order: `MUTANDE_CORE_PATH` env → `mutande_core_path` in `~/.mutande/config.json` → `which mutande-core` → bare `mutande-core` (host PATH).
 
-Written entry:
+Written entry (per-host name `mutande-cursor` / `mutande-claude` / `mutande-chatgpt`):
 
 ```json
 {
   "mcpServers": {
-    "mutande": {
+    "mutande-claude": {
       "command": "/path/to/mutande-core",
-      "args": ["mcp"]
+      "args": ["mcp"],
+      "env": { "MUTANDE_AGENT_SLUG": "claude" }
     }
   }
 }
 ```
+
+### Host tool permissions
+
+Claude Desktop does **not** honor a consumer `alwaysAllow` / `toolPolicy` allow-list in this file (those are managed/enterprise). Users must click **Always allow** once per tool (or use Settings → Connectors → Tool permissions). Collaboration does not require `upvote_message` — prefer nested replies. MCP tools expose `readOnlyHint` / `destructiveHint` annotations so hosts can group read vs write in the permission UI.

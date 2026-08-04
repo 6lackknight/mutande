@@ -23,13 +23,28 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
+#[cfg(unix)]
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+#[cfg(unix)]
 use tokio::net::{UnixListener, UnixStream};
 
 use crate::hub_client::{HubClient, HubConfig};
 
 use rpc::{JsonRpcRequest, JsonRpcResponse, handle_request};
 use state::DaemonState;
+
+/// Hub `platform` string for this build (`macos` / `windows` / `linux`).
+pub fn device_platform() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "macos"
+    } else if cfg!(target_os = "windows") {
+        "windows"
+    } else if cfg!(target_os = "linux") {
+        "linux"
+    } else {
+        "unknown"
+    }
+}
 
 /// Real login-home directory (passwd), not sandboxed `$HOME`.
 ///
@@ -66,38 +81,67 @@ pub fn expand_path(path: &str) -> PathBuf {
     }
 }
 
-/// Canonical daemon Unix socket (`mutande-core serve` + `mutande-core mcp`).
+/// Canonical daemon Unix socket (`mutande-core serve` + `mutande-core mcp` on Unix).
 pub const DEFAULT_SOCKET: &str = "~/.mutande/daemon.sock";
 
+/// Default HTTP JSON-RPC bind (Flutter + Windows MCP).
+pub const DEFAULT_HTTP_BIND: &str = "127.0.0.1:3847";
+
 pub async fn run(socket_path: &str, http_bind: Option<&str>) -> Result<()> {
-    let socket_path = expand_path(socket_path);
-    ensure_mutande_dir(&socket_path)?;
-
-    // Bootstrap before touching the listen path. A second `serve` used to
-    // unlink a live socket immediately, then hang on Keychain — leaving the
-    // first daemon on HTTP with a ghost Unix fd and MCP unable to connect.
     let state = Arc::new(DaemonState::bootstrap()?);
-    prepare_unix_socket(&socket_path).await?;
 
-    if let Some(bind) = http_bind {
+    #[cfg(unix)]
+    {
+        let socket_path = expand_path(socket_path);
+        ensure_mutande_dir(&socket_path)?;
+        // Bootstrap before touching the listen path. A second `serve` used to
+        // unlink a live socket immediately, then hang on Keychain — leaving the
+        // first daemon on HTTP with a ghost Unix fd and MCP unable to connect.
+        prepare_unix_socket(&socket_path).await?;
+
+        if let Some(bind) = http_bind {
+            spawn_http_bridge(Arc::clone(&state), bind)?;
+        }
+
+        return run_unix(socket_path, state).await;
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = socket_path;
+        let bind = http_bind.unwrap_or(DEFAULT_HTTP_BIND);
+        if bind.is_empty() {
+            anyhow::bail!("HTTP bind required on this platform (pass --http-bind)");
+        }
+        ensure_mutande_dir(&expand_path("~/.mutande/daemon.sock"))?;
+        // Windows/non-Unix: HTTP is the only IPC — run in-foreground (not spawn).
         let token = config::ensure_http_token().context("ensure HTTP bridge token")?;
         tracing::info!(
             path = %config::http_token_path().display(),
-            "HTTP bridge token ready (Authorization: Bearer / X-Mutande-Token)"
+            addr = %bind,
+            "HTTP-only daemon listening (no Unix socket on this OS)"
         );
-        let http_state = Arc::clone(&state);
-        let bind = bind.to_string();
-        tokio::spawn(async move {
-            if let Err(err) = http_bridge::run(http_state, &bind, &token).await {
-                tracing::error!(error = %err, addr = %bind, "HTTP bridge stopped");
-            }
-        });
+        http_bridge::run(state, bind, &token).await
     }
+}
 
-    run_unix(socket_path, state).await
+fn spawn_http_bridge(state: Arc<DaemonState>, bind: &str) -> Result<()> {
+    let token = config::ensure_http_token().context("ensure HTTP bridge token")?;
+    tracing::info!(
+        path = %config::http_token_path().display(),
+        "HTTP bridge token ready (Authorization: Bearer / X-Mutande-Token)"
+    );
+    let bind = bind.to_string();
+    tokio::spawn(async move {
+        if let Err(err) = http_bridge::run(state, &bind, &token).await {
+            tracing::error!(error = %err, addr = %bind, "HTTP bridge stopped");
+        }
+    });
+    Ok(())
 }
 
 /// Remove a dead socket file; refuse if another daemon is still accepting.
+#[cfg(unix)]
 async fn prepare_unix_socket(socket_path: &Path) -> Result<()> {
     if !socket_path.exists() {
         return Ok(());
@@ -114,6 +158,7 @@ async fn prepare_unix_socket(socket_path: &Path) -> Result<()> {
     }
 }
 
+#[cfg(unix)]
 async fn run_unix(socket_path: PathBuf, state: Arc<DaemonState>) -> Result<()> {
     let listener = UnixListener::bind(&socket_path)
         .with_context(|| format!("bind {}", socket_path.display()))?;
@@ -132,6 +177,7 @@ async fn run_unix(socket_path: PathBuf, state: Arc<DaemonState>) -> Result<()> {
     }
 }
 
+#[cfg(unix)]
 async fn serve_connection(stream: UnixStream, state: Arc<DaemonState>) -> Result<()> {
     let (reader, mut writer) = stream.into_split();
     let mut lines = BufReader::new(reader).lines();
@@ -199,69 +245,7 @@ pub fn hub_from_config(config: &DaemonConfig) -> Option<Result<HubClient>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crypto::{DevicePubKey, DeviceSecretKey};
-    use crypto_box::aead::OsRng;
-    use crypto_box::SecretKey;
     use tempfile::tempdir;
-
-    fn test_keypair() -> (DevicePubKey, DeviceSecretKey) {
-        let sk = SecretKey::generate(&mut OsRng);
-        let pk = sk.public_key();
-        (
-            DevicePubKey(pk.to_bytes()),
-            DeviceSecretKey(sk.to_bytes()),
-        )
-    }
-
-    #[tokio::test]
-    async fn daemon_crypto_roundtrip_via_rpc() {
-        let dir = tempdir().unwrap();
-        let sock = dir.path().join("daemon.sock");
-        let state = Arc::new(DaemonState::new_in_memory_for_test().unwrap());
-
-        let listener = UnixListener::bind(&sock).unwrap();
-        let accept_state = Arc::clone(&state);
-        let server = tokio::spawn(async move {
-            let (stream, _) = listener.accept().await.unwrap();
-            serve_connection(stream, accept_state).await.unwrap();
-        });
-
-        let mut stream = UnixStream::connect(&sock).await.unwrap();
-        let req = serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "draft_add_question",
-            "params": {
-                "id": "q1",
-                "prompt": "What is the plan?",
-                "kind": "question"
-            }
-        });
-        stream
-            .write_all((req.to_string() + "\n").as_bytes())
-            .await
-            .unwrap();
-
-        let mut reader = BufReader::new(stream);
-        let mut line = String::new();
-        reader.read_line(&mut line).await.unwrap();
-        let resp: JsonRpcResponse = serde_json::from_str(line.as_str()).unwrap();
-        assert!(resp.error.is_none(), "{:?}", resp.error);
-
-        let get_req = serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 2,
-            "method": "get_draft",
-            "params": {}
-        });
-        reader.get_mut().write_all((get_req.to_string() + "\n").as_bytes()).await.unwrap();
-        let mut line2 = String::new();
-        reader.read_line(&mut line2).await.unwrap();
-        let resp2: JsonRpcResponse = serde_json::from_str(line2.as_str()).unwrap();
-        assert!(resp2.error.is_none());
-
-        server.abort();
-    }
 
     #[test]
     fn expand_tilde_path() {
@@ -269,25 +253,97 @@ mod tests {
         assert_eq!(expand_path("~/foo"), home.join("foo"));
     }
 
-    #[tokio::test]
-    async fn prepare_unix_socket_refuses_live_listener() {
-        let dir = tempdir().unwrap();
-        let sock = dir.path().join("daemon.sock");
-        let _listener = UnixListener::bind(&sock).unwrap();
-        let err = prepare_unix_socket(&sock).await.unwrap_err();
-        assert!(
-            err.to_string().contains("already running"),
-            "unexpected error: {err}"
-        );
-        assert!(sock.exists(), "must not unlink a live socket path");
-    }
+    #[cfg(unix)]
+    mod unix_ipc {
+        use super::*;
+        use crate::crypto::{DevicePubKey, DeviceSecretKey};
+        use crypto_box::aead::OsRng;
+        use crypto_box::SecretKey;
 
-    #[tokio::test]
-    async fn prepare_unix_socket_removes_stale_path() {
-        let dir = tempdir().unwrap();
-        let sock = dir.path().join("daemon.sock");
-        std::fs::write(&sock, b"").unwrap(); // not a live listener
-        prepare_unix_socket(&sock).await.unwrap();
-        assert!(!sock.exists());
+        fn test_keypair() -> (DevicePubKey, DeviceSecretKey) {
+            let sk = SecretKey::generate(&mut OsRng);
+            let pk = sk.public_key();
+            (
+                DevicePubKey(pk.to_bytes()),
+                DeviceSecretKey(sk.to_bytes()),
+            )
+        }
+
+        #[tokio::test]
+        async fn daemon_crypto_roundtrip_via_rpc() {
+            let _ = test_keypair();
+            let dir = tempdir().unwrap();
+            let sock = dir.path().join("daemon.sock");
+            let state = Arc::new(DaemonState::new_in_memory_for_test().unwrap());
+
+            let listener = UnixListener::bind(&sock).unwrap();
+            let accept_state = Arc::clone(&state);
+            let server = tokio::spawn(async move {
+                let (stream, _) = listener.accept().await.unwrap();
+                serve_connection(stream, accept_state).await.unwrap();
+            });
+
+            let mut stream = UnixStream::connect(&sock).await.unwrap();
+            let req = serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "draft_add_question",
+                "params": {
+                    "id": "q1",
+                    "prompt": "What is the plan?",
+                    "kind": "question"
+                }
+            });
+            stream
+                .write_all((req.to_string() + "\n").as_bytes())
+                .await
+                .unwrap();
+
+            let mut reader = BufReader::new(stream);
+            let mut line = String::new();
+            reader.read_line(&mut line).await.unwrap();
+            let resp: JsonRpcResponse = serde_json::from_str(line.as_str()).unwrap();
+            assert!(resp.error.is_none(), "{:?}", resp.error);
+
+            let get_req = serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "get_draft",
+                "params": {}
+            });
+            reader
+                .get_mut()
+                .write_all((get_req.to_string() + "\n").as_bytes())
+                .await
+                .unwrap();
+            let mut line2 = String::new();
+            reader.read_line(&mut line2).await.unwrap();
+            let resp2: JsonRpcResponse = serde_json::from_str(line2.as_str()).unwrap();
+            assert!(resp2.error.is_none());
+
+            server.abort();
+        }
+
+        #[tokio::test]
+        async fn prepare_unix_socket_refuses_live_listener() {
+            let dir = tempdir().unwrap();
+            let sock = dir.path().join("daemon.sock");
+            let _listener = UnixListener::bind(&sock).unwrap();
+            let err = prepare_unix_socket(&sock).await.unwrap_err();
+            assert!(
+                err.to_string().contains("already running"),
+                "unexpected error: {err}"
+            );
+            assert!(sock.exists(), "must not unlink a live socket path");
+        }
+
+        #[tokio::test]
+        async fn prepare_unix_socket_removes_stale_path() {
+            let dir = tempdir().unwrap();
+            let sock = dir.path().join("daemon.sock");
+            std::fs::write(&sock, b"").unwrap(); // not a live listener
+            prepare_unix_socket(&sock).await.unwrap();
+            assert!(!sock.exists());
+        }
     }
 }

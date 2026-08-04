@@ -299,6 +299,23 @@ impl HubClient {
         Ok(resp.contacts)
     }
 
+    pub async fn submit_feedback(
+        &self,
+        message: &str,
+        category: Option<&str>,
+        app_version: Option<&str>,
+        platform: Option<&str>,
+    ) -> Result<Feedback> {
+        let body = SubmitFeedbackRequest {
+            message: message.to_string(),
+            category: category.map(str::to_string),
+            app_version: app_version.map(str::to_string),
+            platform: platform.map(str::to_string),
+        };
+        let resp: SubmitFeedbackResponse = self.post_json("/v1/feedback", &body, true).await?;
+        Ok(resp.feedback)
+    }
+
     pub async fn list_threads(&self, filter: Option<ThreadFilter>) -> Result<Vec<ThreadMeta>> {
         let path = match filter {
             Some(ThreadFilter::NeedsAction) => "/v1/threads?filter=needs_action".to_string(),

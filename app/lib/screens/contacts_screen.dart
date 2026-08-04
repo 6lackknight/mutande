@@ -104,6 +104,10 @@ class _ContactsPanelState extends State<ContactsPanel> {
       await Process.run('open', [url]);
       return;
     }
+    if (Platform.isWindows) {
+      await Process.run('cmd', ['/C', 'start', '', url], runInShell: true);
+      return;
+    }
     await Clipboard.setData(ClipboardData(text: url));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(

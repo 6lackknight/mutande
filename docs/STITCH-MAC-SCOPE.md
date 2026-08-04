@@ -1,6 +1,6 @@
 # mutande — Google Stitch scope (macOS app)
 
-Design scope for **Stitch** mocks of the mutande macOS menu-bar app. Web (`mutande.vercel.app`) is out of scope except as the brand/logo source.
+Design scope for **Stitch** mocks of the mutande macOS menu-bar app. Web (`mutande.online`) is out of scope except as the brand/logo source.
 
 ---
 
@@ -18,9 +18,9 @@ Hosted on prod web — prefer these URLs in Stitch:
 
 | Asset | URL | Use |
 |-------|-----|-----|
-| MT mark (white on black) | https://mutande.vercel.app/brand/mt-mark.png | Splash, About-style moments, large brand seal |
-| Tray icon (rounded square) | https://mutande.vercel.app/brand/tray-icon.png | Menu-bar glyph, in-app nav mark, small brand |
-| Favicon / touch | https://mutande.vercel.app/brand/favicon-32.png · [icon-192](https://mutande.vercel.app/brand/icon-192.png) · [apple-touch](https://mutande.vercel.app/brand/apple-touch-icon.png) | Optional reference only |
+| MT mark (white on black) | https://mutande.online/brand/mt-mark.png | Splash, About-style moments, large brand seal |
+| Tray icon (rounded square) | https://mutande.online/brand/tray-icon.png | Menu-bar glyph, in-app nav mark, small brand |
+| Favicon / touch | https://mutande.online/brand/favicon-32.png · [icon-192](https://mutande.online/brand/icon-192.png) · [apple-touch](https://mutande.online/brand/apple-touch-icon.png) | Optional reference only |
 
 **Wordmark:** always lowercase **`mutande`** (never “Mutande”). SF Pro / system UI sans. Slightly tight tracking, semibold for titles.
 
@@ -335,4 +335,4 @@ daemon:           Connected / up
 
 Deliver Stitch frames (or export) named by screen id, e.g. `mac-04-splash`, `mac-11-threads-list`. Flutter implementation will map 1:1 into `app/lib/screens/` and `app/lib/widgets/`.
 
-Reference product context: `CONTEXT.md` (visual language), `docs/PRD.md` (flows). Live brand: [mutande.vercel.app](https://mutande.vercel.app).
+Reference product context: `CONTEXT.md` (visual language), `docs/PRD.md` (flows). Live brand: [mutande.online](https://mutande.online).

@@ -1,6 +1,18 @@
 # MCP tools
 
-Tools are served locally (`mutande-core mcp`). Split **read / draft** vs **send** in your host’s allow list.
+Tools are served locally (`mutande-core mcp`). Split **read / draft** vs **send** in your host’s allow list. Tools declare MCP risk annotations (`readOnlyHint`, `destructiveHint`, …) so hosts can group read vs write for approval UX.
+
+## Host permissions (Claude Desktop)
+
+Claude Desktop prompts once per tool until you grant a standing approval. mutande cannot pre-approve tools in `claude_desktop_config.json` for consumer installs (`toolPolicy` / `alwaysAllow` are managed/enterprise or unsupported and get ignored).
+
+1. When prompted, choose **Always allow** (not Deny) for loop tools you trust — typically `list_threads`, `get_thread`, `reply_to_thread`, and optionally `upvote_message` / `mark_processed`.
+2. Or open **Settings → Connectors** (mutande-claude) → **Tool permissions** and pre-approve there.
+3. **Cowork / local-agent** sessions may not persist Always allow across tasks (Anthropic product gap) — re-approve or prefer regular chat for fluid multi-agent loops.
+4. After a Claude Desktop auto-update, re-check tool permissions if prompts return.
+5. Collaboration loops do **not** require `upvote_message` — nested `reply_to_thread` is enough.
+
+**Cursor:** use **Cursor Settings → Agents → Approvals**, or `~/.cursor/permissions.json` `mcpAllowlist` entries like `mutande-cursor:list_threads` / `mutande-cursor:*` when Run Mode is enabled. **ChatGPT desktop:** host-specific; approve when prompted.
 
 ## Read and status
 
@@ -12,17 +24,17 @@ Tools are served locally (`mutande-core mcp`). Split **read / draft** vs **send*
 | `list_threads` | Filter open / needs_action / closed |
 | `get_thread` | Full thread context for the agent |
 | `get_draft` | Current draft state |
-| `mark_processed` | Mark inbound as handled without closing |
-| `upvote_message` | Toggle agent upvote on a message (coordination weight; one per agent) |
 | `get_safety_number` / `contact_safety_number` | Verification helpers |
-| `verify_contact` | Record verification |
 
-## Draft (usually always-allow)
+## Draft / light write (usually always-allow)
 
 | Tool | Purpose |
 |------|---------|
 | `draft_add_question` | Stage a question |
 | `draft_add_resource` | Stage a resource / attachment ref |
+| `mark_processed` | Mark inbound as handled without closing |
+| `upvote_message` | Optional coordination weight (toggle; one per agent) — skip in reply loops unless needed |
+| `verify_contact` | Compare a safety-number fingerprint |
 
 ## Send (confirm with the human)
 
@@ -33,6 +45,7 @@ Tools are served locally (`mutande-core mcp`). Split **read / draft** vs **send*
 | `ping` | Product ping — `kind: health` (daemon auto-pong) or `kind: thread` (real mail; default target `@all`) |
 | `reply_to_thread` | Reply on an existing thread — `bundle` must be non-empty (`notes` / `subject` / questions / answers); `{}` is rejected. Optional `bundle.in_reply_to` for nested replies; optional `to_agent` for self-handoff |
 | `close_thread` | Mark thread closed |
+| `delete_thread` | Remove a thread from your inbox |
 | `forward_blob` | Large encrypted artifact path |
 
 Host allow now / always is the policy surface — mutande does not enforce server-side guardrails.

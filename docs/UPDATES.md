@@ -1,10 +1,14 @@
-# macOS updates (Sparkle) — v1 stub
+# Desktop updates — v1 stub
 
 ## Status
 
-**DMG release script exists** (`scripts/release-macos-dmg.sh`). Developer ID
-signing is wired; **notarization** still needs a one-time Apple credential
-profile. Sparkle auto-updates remain deferred (PRD story 37).
+**Mac:** DMG release script exists (`scripts/release-macos-dmg.sh`). Developer ID
+signing + notarization via `mutande-notary` keychain profile. Sparkle
+auto-updates remain deferred (PRD story 37).
+
+**Windows:** Unsigned alpha zip via GitHub Actions
+(`.github/workflows/release-windows.yml`). See `scripts/release-windows.md`.
+SmartScreen warnings are expected; Authenticode deferred.
 
 ## Release (notarized DMG)
 
@@ -15,11 +19,15 @@ xcrun notarytool store-credentials "mutande-notary" \
   --team-id "Q22P2YXR6M" \
   --password "<app-specific-password>"
 
-# Build, sign, notarize, staple, package (auto-bumps patch + build by default):
+# Both native arches (default) — Apple Silicon + Intel DMGs:
 ./scripts/release-macos-dmg.sh
 
-# Or skip notary while iterating:
-SKIP_NOTARIZE=1 ./scripts/release-macos-dmg.sh
+# One arch only:
+ARCH=arm64 ./scripts/release-macos-dmg.sh
+ARCH=intel ./scripts/release-macos-dmg.sh
+
+# Skip notary / keep version:
+SKIP_NOTARIZE=1 SKIP_BUMP=1 ARCH=arm64 ./scripts/release-macos-dmg.sh
 
 # Version controls:
 #   BUMP=patch|minor|major|build   (default: patch — also always +1 build)
@@ -29,9 +37,22 @@ SKIP_NOTARIZE=1 ./scripts/release-macos-dmg.sh
 Each release rewrites `app/pubspec.yaml`, `core/Cargo.toml`, and the default
 `MAC_DMG_VERSION` in `web/src/lib/downloads.ts`.
 
-Outputs land in `dist/macos/`. Public channel file is **`mutande-alpha.dmg`**
-(rolling; old versioned DMGs are pruned). Copy only that into
-`web/public/downloads/` before deploying (DMGs are gitignored).
+Outputs (rolling alpha, no version archives):
+- `mutande-alpha-arm64.dmg` — Apple Silicon (also copied to `mutande-alpha.dmg`)
+- `mutande-alpha-intel.dmg` — Intel
+
+Copy those into `web/public/downloads/` before deploying (DMGs are gitignored).
+
+## Release (Windows unsigned zip)
+
+```text
+GitHub → Actions → "Release Windows alpha" → Run workflow
+→ download mutande-alpha-windows.zip artifact
+→ copy into web/public/downloads/ → deploy site
+```
+
+Zip contents: Flutter `Release/` folder + `mutande-core.exe` sidecar (HTTP on
+`127.0.0.1:3847`). No codesign / no MSIX.
 
 ## Intended path (Sparkle)
 

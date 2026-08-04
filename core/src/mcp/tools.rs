@@ -1,6 +1,6 @@
 use serde_json::json;
 
-use super::protocol::McpToolDefinition;
+use super::protocol::{McpToolAnnotations, McpToolDefinition};
 
 /// Read tools — safe for always-allow in host policy.
 const READ_TOOLS: &[(&str, &str, ValueFn)] = &[
@@ -143,7 +143,7 @@ const SEND_TOOLS: &[(&str, &str, ValueFn)] = &[
     ),
     (
         "forward_draft",
-        "Hand off the staged draft. Self-collab: @all fans out one thread per other registered agent (excludes sender); result has recipients + thread_ids (parallel arrays) and thread_id (first only — do not treat that as the full fanout). Single agent: @claude/@cursor/@chatgpt. Teammates: alice@org, alice@org/claude, @all@org. 'Ask my agents' → @all.",
+        "Hand off the staged draft. Self-collab: @all opens one shared group thread for all your agents (shared replies). Single agent: @claude/@cursor/@chatgpt. Teammates: alice@org, alice@org/claude, @all@org (org announcement). 'Ask my agents' → @all.",
         || {
             json!({
                 "type": "object",
@@ -248,7 +248,7 @@ const SEND_TOOLS: &[(&str, &str, ValueFn)] = &[
     ),
     (
         "upvote_message",
-        "Signal interest or agreement on a thread message (one upvote per agent; toggle). Use for multi-agent coordination weight — nested replies handle structure.",
+        "Optional coordination weight on a message (one upvote per agent; toggle). Not required for reply loops — nested replies are enough. Prefer skipping unless several agents need a clear signal on the same point.",
         || {
             json!({
                 "type": "object",
@@ -263,7 +263,7 @@ const SEND_TOOLS: &[(&str, &str, ValueFn)] = &[
     ),
     (
         "forward_blob",
-        "Hand off a large artifact as a sealed blob on a new thread (hub presign PUT). Provide content_base64 or path. Same recipients as forward_draft. Confirm via AskQuestion when the skill requires it.",
+        "Hand off a large artifact as a sealed blob on a new thread (hub presign PUT). Wraps bytes in a MutandeBundle (subject + resource with name/mime/content) so recipients can read text artifacts. Provide content_base64 or path. Same recipients as forward_draft. Confirm via AskQuestion when the skill requires it.",
         || {
             json!({
                 "type": "object",
@@ -272,6 +272,7 @@ const SEND_TOOLS: &[(&str, &str, ValueFn)] = &[
                     "recipient": { "type": "string", "description": "Self: @all or @claude/@cursor/@chatgpt. Teammates: alice@org, alice@org/claude, @all@org." },
                     "content_base64": { "type": "string" },
                     "path": { "type": "string", "description": "local file path to seal and upload" },
+                    "filename": { "type": "string", "description": "optional name when using content_base64; path uses the basename automatically" },
                     "subject": { "type": "string" }
                 },
                 "additionalProperties": false
@@ -297,13 +298,85 @@ const SEND_TOOLS: &[(&str, &str, ValueFn)] = &[
 
 type ValueFn = fn() -> serde_json::Value;
 
+fn annotations_for(name: &str, read: bool) -> McpToolAnnotations {
+    if read {
+        return McpToolAnnotations {
+            title: None,
+            read_only_hint: Some(true),
+            destructive_hint: Some(false),
+            idempotent_hint: Some(true),
+            // Local daemon + hub lookups; closed product surface.
+            open_world_hint: Some(false),
+        };
+    }
+
+    match name {
+        // Local draft staging — additive, no handoff yet.
+        "draft_add_question" | "draft_add_resource" => McpToolAnnotations {
+            title: None,
+            read_only_hint: Some(false),
+            destructive_hint: Some(false),
+            idempotent_hint: Some(false),
+            open_world_hint: Some(false),
+        },
+        // Local bookkeeping — not destructive deletes.
+        "mark_processed" | "verify_contact" => McpToolAnnotations {
+            title: None,
+            read_only_hint: Some(false),
+            destructive_hint: Some(false),
+            idempotent_hint: Some(true),
+            open_world_hint: Some(false),
+        },
+        // Toggle — additive coordination signal; second call undoes (not idempotent).
+        "upvote_message" => McpToolAnnotations {
+            title: None,
+            read_only_hint: Some(false),
+            destructive_hint: Some(false),
+            idempotent_hint: Some(false),
+            open_world_hint: Some(false),
+        },
+        // Overwrites router / removes threads.
+        "set_router" | "close_thread" | "delete_thread" => McpToolAnnotations {
+            title: None,
+            read_only_hint: Some(false),
+            destructive_hint: Some(true),
+            idempotent_hint: Some(true),
+            open_world_hint: Some(false),
+        },
+        // Outbound mail / hub — additive but open-world recipients.
+        "forward_draft" | "ping" | "reply_to_thread" | "forward_blob" => McpToolAnnotations {
+            title: None,
+            read_only_hint: Some(false),
+            destructive_hint: Some(false),
+            idempotent_hint: Some(false),
+            open_world_hint: Some(true),
+        },
+        _ => McpToolAnnotations {
+            title: None,
+            read_only_hint: Some(false),
+            destructive_hint: Some(true),
+            idempotent_hint: Some(false),
+            open_world_hint: Some(true),
+        },
+    }
+}
+
 pub fn tool_definitions() -> Vec<McpToolDefinition> {
     let mut tools = Vec::new();
-    for (name, desc, schema) in READ_TOOLS.iter().chain(SEND_TOOLS.iter()) {
+    for (name, desc, schema) in READ_TOOLS.iter() {
         tools.push(McpToolDefinition {
             name: (*name).to_string(),
             description: (*desc).to_string(),
             input_schema: schema(),
+            annotations: Some(annotations_for(name, true)),
+        });
+    }
+    for (name, desc, schema) in SEND_TOOLS.iter() {
+        tools.push(McpToolDefinition {
+            name: (*name).to_string(),
+            description: (*desc).to_string(),
+            input_schema: schema(),
+            annotations: Some(annotations_for(name, false)),
         });
     }
     tools

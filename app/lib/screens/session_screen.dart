@@ -1,7 +1,6 @@
-import 'dart:io' show Platform;
-
 import 'package:flutter/material.dart';
 
+import '../platform/user_home.dart';
 import '../services/daemon_client.dart';
 import '../widgets/ai_host_icon.dart';
 import '../widgets/thinking_orb.dart';
@@ -635,7 +634,7 @@ String? _softHelperNote(HostWriteResult host) {
 }
 
 String _tildePath(String path) {
-  final home = Platform.environment['HOME'];
+  final home = userHomeDir();
   if (home != null && home.isNotEmpty && path.startsWith(home)) {
     return '~${path.substring(home.length)}';
   }

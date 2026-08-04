@@ -18,7 +18,7 @@ export function isBroadcastHandle(handle: string): boolean {
   return handle.startsWith("@all@");
 }
 
-/** Self fan-out to all of the current user's agents: bare `@all`. */
+/** Shared my-agents group: bare `@all`. */
 export function isMyAgentsHandle(handle: string): boolean {
   return handle.trim() === "@all";
 }

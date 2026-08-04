@@ -14,7 +14,7 @@ class AppConfig {
   static const defaultHubUrl = 'https://mutande.6lackknight.deno.net';
 
   /// Prod web (signup, invites). Override with `--dart-define=MUTANDE_WEB_APP_URL=…`.
-  static const defaultWebAppUrl = 'https://mutande.vercel.app';
+  static const defaultWebAppUrl = 'https://mutande.online';
 
   /// Auth0 tenant host (no scheme). Matches core `auth0_defaults`.
   static const defaultAuth0Domain = 'chevrondigital.auth0.com';

@@ -133,6 +133,15 @@ async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Resu
             let contacts = state.list_contacts().await?;
             Ok(serde_json::to_value(serde_json::json!({ "contacts": contacts }))?)
         }
+        "submit_feedback" => {
+            let message = param_str(&params, "message")?;
+            let category = optional_str(&params, "category");
+            let app_version = optional_str(&params, "app_version");
+            let feedback = state
+                .submit_feedback(&message, category.as_deref(), app_version.as_deref())
+                .await?;
+            Ok(serde_json::to_value(serde_json::json!({ "feedback": feedback }))?)
+        }
         "list_threads" => {
             let filter = params
                 .get("filter")
@@ -320,20 +329,30 @@ async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Resu
                 .get("subject")
                 .and_then(|v| v.as_str())
                 .map(str::to_string);
-            let plaintext = if let Some(b64) = params.get("content_base64").and_then(|v| v.as_str())
-            {
-                decode_base64(b64)?
-            } else if let Some(path) = params.get("path").and_then(|v| v.as_str()) {
-                std::fs::read(path)
-                    .with_context(|| format!("read blob path {path}"))?
-            } else {
-                anyhow::bail!("missing param: content_base64 or path");
-            };
+            let (plaintext, filename) =
+                if let Some(b64) = params.get("content_base64").and_then(|v| v.as_str()) {
+                    let name = params
+                        .get("filename")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string);
+                    (decode_base64(b64)?, name)
+                } else if let Some(path) = params.get("path").and_then(|v| v.as_str()) {
+                    let bytes = std::fs::read(path)
+                        .with_context(|| format!("read blob path {path}"))?;
+                    let name = std::path::Path::new(path)
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .map(str::to_string);
+                    (bytes, name)
+                } else {
+                    anyhow::bail!("missing param: content_base64 or path");
+                };
             let result = state
                 .forward_blob(
                     &recipient,
                     &plaintext,
                     subject.as_deref(),
+                    filename.as_deref(),
                     agent_slug.as_deref(),
                 )
                 .await?;

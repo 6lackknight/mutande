@@ -2,7 +2,7 @@
 
 Next.js (App Router) front-end for Auth0 sign-in, org onboarding, and admin invites. Deployed on Vercel. No E2E mail in the browser — metadata and invites only.
 
-**Prod web:** [https://mutande.vercel.app](https://mutande.vercel.app) (canonical until `mutande.ai`). Optional alias: `mutande-web.vercel.app`.
+**Prod web:** [https://mutande.online](https://mutande.online) (canonical until `mutande.ai`). Optional aliases: `mutande.vercel.app`, `mutande-web.vercel.app`.
 
 ## Local run
 
@@ -25,8 +25,8 @@ Short path for this app:
 1. Create a **Regular Web Application** (separate from the Mac Native app).
 2. Enable **Password** and **Email (passwordless)** on the Database connection; enable that connection on this app.
 3. Application URLs:
-   - Callback: `http://localhost:3000/auth/callback` and `https://mutande.vercel.app/auth/callback`
-   - Logout: `http://localhost:3000` and `https://mutande.vercel.app` (plus `/auth/logout`)
+   - Callback: `http://localhost:3000/auth/callback` and `https://mutande.online/auth/callback`
+   - Logout: `http://localhost:3000` and `https://mutande.online` (plus `/auth/logout`)
    - Web Origins: same origins
 4. Create an **API** whose Identifier matches `AUTH0_AUDIENCE` / hub `AUTH0_AUDIENCE` (e.g. `https://hub.mutande.app`).
 5. Authorize the web app for that API (RBAC optional for v1).
@@ -43,7 +43,7 @@ SDK routes are mounted by `src/proxy.ts`: `/auth/login`, `/auth/logout`, `/auth/
 | `AUTH0_CLIENT_SECRET` | yes | Web app |
 | `AUTH0_SECRET` | yes | Session cookie encryption |
 | `AUTH0_AUDIENCE` | yes | Hub API audience |
-| `APP_BASE_URL` | recommended | Local `http://localhost:3000`; production `https://mutande.vercel.app` (until `mutande.ai`); omit on Vercel previews to infer host |
+| `APP_BASE_URL` | recommended | Local `http://localhost:3000`; production `https://mutande.online` (until `mutande.ai`); omit on Vercel previews to infer host |
 | `MUTANDE_HUB_URL` | no | Default `https://mutande.6lackknight.deno.net` |
 | `PLUNK_API_KEY` | no | Invite email; if unset, create + copy link still works |
 
@@ -62,8 +62,8 @@ Typed client: `src/lib/hub.ts`. Network / 4xx–5xx surface as friendly UI error
 
 1. Import the monorepo; set **Root Directory** to `web`.
 2. Framework: Next.js (auto).
-3. Add the env vars above. Set production `APP_BASE_URL=https://mutande.vercel.app` and Auth0 callbacks/logout/web origins for that host.
-4. Deploy. Production host: `https://mutande.vercel.app` until `mutande.ai`.
+3. Add the env vars above. Set production `APP_BASE_URL=https://mutande.online` and Auth0 callbacks/logout/web origins for that host.
+4. Deploy. Production host: `https://mutande.online` until `mutande.ai`.
 
 ## Structure
 

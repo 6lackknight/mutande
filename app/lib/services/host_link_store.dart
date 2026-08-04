@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
+import '../platform/user_home.dart';
 import 'daemon_client.dart';
 
 /// Last-known MCP link outcome per AI host (`cursor`, `claude`, `chatgpt`).
@@ -61,9 +62,9 @@ class HostLinkStore {
 
   File _resolveFile() {
     if (_file != null) return _file!;
-    final home = Platform.environment['HOME'];
+    final home = userHomeDir();
     if (home == null || home.isEmpty) {
-      throw StateError('HOME is not set');
+      throw StateError('home directory is not set');
     }
     return File('$home/.mutande/host_links.json');
   }

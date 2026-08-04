@@ -578,7 +578,15 @@ fn open_url(url: &str) -> Result<()> {
             .context("open Auth0 authorize URL")?;
         return Ok(());
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", url])
+            .spawn()
+            .context("open Auth0 authorize URL")?;
+        return Ok(());
+    }
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
     {
         tracing::warn!(%url, "open browser not implemented on this OS — open URL manually");
         Ok(())

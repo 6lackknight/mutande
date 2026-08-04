@@ -1,0 +1,85 @@
+# Unsigned Windows alpha zip (SmartScreen will warn). Authenticode deferred.
+# Trigger: Actions → Release Windows alpha → Run workflow
+name: Release Windows alpha
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "win-alpha-*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Build mutande-core
+        working-directory: core
+        run: cargo build --release
+
+      - name: Flutter pub get
+        working-directory: app
+        run: flutter pub get
+
+      - name: Read app version
+        id: ver
+        working-directory: app
+        run: |
+          $line = Get-Content pubspec.yaml | Where-Object { $_ -match '^version:\s*' } | Select-Object -First 1
+          $v = ($line -replace '^version:\s*', '').Trim()
+          $semver = ($v -split '\+')[0]
+          "version=$semver" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "full=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Build Flutter Windows
+        working-directory: app
+        env:
+          MUTANDE_CORE_EXE: ${{ github.workspace }}\core\target\release\mutande-core.exe
+        run: |
+          flutter build windows --release `
+            --dart-define=APP_VERSION=${{ steps.ver.outputs.version }}
+
+      - name: Bundle sidecar into Release
+        run: |
+          $release = "app/build/windows/x64/runner/Release"
+          if (-not (Test-Path $release)) {
+            $release = Get-ChildItem -Path app/build/windows -Recurse -Directory -Filter Release |
+              Where-Object { Test-Path (Join-Path $_.FullName "mutande.exe") } |
+              Select-Object -First 1 -ExpandProperty FullName
+          }
+          if (-not $release) { throw "Flutter Release output not found" }
+          Copy-Item -Force "core/target/release/mutande-core.exe" (Join-Path $release "mutande-core.exe")
+          "RELEASE_DIR=$release" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Get-ChildItem $release | Format-Table Name, Length
+
+      - name: Zip portable alpha
+        run: |
+          $zip = Join-Path $pwd "mutande-alpha-windows.zip"
+          if (Test-Path $zip) { Remove-Item $zip }
+          Compress-Archive -Path (Join-Path $env:RELEASE_DIR "*") -DestinationPath $zip
+          Get-Item $zip | Format-List FullName, Length
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutande-alpha-windows
+          path: mutande-alpha-windows.zip
+          if-no-files-found: error

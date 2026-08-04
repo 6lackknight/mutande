@@ -32,7 +32,7 @@ Xcode Run Script: `macos/Runner/Scripts/bundle_mutande_core.sh`.
 
 ## Auth (Auth0)
 
-Same Auth0 user as `web/` ([https://mutande.vercel.app](https://mutande.vercel.app) until `mutande.ai`). Flow: **Sign in with Auth0** → daemon opens browser (PKCE loopback) → create team or join invite → home.
+Same Auth0 user as `web/` ([https://mutande.online](https://mutande.online) until `mutande.ai`). Flow: **Sign in with Auth0** → daemon opens browser (PKCE loopback) → create team or join invite → home.
 
 Dart-defines (optional; daemon can also read env):
 

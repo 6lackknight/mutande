@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
+import '../platform/user_home.dart';
+
 /// Local IPC client for `mutande-core serve`.
 ///
 /// App transport (current): JSON-RPC 2.0 over HTTP POST to
@@ -185,6 +187,22 @@ class DaemonClient {
         .toList();
   }
 
+  /// Pilot / product feedback → hub `POST /v1/feedback`.
+  Future<void> submitFeedback({
+    required String message,
+    String? category,
+    String? appVersion,
+  }) async {
+    final params = <String, dynamic>{'message': message};
+    if (category != null && category.isNotEmpty) {
+      params['category'] = category;
+    }
+    if (appVersion != null && appVersion.isNotEmpty) {
+      params['app_version'] = appVersion;
+    }
+    await _call('submit_feedback', params);
+  }
+
   /// List threads via JSON-RPC `list_threads`.
   Future<List<ThreadSummary>> listThreads({String? filter}) async {
     final result = await _callWithTimeout(
@@ -205,6 +223,11 @@ class DaemonClient {
         yourStatus: m['your_status'] as String?,
         replyCount: (m['reply_count'] as num?)?.toInt() ?? 0,
         agentBadge: _agentBadgeFromThread(m),
+        // Hub `updated_at` advances on latest message activity.
+        updatedAt: m['updated_at'] as String? ?? m['created_at'] as String?,
+        lastFrom: m['last_from'] as String?,
+        lastSubject: m['last_subject'] as String?,
+        lastPreview: m['last_preview'] as String?,
       );
     }).toList();
   }
@@ -529,19 +552,7 @@ class DaemonClient {
     return token;
   }
 
-  static String _expandHome(String path) {
-    if (path == '~') {
-      return Platform.environment['HOME'] ?? path;
-    }
-    if (path.startsWith('~/')) {
-      final home = Platform.environment['HOME'];
-      if (home == null || home.isEmpty) {
-        return path;
-      }
-      return '$home/${path.substring(2)}';
-    }
-    return path;
-  }
+  static String _expandHome(String path) => expandUserPath(path);
 
   void dispose() => _http.close();
 }
@@ -685,6 +696,10 @@ class ThreadSummary {
     this.yourStatus,
     this.replyCount = 0,
     this.agentBadge,
+    this.updatedAt,
+    this.lastFrom,
+    this.lastSubject,
+    this.lastPreview,
   });
 
   final String id;
@@ -695,6 +710,56 @@ class ThreadSummary {
   final String? yourStatus;
   final int replyCount;
   final String? agentBadge;
+  /// ISO timestamp of latest thread activity (last message).
+  final String? updatedAt;
+  /// Author of the latest opened message (daemon-local).
+  final String? lastFrom;
+  /// Subject for the list title (latest, else OP — daemon-local).
+  final String? lastSubject;
+  /// Body preview of the latest message (daemon-local).
+  final String? lastPreview;
+
+  ThreadSummary copyWith({
+    String? status,
+    String? yourStatus,
+    int? replyCount,
+    String? agentBadge,
+    String? updatedAt,
+    String? lastFrom,
+    String? lastSubject,
+    String? lastPreview,
+  }) {
+    return ThreadSummary(
+      id: id,
+      kind: kind,
+      status: status ?? this.status,
+      from: from,
+      audience: audience,
+      yourStatus: yourStatus ?? this.yourStatus,
+      replyCount: replyCount ?? this.replyCount,
+      agentBadge: agentBadge ?? this.agentBadge,
+      updatedAt: updatedAt ?? this.updatedAt,
+      lastFrom: lastFrom ?? this.lastFrom,
+      lastSubject: lastSubject ?? this.lastSubject,
+      lastPreview: lastPreview ?? this.lastPreview,
+    );
+  }
+
+  /// List-row fingerprint for merge / skip-rebuild checks.
+  bool sameListRow(ThreadSummary other) {
+    return id == other.id &&
+        kind == other.kind &&
+        status == other.status &&
+        from == other.from &&
+        audience == other.audience &&
+        yourStatus == other.yourStatus &&
+        replyCount == other.replyCount &&
+        agentBadge == other.agentBadge &&
+        updatedAt == other.updatedAt &&
+        lastFrom == other.lastFrom &&
+        lastSubject == other.lastSubject &&
+        lastPreview == other.lastPreview;
+  }
 }
 
 class AgentInfo {

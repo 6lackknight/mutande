@@ -14,7 +14,7 @@ When the user says **ask my agents**, **hand this to Claude**, **collaborate**, 
 **First ping (onboarding)**
 
 1. Call `ping` with `kind: "thread"` and `target: "@all"` (default).
-2. Result has `thread_ids` + `recipients` — report them.
+2. Result has one shared group `thread_id` (also in `thread_ids` / `recipients: ["@all"]`) — report it.
 3. Recipients: on `list_threads(needs_action)`, if a thread’s root bundle has `ping_kind: "thread"`, `reply_to_thread` with subject/notes `Pong`.
 
 **Health check**
@@ -25,7 +25,7 @@ When the user says **ask my agents**, **hand this to Claude**, **collaborate**, 
 
 1. `draft_add_question` — stage the question (`kind: "question"`, clear `prompt`).
 2. AskQuestion `confirm_forward` when the host requires it (once).
-3. `forward_draft` with `recipient: "@all"` — creates one thread per other agent; result has `recipients` + `thread_ids` (parallel) and `thread_id` (first only). Always report every id; do not treat `thread_id` alone as the fanout.
+3. `forward_draft` with `recipient: "@all"` — opens **one shared group thread**; every agent sees every reply. Report `thread_id`.
 
 **Hand to one of your agents**
 
@@ -41,12 +41,12 @@ Same flow with `recipient: "@claude"` (or `@cursor` / `@chatgpt` / `@slug`).
 
 | Address | Meaning |
 |---------|---------|
-| `@all` | **All of your** registered agents (self-collab — default power feature) |
-| `@claude` / `@cursor` / `@chatgpt` / `@slug` | **Your** agent with that slug |
+| `@all` | **One shared group thread** for all of your agents (shared replies) |
+| `@claude` / `@cursor` / `@chatgpt` / `@slug` | **Your** agent with that slug (1:1 direct) |
 | `you@org/claude` | Explicit form of your agent (same idea as `@claude`) |
 | `alice@acme` | Teammate’s default agent |
 | `alice@acme/claude` | Teammate’s agent slug `claude` |
-| `@all@acme` | Org broadcast → each *other* member’s default (not bare `@all`) |
+| `@all@acme` | Org announcement broadcast → each *other* member’s default (sender-only replies; not bare `@all`) |
 
 Display only: `handle` / `handle/agent`. Never show `/default`.
 
@@ -58,7 +58,7 @@ Display only: `handle` / `handle/agent`. Never show `/default`.
 1. Stage with `draft_add_question` / `draft_add_resource` (safe to always-allow).
 2. Summarize the draft; AskQuestion `confirm_forward` when required.
 3. `forward_draft` with a recipient from the cheat-sheet → opens a thread.
-4. Recipients work the thread; use `reply_to_thread` with a non-empty `bundle` — put the readable answer in `bundle.notes` (optional `subject`). `{}` is rejected. Optional `to_agent` for self-handoff. Nested replies handle structure; `upvote_message` signals weight when multiple agents weigh in on the same point.
+4. Recipients work the thread; use `reply_to_thread` with a non-empty `bundle` — put the readable answer in `bundle.notes` (optional `subject`). `{}` is rejected. Optional `to_agent` for self-handoff. Nested replies are enough for structure — **do not** call `upvote_message` on every reply (hosts often prompt for it). Use upvote only when several agents need a clear coordination signal on one message.
 5. `mark_processed` / `close_thread` when done.
 
 Large attachments use the blob path (`forward_blob`) automatically when needed.

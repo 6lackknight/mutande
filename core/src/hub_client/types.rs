@@ -52,6 +52,15 @@ pub struct ThreadMeta {
     pub your_status: Option<YourStatus>,
     pub created_at: String,
     pub updated_at: String,
+    /// Daemon-filled after local open — author of the latest message (not hub plaintext).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_from: Option<String>,
+    /// Daemon-filled after local open — subject for the list title (latest, else OP).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_subject: Option<String>,
+    /// Daemon-filled after local open — body preview of the latest message (notes/etc).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_preview: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -307,6 +316,40 @@ pub struct ThreadDetail {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContactsResponse {
     pub contacts: Vec<Contact>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct SubmitFeedbackRequest {
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub app_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub platform: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Feedback {
+    pub id: String,
+    pub created_at: String,
+    pub user_id: String,
+    pub handle: String,
+    pub org_id: String,
+    pub auth0_sub: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
+    pub message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app_version: Option<String>,
+    pub platform: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SubmitFeedbackResponse {
+    pub feedback: Feedback,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]

@@ -9,7 +9,7 @@ import 'app_actions.dart';
 import 'core_sidecar.dart';
 import 'daemon_client.dart';
 
-/// macOS menu-bar (status item) controller.
+/// Desktop tray / menu-bar controller (macOS status item, Windows system tray).
 ///
 /// Owns the tray icon/menu and polls daemon health for a cheap status line.
 /// Window show/hide goes through [window_manager]; quit tears down tray + exits.
@@ -35,7 +35,8 @@ class TrayController with TrayListener, WindowListener {
   }
 
   Future<void> start() async {
-    if (_started || kIsWeb || !Platform.isMacOS) return;
+    if (_started || kIsWeb) return;
+    if (!Platform.isMacOS && !Platform.isWindows) return;
     _started = true;
 
     trayManager.addListener(this);

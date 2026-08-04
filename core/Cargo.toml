@@ -1,6 +1,6 @@
 [package]
 name = "mutande-core"
-version = "1.0.2"
+version = "1.0.3"
 edition = "2021"
 description = "Mutande desktop core: E2E crypto, daemon, MCP stdio"
 license = "MIT"
@@ -26,9 +26,11 @@ hex = "0.4"
 thiserror = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 dirs = "5"
-libc = "0.2"
 uuid = { version = "1", features = ["v4"] }
 base64 = "0.22"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = "3"

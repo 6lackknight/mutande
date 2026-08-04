@@ -134,7 +134,8 @@ pub struct OpenedThreadDetail {
     pub messages: Vec<OpenedThreadMessage>,
 }
 
-/// Result of `forward_draft` / `forward_blob` fan-out (`@all` → N directs).
+/// Result of `forward_draft` / `forward_blob` / `ping`.
+/// Bare `@all` is one shared group thread; 1:1 addresses stay single-thread.
 #[derive(Debug, Clone)]
 pub struct ForwardThreadsResult {
     /// Hub `to` addresses, same order as [`Self::thread_ids`].
@@ -573,7 +574,8 @@ impl DaemonState {
     async fn register_local_device(&self, hub: &HubClient) -> Result<()> {
         let pubkey = self.device_public()?;
         let agent_slug = self.connected_agent_slug.lock().unwrap().clone();
-        hub.register_device(&pubkey, "macos", agent_slug.as_deref()).await?;
+        hub.register_device(&pubkey, super::device_platform(), agent_slug.as_deref())
+            .await?;
         Ok(())
     }
 
@@ -844,6 +846,19 @@ impl DaemonState {
         Ok(vec![])
     }
 
+    pub async fn submit_feedback(
+        &self,
+        message: &str,
+        category: Option<&str>,
+        app_version: Option<&str>,
+    ) -> Result<crate::hub_client::Feedback> {
+        let hub = self
+            .hub_client()
+            .context("not signed in — call auth_login first")?;
+        hub.submit_feedback(message, category, app_version, Some(super::device_platform()))
+            .await
+    }
+
     pub async fn list_threads(
         &self,
         filter: Option<ThreadFilter>,
@@ -888,19 +903,25 @@ impl DaemonState {
                 // Mac UI: Needs you = unanswered human decisions only
                 // (approval / verify / questions to the bare human handle).
                 // Agent-to-agent waiting is never Needs you.
+                // Also attach last-message author + preview (local open only).
                 for t in &mut threads {
-                    if t.status != ThreadStatus::Open {
-                        continue;
+                    match self.fetch_and_open_thread(&t.id).await {
+                        Ok(detail) => {
+                            apply_last_message_snippet(t, &detail);
+                            if t.status == ThreadStatus::Open {
+                                t.your_status = Some(if thread_needs_human(&detail) {
+                                    YourStatus::Pending
+                                } else {
+                                    YourStatus::Replied
+                                });
+                            }
+                        }
+                        Err(_) => {
+                            if t.status == ThreadStatus::Open {
+                                t.your_status = Some(YourStatus::Replied);
+                            }
+                        }
                     }
-                    let needs_human = match self.fetch_and_open_thread(&t.id).await {
-                        Ok(detail) => thread_needs_human(&detail),
-                        Err(_) => false,
-                    };
-                    t.your_status = Some(if needs_human {
-                        YourStatus::Pending
-                    } else {
-                        YourStatus::Replied
-                    });
                 }
                 if matches!(filter, Some(ThreadFilter::NeedsAction)) {
                     threads.retain(|t| {
@@ -1080,7 +1101,8 @@ impl DaemonState {
                     upvotes: upvotes.clone(),
                 },
                 Err(_err) if is_blob => {
-                    // Raw artifact bytes in R2 — summarize without embedding content.
+                    // Legacy/raw blob plaintext (not a MutandeBundle). Inline small
+                    // UTF-8 so agents can read .md/.txt; stub binary/large.
                     OpenedThreadMessage {
                         id: msg.id,
                         thread_id: msg.thread_id,
@@ -1089,19 +1111,7 @@ impl DaemonState {
                         created_at: msg.created_at,
                         sender_only: msg.sender_only,
                         parent_message_id: parent_message_id.clone(),
-                        bundle: Some(MutandeBundle {
-                            subject: Some("blob artifact".into()),
-                            notes: Some(format!(
-                                "Opened encrypted blob ({} bytes); content not inlined.",
-                                plain.len()
-                            )),
-                            resources: vec![BundleResource {
-                                name: "artifact.bin".into(),
-                                mime: "application/octet-stream".into(),
-                                content: None,
-                            }],
-                            ..Default::default()
-                        }),
+                        bundle: Some(bundle_from_raw_blob_plaintext(&plain)),
                         envelope: None,
                         open_error: None,
                         upvotes: upvotes.clone(),
@@ -1156,8 +1166,9 @@ impl DaemonState {
         Ok(env)
     }
 
-    /// Create one thread per expanded hub recipient. `thread_ids[i]` matches
-    /// `recipients[i]`; callers expose `thread_id` = first id.
+    /// Create one hub thread per expanded recipient. Bare `@all` expands to a
+    /// single `@all` group thread. `thread_ids[i]` matches `recipients[i]`;
+    /// callers expose `thread_id` = first id.
     pub async fn forward_draft(
         &self,
         recipient: &str,
@@ -1216,7 +1227,8 @@ impl DaemonState {
         &self,
         recipient: &str,
         plaintext: &[u8],
-        _subject: Option<&str>,
+        subject: Option<&str>,
+        filename: Option<&str>,
         agent_slug: Option<&str>,
     ) -> Result<ForwardThreadsResult> {
         if plaintext.is_empty() {
@@ -1224,7 +1236,10 @@ impl DaemonState {
         }
         self.assert_recipient_allowed(recipient, agent_slug).await?;
         let seal_keys = self.resolve_recipient_pubkeys(recipient).await?;
-        let env = self.seal_and_upload_blob(plaintext, &seal_keys).await?;
+        // Wrap artifact in a bundle so open yields subject/name/mime/content for agents.
+        let bundle = bundle_for_blob_artifact(plaintext, subject, filename);
+        let plain = serde_json::to_vec(&bundle).context("serialize blob bundle")?;
+        let env = self.seal_and_upload_blob(&plain, &seal_keys).await?;
 
         if let Some(hub) = self.hub_client() {
             let hub_tos = self.expand_hub_recipients(recipient, agent_slug).await?;
@@ -1511,9 +1526,8 @@ impl DaemonState {
             .context("local handle unknown — cannot expand self-collaboration address")
     }
 
-    /// Expand `@all` / `@claude` to full `you@org/slug` addresses before hub
-    /// createThread. Prod hubs that lack shorthand parsing still accept the
-    /// expanded form; `@all` becomes one thread per other registered agent.
+    /// Expand `@claude` to `you@org/slug` for hubs that lack shorthand.
+    /// Bare `@all` stays `@all` — one shared my-agents group thread on the hub.
     async fn expand_hub_recipients(
         &self,
         recipient: &str,
@@ -1531,22 +1545,18 @@ impl DaemonState {
                 Ok(vec![format!("{bare}/{slug}")])
             }
             AddressKind::MyAgents => {
-                let bare = self.my_bare_handle().await?;
                 let list = self.list_agents().await?;
                 let from = self.effective_agent_slug(agent_slug).await;
-                let mut out: Vec<String> = list
+                let has_peer = list
                     .agents
-                    .into_iter()
-                    .filter(|a| from.as_deref() != Some(a.slug.as_str()))
-                    .map(|a| format!("{bare}/{}", a.slug))
-                    .collect();
-                if out.is_empty() {
+                    .iter()
+                    .any(|a| from.as_deref() != Some(a.slug.as_str()));
+                if !has_peer {
                     bail!(
                         "no other agents to hand off to with @all — register another agent or use @claude/@cursor/@chatgpt"
                     );
                 }
-                out.sort();
-                Ok(out)
+                Ok(vec!["@all".into()])
             }
             AddressKind::User | AddressKind::OrgBroadcast => Ok(vec![trimmed.to_string()]),
         }
@@ -1681,9 +1691,10 @@ impl DaemonState {
         bail!("unknown recipient {recipient}");
     }
 
-    /// Seal replies to `thread.from` only.
+    /// Seal replies to the original sender's devices.
     ///
-    /// PRD v1: broadcast replies are sender-only (not re-broadcast to `@all` / participants).
+    /// Org `@all@org` announcements are sender-only. My-agents `@all` groups seal
+    /// to the same user devices so every agent on this Mac can open peer replies.
     /// Direct-thread replies likewise go back to the original sender's devices.
     async fn resolve_reply_recipients(
         &self,
@@ -1755,6 +1766,82 @@ fn agent_matches_display(display: &str, slug: &str, default_slug: &str) -> bool 
         Some(s) => s == slug,
         None => slug == default_slug,
     }
+}
+
+/// Fill `last_from` / `last_subject` / `last_preview` from opened plaintext.
+fn apply_last_message_snippet(thread: &mut ThreadMeta, detail: &OpenedThreadDetail) {
+    let Some(latest) = detail
+        .messages
+        .iter()
+        .max_by(|a, b| a.created_at.cmp(&b.created_at))
+    else {
+        return;
+    };
+    thread.last_from = Some(latest.from_handle.clone());
+    thread.last_subject = bundle_subject(latest.bundle.as_ref())
+        .or_else(|| {
+            // Stable thread title: fall back to the root/OP subject.
+            detail
+                .messages
+                .iter()
+                .filter(|m| m.parent_message_id.is_none())
+                .min_by(|a, b| a.created_at.cmp(&b.created_at))
+                .and_then(|op| bundle_subject(op.bundle.as_ref()))
+        })
+        .map(|s| truncate_preview(&s, 72));
+    thread.last_preview = latest
+        .bundle
+        .as_ref()
+        .and_then(bundle_body_preview)
+        .map(|s| truncate_preview(&s, 96));
+}
+
+fn bundle_subject(bundle: Option<&MutandeBundle>) -> Option<String> {
+    bundle.and_then(|b| {
+        b.subject
+            .as_ref()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+    })
+}
+
+/// Body preview for the list row — notes / question / answer / resource (not subject).
+fn bundle_body_preview(b: &MutandeBundle) -> Option<String> {
+    if let Some(n) = b.notes.as_ref().map(|n| n.trim()).filter(|n| !n.is_empty()) {
+        return Some(n.to_string());
+    }
+    if let Some(q) = b
+        .questions
+        .iter()
+        .map(|q| q.prompt.trim())
+        .find(|p| !p.is_empty())
+    {
+        return Some(q.to_string());
+    }
+    if let Some(a) = b
+        .answers
+        .iter()
+        .map(|a| a.answer.trim())
+        .find(|a| !a.is_empty())
+    {
+        return Some(a.to_string());
+    }
+    b.resource_requests
+        .iter()
+        .map(|r| r.description.trim())
+        .find(|d| !d.is_empty())
+        .map(|d| format!("Resource: {d}"))
+}
+
+fn truncate_preview(s: &str, max_chars: usize) -> String {
+    let collapsed = s.split_whitespace().collect::<Vec<_>>().join(" ");
+    if collapsed.chars().count() <= max_chars {
+        return collapsed;
+    }
+    let mut out = collapsed.chars().take(max_chars.saturating_sub(1)).collect::<String>();
+    out.push('…');
+    out
 }
 
 /// True when the thread still needs a human decision (approval / verify /
@@ -1873,6 +1960,118 @@ fn bundle_is_empty(bundle: &MutandeBundle) -> bool {
         && bundle.context.as_ref().is_none_or(|c| c.trim().is_empty())
         && bundle.notes.as_ref().is_none_or(|n| n.trim().is_empty())
         && bundle.ping_kind.is_none()
+}
+
+/// Max raw-blob UTF-8 bytes to inline into an opened bundle for agents.
+const RAW_BLOB_INLINE_MAX: usize = 256 * 1024;
+
+fn guess_blob_mime(name: &str) -> &'static str {
+    match std::path::Path::new(name)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("md") | Some("markdown") => "text/markdown",
+        Some("txt") | Some("text") => "text/plain",
+        Some("json") => "application/json",
+        Some("csv") => "text/csv",
+        Some("html") | Some("htm") => "text/html",
+        Some("rs") | Some("ts") | Some("tsx") | Some("js") | Some("jsx") | Some("py")
+        | Some("toml") | Some("yaml") | Some("yml") => "text/plain",
+        Some("png") => "image/png",
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("webp") => "image/webp",
+        Some("pdf") => "application/pdf",
+        Some("zip") => "application/zip",
+        _ => "application/octet-stream",
+    }
+}
+
+/// Build the sealed plaintext for `forward_blob`: a MutandeBundle carrying the artifact.
+fn bundle_for_blob_artifact(
+    plaintext: &[u8],
+    subject: Option<&str>,
+    filename: Option<&str>,
+) -> MutandeBundle {
+    let name = filename
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("artifact.bin")
+        .to_string();
+    let mime = guess_blob_mime(&name).to_string();
+    let (content, notes) = if let Ok(text) = std::str::from_utf8(plaintext) {
+        (Some(text.to_string()), None)
+    } else if plaintext.len() <= RAW_BLOB_INLINE_MAX {
+        use base64::Engine;
+        (
+            Some(base64::engine::general_purpose::STANDARD.encode(plaintext)),
+            Some(format!(
+                "Binary artifact ({} bytes); resource.content is standard base64.",
+                plaintext.len()
+            )),
+        )
+    } else {
+        (
+            None,
+            Some(format!(
+                "Binary artifact ({} bytes); too large to inline in opened bundle.",
+                plaintext.len()
+            )),
+        )
+    };
+    MutandeBundle {
+        subject: subject
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .or_else(|| Some(name.clone())),
+        notes,
+        resources: vec![BundleResource {
+            name,
+            mime,
+            content,
+        }],
+        ..Default::default()
+    }
+}
+
+/// Legacy raw blob plaintext → agent-readable bundle (UTF-8 inline when small).
+fn bundle_from_raw_blob_plaintext(plain: &[u8]) -> MutandeBundle {
+    if plain.len() <= RAW_BLOB_INLINE_MAX {
+        if let Ok(text) = std::str::from_utf8(plain) {
+            let name = if text.trim_start().starts_with('#') {
+                "artifact.md"
+            } else {
+                "artifact.txt"
+            };
+            let mime = guess_blob_mime(name).to_string();
+            return MutandeBundle {
+                subject: Some("blob artifact".into()),
+                notes: Some(text.to_string()),
+                resources: vec![BundleResource {
+                    name: name.into(),
+                    mime,
+                    content: Some(text.to_string()),
+                }],
+                ..Default::default()
+            };
+        }
+    }
+    MutandeBundle {
+        subject: Some("blob artifact".into()),
+        notes: Some(format!(
+            "Opened encrypted blob ({} bytes); content not inlined (binary or too large).",
+            plain.len()
+        )),
+        resources: vec![BundleResource {
+            name: "artifact.bin".into(),
+            mime: "application/octet-stream".into(),
+            content: None,
+        }],
+        ..Default::default()
+    }
 }
 
 fn onboard_from_me(me: &MeResponse) -> Result<OnboardResult> {
@@ -2017,6 +2216,9 @@ mod tests {
                 your_status: None,
                 created_at: "2026-01-01T00:00:00Z".into(),
                 updated_at: "2026-01-01T00:00:00Z".into(),
+                last_from: None,
+                last_subject: None,
+                last_preview: None,
             },
             messages: vec![ThreadMessage {
                 id: "m1".into(),
@@ -2067,6 +2269,9 @@ mod tests {
                 your_status: None,
                 created_at: "2026-01-01T00:00:00Z".into(),
                 updated_at: "2026-01-01T00:00:00Z".into(),
+                last_from: None,
+                last_subject: None,
+                last_preview: None,
             },
             messages: vec![ThreadMessage {
                 id: "m-fail".into(),
@@ -2127,6 +2332,9 @@ mod tests {
                 your_status: None,
                 created_at: "2026-01-01T00:00:00Z".into(),
                 updated_at: "2026-01-01T00:00:00Z".into(),
+                last_from: None,
+                last_subject: None,
+                last_preview: None,
             },
             messages: vec![ThreadMessage {
                 id: "m-bad".into(),
@@ -2255,7 +2463,13 @@ mod tests {
 
         let artifact = b"large codebase tarball bytes for e2e";
         let forwarded = state
-            .forward_blob("bob@acme", artifact, Some("code drop"), None)
+            .forward_blob(
+                "bob@acme",
+                artifact,
+                Some("code drop"),
+                Some("codebase.txt"),
+                None,
+            )
             .await
             .unwrap();
         assert_eq!(forwarded.thread_ids, vec!["thread-blob-1".to_string()]);
@@ -2269,7 +2483,65 @@ mod tests {
 
         let env: Envelope = serde_json::from_value(env_json).unwrap();
         let opened = state.open_envelope_maybe_blob(&env).await.unwrap();
-        assert_eq!(opened, artifact);
+        let bundle: MutandeBundle = serde_json::from_slice(&opened).unwrap();
+        assert_eq!(bundle.subject.as_deref(), Some("code drop"));
+        assert_eq!(bundle.resources.len(), 1);
+        assert_eq!(bundle.resources[0].name, "codebase.txt");
+        assert_eq!(bundle.resources[0].mime, "text/plain");
+        assert_eq!(
+            bundle.resources[0].content.as_deref(),
+            Some("large codebase tarball bytes for e2e")
+        );
+    }
+
+    #[test]
+    fn legacy_raw_text_blob_inlines_for_agents() {
+        let state = DaemonState::new_in_memory_for_test().unwrap();
+        let body = "# Notice of Fine\n\nPay one upvote.";
+        let mut env = state.seal_to_self(body.as_bytes()).unwrap();
+        // Mark as blob while keeping inline ciphertext so sync open works.
+        env.blob_id = Some("legacy-raw-1".into());
+        let detail = ThreadDetail {
+            thread: ThreadMeta {
+                id: "t-blob".into(),
+                kind: ThreadKind::Direct,
+                status: ThreadStatus::Open,
+                from: "alice@acme/cursor".into(),
+                from_user_id: "u1".into(),
+                from_agent_id: None,
+                audience: "alice@acme/claude".into(),
+                audience_agent_id: None,
+                audience_wire_path: None,
+                org_id: "o1".into(),
+                participant_count: 2,
+                reply_count: 0,
+                your_status: None,
+                created_at: "2026-01-01T00:00:00Z".into(),
+                updated_at: "2026-01-01T00:00:00Z".into(),
+                last_from: None,
+                last_subject: None,
+                last_preview: None,
+            },
+            messages: vec![ThreadMessage {
+                id: "m-blob".into(),
+                thread_id: "t-blob".into(),
+                from_user_id: "u1".into(),
+                from_handle: "alice@acme/cursor".into(),
+                envelope: env,
+                created_at: "2026-01-01T00:00:00Z".into(),
+                sender_only: None,
+                parent_message_id: None,
+                upvotes: None,
+            }],
+        };
+        let opened = state.open_thread_detail(detail);
+        let msg = &opened.messages[0];
+        let bundle = msg.bundle.as_ref().expect("bundle");
+        assert_eq!(bundle.notes.as_deref(), Some(body));
+        assert_eq!(bundle.resources[0].name, "artifact.md");
+        assert_eq!(bundle.resources[0].mime, "text/markdown");
+        assert_eq!(bundle.resources[0].content.as_deref(), Some(body));
+        assert!(msg.open_error.is_none());
     }
 
     async fn mock_solo_hub(server: &wiremock::MockServer) {
@@ -2423,6 +2695,9 @@ mod tests {
             your_status: None,
             created_at: "2026-01-01T00:00:00Z".into(),
             updated_at: "2026-01-01T00:00:00Z".into(),
+            last_from: None,
+            last_subject: None,
+            last_preview: None,
         };
         assert!(thread_visible_for_agent(&thread, "u-solo", "cursor", "cursor"));
         assert!(thread_visible_for_agent(&thread, "u-solo", "claude", "cursor"));
@@ -2448,6 +2723,9 @@ mod tests {
             your_status: None,
             created_at: "2026-01-01T00:00:00Z".into(),
             updated_at: "2026-01-01T00:00:00Z".into(),
+            last_from: None,
+            last_subject: None,
+            last_preview: None,
         };
         assert!(thread_visible_for_agent(&thread, "u-alice", "cursor", "cursor"));
         assert!(!thread_visible_for_agent(
@@ -2476,6 +2754,9 @@ mod tests {
             your_status: Some(YourStatus::Replied),
             created_at: "2026-01-01T00:00:00Z".into(),
             updated_at: "2026-01-01T00:00:00Z".into(),
+            last_from: None,
+            last_subject: None,
+            last_preview: None,
         };
         assert_eq!(
             agent_your_status(&thread, "u-solo", "chatgpt", "cursor"),
@@ -2505,11 +2786,27 @@ mod tests {
             your_status: None,
             created_at: "2026-01-01T00:00:00Z".into(),
             updated_at: "2026-01-01T00:00:00Z".into(),
+            last_from: None,
+            last_subject: None,
+            last_preview: None,
         };
         assert!(thread_visible_for_agent(&thread, "u-solo", "cursor", "cursor"));
         assert!(thread_visible_for_agent(&thread, "u-solo", "claude", "cursor"));
         assert!(thread_visible_for_agent(&thread, "u-solo", "chatgpt", "cursor"));
         assert!(!thread_visible_for_agent(&thread, "u-other", "cursor", "cursor"));
+        // Unreplied group: non-senders have the ball; sender is Waiting.
+        assert_eq!(
+            agent_your_status(&thread, "u-solo", "claude", "cursor"),
+            YourStatus::Pending
+        );
+        assert_eq!(
+            agent_your_status(&thread, "u-solo", "chatgpt", "cursor"),
+            YourStatus::Pending
+        );
+        assert_eq!(
+            agent_your_status(&thread, "u-solo", "cursor", "cursor"),
+            YourStatus::Replied
+        );
     }
 
     #[test]
@@ -2530,6 +2827,9 @@ mod tests {
             your_status: None,
             created_at: "2026-01-01T00:00:00Z".into(),
             updated_at: "2026-01-01T00:00:00Z".into(),
+            last_from: None,
+            last_subject: None,
+            last_preview: None,
         };
         assert!(thread_visible_for_agent(&thread, "u-bob", "cursor", "cursor"));
         assert!(!thread_visible_for_agent(&thread, "u-bob", "claude", "cursor"));
@@ -2580,7 +2880,7 @@ mod tests {
         assert_eq!(claude, vec!["solo@tbhco/claude".to_string()]);
 
         let all = state.expand_hub_recipients("@all", None).await.unwrap();
-        assert_eq!(all, vec!["solo@tbhco/claude".to_string()]);
+        assert_eq!(all, vec!["@all".to_string()]);
 
         let passthrough = state
             .expand_hub_recipients("solo@tbhco/claude", None)
@@ -2589,10 +2889,9 @@ mod tests {
         assert_eq!(passthrough, vec!["solo@tbhco/claude".to_string()]);
     }
 
-    /// Bare `@all` from claude with three registered agents → cursor + chatgpt
-    /// (sorted), never only one peer.
+    /// Bare `@all` with multiple agents → one shared group recipient, not N directs.
     #[tokio::test]
-    async fn expand_all_excludes_sender_keeps_every_other_agent() {
+    async fn expand_all_is_single_group_recipient() {
         use crate::hub_client::HubConfig;
         use wiremock::matchers::{method, path};
         use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -2639,14 +2938,7 @@ mod tests {
         state.set_connected_agent_slug_for_test(Some("claude"));
 
         let all = state.expand_hub_recipients("@all", None).await.unwrap();
-        assert_eq!(
-            all,
-            vec![
-                "tawanda@tbhco/chatgpt".to_string(),
-                "tawanda@tbhco/cursor".to_string(),
-            ]
-        );
-        assert!(!all.iter().any(|a| a.ends_with("/claude")));
+        assert_eq!(all, vec!["@all".to_string()]);
     }
 
     /// Stale shared connected_agent_slug=cursor must not win when the MCP call
@@ -2923,6 +3215,9 @@ mod tests {
                 your_status: Some(YourStatus::Pending),
                 created_at: "2026-01-01T00:00:00Z".into(),
                 updated_at: "2026-01-01T00:00:00Z".into(),
+                last_from: None,
+                last_subject: None,
+                last_preview: None,
             },
             messages: vec![ThreadMessage {
                 id: "m-health".into(),
@@ -2978,6 +3273,9 @@ mod tests {
             your_status: None,
             created_at: "t".into(),
             updated_at: "t".into(),
+            last_from: None,
+            last_subject: None,
+            last_preview: None,
         };
 
         // Agent-targeted question → not Needs you.
@@ -3110,6 +3408,37 @@ mod tests {
             ],
         };
         assert!(!thread_needs_human(&answered));
+    }
+
+    #[test]
+    fn bundle_body_preview_skips_subject() {
+        assert_eq!(
+            bundle_body_preview(&MutandeBundle {
+                notes: Some("  hi there  ".into()),
+                subject: Some("Ping".into()),
+                ..Default::default()
+            }),
+            Some("hi there".into())
+        );
+        assert_eq!(
+            bundle_body_preview(&MutandeBundle {
+                subject: Some("Ping".into()),
+                ..Default::default()
+            }),
+            None
+        );
+        assert_eq!(
+            bundle_body_preview(&MutandeBundle {
+                questions: vec![HumanDecision {
+                    id: "q1".into(),
+                    kind: "question".into(),
+                    prompt: "Ship it?".into(),
+                    options: None,
+                }],
+                ..Default::default()
+            }),
+            Some("Ship it?".into())
+        );
     }
 
     #[test]

@@ -55,12 +55,30 @@ pub struct McpToolsListResult {
     pub tools: Vec<McpToolDefinition>,
 }
 
+/// MCP tool risk hints (spec 2025-03-26). Clients may use these for approval UX;
+/// they are not a security boundary.
+#[derive(Debug, Clone, Serialize)]
+pub struct McpToolAnnotations {
+    #[serde(rename = "title", skip_serializing_if = "Option::is_none")]
+    pub title: Option<&'static str>,
+    #[serde(rename = "readOnlyHint", skip_serializing_if = "Option::is_none")]
+    pub read_only_hint: Option<bool>,
+    #[serde(rename = "destructiveHint", skip_serializing_if = "Option::is_none")]
+    pub destructive_hint: Option<bool>,
+    #[serde(rename = "idempotentHint", skip_serializing_if = "Option::is_none")]
+    pub idempotent_hint: Option<bool>,
+    #[serde(rename = "openWorldHint", skip_serializing_if = "Option::is_none")]
+    pub open_world_hint: Option<bool>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct McpToolDefinition {
     pub name: String,
     pub description: String,
     #[serde(rename = "inputSchema")]
     pub input_schema: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<McpToolAnnotations>,
 }
 
 #[derive(Debug, Deserialize)]

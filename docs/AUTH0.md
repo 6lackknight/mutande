@@ -20,13 +20,14 @@ This Identifier is `AUTH0_AUDIENCE` everywhere.
 
 Dashboard → **Applications → Create Application → Regular Web Application**
 
-**Prod web (until `mutande.ai`):** `https://mutande.vercel.app`  
-Optional alias: `https://mutande-web.vercel.app`
+**Prod web (until `mutande.ai`):** `https://mutande.online`  
+Optional aliases: `https://mutande.vercel.app`, `https://mutande-web.vercel.app`
 
 **Allowed Callback URLs**
 
 ```
 http://localhost:3000/auth/callback
+https://mutande.online/auth/callback
 https://mutande.vercel.app/auth/callback
 https://mutande-web.vercel.app/auth/callback
 https://*.vercel.app/auth/callback
@@ -38,6 +39,8 @@ https://*.vercel.app/auth/callback
 
 ```
 http://localhost:3000
+https://mutande.online
+https://mutande.online/auth/logout
 https://mutande.vercel.app
 https://mutande.vercel.app/auth/logout
 https://mutande-web.vercel.app
@@ -49,6 +52,7 @@ https://*.vercel.app
 
 ```
 http://localhost:3000
+https://mutande.online
 https://mutande.vercel.app
 https://mutande-web.vercel.app
 https://*.vercel.app
@@ -111,7 +115,7 @@ Hub hard-requires `AUTH0_DOMAIN` + `AUTH0_AUDIENCE` when `DENO_DEPLOYMENT_ID` is
 | `AUTH0_CLIENT_SECRET` | Regular Web Application |
 | `AUTH0_SECRET` | `openssl rand -hex 32` (session cookie) |
 | `AUTH0_AUDIENCE` | Same as hub |
-| `APP_BASE_URL` | Local: `http://localhost:3000`. Production: `https://mutande.vercel.app` (until `mutande.ai`) |
+| `APP_BASE_URL` | Local: `http://localhost:3000`. Production: `https://mutande.online` (until `mutande.ai`) |
 | `MUTANDE_HUB_URL` | e.g. `https://mutande.6lackknight.deno.net` |
 | `PLUNK_API_KEY` | Optional invite email |
 

@@ -312,6 +312,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _sectionHeader(context, 'ACCOUNT'),
             const SizedBox(height: 8),
             _AccountCard(handle: widget.handle),
+            const SizedBox(height: 28),
+            _sectionHeader(context, 'FEEDBACK'),
+            const SizedBox(height: 8),
+            _FeedbackCard(
+              daemon: widget.daemon,
+              appVersion: widget.appVersion,
+            ),
           ],
         ),
       ),
@@ -775,6 +782,126 @@ class _AccountCard extends StatelessWidget {
                       ),
                 ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FeedbackCard extends StatefulWidget {
+  const _FeedbackCard({
+    required this.daemon,
+    required this.appVersion,
+  });
+
+  final DaemonClient daemon;
+  final String appVersion;
+
+  @override
+  State<_FeedbackCard> createState() => _FeedbackCardState();
+}
+
+class _FeedbackCardState extends State<_FeedbackCard> {
+  final _controller = TextEditingController();
+  bool _sending = false;
+  String? _error;
+  bool _sent = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _send() async {
+    final message = _controller.text.trim();
+    if (message.isEmpty) {
+      setState(() => _error = 'Write a short note first.');
+      return;
+    }
+    setState(() {
+      _sending = true;
+      _error = null;
+      _sent = false;
+    });
+    try {
+      await widget.daemon.submitFeedback(
+        message: message,
+        category: 'pilot',
+        appVersion: widget.appVersion,
+      );
+      if (!mounted) return;
+      _controller.clear();
+      setState(() {
+        _sending = false;
+        _sent = true;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _sending = false;
+        _error = e.toString();
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE7E5E4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Tell us what broke or felt off. Goes to the mutande team — not into threads.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: const Color(0xFF78716C),
+                  height: 1.35,
+                ),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _controller,
+            minLines: 3,
+            maxLines: 6,
+            enabled: !_sending,
+            decoration: const InputDecoration(
+              hintText: 'e.g. Connect hosts failed on Claude…',
+            ),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              _error!,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: const Color(0xFF991B1B),
+                  ),
+            ),
+          ],
+          if (_sent) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Sent — thank you.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: const Color(0xFF166534),
+                  ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 40,
+            child: FilledButton(
+              onPressed: _sending ? null : _send,
+              child: _sending
+                  ? const MutandeOrb.loading(semanticLabel: 'Sending…')
+                  : const Text('Send feedback'),
             ),
           ),
         ],

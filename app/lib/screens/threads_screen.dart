@@ -1,13 +1,20 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_resizable_container/flutter_resizable_container.dart';
 
 import '../services/daemon_client.dart';
 import '../theme/mutande_macos_theme.dart';
 import '../util/address_display.dart';
+import '../util/clock_format.dart';
 import '../widgets/ai_host_icon.dart';
 import '../widgets/thinking_orb.dart';
 import '../widgets/thread_message_tree.dart';
 import '../widgets/thread_status_badge.dart';
+
+/// Inbox poll cadence — merge into existing rows (no push channel in v1).
+const Duration _threadsPollInterval = Duration(seconds: 3);
 
 Future<bool?> confirmThreadAction(
   BuildContext context, {
@@ -59,11 +66,14 @@ class ThreadsPanel extends StatefulWidget {
 
   final DaemonClient daemon;
   final ValueChanged<VoidCallback?>? onReloadReady;
+
   /// Current user handle (`alice@acme`) for self-shorthand display.
   final String? myHandle;
+
   /// When set, opens compose addressed to this handle.
   final String? composeRecipient;
   final VoidCallback? onComposeRecipientHandled;
+
   /// When set, opens this thread (e.g. after first-run ping).
   final String? initialThreadId;
   final VoidCallback? onInitialThreadHandled;
@@ -75,12 +85,17 @@ class ThreadsPanel extends StatefulWidget {
 class _ThreadsPanelState extends State<ThreadsPanel> {
   String _filter = 'all';
   bool _loading = true;
+  bool _silentRefreshInFlight = false;
   String? _error;
   List<ThreadSummary> _threads = const [];
   String? _openId;
   bool _composeOpen = false;
   String? _composePrefillRecipient;
   int? _hotDivider;
+  Timer? _pollTimer;
+  final GlobalKey<_ThreadDetailPanelState> _detailKey =
+      GlobalKey<_ThreadDetailPanelState>();
+  final ScrollController _listScroll = ScrollController();
 
   ResizableDivider _splitDivider(int id) {
     final hot = _hotDivider == id;
@@ -139,32 +154,122 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
 
   @override
   void dispose() {
+    _pollTimer?.cancel();
+    _listScroll.dispose();
     widget.onReloadReady?.call(null);
     super.dispose();
   }
 
-  Future<void> _reload() async {
-    if (!mounted) return;
-    setState(() {
-      _loading = true;
-      _error = null;
+  void _ensurePolling() {
+    _pollTimer ??= Timer.periodic(_threadsPollInterval, (_) {
+      unawaited(_reload(silent: true));
     });
+  }
+
+  /// Full reload shows the orb; [silent] merges without tearing down the list.
+  Future<void> _reload({bool silent = false}) async {
+    if (!mounted) return;
+    if (silent) {
+      if (_loading || _silentRefreshInFlight) return;
+      _silentRefreshInFlight = true;
+    } else {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     try {
       final threads = await widget.daemon.listThreads(
         filter: _filter == 'all' ? null : _filter,
       );
       if (!mounted) return;
-      setState(() {
-        _threads = threads;
-        _loading = false;
-      });
+      _applyThreadList(threads, clearError: true);
+      _ensurePolling();
     } catch (e) {
       if (!mounted) return;
+      if (silent && _threads.isNotEmpty) {
+        // Keep last-known list on poll blips.
+        return;
+      }
       setState(() {
         _error = friendlyDaemonError(e, what: 'Threads');
         _loading = false;
       });
+    } finally {
+      if (silent) _silentRefreshInFlight = false;
     }
+  }
+
+  void _applyThreadList(List<ThreadSummary> next, {bool clearError = false}) {
+    final openId = _openId;
+    ThreadSummary? prevOpen;
+    if (openId != null) {
+      for (final t in _threads) {
+        if (t.id == openId) {
+          prevOpen = t;
+          break;
+        }
+      }
+    }
+
+    final unchanged = _sameThreadList(_threads, next);
+    final openStillPresent =
+        openId == null || next.any((t) => t.id == openId);
+
+    if (!unchanged || _loading || (clearError && _error != null)) {
+      setState(() {
+        if (!unchanged) _threads = next;
+        _loading = false;
+        if (clearError) _error = null;
+        if (openId != null && !openStillPresent) _openId = null;
+      });
+    }
+
+    if (openId != null && openStillPresent) {
+      ThreadSummary? nextOpen;
+      for (final t in next) {
+        if (t.id == openId) {
+          nextOpen = t;
+          break;
+        }
+      }
+      if (nextOpen != null &&
+          (prevOpen == null || !prevOpen.sameListRow(nextOpen))) {
+        _detailKey.currentState?.softRefresh();
+      }
+    }
+  }
+
+  static bool _sameThreadList(List<ThreadSummary> a, List<ThreadSummary> b) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (!a[i].sameListRow(b[i])) return false;
+    }
+    return true;
+  }
+
+  void _removeThreadLocally(String threadId) {
+    setState(() {
+      _threads = [for (final t in _threads) if (t.id != threadId) t];
+      if (_openId == threadId) _openId = null;
+    });
+  }
+
+  void _applyClosedLocally(String threadId) {
+    final dropFromFilter =
+        _filter == 'open' || _filter == 'needs_action';
+    setState(() {
+      if (dropFromFilter) {
+        _threads = [for (final t in _threads) if (t.id != threadId) t];
+        if (_openId == threadId) _openId = null;
+      } else {
+        _threads = [
+          for (final t in _threads)
+            if (t.id == threadId) t.copyWith(status: 'closed') else t,
+        ];
+      }
+    });
   }
 
   List<ThreadSummary> get _visible => _threads;
@@ -180,8 +285,10 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
     try {
       await widget.daemon.closeThread(threadId);
       if (!mounted) return;
-      if (_openId == threadId) setState(() => _openId = null);
-      await _reload();
+      _applyClosedLocally(threadId);
+      if (_openId == threadId) {
+        _detailKey.currentState?.softRefresh();
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -203,8 +310,7 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
     try {
       await widget.daemon.deleteThread(threadId);
       if (!mounted) return;
-      if (_openId == threadId) setState(() => _openId = null);
-      await _reload();
+      _removeThreadLocally(threadId);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -238,7 +344,7 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
                   _composeOpen = false;
                   _composePrefillRecipient = null;
                 });
-                _reload();
+                unawaited(_reload(silent: true));
               },
               onCancel: () => setState(() {
                 _composeOpen = false;
@@ -259,18 +365,17 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
     final reading = _openId == null
         ? const _EmptyReadingPane()
         : ThreadDetailPanel(
+            key: _detailKey,
             daemon: widget.daemon,
             threadId: _openId!,
             myHandle: widget.myHandle,
             embedded: true,
-            onBack: () {
-              setState(() => _openId = null);
-              _reload();
-            },
-            onListChanged: _reload,
+            onBack: () => setState(() => _openId = null),
+            onListChanged: () => unawaited(_reload(silent: true)),
+            onThreadClosed: _applyClosedLocally,
             onGone: () {
-              setState(() => _openId = null);
-              _reload();
+              final id = _openId;
+              if (id != null) _removeThreadLocally(id);
             },
           );
 
@@ -283,10 +388,7 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
           divider: _splitDivider(0),
           child: listPane,
         ),
-        ResizableChild(
-          size: const ResizableSize.expand(),
-          child: reading,
-        ),
+        ResizableChild(size: const ResizableSize.expand(), child: reading),
       ],
     );
   }
@@ -308,9 +410,9 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
                 _error!,
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: const Color(0xFF57534E),
-                      height: 1.35,
-                    ),
+                  color: const Color(0xFF57534E),
+                  height: 1.35,
+                ),
               ),
               const SizedBox(height: 14),
               OutlinedButton(onPressed: _reload, child: const Text('Retry')),
@@ -323,19 +425,20 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
       return Center(
         child: Text(
           'No threads.',
-          style: Theme.of(context)
-              .textTheme
-              .bodyMedium
-              ?.copyWith(color: const Color(0xFF78716C)),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: const Color(0xFF78716C)),
         ),
       );
     }
     return ListView.builder(
+      controller: _listScroll,
       padding: EdgeInsets.zero,
       itemCount: _visible.length,
       itemBuilder: (context, i) {
         final t = _visible[i];
         return _ThreadRow(
+          key: ValueKey(t.id),
           thread: t,
           myHandle: widget.myHandle,
           selected: t.id == _openId,
@@ -364,18 +467,18 @@ class _EmptyReadingPane extends StatelessWidget {
             Text(
               'Select a thread',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: const Color(0xFF57534E),
-                    fontWeight: FontWeight.w600,
-                  ),
+                color: const Color(0xFF57534E),
+                fontWeight: FontWeight.w600,
+              ),
             ),
             const SizedBox(height: 8),
             Text(
               'Replies stay nested on the right — list never leaves.',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: const Color(0xFFA8A29E),
-                    height: 1.4,
-                  ),
+                color: const Color(0xFFA8A29E),
+                height: 1.4,
+              ),
             ),
           ],
         ),
@@ -386,20 +489,17 @@ class _EmptyReadingPane extends StatelessWidget {
 
 /// Inbox filter scope (search lives on the home chrome strip).
 class _ThreadsToolbar extends StatelessWidget {
-  const _ThreadsToolbar({
-    required this.filter,
-    required this.onFilterChanged,
-  });
+  const _ThreadsToolbar({required this.filter, required this.onFilterChanged});
 
   final String filter;
   final ValueChanged<String> onFilterChanged;
 
   String get _filterLabel => switch (filter) {
-        'needs_action' => 'Needs you',
-        'open' => 'Open',
-        'closed' => 'Closed',
-        _ => 'All',
-      };
+    'needs_action' => 'Needs you',
+    'open' => 'Open',
+    'closed' => 'Closed',
+    _ => 'All',
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -411,10 +511,7 @@ class _ThreadsToolbar extends StatelessWidget {
         onSelected: onFilterChanged,
         itemBuilder: (context) => const [
           PopupMenuItem(value: 'all', child: Text('All')),
-          PopupMenuItem(
-            value: 'needs_action',
-            child: Text('Needs you'),
-          ),
+          PopupMenuItem(value: 'needs_action', child: Text('Needs you')),
           PopupMenuItem(value: 'open', child: Text('Open')),
           PopupMenuItem(value: 'closed', child: Text('Closed')),
         ],
@@ -426,16 +523,12 @@ class _ThreadsToolbar extends StatelessWidget {
               Text(
                 _filterLabel,
                 style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: const Color(0xFF57534E),
-                      fontWeight: FontWeight.w600,
-                    ),
+                  color: const Color(0xFF57534E),
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               const SizedBox(width: 2),
-              const Icon(
-                Icons.expand_more,
-                size: 16,
-                color: Color(0xFFA8A29E),
-              ),
+              const Icon(Icons.expand_more, size: 16, color: Color(0xFFA8A29E)),
             ],
           ),
         ),
@@ -468,6 +561,7 @@ class _ThreadsFooter extends StatelessWidget {
 
 class _ThreadRow extends StatelessWidget {
   const _ThreadRow({
+    super.key,
     required this.thread,
     required this.onTap,
     this.myHandle,
@@ -488,12 +582,12 @@ class _ThreadRow extends StatelessWidget {
     final title = _rowTitle(thread, myHandle: myHandle);
     final meta = _rowMeta(thread);
     final status = _rowStatus(thread);
+    final time = formatClockHm(thread.updatedAt);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 2),
       child: Material(
-        color: selected ? const Color(0xFFF5F5F4) : Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
+        color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
           onSecondaryTapDown: (details) {
@@ -501,10 +595,7 @@ class _ThreadRow extends StatelessWidget {
               if (onClose != null)
                 const PopupMenuItem(value: 'close', child: Text('Close')),
               if (onDelete != null)
-                const PopupMenuItem(
-                  value: 'delete',
-                  child: Text('Delete'),
-                ),
+                const PopupMenuItem(value: 'delete', child: Text('Delete')),
             ];
             if (items.isEmpty) return;
             showMenu<String>(
@@ -522,46 +613,97 @@ class _ThreadRow extends StatelessWidget {
             });
           },
           borderRadius: BorderRadius.circular(8),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(8, 10, 8, 10),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                _ThreadMark(thread: thread, label: title),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: const Color(0xFF292524),
-                              fontWeight: FontWeight.w600,
-                              height: 1.2,
-                            ),
-                      ),
-                      if (meta.isNotEmpty) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          meta,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style:
-                              Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: const Color(0xFFA8A29E),
-                                    height: 1.2,
-                                  ),
-                        ),
-                      ],
-                    ],
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 140),
+            curve: Curves.easeOutCubic,
+            decoration: BoxDecoration(
+              color: selected ? MutandeColors.stone100 : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: selected ? MutandeColors.stone200 : Colors.transparent,
+              ),
+            ),
+            child: IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 140),
+                    curve: Curves.easeOutCubic,
+                    width: 3,
+                    margin: const EdgeInsets.symmetric(vertical: 6),
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? MutandeColors.bronze
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                ThreadStatusBadge(kind: status, compact: true),
-              ],
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(5, 10, 8, 10),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          _ThreadMark(thread: thread, label: title),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.bodyMedium
+                                      ?.copyWith(
+                                        color: MutandeColors.stone800,
+                                        fontWeight: selected
+                                            ? FontWeight.w700
+                                            : FontWeight.w600,
+                                        height: 1.2,
+                                      ),
+                                ),
+                                if (meta.isNotEmpty) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    meta,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(
+                                          color: MutandeColors.stone400,
+                                          height: 1.2,
+                                        ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          // List pane: Needs you badge, else HH:MM (never Waiting).
+                          if (status == ThreadStatusKind.needsYou)
+                            ThreadStatusBadge(kind: status, compact: true)
+                          else if (time.isNotEmpty)
+                            Text(
+                              time,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .labelSmall
+                                  ?.copyWith(
+                                    color: MutandeColors.stone400,
+                                    fontWeight: FontWeight.w500,
+                                    fontFeatures: const [
+                                      FontFeature.tabularFigures(),
+                                    ],
+                                  ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -595,10 +737,10 @@ class _ThreadMark extends StatelessWidget {
       mark = Text(
         initials,
         style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: const Color(0xFF78716C),
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.2,
-            ),
+          color: const Color(0xFF78716C),
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.2,
+        ),
       );
     }
 
@@ -618,17 +760,11 @@ class _ThreadMark extends StatelessWidget {
 
 /// List-row status — always show so open/closed read at a glance.
 ThreadStatusKind _rowStatus(ThreadSummary t) {
-  return ThreadStatusKindX.resolve(
-    status: t.status,
-    yourStatus: t.yourStatus,
-  );
+  return ThreadStatusKindX.resolve(status: t.status, yourStatus: t.yourStatus);
 }
 
 /// Header/stats: only surface when it changes what you should do.
-ThreadStatusKind? _actionStatus({
-  required String status,
-  String? yourStatus,
-}) {
+ThreadStatusKind? _actionStatus({required String status, String? yourStatus}) {
   final resolved = ThreadStatusKindX.resolve(
     status: status,
     yourStatus: yourStatus,
@@ -638,19 +774,18 @@ ThreadStatusKind? _actionStatus({
 }
 
 String _rowTitle(ThreadSummary t, {String? myHandle}) {
+  final subject = t.lastSubject?.trim();
+  if (subject != null && subject.isNotEmpty) return subject;
+  if (t.audience.trim() == '@all') return '@all';
   final self = _selfCollabTitle(t);
   return formatMailAddress(self ?? t.from, myHandle: myHandle);
 }
 
-/// One meta line: `via cursor · 2 replies` — no kind / from /default noise.
+/// Body line: latest message preview (daemon-opened plaintext).
 String _rowMeta(ThreadSummary t) {
-  final parts = <String>[];
-  final via = _agentSlug(t.agentBadge);
-  if (via != null) parts.add('via $via');
-  if (t.replyCount > 0) {
-    parts.add(t.replyCount == 1 ? '1 reply' : '${t.replyCount} replies');
-  }
-  return parts.join(' · ');
+  final preview = t.lastPreview?.trim();
+  if (preview != null && preview.isNotEmpty) return preview;
+  return '';
 }
 
 String? _agentSlug(String? badge) {
@@ -722,7 +857,8 @@ class _ComposePanelState extends State<_ComposePanel> {
 
     // Self-collaboration shorthand: @cursor, @claude, @all —
     // not @all@org (second @ means org broadcast / handle path below).
-    final selfShorthand = trimmed.isEmpty ||
+    final selfShorthand =
+        trimmed.isEmpty ||
         (trimmed.startsWith('@') && !trimmed.substring(1).contains('@'));
     if (selfShorthand) {
       try {
@@ -736,10 +872,7 @@ class _ComposePanelState extends State<_ComposePanel> {
         return suggestions.where((s) => s.startsWith(lower)).toList();
       } catch (_) {
         if (trimmed.isEmpty || lower.startsWith('@')) {
-          return [
-            '@all',
-            if (orgAll != null) orgAll,
-          ];
+          return ['@all', if (orgAll != null) orgAll];
         }
       }
     }
@@ -856,9 +989,9 @@ class _ComposePanelState extends State<_ComposePanel> {
             const SizedBox(height: 8),
             Text(
               _error!,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: const Color(0xFF991B1B),
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: const Color(0xFF991B1B)),
             ),
           ],
           const SizedBox(height: 8),
@@ -890,6 +1023,7 @@ class ThreadDetailPanel extends StatefulWidget {
     this.myHandle,
     this.embedded = false,
     this.onListChanged,
+    this.onThreadClosed,
     this.onGone,
   });
 
@@ -897,11 +1031,17 @@ class ThreadDetailPanel extends StatefulWidget {
   final String threadId;
   final VoidCallback onBack;
   final String? myHandle;
+
   /// Side-panel mode: close control instead of full-page back chrome.
   final bool embedded;
-  /// Refresh the thread list (e.g. after close) without clearing selection.
+
+  /// Quiet list refresh after reply / activity (no full-panel orb).
   final VoidCallback? onListChanged;
-  /// Clear selection + reload after delete.
+
+  /// Local list patch after close succeeds.
+  final ValueChanged<String>? onThreadClosed;
+
+  /// Remove from list + clear selection after delete.
   final VoidCallback? onGone;
 
   @override
@@ -910,9 +1050,11 @@ class ThreadDetailPanel extends StatefulWidget {
 
 class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
   bool _loading = true;
+  bool _silentLoadInFlight = false;
   String? _error;
   ThreadDetailResult? _detail;
   final _reply = TextEditingController();
+  final ScrollController _messageScroll = ScrollController();
   bool _sending = false;
   String? _replyToMessageId;
   String? _replyToHandle;
@@ -953,19 +1095,15 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
           audience: _detail!.audience,
           yourStatus: _detail!.yourStatus,
           messages: _detail!.messages
-              .map((m) =>
-                  m.id == message.id ? m.copyWithUpvotes(summary) : m)
+              .map((m) => m.id == message.id ? m.copyWithUpvotes(summary) : m)
               .toList(),
         );
       });
+      // Stats panel reads upvote totals from detail — already patched locally.
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            friendlyDaemonError(e, what: 'Upvote'),
-          ),
-        ),
+        SnackBar(content: Text(friendlyDaemonError(e, what: 'Upvote'))),
       );
     } finally {
       if (mounted) setState(() => _upvotingMessageId = null);
@@ -1006,27 +1144,40 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
   @override
   void dispose() {
     _reply.dispose();
+    _messageScroll.dispose();
     super.dispose();
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  /// Quiet refresh when the list row fingerprint for this thread changes.
+  void softRefresh() => unawaited(_load(silent: true));
+
+  Future<void> _load({bool silent = false}) async {
+    if (silent) {
+      if (_loading || _silentLoadInFlight) return;
+      _silentLoadInFlight = true;
+    } else {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     try {
       final detail = await widget.daemon.getThread(widget.threadId);
       if (!mounted) return;
       setState(() {
         _detail = detail;
         _loading = false;
+        if (silent) _error = null;
       });
     } catch (e) {
       if (!mounted) return;
+      if (silent && _detail != null) return;
       setState(() {
         _error = friendlyDaemonError(e, what: 'This thread');
         _loading = false;
       });
+    } finally {
+      if (silent) _silentLoadInFlight = false;
     }
   }
 
@@ -1046,7 +1197,8 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
       if (!mounted) return;
       _reply.clear();
       _clearReplyTarget();
-      await _load();
+      await _load(silent: true);
+      widget.onListChanged?.call();
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = friendlyDaemonError(e, what: 'Reply'));
@@ -1066,8 +1218,14 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
     try {
       await widget.daemon.closeThread(widget.threadId);
       if (!mounted) return;
-      await _load();
-      widget.onListChanged?.call();
+      if (widget.onThreadClosed != null) {
+        widget.onThreadClosed!(widget.threadId);
+      } else {
+        widget.onListChanged?.call();
+      }
+      // Parent may have cleared selection (filter dropped this row).
+      if (!mounted) return;
+      await _load(silent: true);
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = friendlyDaemonError(e, what: 'Close thread'));
@@ -1116,9 +1274,9 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
               Text(
                 'Thread',
                 style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      color: const Color(0xFF78716C),
-                      fontWeight: FontWeight.w600,
-                    ),
+                  color: const Color(0xFF78716C),
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               const Spacer(),
               IconButton(
@@ -1137,14 +1295,8 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
                   },
                   itemBuilder: (context) => [
                     if (_detail!.status != 'closed')
-                      const PopupMenuItem(
-                        value: 'close',
-                        child: Text('Close'),
-                      ),
-                    const PopupMenuItem(
-                      value: 'delete',
-                      child: Text('Delete'),
-                    ),
+                      const PopupMenuItem(value: 'close', child: Text('Close')),
+                    const PopupMenuItem(value: 'delete', child: Text('Delete')),
                   ],
                 ),
             ],
@@ -1161,9 +1313,9 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
               child: Text(
                 _error ?? 'Thread unavailable',
                 textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: const Color(0xFF991B1B),
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: const Color(0xFF991B1B)),
               ),
             ),
           )
@@ -1171,7 +1323,9 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
           _ThreadDetailHeader(
             detail: _detail!,
             myHandle: widget.myHandle,
-            onRefresh: widget.embedded && !_loading ? _load : null,
+            onRefresh: widget.embedded && !_loading
+                ? () => _load(silent: _detail != null)
+                : null,
             onClose: _detail!.status == 'closed' ? null : _closeThread,
             onDelete: _deleteThread,
             onReplyOp: _detail!.status == 'closed'
@@ -1195,19 +1349,21 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
             const SizedBox(height: 12),
             Text(
               _error!,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: const Color(0xFF991B1B),
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: const Color(0xFF991B1B)),
             ),
           ],
-          const SizedBox(height: 28),
+          const SizedBox(height: 12),
           Expanded(
             child: ListView(
-              padding: const EdgeInsets.only(bottom: 16),
+              controller: _messageScroll,
+              padding: const EdgeInsets.only(top: 0, bottom: 16),
               children: [
                 for (final node in flattenThreadMessages(_detail!.messages))
                   if (!_isRootOpNode(node, _detail!))
                     _ThreadMessageTile(
+                      key: ValueKey(node.message.id),
                       node: node,
                       myHandle: widget.myHandle,
                       opHandle: _detail!.from,
@@ -1260,10 +1416,7 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
         ),
         ResizableChild(
           size: const ResizableSize.pixels(240, min: 180, max: 360),
-          child: _ThreadStatsPanel(
-            detail: _detail!,
-            myHandle: widget.myHandle,
-          ),
+          child: _ThreadStatsPanel(detail: _detail!, myHandle: widget.myHandle),
         ),
       ],
     );
@@ -1271,10 +1424,7 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
 }
 
 class _ThreadStatsPanel extends StatelessWidget {
-  const _ThreadStatsPanel({
-    required this.detail,
-    this.myHandle,
-  });
+  const _ThreadStatsPanel({required this.detail, this.myHandle});
 
   final ThreadDetailResult detail;
   final String? myHandle;
@@ -1286,7 +1436,12 @@ class _ThreadStatsPanel extends StatelessWidget {
       if (m.fromHandle.isNotEmpty) participants.add(m.fromHandle);
     }
     if (detail.from.isNotEmpty) participants.add(detail.from);
-    if (detail.audience.isNotEmpty) participants.add(detail.audience);
+    // Bare @all is the group audience, not a participant handle.
+    if (detail.audience.isNotEmpty &&
+        detail.audience != detail.from &&
+        detail.audience.trim() != '@all') {
+      participants.add(detail.audience);
+    }
 
     var upvoteTotal = 0;
     for (final m in detail.messages) {
@@ -1294,14 +1449,14 @@ class _ThreadStatsPanel extends StatelessWidget {
     }
 
     final labelStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
-          color: MutandeColors.stone500,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.3,
-        );
+      color: MutandeColors.stone500,
+      fontWeight: FontWeight.w600,
+      letterSpacing: 0.3,
+    );
     final valueStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
-          color: MutandeColors.stone800,
-          height: 1.35,
-        );
+      color: MutandeColors.stone800,
+      height: 1.35,
+    );
 
     Widget row(String label, Widget value) {
       return Padding(
@@ -1320,18 +1475,16 @@ class _ThreadStatsPanel extends StatelessWidget {
     Widget textValue(String value) => Text(value, style: valueStyle);
 
     return DecoratedBox(
-      decoration: const BoxDecoration(
-        color: MutandeColors.stone50,
-      ),
+      decoration: const BoxDecoration(color: MutandeColors.stone50),
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
         children: [
           Text(
             'Thread',
             style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  color: MutandeColors.stone800,
-                  fontWeight: FontWeight.w600,
-                ),
+              color: MutandeColors.stone800,
+              fontWeight: FontWeight.w600,
+            ),
           ),
           const SizedBox(height: 16),
           row(
@@ -1351,9 +1504,7 @@ class _ThreadStatsPanel extends StatelessWidget {
           if (detail.audience.isNotEmpty && detail.audience != detail.from)
             row(
               'Audience',
-              textValue(
-                formatMailAddress(detail.audience, myHandle: myHandle),
-              ),
+              textValue(formatMailAddress(detail.audience, myHandle: myHandle)),
             ),
           row('Messages', textValue('${detail.messages.length}')),
           row('Upvotes', textValue('$upvoteTotal')),
@@ -1416,10 +1567,8 @@ class _ThreadDetailHeader extends StatelessWidget {
   final VoidCallback? onUpvoteOp;
   final bool upvotingOp;
 
-  ThreadStatusKind? get _statusKind => _actionStatus(
-        status: detail.status,
-        yourStatus: detail.yourStatus,
-      );
+  ThreadStatusKind? get _statusKind =>
+      _actionStatus(status: detail.status, yourStatus: detail.yourStatus);
 
   @override
   Widget build(BuildContext context) {
@@ -1435,16 +1584,21 @@ class _ThreadDetailHeader extends StatelessWidget {
     final audienceLabel = detail.audience.isNotEmpty
         ? formatMailAddress(detail.audience, myHandle: myHandle)
         : null;
-    final showTo = audienceLabel != null &&
+    final showTo =
+        audienceLabel != null &&
         audienceLabel != opLabel &&
         detail.audience != detail.from;
+    final isMyAgentsGroup = detail.audience.trim() == '@all';
+    final groupAgents = isMyAgentsGroup
+        ? _agentParticipantsFromMessages(detail, myHandle: myHandle)
+        : const <String>[];
     final status = _statusKind;
     const iconSize = 44.0;
     final metaStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
-          color: MutandeColors.stone400,
-          height: 1.15,
-          fontSize: 11,
-        );
+      color: MutandeColors.stone400,
+      height: 1.15,
+      fontSize: 11,
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1468,9 +1622,7 @@ class _ThreadDetailHeader extends StatelessWidget {
                             opLabel,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleSmall
+                            style: Theme.of(context).textTheme.titleSmall
                                 ?.copyWith(
                                   color: MutandeColors.stone800,
                                   fontWeight: FontWeight.w700,
@@ -1480,6 +1632,22 @@ class _ThreadDetailHeader extends StatelessWidget {
                         ),
                         const SizedBox(width: 6),
                         const _OpBadge(),
+                        if (op != null &&
+                            formatClockHm(op.createdAt).isNotEmpty) ...[
+                          const SizedBox(width: 6),
+                          Text(
+                            formatClockHm(op.createdAt),
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(
+                                  color: MutandeColors.stone400,
+                                  fontFeatures: const [
+                                    FontFeature.tabularFigures(),
+                                  ],
+                                ),
+                          ),
+                        ],
                       ],
                     ),
                     if (showTo || status != null) ...[
@@ -1528,10 +1696,7 @@ class _ThreadDetailHeader extends StatelessWidget {
                   if (onClose != null)
                     const PopupMenuItem(value: 'close', child: Text('Close')),
                   if (onDelete != null)
-                    const PopupMenuItem(
-                      value: 'delete',
-                      child: Text('Delete'),
-                    ),
+                    const PopupMenuItem(value: 'delete', child: Text('Delete')),
                 ],
                 child: const Padding(
                   padding: EdgeInsets.all(6),
@@ -1544,6 +1709,15 @@ class _ThreadDetailHeader extends StatelessWidget {
               ),
           ],
         ),
+        if (groupAgents.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text(
+            groupAgents.join(' · '),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: metaStyle,
+          ),
+        ],
         if (op != null) ...[
           const SizedBox(height: 12),
           _ReadMoreText(text: op.displayBody),
@@ -1562,6 +1736,31 @@ class _ThreadDetailHeader extends StatelessWidget {
       ],
     );
   }
+}
+
+/// Agent slugs that have posted in a my-agents `@all` group (from `from_handle`s).
+List<String> _agentParticipantsFromMessages(
+  ThreadDetailResult detail, {
+  String? myHandle,
+}) {
+  final seen = <String>{};
+  final out = <String>[];
+  void addHandle(String handle) {
+    if (handle.isEmpty || handle.trim() == '@all') return;
+    final label = formatMailAddress(handle, myHandle: myHandle);
+    final slash = label.indexOf('/');
+    final slug = slash >= 0 && slash < label.length - 1
+        ? label.substring(slash + 1)
+        : (label.startsWith('@') ? label.substring(1) : label);
+    if (slug.isEmpty || !seen.add(slug)) return;
+    out.add('@$slug');
+  }
+
+  addHandle(detail.from);
+  for (final m in detail.messages) {
+    addHandle(m.fromHandle);
+  }
+  return out;
 }
 
 class _ReadMoreText extends StatefulWidget {
@@ -1605,10 +1804,10 @@ class _ReadMoreTextState extends State<_ReadMoreText> {
   Widget build(BuildContext context) {
     final empty = widget.text.trim().isEmpty;
     final style = Theme.of(context).textTheme.bodyMedium?.copyWith(
-          color: empty ? MutandeColors.stone400 : MutandeColors.stone800,
-          height: 1.5,
-          fontStyle: empty ? FontStyle.italic : FontStyle.normal,
-        );
+      color: empty ? MutandeColors.stone400 : MutandeColors.stone800,
+      height: 1.5,
+      fontStyle: empty ? FontStyle.italic : FontStyle.normal,
+    );
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -1619,8 +1818,9 @@ class _ReadMoreTextState extends State<_ReadMoreText> {
             Text(
               empty ? '(no notes)' : widget.text,
               maxLines: _expanded ? null : _ReadMoreText.maxLines,
-              overflow:
-                  _expanded ? TextOverflow.visible : TextOverflow.ellipsis,
+              overflow: _expanded
+                  ? TextOverflow.visible
+                  : TextOverflow.ellipsis,
               style: style,
             ),
             if (_overflows) ...[
@@ -1633,9 +1833,9 @@ class _ReadMoreTextState extends State<_ReadMoreText> {
                     Text(
                       _expanded ? 'Show less' : 'Read more',
                       style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                            color: MutandeColors.stone600,
-                            fontWeight: FontWeight.w600,
-                          ),
+                        color: MutandeColors.stone600,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     Icon(
                       _expanded ? Icons.expand_less : Icons.expand_more,
@@ -1653,7 +1853,7 @@ class _ReadMoreTextState extends State<_ReadMoreText> {
   }
 }
 
-class _ThreadReplyComposer extends StatelessWidget {
+class _ThreadReplyComposer extends StatefulWidget {
   const _ThreadReplyComposer({
     required this.controller,
     required this.sending,
@@ -1673,115 +1873,198 @@ class _ThreadReplyComposer extends StatelessWidget {
   final VoidCallback onSend;
 
   @override
+  State<_ThreadReplyComposer> createState() => _ThreadReplyComposerState();
+}
+
+class _ThreadReplyComposerState extends State<_ThreadReplyComposer> {
+  bool _focused = false;
+  late bool _hasText = widget.controller.text.trim().isNotEmpty;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_onText);
+  }
+
+  @override
+  void didUpdateWidget(covariant _ThreadReplyComposer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_onText);
+      widget.controller.addListener(_onText);
+      _hasText = widget.controller.text.trim().isNotEmpty;
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_onText);
+    super.dispose();
+  }
+
+  void _onText() {
+    final next = widget.controller.text.trim().isNotEmpty;
+    if (next != _hasText) setState(() => _hasText = next);
+  }
+
+  void _trySend() {
+    if (widget.closed || widget.sending || !_hasText) return;
+    widget.onSend();
+  }
+
+  String get _hint {
+    if (widget.closed) return 'Thread closed';
+    if (widget.replyToHandle != null) {
+      return 'Reply to ${widget.replyToHandle}…';
+    }
+    if (widget.nested) return 'Nested reply…';
+    return 'Write a reply…';
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final canSend = !widget.closed && !widget.sending && _hasText;
+    final borderColor = _focused
+        ? MutandeColors.stone500
+        : const Color(0xFFE7E5E4);
+
     return Container(
       decoration: const BoxDecoration(
         border: Border(top: BorderSide(color: Color(0xFFE7E5E4))),
       ),
-      padding: const EdgeInsets.only(top: 16),
+      padding: const EdgeInsets.only(top: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (replyToHandle != null)
+          if (widget.replyToHandle != null)
             Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Material(
-                color: const Color(0xFFF5F5F4),
-                borderRadius: BorderRadius.circular(8),
-                child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.reply, size: 14, color: Color(0xFF78716C)),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          'Replying to $replyToHandle',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style:
-                              Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: const Color(0xFF57534E),
-                                  ),
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.reply,
+                    size: 14,
+                    color: MutandeColors.stone500,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Replying to ${widget.replyToHandle}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: MutandeColors.stone600,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: widget.onClearTarget,
+                    style: TextButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      minimumSize: const Size(44, 28),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      foregroundColor: MutandeColors.stone500,
+                    ),
+                    child: const Text('Cancel'),
+                  ),
+                ],
+              ),
+            ),
+          CallbackShortcuts(
+            bindings: {
+              const SingleActivator(LogicalKeyboardKey.enter, meta: true):
+                  _trySend,
+            },
+            child: Focus(
+              onFocusChange: (v) => setState(() => _focused = v),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 120),
+                curve: Curves.easeOut,
+                decoration: BoxDecoration(
+                  color: Colors.transparent,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: borderColor, width: 1),
+                ),
+                padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    TextField(
+                      controller: widget.controller,
+                      decoration: InputDecoration(
+                        hintText: _hint,
+                        hintStyle: TextStyle(
+                          color: MutandeColors.stone400,
+                          fontSize: 14,
                         ),
+                        filled: false,
+                        fillColor: Colors.transparent,
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        isDense: true,
+                        contentPadding: const EdgeInsets.fromLTRB(0, 4, 4, 4),
                       ),
-                      TextButton(
-                        onPressed: onClearTarget,
-                        style: TextButton.styleFrom(
-                          padding: EdgeInsets.zero,
-                          minimumSize: const Size(44, 28),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: MutandeColors.stone800,
+                        height: 1.4,
+                      ),
+                      minLines: 1,
+                      maxLines: 8,
+                      maxLength: 12000,
+                      buildCounter:
+                          (
+                            context, {
+                            required currentLength,
+                            required isFocused,
+                            maxLength,
+                          }) => null,
+                      enabled: !widget.sending && !widget.closed,
+                      textInputAction: TextInputAction.newline,
+                      onSubmitted: (_) {},
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        if (widget.closed)
+                          Text(
+                            'This thread is closed',
+                            style: Theme.of(context).textTheme.labelSmall
+                                ?.copyWith(color: MutandeColors.stone400),
+                          )
+                        else if (_focused || _hasText)
+                          Text(
+                            '⌘↩ to send',
+                            style: Theme.of(context).textTheme.labelSmall
+                                ?.copyWith(color: MutandeColors.stone400),
+                          ),
+                        const Spacer(),
+                        TextButton(
+                          onPressed: canSend ? _trySend : null,
+                          style: TextButton.styleFrom(
+                            foregroundColor: canSend
+                                ? MutandeColors.stone800
+                                : MutandeColors.stone400,
+                            disabledForegroundColor: MutandeColors.stone400,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            minimumSize: const Size(0, 32),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            textStyle: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          child: Text(widget.sending ? 'Sending…' : 'Send'),
                         ),
-                        child: const Text('Cancel'),
-                      ),
-                    ],
-                  ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
             ),
-          Container(
-            decoration: BoxDecoration(
-              color: const Color(0xFFFAFAF9),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: const Color(0xFFE7E5E4)),
-            ),
-            padding: const EdgeInsets.fromLTRB(14, 6, 14, 6),
-            child: TextField(
-              controller: controller,
-              decoration: InputDecoration(
-                hintText: closed
-                    ? 'Thread closed'
-                    : nested
-                        ? 'Nested reply…'
-                        : 'Reply to thread…',
-                border: InputBorder.none,
-                isDense: true,
-                contentPadding: const EdgeInsets.symmetric(vertical: 10),
-              ),
-              minLines: 2,
-              maxLines: 8,
-              maxLength: 12000,
-              buildCounter: (
-                context, {
-                required currentLength,
-                required isFocused,
-                maxLength,
-              }) =>
-                  null,
-              enabled: !sending && !closed,
-              textInputAction: TextInputAction.newline,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              if (closed)
-                Text(
-                  'This thread is closed',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: const Color(0xFFA8A29E),
-                      ),
-                ),
-              const Spacer(),
-              FilledButton(
-                onPressed: sending || closed ? null : onSend,
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF292524),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 18,
-                    vertical: 10,
-                  ),
-                  minimumSize: const Size(0, 36),
-                  textStyle: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                child: Text(sending ? 'Sending…' : 'Send reply'),
-              ),
-            ],
           ),
         ],
       ),
@@ -1791,6 +2074,7 @@ class _ThreadReplyComposer extends StatelessWidget {
 
 class _ThreadMessageTile extends StatelessWidget {
   const _ThreadMessageTile({
+    super.key,
     required this.node,
     this.myHandle,
     this.opHandle,
@@ -1801,6 +2085,7 @@ class _ThreadMessageTile extends StatelessWidget {
 
   final ThreadMessageNode node;
   final String? myHandle;
+
   /// Thread originator (`detail.from`) — shown as OP when it matches.
   final String? opHandle;
   final VoidCallback? onReply;
@@ -1822,6 +2107,7 @@ class _ThreadMessageTile extends StatelessWidget {
     final fromLabel = formatMailAddress(m.fromHandle, myHandle: myHandle);
     final host = _hostSlugFromHandle(m.fromHandle, myHandle: myHandle);
     final isOp = _isOpHandle(m.fromHandle, opHandle);
+    final time = formatClockHm(m.createdAt);
 
     // OP gets more air below; nested replies stay denser.
     final bottomGap = depth == 0 ? 20.0 : 14.0;
@@ -1855,16 +2141,25 @@ class _ThreadMessageTile extends StatelessWidget {
                           fromLabel,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style:
-                              Theme.of(context).textTheme.labelLarge?.copyWith(
-                                    color: const Color(0xFF292524),
-                                    fontWeight: FontWeight.w700,
-                                  ),
+                          style: Theme.of(context).textTheme.labelLarge
+                              ?.copyWith(
+                                color: const Color(0xFF292524),
+                                fontWeight: FontWeight.w700,
+                              ),
                         ),
                       ),
-                      if (isOp) ...[
+                      if (isOp) ...[const SizedBox(width: 8), const _OpBadge()],
+                      if (time.isNotEmpty) ...[
                         const SizedBox(width: 8),
-                        const _OpBadge(),
+                        Text(
+                          time,
+                          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                color: MutandeColors.stone400,
+                                fontFeatures: const [
+                                  FontFeature.tabularFigures(),
+                                ],
+                              ),
+                        ),
                       ],
                     ],
                   ),
@@ -1872,15 +2167,14 @@ class _ThreadMessageTile extends StatelessWidget {
                   SelectableText(
                     body,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: hasError
-                              ? const Color(0xFF991B1B)
-                              : empty
-                                  ? const Color(0xFFA8A29E)
-                                  : const Color(0xFF1C1917),
-                          height: 1.5,
-                          fontStyle:
-                              empty ? FontStyle.italic : FontStyle.normal,
-                        ),
+                      color: hasError
+                          ? const Color(0xFF991B1B)
+                          : empty
+                          ? const Color(0xFFA8A29E)
+                          : const Color(0xFF1C1917),
+                      height: 1.5,
+                      fontStyle: empty ? FontStyle.italic : FontStyle.normal,
+                    ),
                   ),
                   if (onUpvote != null || count > 0 || onReply != null) ...[
                     const SizedBox(height: 10),
@@ -1895,16 +2189,14 @@ class _ThreadMessageTile extends StatelessWidget {
                           onReply: onReply,
                           showUpvote: onUpvote != null || count > 0,
                         ),
-                        if (upvotes != null &&
-                            upvotes.upvotes.isNotEmpty) ...[
+                        if (upvotes != null && upvotes.upvotes.isNotEmpty) ...[
                           const SizedBox(width: 10),
                           Expanded(
                             child: Wrap(
                               spacing: 4,
                               runSpacing: 4,
                               children: [
-                                for (final vote
-                                    in upvotes.upvotes.take(8))
+                                for (final vote in upvotes.upvotes.take(8))
                                   _AgentVoteChip(
                                     label: formatMailAddress(
                                       vote.fromHandle,
@@ -1913,8 +2205,7 @@ class _ThreadMessageTile extends StatelessWidget {
                                   ),
                                 if (upvotes.upvotes.length > 8)
                                   _AgentVoteChip(
-                                    label:
-                                        '+${upvotes.upvotes.length - 8}',
+                                    label: '+${upvotes.upvotes.length - 8}',
                                   ),
                               ],
                             ),
@@ -1955,11 +2246,11 @@ class _OpBadge extends StatelessWidget {
       child: Text(
         'OP',
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: const Color(0xFF1D4ED8),
-              fontWeight: FontWeight.w700,
-              fontSize: 10,
-              letterSpacing: 0.3,
-            ),
+          color: const Color(0xFF1D4ED8),
+          fontWeight: FontWeight.w700,
+          fontSize: 10,
+          letterSpacing: 0.3,
+        ),
       ),
     );
   }
@@ -1980,11 +2271,7 @@ String? _hostSlugFromHandle(String handle, {String? myHandle}) {
 }
 
 class _MessageAvatar extends StatelessWidget {
-  const _MessageAvatar({
-    required this.label,
-    this.host,
-    this.size = 26,
-  });
+  const _MessageAvatar({required this.label, this.host, this.size = 26});
 
   final String label;
   final String? host;
@@ -2007,10 +2294,10 @@ class _MessageAvatar extends StatelessWidget {
       child: Text(
         _initialsFor(label),
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: const Color(0xFF78716C),
-              fontWeight: FontWeight.w700,
-              fontSize: size * 0.34,
-            ),
+          color: const Color(0xFF78716C),
+          fontWeight: FontWeight.w700,
+          fontSize: size * 0.34,
+        ),
       ),
     );
   }
@@ -2059,11 +2346,7 @@ class _MessageActionGroup extends StatelessWidget {
               roundedLeft: true,
             ),
             if (showReply)
-              Container(
-                width: 1,
-                height: 18,
-                color: const Color(0xFFE7E5E4),
-              ),
+              Container(width: 1, height: 18, color: const Color(0xFFE7E5E4)),
           ],
           if (showReply)
             _ActionIconCell(
@@ -2127,15 +2410,19 @@ class _ActionIconCell extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(icon, size: 16, color: enabled ? fg : const Color(0xFFA8A29E)),
+                Icon(
+                  icon,
+                  size: 16,
+                  color: enabled ? fg : const Color(0xFFA8A29E),
+                ),
                 if (label != null) ...[
                   const SizedBox(width: 4),
                   Text(
                     label!,
                     style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                          color: enabled ? fg : const Color(0xFFA8A29E),
-                          fontWeight: FontWeight.w600,
-                        ),
+                      color: enabled ? fg : const Color(0xFFA8A29E),
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ],
               ],
@@ -2163,9 +2450,9 @@ class _AgentVoteChip extends StatelessWidget {
       child: Text(
         label,
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: const Color(0xFF57534E),
-              fontWeight: FontWeight.w500,
-            ),
+          color: const Color(0xFF57534E),
+          fontWeight: FontWeight.w500,
+        ),
       ),
     );
   }

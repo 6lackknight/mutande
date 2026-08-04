@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
+import '../platform/user_home.dart';
+
 /// First-run gate flags under `~/.mutande/first_run.json`.
 class FirstRunStore {
   FirstRunStore({File? file, Map<String, dynamic>? memory})
@@ -32,9 +34,9 @@ class FirstRunStore {
 
   File _resolveFile() {
     if (_file != null) return _file!;
-    final home = Platform.environment['HOME'];
+    final home = userHomeDir();
     if (home == null || home.isEmpty) {
-      throw StateError('HOME is not set');
+      throw StateError('home directory is not set');
     }
     return File('$home/.mutande/first_run.json');
   }

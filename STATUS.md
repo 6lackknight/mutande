@@ -53,12 +53,20 @@ v1.5 iOS companion.
 
 ## Remaining deferred
 
-- Sparkle + notarization credential profile (see `docs/UPDATES.md`)
-- Flutter Unix-socket transport (still HTTP bridge + token)
+- Sparkle auto-update (Mac DMG path documented in `docs/UPDATES.md`)
+- Windows Authenticode / EV signing (unsigned zip alpha via GHA for now)
+- Flutter Unix-socket transport (still HTTP bridge + token; Windows is HTTP-only)
 - ChatGPT MCP config path confirmation across desktop builds
 - Own safety-number URI uses handle `me` until hub `/me` is wired into that RPC
 - Verify UI shows QR *payload* stub (copyable URI), not a rendered QR bitmap
 - Self-handoff inbox overwrite (sender→recipient/pending) is intentional for `needs_action`
+
+## Windows alpha
+
+- Core: HTTP-only serve on non-Unix; MCP client uses HTTP bearer (no Unix socket)
+- App: `app/windows/` runner + Material shell; tray/window_manager enabled
+- Ship: `.github/workflows/release-windows.yml` → `mutande-alpha-windows.zip`
+- Site: `WIN_ZIP_URL` on landing/dashboard (SmartScreen copy)
 
 ## Last code review
 

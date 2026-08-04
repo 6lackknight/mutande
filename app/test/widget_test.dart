@@ -390,7 +390,7 @@ void main() {
     expect(find.text('Compare'), findsOneWidget);
   });
 
-    testWidgets('onboarding sign-in smoke test', (WidgetTester tester) async {
+  testWidgets('onboarding sign-in smoke test', (WidgetTester tester) async {
     await tester.pumpWidget(
       MutandeApp(
         config: const AppConfig(hubUrl: 'http://localhost:8000'),
@@ -398,6 +398,7 @@ void main() {
         welcomeDuration: Duration.zero,
       ),
     );
+    await tester.pump(); // splash dismisses after bootstrap post-frame
 
     expect(find.text('mutande'), findsOneWidget);
     expect(find.text('Sign in'), findsOneWidget);

@@ -37,14 +37,22 @@ class CoreSidecar {
       return File(env).absolute.path;
     }
 
-    // macOS bundle: Contents/MacOS/<app> → Contents/Resources/mutande-core
+    final exeName =
+        Platform.isWindows ? 'mutande-core.exe' : 'mutande-core';
+
     try {
       final exe = File(Platform.resolvedExecutable).absolute;
-      final macosDir = exe.parent; // …/Contents/MacOS
-      final contents = macosDir.parent; // …/Contents
-      final resources = File('${contents.path}/Resources/mutande-core');
-      if (resources.existsSync()) return resources.path;
-      final beside = File('${macosDir.path}/mutande-core');
+      final exeDir = exe.parent;
+
+      if (Platform.isMacOS) {
+        // macOS bundle: Contents/MacOS/<app> → Contents/Resources/mutande-core
+        final contents = exeDir.parent; // …/Contents
+        final resources = File('${contents.path}/Resources/$exeName');
+        if (resources.existsSync()) return resources.path;
+      }
+
+      // Windows Release folder / macOS MacOS folder: sidecar beside the app.
+      final beside = File('${exeDir.path}/$exeName');
       if (beside.existsSync()) return beside.path;
     } catch (_) {
       // ignore — fall through
@@ -53,23 +61,27 @@ class CoreSidecar {
     // Dev: run from app/ → ../core/target/{release,debug}/mutande-core
     final cwd = Directory.current.path;
     for (final rel in [
-      '../core/target/release/mutande-core',
-      '../core/target/debug/mutande-core',
-      'core/target/release/mutande-core',
-      'core/target/debug/mutande-core',
+      '../core/target/release/$exeName',
+      '../core/target/debug/$exeName',
+      'core/target/release/$exeName',
+      'core/target/debug/$exeName',
+      '../core/target/x86_64-pc-windows-msvc/release/$exeName',
     ]) {
       final f = File('$cwd/$rel');
       if (f.existsSync()) return f.absolute.path;
     }
 
-    return _which('mutande-core');
+    return _which(exeName) ??
+        (Platform.isWindows ? _which('mutande-core') : null);
   }
 
   static String? _which(String name) {
     try {
-      final result = Process.runSync('which', [name]);
+      final result = Platform.isWindows
+          ? Process.runSync('where', [name], runInShell: true)
+          : Process.runSync('which', [name]);
       if (result.exitCode != 0) return null;
-      final path = (result.stdout as String).trim();
+      final path = (result.stdout as String).trim().split('\n').first.trim();
       return path.isEmpty ? null : path;
     } catch (_) {
       return null;
@@ -179,6 +191,10 @@ class CoreSidecar {
     _process = null;
     _startedByUs = false;
     if (proc == null) return;
+    if (Platform.isWindows) {
+      proc.kill(ProcessSignal.sigkill);
+      return;
+    }
     proc.kill(ProcessSignal.sigterm);
     try {
       await proc.exitCode.timeout(const Duration(seconds: 2));

@@ -8,6 +8,7 @@ use std::io::{self, BufRead, Write};
 use anyhow::{Context, Result};
 use serde_json::{Value, json};
 
+#[cfg(unix)]
 use crate::daemon::{DEFAULT_SOCKET, expand_path};
 use crate::daemon::rpc::{JsonRpcRequest, JsonRpcResponse};
 
@@ -148,6 +149,18 @@ fn inject_agent_slug(mut arguments: Value) -> Value {
 }
 
 async fn call_daemon(req: &JsonRpcRequest) -> Result<JsonRpcResponse> {
+    #[cfg(unix)]
+    {
+        call_daemon_unix(req).await
+    }
+    #[cfg(not(unix))]
+    {
+        call_daemon_http(req).await
+    }
+}
+
+#[cfg(unix)]
+async fn call_daemon_unix(req: &JsonRpcRequest) -> Result<JsonRpcResponse> {
     let socket_path = expand_path(DEFAULT_SOCKET);
     let mut stream = tokio::net::UnixStream::connect(&socket_path)
         .await
@@ -162,6 +175,37 @@ async fn call_daemon(req: &JsonRpcRequest) -> Result<JsonRpcResponse> {
     let mut line = String::new();
     reader.read_line(&mut line).await?;
     serde_json::from_str(&line).context("decode daemon response")
+}
+
+/// Windows / non-Unix: MCP stdio talks to the local HTTP bridge (same as Flutter).
+#[cfg(not(unix))]
+async fn call_daemon_http(req: &JsonRpcRequest) -> Result<JsonRpcResponse> {
+    use crate::daemon::{DEFAULT_HTTP_BIND, config};
+
+    let token = std::fs::read_to_string(config::http_token_path())
+        .context("read HTTP bridge token (~/.mutande/daemon_http_token) — is mutande-core serve running?")?
+        .trim()
+        .to_string();
+    if token.is_empty() {
+        anyhow::bail!("empty HTTP bridge token");
+    }
+
+    let url = format!("http://{}/rpc", DEFAULT_HTTP_BIND);
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {token}"))
+        .header("Content-Type", "application/json")
+        .json(req)
+        .send()
+        .await
+        .with_context(|| format!("POST {url}"))?;
+    let status = resp.status();
+    let body = resp.text().await.context("read HTTP response")?;
+    if !status.is_success() {
+        anyhow::bail!("daemon HTTP {status}: {body}");
+    }
+    serde_json::from_str(&body).context("decode daemon HTTP JSON-RPC response")
 }
 
 #[cfg(test)]
@@ -179,6 +223,24 @@ mod tests {
         assert!(defs.iter().any(|t| t.name == "delete_thread"));
         assert!(defs.iter().any(|t| t.name == "get_safety_number"));
         assert!(defs.iter().any(|t| t.name == "verify_contact"));
+    }
+
+    #[test]
+    fn tool_annotations_mark_reads_and_soft_writes() {
+        let defs = tool_definitions();
+        let list = defs.iter().find(|t| t.name == "list_threads").unwrap();
+        let ann = list.annotations.as_ref().expect("list_threads annotations");
+        assert_eq!(ann.read_only_hint, Some(true));
+        assert_eq!(ann.destructive_hint, Some(false));
+
+        let upvote = defs.iter().find(|t| t.name == "upvote_message").unwrap();
+        let u = upvote.annotations.as_ref().expect("upvote annotations");
+        assert_eq!(u.read_only_hint, Some(false));
+        assert_eq!(u.destructive_hint, Some(false));
+
+        let del = defs.iter().find(|t| t.name == "delete_thread").unwrap();
+        let d = del.annotations.as_ref().expect("delete annotations");
+        assert_eq!(d.destructive_hint, Some(true));
     }
 
     #[test]

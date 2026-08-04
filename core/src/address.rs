@@ -29,7 +29,7 @@ pub fn is_broadcast_handle(handle: &str) -> bool {
     handle.starts_with("@all@")
 }
 
-/// Self fan-out to all of the current user's agents: bare `@all`.
+/// Shared my-agents group: bare `@all`.
 pub fn is_my_agents_handle(handle: &str) -> bool {
     handle.trim() == "@all"
 }

@@ -8,7 +8,7 @@ Auth is **Auth0-first**: the hub validates Auth0 access tokens via JWKS. Self-se
 
 Tenant / app setup (API, web, Mac, env vars): see [`docs/AUTH0.md`](../docs/AUTH0.md).
 
-**Prod URLs:** hub `https://mutande.6lackknight.deno.net`; web `https://mutande.vercel.app` (until `mutande.ai`).
+**Prod URLs:** hub `https://mutande.6lackknight.deno.net`; web `https://mutande.online` (until `mutande.ai`).
 
 ## Local dev
 

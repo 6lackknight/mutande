@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
 import 'thinking_orb.dart';
 
@@ -6,12 +8,17 @@ import 'thinking_orb.dart';
 ///
 /// [child] stays mounted under the overlay so RootScreen / tray listeners
 /// keep running during the hold.
+///
+/// Dismisses after [duration] *and* [dismissWhen] is true (when provided),
+/// so Keychain authorization keeps the branded splash instead of a blank wait.
 class WelcomeSplash extends StatefulWidget {
   const WelcomeSplash({
     super.key,
     required this.child,
     this.duration = const Duration(seconds: 3),
     this.appVersion = '1.0.0',
+    this.dismissWhen,
+    this.statusLabel,
   });
 
   final Widget child;
@@ -20,24 +27,74 @@ class WelcomeSplash extends StatefulWidget {
   /// Display version from pubspec (`version:` before `+`).
   final String appVersion;
 
+  /// When set, splash stays until this is true (and [duration] has elapsed).
+  final ValueListenable<bool>? dismissWhen;
+
+  /// Optional status under the wordmark (e.g. Waiting for Keychain).
+  final ValueListenable<String?>? statusLabel;
+
   @override
   State<WelcomeSplash> createState() => _WelcomeSplashState();
 }
 
 class _WelcomeSplashState extends State<WelcomeSplash> {
   bool _showSplash = true;
+  bool _minElapsed = false;
 
   @override
   void initState() {
     super.initState();
+    widget.dismissWhen?.addListener(_onDismissSignal);
     if (widget.duration <= Duration.zero) {
-      _showSplash = false;
+      _minElapsed = true;
+      _tryDismiss();
       return;
     }
     Future<void>.delayed(widget.duration, () {
       if (!mounted) return;
-      setState(() => _showSplash = false);
+      _minElapsed = true;
+      _tryDismiss();
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant WelcomeSplash oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.dismissWhen != widget.dismissWhen) {
+      oldWidget.dismissWhen?.removeListener(_onDismissSignal);
+      widget.dismissWhen?.addListener(_onDismissSignal);
+      _tryDismiss();
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.dismissWhen?.removeListener(_onDismissSignal);
+    super.dispose();
+  }
+
+  void _onDismissSignal() => _tryDismiss();
+
+  void _tryDismiss() {
+    if (!_showSplash || !_minElapsed) return;
+    final gate = widget.dismissWhen;
+    if (gate != null && !gate.value) return;
+
+    void dismiss() {
+      if (!mounted || !_showSplash) return;
+      final g = widget.dismissWhen;
+      if (g != null && !g.value) return;
+      setState(() => _showSplash = false);
+    }
+
+    // Safe during post-frame callbacks (bootstrap notify); defer if mid-build.
+    final phase = SchedulerBinding.instance.schedulerPhase;
+    if (phase == SchedulerPhase.idle ||
+        phase == SchedulerPhase.postFrameCallbacks) {
+      dismiss();
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) => dismiss());
+    }
   }
 
   @override
@@ -82,7 +139,7 @@ class _WelcomeSplashState extends State<WelcomeSplash> {
                                 ),
                           ),
                           const SizedBox(height: 18),
-                          const _StatusLine(),
+                          _StatusLine(statusLabel: widget.statusLabel),
                           const Spacer(flex: 4),
                           _Footer(version: widget.appVersion),
                         ],
@@ -122,7 +179,33 @@ class _MidGlow extends StatelessWidget {
 }
 
 class _StatusLine extends StatelessWidget {
-  const _StatusLine();
+  const _StatusLine({this.statusLabel});
+
+  final ValueListenable<String?>? statusLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final labelListenable = statusLabel;
+    if (labelListenable == null) {
+      return const _StatusText(label: 'STARTING');
+    }
+    return ValueListenableBuilder<String?>(
+      valueListenable: labelListenable,
+      builder: (context, value, _) {
+        final raw = value?.trim();
+        final label = (raw == null || raw.isEmpty)
+            ? 'STARTING'
+            : raw.toUpperCase();
+        return _StatusText(label: label);
+      },
+    );
+  }
+}
+
+class _StatusText extends StatelessWidget {
+  const _StatusText({required this.label});
+
+  final String label;
 
   @override
   Widget build(BuildContext context) {
@@ -140,7 +223,7 @@ class _StatusLine extends StatelessWidget {
         ),
         const SizedBox(width: 8),
         Text(
-          'STARTING',
+          label,
           style: Theme.of(context).textTheme.labelSmall?.copyWith(
                 color: const Color(0xFFA8A29E),
                 fontWeight: FontWeight.w500,

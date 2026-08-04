@@ -1,19 +1,22 @@
 #!/usr/bin/env bash
-# Build, Developer ID–sign, optionally notarize, and package mutande as a DMG.
+# Build, Developer ID–sign, optionally notarize, and package mutande DMGs.
+#
+# Two architecture paths (native binaries — no Rosetta required):
+#   ARCH=arm64  → mutande-alpha-arm64.dmg   (Apple Silicon)
+#   ARCH=intel  → mutande-alpha-intel.dmg   (Intel)
+#   ARCH=both   → both (default)
 #
 # Prereqs:
 #   - Developer ID Application cert in Keychain
-#   - Flutter + Rust toolchain
-#   - For notarization: keychain profile from
-#       xcrun notarytool store-credentials "mutande-notary" \
-#         --apple-id "you@example.com" --team-id "Q22P2YXR6M" --password "<app-specific-password>"
+#   - Flutter + Rust toolchain (+ rustup target aarch64-apple-darwin when building arm64)
+#   - For notarization: keychain profile "mutande-notary"
 #
 # Usage (from repo root):
 #   ./scripts/release-macos-dmg.sh
-#   SKIP_NOTARIZE=1 ./scripts/release-macos-dmg.sh
-#   BUMP=patch|minor|major|build ./scripts/release-macos-dmg.sh   # default: patch
-#   SKIP_BUMP=1 ./scripts/release-macos-dmg.sh                     # keep current version
-#   NOTARY_PROFILE=mutande-notary ./scripts/release-macos-dmg.sh
+#   ARCH=arm64 ./scripts/release-macos-dmg.sh
+#   ARCH=intel SKIP_NOTARIZE=1 SKIP_BUMP=1 ./scripts/release-macos-dmg.sh
+#   BUMP=patch|minor|major|build   (default: patch)
+#   SKIP_BUMP=1
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -27,9 +30,234 @@ NOTARY_PROFILE="${NOTARY_PROFILE:-mutande-notary}"
 SKIP_NOTARIZE="${SKIP_NOTARIZE:-0}"
 SKIP_BUMP="${SKIP_BUMP:-0}"
 BUMP="${BUMP:-patch}"
+ARCH="${ARCH:-both}"
 BUNDLE_ID="ai.mutande.app"
+APP_NAME="mutande.app"
 
 export PATH="${HOME}/.cargo/bin:${HOME}/flutter/bin:/opt/homebrew/bin:${PATH:-}"
+
+ENTITLEMENTS="$APP_DIR/macos/Runner/Release.entitlements"
+SIDECAR_ENTITLEMENTS="$APP_DIR/macos/Runner/Sidecar.entitlements"
+
+resolve_arch() {
+  case "$1" in
+    arm64|aarch64|apple-silicon|silicon) echo "arm64" ;;
+    intel|x86_64|x64|amd64) echo "intel" ;;
+    both|all) echo "both" ;;
+    *)
+      echo "error: unknown ARCH=$1 (use arm64|intel|both)" >&2
+      exit 1
+      ;;
+  esac
+}
+
+rust_target_for() {
+  case "$1" in
+    arm64) echo "aarch64-apple-darwin" ;;
+    intel) echo "x86_64-apple-darwin" ;;
+  esac
+}
+
+macho_arch_for() {
+  case "$1" in
+    arm64) echo "arm64" ;;
+    intel) echo "x86_64" ;;
+  esac
+}
+
+channel_dmg_for() {
+  case "$1" in
+    arm64) echo "mutande-alpha-arm64.dmg" ;;
+    intel) echo "mutande-alpha-intel.dmg" ;;
+  esac
+}
+
+ensure_rust_target() {
+  local target="$1"
+  if ! rustup target list --installed | grep -qx "$target"; then
+    echo "==> rustup target add ${target}"
+    rustup target add "$target"
+  fi
+}
+
+thin_app_to_arch() {
+  local app="$1"
+  local slice="$2"
+  echo "==> thin app to ${slice}"
+  while IFS= read -r -d '' f; do
+    [[ -L "$f" ]] && continue
+    local kind
+    kind="$(file -b "$f" 2>/dev/null || true)"
+    [[ "$kind" == *Mach-O* ]] || continue
+    local archs
+    archs="$(lipo -archs "$f" 2>/dev/null || true)"
+    [[ -n "$archs" ]] || continue
+    if ! echo " $archs " | grep -q " ${slice} "; then
+      echo "    warning: no ${slice} slice in ${f#"$app/"}" >&2
+      continue
+    fi
+    # shellcheck disable=SC2206
+    local -a list=($archs)
+    if [[ ${#list[@]} -gt 1 ]]; then
+      lipo -thin "$slice" "$f" -output "${f}.thin"
+      mv "${f}.thin" "$f"
+    fi
+  done < <(find "$app" -type f -print0)
+}
+
+sign_app() {
+  local app="$1"
+  local core_bin="$app/Contents/Resources/mutande-core"
+
+  echo "==> codesign nested frameworks + sidecar + app"
+  if [[ ! -x "$core_bin" ]]; then
+    echo "error: missing sidecar $core_bin" >&2
+    exit 1
+  fi
+
+  find "$app/Contents/Frameworks" -name "*.framework" -maxdepth 1 -print0 2>/dev/null \
+    | while IFS= read -r -d '' fw; do
+        echo "    $(basename "$fw")"
+        codesign --force --options runtime --timestamp --deep \
+          --sign "$SIGN_IDENTITY" \
+          "$fw"
+      done
+
+  echo "    mutande-core"
+  codesign --force --options runtime --timestamp \
+    --entitlements "$SIDECAR_ENTITLEMENTS" \
+    --sign "$SIGN_IDENTITY" \
+    "$core_bin"
+
+  echo "    ${APP_NAME}"
+  codesign --force --options runtime --timestamp \
+    --entitlements "$ENTITLEMENTS" \
+    --sign "$SIGN_IDENTITY" \
+    "$app"
+
+  codesign --verify --deep --strict --verbose=2 "$app"
+  spctl --assess --type execute --verbose=4 "$app" 2>&1 || true
+}
+
+notarize_app() {
+  local app="$1"
+  local zip="$DIST_DIR/${APP_NAME}.${2}.zip"
+  echo "==> zip + notarize app (${2})"
+  rm -f "$zip"
+  ditto -c -k --keepParent "$app" "$zip"
+  xcrun notarytool submit "$zip" --keychain-profile "$NOTARY_PROFILE" --wait
+  xcrun stapler staple "$app"
+  xcrun stapler validate "$app"
+  rm -f "$zip"
+}
+
+package_dmg() {
+  local app="$1"
+  local dmg_path="$2"
+  local stage="$DIST_DIR/.dmg-stage-$3"
+
+  echo "==> build DMG $(basename "$dmg_path")"
+  rm -rf "$stage" "$dmg_path"
+  mkdir -p "$stage"
+  cp -R "$app" "$stage/"
+  ln -sf /Applications "$stage/Applications"
+  hdiutil create \
+    -volname "mutande" \
+    -srcfolder "$stage" \
+    -ov \
+    -format UDZO \
+    "$dmg_path"
+  rm -rf "$stage"
+
+  echo "==> codesign DMG"
+  codesign --force --sign "$SIGN_IDENTITY" --timestamp "$dmg_path"
+  codesign --verify --verbose=2 "$dmg_path"
+
+  if [[ "$SKIP_NOTARIZE" != "1" ]]; then
+    echo "==> notarize + staple DMG"
+    xcrun notarytool submit "$dmg_path" --keychain-profile "$NOTARY_PROFILE" --wait
+    xcrun stapler staple "$dmg_path"
+    xcrun stapler validate "$dmg_path"
+  fi
+
+  spctl --assess --type open --context context:primary-signature --verbose=4 \
+    "$dmg_path" 2>&1 || true
+}
+
+build_one_arch() {
+  local arch_key="$1"
+  local rust_target
+  local macho
+  local channel_dmg
+  local app_out
+  local core_src
+  local built_app
+
+  rust_target="$(rust_target_for "$arch_key")"
+  macho="$(macho_arch_for "$arch_key")"
+  channel_dmg="$(channel_dmg_for "$arch_key")"
+  app_out="$DIST_DIR/${APP_NAME}.${arch_key}"
+  ensure_rust_target "$rust_target"
+
+  echo ""
+  echo "========== ARCH=${arch_key} (${rust_target}) =========="
+
+  echo "==> cargo build --release --target ${rust_target}"
+  (cd "$CORE_DIR" && cargo build --release --target "$rust_target")
+  core_src="$CORE_DIR/target/${rust_target}/release/mutande-core"
+  if [[ ! -x "$core_src" ]]; then
+    echo "error: missing $core_src" >&2
+    exit 1
+  fi
+
+  # Flutter produces a universal (or host) app; we thin + swap sidecar per arch.
+  if [[ ! -d "$APP_DIR/build/macos/Build/Products/Release/${APP_NAME}" ]]; then
+    echo "==> flutter build macos --release"
+    (cd "$APP_DIR" && flutter build macos --release \
+      --build-name="${VERSION}" \
+      --build-number="${BUILD_NUMBER}")
+  else
+    echo "==> reuse flutter Release app (already built this run)"
+  fi
+
+  built_app="$APP_DIR/build/macos/Build/Products/Release/${APP_NAME}"
+  if [[ ! -d "$built_app" ]]; then
+    echo "error: expected app at $built_app" >&2
+    exit 1
+  fi
+
+  rm -rf "$app_out"
+  cp -R "$built_app" "$app_out"
+  cp -f "$core_src" "$app_out/Contents/Resources/mutande-core"
+  chmod 755 "$app_out/Contents/Resources/mutande-core"
+  thin_app_to_arch "$app_out" "$macho"
+
+  echo "==> arch check"
+  file "$app_out/Contents/MacOS/mutande"
+  file "$app_out/Contents/Resources/mutande-core"
+  lipo -archs "$app_out/Contents/MacOS/mutande"
+  lipo -archs "$app_out/Contents/Resources/mutande-core"
+
+  sign_app "$app_out"
+
+  if [[ "$SKIP_NOTARIZE" != "1" ]]; then
+    notarize_app "$app_out" "$arch_key"
+  else
+    echo "==> SKIP_NOTARIZE=1 — Gatekeeper will warn until notarized"
+  fi
+
+  package_dmg "$app_out" "$DIST_DIR/${channel_dmg}" "$arch_key"
+
+  # Apple Silicon is the default /downloads/mutande-alpha.dmg alias.
+  if [[ "$arch_key" == "arm64" ]]; then
+    cp -f "$DIST_DIR/${channel_dmg}" "$DIST_DIR/mutande-alpha.dmg"
+  fi
+
+  echo "==> done ${arch_key} → ${channel_dmg}"
+}
+
+# --- version bump (once per invocation) ---
+ARCH="$(resolve_arch "$ARCH")"
 
 echo "==> bump version (BUMP=${BUMP}, SKIP_BUMP=${SKIP_BUMP})"
 VERSION_INFO="$(
@@ -109,131 +337,35 @@ PY
 )"
 VERSION="$(echo "$VERSION_INFO" | awk '{print $1}')"
 BUILD_NUMBER="$(echo "$VERSION_INFO" | awk '{print $2}')"
-DMG_NAME="mutande-${VERSION}.dmg"
-APP_NAME="mutande.app"
 
 echo "==> version ${VERSION} (build ${BUILD_NUMBER})"
+echo "==> ARCH=${ARCH}"
 echo "==> identity ${SIGN_IDENTITY}"
 
 mkdir -p "$DIST_DIR"
-rm -rf "$DIST_DIR/${APP_NAME}" "$DIST_DIR/${DMG_NAME}" "$DIST_DIR/.dmg-stage" "$DIST_DIR/${APP_NAME}.zip"
+# Fresh flutter build once for this run
+rm -rf "$APP_DIR/build/macos/Build/Products/Release/${APP_NAME}"
 
-echo "==> cargo build --release (mutande-core)"
-(cd "$CORE_DIR" && cargo build --release)
+case "$ARCH" in
+  both)
+    build_one_arch arm64
+    build_one_arch intel
+    ;;
+  arm64|intel)
+    build_one_arch "$ARCH"
+    ;;
+esac
 
-echo "==> flutter build macos --release"
-(cd "$APP_DIR" && flutter build macos --release \
-  --build-name="${VERSION}" \
-  --build-number="${BUILD_NUMBER}")
-
-BUILT_APP="$APP_DIR/build/macos/Build/Products/Release/${APP_NAME}"
-if [[ ! -d "$BUILT_APP" ]]; then
-  echo "error: expected app at $BUILT_APP" >&2
-  ls -la "$APP_DIR/build/macos/Build/Products/Release/" >&2 || true
-  exit 1
-fi
-
-cp -R "$BUILT_APP" "$DIST_DIR/${APP_NAME}"
-APP="$DIST_DIR/${APP_NAME}"
-
-ENTITLEMENTS="$APP_DIR/macos/Runner/Release.entitlements"
-SIDECAR_ENTITLEMENTS="$APP_DIR/macos/Runner/Sidecar.entitlements"
-CORE_BIN="$APP/Contents/Resources/mutande-core"
-
-echo "==> codesign nested frameworks + sidecar + app"
-if [[ ! -x "$CORE_BIN" ]]; then
-  echo "error: missing sidecar $CORE_BIN" >&2
-  exit 1
-fi
-
-# Inside-out: frameworks (runtime only — no app entitlements), sidecar, then app.
-find "$APP/Contents/Frameworks" -name "*.framework" -maxdepth 1 -print0 2>/dev/null \
-  | while IFS= read -r -d '' fw; do
-      echo "    $(basename "$fw")"
-      codesign --force --options runtime --timestamp --deep \
-        --sign "$SIGN_IDENTITY" \
-        "$fw"
-    done
-
-echo "    mutande-core"
-codesign --force --options runtime --timestamp \
-  --entitlements "$SIDECAR_ENTITLEMENTS" \
-  --sign "$SIGN_IDENTITY" \
-  "$CORE_BIN"
-
-echo "    ${APP_NAME}"
-codesign --force --options runtime --timestamp \
-  --entitlements "$ENTITLEMENTS" \
-  --sign "$SIGN_IDENTITY" \
-  "$APP"
-
-echo "==> verify signature"
-codesign --verify --deep --strict --verbose=2 "$APP"
-spctl --assess --type execute --verbose=4 "$APP" 2>&1 || true
-
-if [[ "$SKIP_NOTARIZE" != "1" ]]; then
-  echo "==> zip for notarytool"
-  ditto -c -k --keepParent "$APP" "$DIST_DIR/${APP_NAME}.zip"
-
-  echo "==> submit notarization (profile: ${NOTARY_PROFILE})"
-  xcrun notarytool submit "$DIST_DIR/${APP_NAME}.zip" \
-    --keychain-profile "$NOTARY_PROFILE" \
-    --wait
-
-  echo "==> staple"
-  xcrun stapler staple "$APP"
-  xcrun stapler validate "$APP"
-else
-  echo "==> SKIP_NOTARIZE=1 — Gatekeeper will warn until notarized"
-fi
-
-echo "==> build DMG"
-STAGE="$DIST_DIR/.dmg-stage"
-mkdir -p "$STAGE"
-cp -R "$APP" "$STAGE/"
-ln -sf /Applications "$STAGE/Applications"
-
-# UDZO compressed DMG
-hdiutil create \
-  -volname "mutande" \
-  -srcfolder "$STAGE" \
-  -ov \
-  -format UDZO \
-  "$DIST_DIR/${DMG_NAME}"
-
-rm -rf "$STAGE"
-
-# Disk image must be Developer ID–signed or Gatekeeper reports "no usable signature"
-# even when the nested .app is notarized.
-echo "==> codesign DMG"
-codesign --force --sign "$SIGN_IDENTITY" --timestamp "$DIST_DIR/${DMG_NAME}"
-codesign --verify --verbose=2 "$DIST_DIR/${DMG_NAME}"
-
-if [[ "$SKIP_NOTARIZE" != "1" ]]; then
-  echo "==> notarize + staple DMG"
-  xcrun notarytool submit "$DIST_DIR/${DMG_NAME}" \
-    --keychain-profile "$NOTARY_PROFILE" \
-    --wait
-  xcrun stapler staple "$DIST_DIR/${DMG_NAME}"
-  xcrun stapler validate "$DIST_DIR/${DMG_NAME}"
-fi
-
-# Rolling alpha channel — only this public name is kept (no version archives).
-CHANNEL_DMG="mutande-alpha.dmg"
-cp -f "$DIST_DIR/${DMG_NAME}" "$DIST_DIR/${CHANNEL_DMG}"
-rm -f "$DIST_DIR/${DMG_NAME}" "$DIST_DIR/mutande-latest.dmg"
-find "$DIST_DIR" -maxdepth 1 -type f -name 'mutande-*.dmg' ! -name "$CHANNEL_DMG" -delete
-
-echo "==> Gatekeeper assess"
-spctl --assess --type execute --verbose=4 "$APP" 2>&1 || true
-# open/context is the check users hit when mounting a downloaded DMG
-spctl --assess --type open --context context:primary-signature --verbose=4 \
-  "$DIST_DIR/${CHANNEL_DMG}" 2>&1 || true
+# Keep only rolling alpha DMGs (+ optional legacy alias).
+find "$DIST_DIR" -maxdepth 1 -type f -name 'mutande-*.dmg' \
+  ! -name 'mutande-alpha-arm64.dmg' \
+  ! -name 'mutande-alpha-intel.dmg' \
+  ! -name 'mutande-alpha.dmg' \
+  -delete
 
 echo ""
 echo "Done."
-echo "  App:     $APP"
-echo "  Version: $DIST_DIR/${DMG_NAME}"
-echo "  Publish: $DIST_DIR/${CHANNEL_DMG}"
+echo "  Version: ${VERSION}+${BUILD_NUMBER}"
+ls -lh "$DIST_DIR"/mutande-alpha*.dmg 2>/dev/null || true
 echo "  Bundle id: $BUNDLE_ID"
 echo "  Team: $TEAM_ID"

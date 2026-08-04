@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
@@ -10,10 +12,6 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   final sidecar = CoreSidecar();
-  // Start bundled mutande-core before UI talks to the daemon.
-  // Failures surface via DaemonErrorScreen / tray "Daemon: down".
-  await sidecar.start();
-
   final tray = await bootstrapDesktopShell();
   tray?.attachSidecar(sidecar);
 
@@ -23,6 +21,8 @@ Future<void> main() async {
       ? definedVersion
       : (await PackageInfo.fromPlatform()).version;
 
+  // Paint the welcome splash immediately — do not block on Keychain /
+  // mutande-core health (can take tens of seconds while the user authorizes).
   runApp(
     MutandeApp(
       config: AppConfig.fromEnvironment(),
@@ -34,4 +34,10 @@ Future<void> main() async {
       },
     ),
   );
+
+  // Start bundled mutande-core after the first frame so the UI is visible
+  // while the OS Keychain prompt is up.
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    unawaited(sidecar.start());
+  });
 }

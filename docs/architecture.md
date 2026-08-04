@@ -22,8 +22,8 @@ Hub (Deno Deploy)
 ## Threads
 
 - `direct` — one recipient (handle, `handle/agent`, or self `@slug`)
-- `my-agents` — bare `@all`, fan-out to the current user’s agents
-- `broadcast` — `@all@org`, fan-out to each *other* member’s default (sole member → own devices)
+- `my-agents` — bare `@all`, one shared group thread among the current user’s agents (shared replies)
+- `broadcast` — `@all@org`, announcement to each *other* member’s default (sender-only replies; sole member → own devices)
 - Status: `open` | `closed`; participant `pending` | `replied`
 - Replies attach to thread; sender inbox does not flood
 - Display addresses `alice@acme/claude`; wire form `acme/alice/claude` (internal)

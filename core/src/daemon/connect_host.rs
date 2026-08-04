@@ -89,14 +89,26 @@ pub fn resolve_mutande_core_command() -> String {
 }
 
 fn which_mutande_core() -> Option<String> {
-    let output = Command::new("/usr/bin/which")
+    #[cfg(windows)]
+    let output = Command::new("where")
+        .arg("mutande-core.exe")
+        .output()
+        .or_else(|_| Command::new("where").arg("mutande-core").output())
+        .ok()?;
+    #[cfg(not(windows))]
+    let output = Command::new("which")
         .arg("mutande-core")
         .output()
         .ok()?;
     if !output.status.success() {
         return None;
     }
-    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let path = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_string();
     if path.is_empty() {
         None
     } else {
@@ -108,9 +120,20 @@ fn which_mutande_core() -> Option<String> {
 pub fn config_path_for_host(host: Host, home: &Path) -> PathBuf {
     match host {
         Host::Cursor => home.join(".cursor/mcp.json"),
-        Host::Claude => home
-            .join("Library/Application Support/Claude/claude_desktop_config.json"),
-        Host::Chatgpt => home.join("Library/Application Support/ChatGPT/mcp.json"),
+        Host::Claude => {
+            if cfg!(windows) {
+                home.join("AppData/Roaming/Claude/claude_desktop_config.json")
+            } else {
+                home.join("Library/Application Support/Claude/claude_desktop_config.json")
+            }
+        }
+        Host::Chatgpt => {
+            if cfg!(windows) {
+                home.join("AppData/Roaming/ChatGPT/mcp.json")
+            } else {
+                home.join("Library/Application Support/ChatGPT/mcp.json")
+            }
+        }
     }
 }
 

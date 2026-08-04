@@ -619,7 +619,7 @@ export class HubStore {
       audience = broadcastHandle(org.slug);
       isBroadcast = true;
     } else if (isMyAgents) {
-      // Bare @all → fan-out to all of the current user's agents (inbox visibility).
+      // Bare @all → one shared my-agents group thread (inbox for this user).
       // Crypto still seals once to the user's own device pubkeys.
       const { agents } = await this.listAgents(auth);
       if (agents.length === 0) {
@@ -973,7 +973,8 @@ export class HubStore {
       from_handle: fromDisplay,
       envelope: input.envelope,
       created_at: ts,
-      sender_only: thread.kind === "broadcast",
+      // Org @all@org announcements hide peer replies; bare @all group threads share them.
+      sender_only: thread.kind === "broadcast" && isBroadcastHandle(thread.audience),
       ...(parentId ? { parent_message_id: parentId } : {}),
     };
 

@@ -17,8 +17,8 @@ enum Commands {
     Serve {
         #[arg(long, default_value = daemon::DEFAULT_SOCKET)]
         socket: String,
-        /// HTTP JSON-RPC bridge for Flutter dev (POST /rpc). Empty string disables.
-        #[arg(long, default_value = "127.0.0.1:3847")]
+        /// HTTP JSON-RPC bridge for Flutter (POST /rpc). Required on Windows. Empty disables on Unix.
+        #[arg(long, default_value = daemon::DEFAULT_HTTP_BIND)]
         http_bind: String,
     },
     /// MCP stdio server — forwards to running daemon

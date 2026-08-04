@@ -1,4 +1,7 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:macos_ui/macos_ui.dart';
@@ -26,7 +29,7 @@ import 'widgets/welcome_splash.dart';
 /// Back-compat alias for content Material theme.
 ThemeData mutandeTheme() => mutandeMaterialTheme();
 
-class MutandeApp extends StatelessWidget {
+class MutandeApp extends StatefulWidget {
   const MutandeApp({
     super.key,
     required this.config,
@@ -67,7 +70,58 @@ class MutandeApp extends StatelessWidget {
   final Future<String?> Function()? onRestartCourier;
 
   @override
+  State<MutandeApp> createState() => _MutandeAppState();
+}
+
+class _MutandeAppState extends State<MutandeApp> {
+  /// Welcome splash stays up until bootstrap finishes (covers Keychain prompts).
+  final ValueNotifier<bool> _sessionReady = ValueNotifier(false);
+  final ValueNotifier<String?> _splashStatus = ValueNotifier(null);
+
+  @override
+  void dispose() {
+    _sessionReady.dispose();
+    _splashStatus.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final home = WelcomeSplash(
+      duration: widget.welcomeDuration,
+      appVersion: widget.appVersion,
+      dismissWhen: _sessionReady,
+      statusLabel: _splashStatus,
+      child: RootScreen(
+        config: widget.config,
+        daemon: widget.daemon,
+        seedStatus: widget.seedStatus,
+        hostLinkStore: widget.hostLinkStore,
+        firstRunStore: widget.firstRunStore,
+        startupRetryAttempts: widget.startupRetryAttempts,
+        onRestartCourier: widget.onRestartCourier,
+        onBootstrapPhase: (ready, status) {
+          // Defer — RootScreen may emit from initState while splash is mounting.
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            _sessionReady.value = ready;
+            _splashStatus.value = status;
+          });
+        },
+      ),
+    );
+
+    // Windows alpha: Material shell (macos_ui is macOS-only).
+    final useMaterial = !kIsWeb && Platform.isWindows;
+    if (useMaterial) {
+      return MaterialApp(
+        title: 'mutande',
+        theme: mutandeMaterialTheme(),
+        debugShowCheckedModeBanner: false,
+        home: home,
+      );
+    }
+
     return MacosApp(
       title: 'mutande',
       theme: mutandeMacosTheme(),
@@ -84,19 +138,7 @@ class MutandeApp extends StatelessWidget {
           child: child ?? const SizedBox.shrink(),
         );
       },
-      home: WelcomeSplash(
-        duration: welcomeDuration,
-        appVersion: appVersion,
-        child: RootScreen(
-          config: config,
-          daemon: daemon,
-          seedStatus: seedStatus,
-          hostLinkStore: hostLinkStore,
-          firstRunStore: firstRunStore,
-          startupRetryAttempts: startupRetryAttempts,
-          onRestartCourier: onRestartCourier,
-        ),
-      ),
+      home: home,
     );
   }
 }
@@ -111,6 +153,7 @@ class RootScreen extends StatefulWidget {
     this.firstRunStore,
     this.startupRetryAttempts = 15,
     this.onRestartCourier,
+    this.onBootstrapPhase,
   });
 
   final AppConfig config;
@@ -120,6 +163,9 @@ class RootScreen extends StatefulWidget {
   final FirstRunStore? firstRunStore;
   final int startupRetryAttempts;
   final Future<String?> Function()? onRestartCourier;
+
+  /// Reports bootstrap readiness + splash status (Keychain wait, etc.).
+  final void Function(bool ready, String? status)? onBootstrapPhase;
 
   @override
   State<RootScreen> createState() => _RootScreenState();
@@ -172,9 +218,18 @@ class _RootScreenState extends State<RootScreen> {
     if (widget.seedStatus != null) {
       _status = widget.seedStatus;
       _loading = false;
+      _emitBootstrapPhase();
     } else {
+      _emitBootstrapPhase();
       _refreshStatus(bootstrap: true);
     }
+  }
+
+  void _emitBootstrapPhase() {
+    widget.onBootstrapPhase?.call(
+      !_loading,
+      _loading ? (_loadingHint ?? 'Starting') : null,
+    );
   }
 
   Future<void> _bootstrapFirstRun() async {
@@ -209,8 +264,9 @@ class _RootScreenState extends State<RootScreen> {
     setState(() {
       _loading = true;
       _statusError = null;
-      _loadingHint = null;
+      _loadingHint = bootstrap ? 'Starting' : null;
     });
+    _emitBootstrapPhase();
 
     Object? lastError;
     final maxAttempts =
@@ -226,6 +282,7 @@ class _RootScreenState extends State<RootScreen> {
           _loading = false;
           _loadingHint = null;
         });
+        _emitBootstrapPhase();
         if (_pendingConnectHosts && status.configured) {
           _pendingConnectHosts = false;
           await _runConnectHosts();
@@ -239,8 +296,9 @@ class _RootScreenState extends State<RootScreen> {
         if (!canRetry) break;
         if (mounted) {
           setState(() {
-            _loadingHint = 'Waiting for Keychain…';
+            _loadingHint = 'Waiting for Keychain';
           });
+          _emitBootstrapPhase();
         }
         await Future<void>.delayed(const Duration(seconds: 2));
         if (!mounted) return;
@@ -259,6 +317,7 @@ class _RootScreenState extends State<RootScreen> {
       _loading = false;
       _loadingHint = null;
     });
+    _emitBootstrapPhase();
   }
 
   Future<void> _restartCourier() async {
@@ -266,9 +325,10 @@ class _RootScreenState extends State<RootScreen> {
     if (restart == null) return;
     setState(() {
       _loading = true;
-      _loadingHint = 'Restarting courier…';
+      _loadingHint = 'Restarting courier';
       _statusError = null;
     });
+    _emitBootstrapPhase();
     final err = await restart();
     if (!mounted) return;
     if (err != null) {
@@ -278,6 +338,7 @@ class _RootScreenState extends State<RootScreen> {
         _loading = false;
         _loadingHint = null;
       });
+      _emitBootstrapPhase();
       return;
     }
     await _refreshStatus(bootstrap: true);
@@ -759,13 +820,17 @@ class _HomeScreenState extends State<HomeScreen> {
   bool get _inWidgetTest =>
       WidgetsBinding.instance.runtimeType.toString().contains('Test');
 
+  /// Material chrome for Windows (+ widget tests); macos_ui on macOS.
+  bool get _useMaterialShell =>
+      _inWidgetTest || (!kIsWeb && Platform.isWindows);
+
   @override
   Widget build(BuildContext context) {
     final handle = widget.status.handle ?? 'mutande';
     final initial = handle.isNotEmpty ? handle[0].toUpperCase() : 'M';
     final banner = _statusBanner();
 
-    final shell = _inWidgetTest
+    final shell = _useMaterialShell
         ? Scaffold(
             body: SafeArea(
               child: Column(

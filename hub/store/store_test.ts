@@ -312,7 +312,7 @@ Deno.test("unknown @slug rejected", async () => {
   });
 });
 
-Deno.test("bare @all fans out to my agents", async () => {
+Deno.test("bare @all is one shared my-agents group thread", async () => {
   await withTestStore(async ({ store }) => {
     const { aliceAuth, bobAuth } = await setupOrgWithUsers(store);
     await store.registerAgent(aliceAuth, { slug: "claude" });
@@ -329,6 +329,37 @@ Deno.test("bare @all fans out to my agents", async () => {
     assertEquals((await store.listThreads(aliceAuth, "open")).threads[0]?.your_status, "replied");
     // Org members do not receive bare @all (that's @all@org).
     assertEquals((await store.listThreads(bobAuth, "needs_action")).threads.length, 0);
+
+    // Peer agents see each other's replies (unlike org @all@org).
+    await store.postReply(aliceAuth, thread.id, {
+      envelope: sampleEnvelope("claude-reply"),
+      from_agent: "claude",
+    });
+    const { messages } = await store.getThread(aliceAuth, thread.id);
+    assertEquals(messages.length, 2);
+    assertEquals(messages[1]!.from_handle.endsWith("/claude"), true);
+    assertEquals(messages[1]!.sender_only, false);
+  });
+});
+
+Deno.test("@all@org replies stay sender-only for other members", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth, bobAuth, carolAuth } = await setupOrgWithUsers(store);
+    const { thread } = await store.createThread(aliceAuth, {
+      to: "@all@acme",
+      envelope: sampleEnvelope("org-ann"),
+      from_agent: "cursor",
+    });
+    await store.postReply(bobAuth, thread.id, {
+      envelope: sampleEnvelope("bob-reply"),
+      from_agent: "claude",
+    });
+    const bobView = await store.getThread(bobAuth, thread.id);
+    assertEquals(bobView.messages.length, 2);
+    const carolView = await store.getThread(carolAuth, thread.id);
+    // Carol sees root + not bob's sender_only reply.
+    assertEquals(carolView.messages.length, 1);
+    assertEquals(carolView.messages[0]!.from_user_id, aliceAuth.userId);
   });
 });
 
