@@ -51,7 +51,7 @@ Tenant checklist: [`docs/AUTH0.md`](../docs/AUTH0.md). Core env sample: [`core/.
 cd app
 flutter pub get
 flutter run -d macos \
-  --dart-define=AUTH0_DOMAIN=chevrondigital.auth0.com \
+  --dart-define=AUTH0_DOMAIN=auth.mutande.online \
   --dart-define=AUTH0_NATIVE_CLIENT_ID=2cbPq8c2JelRxBRkvKlSHTmrM91ItUUm \
   --dart-define=AUTH0_AUDIENCE=https://hub.mutande.app
 ```

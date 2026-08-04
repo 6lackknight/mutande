@@ -4,4 +4,5 @@ export const AnalyticsEvent = {
   DownloadNavClick: "download_nav_click",
   DownloadArtifactClick: "download_artifact_click",
   SignInClick: "sign_in_click",
+  CreateAccountClick: "create_account_click",
 } as const;

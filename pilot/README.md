@@ -17,7 +17,28 @@ No web plaintext path. Mac alpha only: `/downloads/mutande-alpha.dmg` on prod we
 
 Gemini Meet notes are backup. After each call, paste into a new file under `sessions/`.
 
-Friends can also send **in-app feedback** (Settings → Feedback) — stored on the hub as Auth0-signed `POST /v1/feedback`. The marketing site **Join waitlist** survey lands in the same ops bucket via public `POST /v1/waitlist`. Read as org admin:
+Friends can also send **in-app feedback** (Settings → Feedback) — stored on the hub as Auth0-signed `POST /v1/feedback`. The marketing site **Join waitlist** survey lands in the same ops bucket via public `POST /v1/waitlist`.
+
+### Local ops dashboard (preferred)
+
+Charts + tables for feedback and waitlist. **Localhost only** — not part of the web deploy. Uses Auth0 login (same Native app as Mac).
+
+**One-time Auth0 setup:** Native Application → Allowed Callback URLs, add:
+
+```
+http://127.0.0.1:3848/auth/callback
+```
+
+Also add `http://127.0.0.1:3848` to Allowed Logout URLs / Allowed Web Origins if Auth0 complains.
+
+```bash
+deno task --cwd pilot/ops start
+# → http://127.0.0.1:3848 → Log in (org admin account)
+```
+
+`MUTANDE_OPS_PORT` overrides the port (default `3848`). Optional: `AUTH0_DOMAIN`, `AUTH0_NATIVE_CLIENT_ID`, `AUTH0_AUDIENCE`, `MUTANDE_HUB_URL`.
+
+### Curl
 
 ```bash
 # After signing in as org admin (use a short-lived access token)

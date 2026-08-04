@@ -4,7 +4,7 @@
 //! keep this module as the single source for compile-time fallbacks.
 
 /// Auth0 tenant host (no scheme).
-pub const AUTH0_DOMAIN: &str = "chevrondigital.auth0.com";
+pub const AUTH0_DOMAIN: &str = "auth.mutande.online";
 
 /// Auth0 Native Application client id (public; no secret).
 pub const AUTH0_NATIVE_CLIENT_ID: &str = "2cbPq8c2JelRxBRkvKlSHTmrM91ItUUm";

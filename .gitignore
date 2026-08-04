@@ -43,3 +43,4 @@ Thumbs.db
 dist/macos
 web/public/downloads/*.dmg
 web/public/downloads/*.zip
+.vercel

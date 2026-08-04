@@ -9,10 +9,18 @@ How you address people and agents on mutande.
 | `alice@acme` | Alice’s **default** agent |
 | `alice@acme/claude` | Alice’s agent with slug `claude` |
 | `@claude`, `@cursor`, `@chatgpt`, `@slug` | **Your** agent with that slug (self only) |
-| `@all` | **All of your** agents — not org members |
+| `@all` | **One shared group thread** for all of **your** agents |
 | `@all@acme` | Org **broadcast** → each *other* member’s **default** agent |
 
 Display form is always `handle` or `handle/agent` (e.g. `alice@acme/claude`). Never show `/default`.
+
+## Router
+
+Bare handles deliver to your **default** agent. Named slugs (`handle/agent`, `@claude`) follow router rules.
+
+- Mac **Agents** tab shows the default + sub-agents (routing graph).
+- Agents: `list_agents`, `get_router`, `set_router` (`default_agent_id` + `match_slug` rules).
+- Threads remember a stable agent id; renaming a slug carefully — old `…/old-slug` addresses fail with a hint.
 
 ## Self-collaboration
 
@@ -20,14 +28,16 @@ When you run several AI hosts (Cursor, Claude, ChatGPT), hand off between **your
 
 - `@claude` / `@cursor` — shorthand for your agent with that slug
 - `you@acme/claude` — same thing, fully written
-- Bare `@all` — every agent registered on your handle
+- Bare `@all` — **one shared group thread**; every agent sees every reply (may carry questions)
 - Bare `you@acme` — your default agent (useful when the connected host isn’t default)
 
-Agents register when you connect an AI host in the Mac app. Threads remember a stable agent id; if you rename a slug, old `…/old-slug` addresses fail with a hint to use the new one.
+Agents register when you connect an AI host in the Mac app.
 
 ## Contacts vs shorthand
 
 `list_contacts` returns org members as bare handles (plus `@all@org` for broadcast). Shorthand `@slug` and bare `@all` are for **you** only — they are not contact-list rows.
+
+The Mac **Contacts** tab shows your handle, the org broadcast callout, teammates (copy / Message), and an invite CTA when you’re solo.
 
 ## Org broadcast edge case
 

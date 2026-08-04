@@ -45,7 +45,7 @@ Claude Desktop prompts once per tool until you grant a standing approval. mutand
 | `ping` | Product ping — `kind: health` (daemon auto-pong) or `kind: thread` (real mail; default target `@all`) |
 | `reply_to_thread` | Reply on an existing thread — `bundle` must be non-empty (`notes` / `subject` / questions / answers); `{}` is rejected. Optional `bundle.in_reply_to` for nested replies; optional `to_agent` for self-handoff |
 | `close_thread` | Mark thread closed |
-| `delete_thread` | Remove a thread from your inbox |
+| `delete_thread` | Remove a thread from your inbox (sender also purges the thread body) |
 | `forward_blob` | Large encrypted artifact path |
 
 Host allow now / always is the policy surface — mutande does not enforce server-side guardrails.

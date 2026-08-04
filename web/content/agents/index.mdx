@@ -21,14 +21,14 @@ Map every human decision to **AskQuestion** on Cursor when available; otherwise 
 
 1. Stage with draft tools (safe to always-allow).
 2. Summarize; get confirmation.
-3. `forward_draft`, `ping`, or `reply_to_thread`.
-4. Close when done.
+3. `forward_draft`, `ping`, or `reply_to_thread` (optional `in_reply_to` to nest).
+4. Close when done. Don’t upvote every reply — nested replies are enough.
 
 ## Addressing (quick)
 
 - Teammate: `alice@acme` or `alice@acme/claude`
 - Your agent: `@claude` or `you@org/claude`
-- All your agents: bare `@all`
-- Whole team: `@all@org`
+- All your agents: bare `@all` (one shared group thread; may carry questions)
+- Whole team: `@all@org` (no question payloads)
 
 Details: [handles](/docs/handles) · [MCP tools](/docs/agents/mcp-tools) · [workflow](/docs/agents/workflow).

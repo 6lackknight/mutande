@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
-import { BrandMark, ButtonLink, PageTitle, Shell } from "@/components/ui";
+import { BrandMark } from "@/components/ui";
+import { TrackButtonLink } from "@/components/track-button-link";
+import { AnalyticsEvent } from "@/lib/analytics-events";
 import { auth0 } from "@/lib/auth0";
 
 export const dynamic = "force-dynamic";
@@ -20,26 +22,73 @@ export default async function LoginPage({
   const signupHref = `/auth/login?screen_hint=signup&returnTo=${encodeURIComponent(returnTo || "/signup")}`;
 
   return (
-    <Shell>
-      <BrandMark className="mb-10" />
-      <PageTitle
-        title="Sign in"
-        subtitle="Magic link or email and password via Auth0. After sign-in you’ll create a team or join with an invite."
+    <div className="bg-relay grain relative flex min-h-full flex-1 flex-col overflow-hidden">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_60%_45%_at_50%_0%,color-mix(in_oklch,var(--accent)_9%,transparent),transparent_65%)]"
       />
-      <div className="flex flex-col gap-3">
-        <ButtonLink href={loginHref} className="w-full">
-          Continue with Auth0
-        </ButtonLink>
-        <ButtonLink href={signupHref} variant="secondary" className="w-full">
-          Create an account
-        </ButtonLink>
-      </div>
-      <p className="mt-8 text-sm text-muted">
-        Already joining a team?{" "}
-        <a href="/join" className="text-stone-800 underline-offset-2 hover:underline">
-          Have an invite
-        </a>
-      </p>
-    </Shell>
+
+      <header className="relative z-10 flex items-center justify-between px-6 py-5 sm:px-8">
+        <BrandMark />
+        <nav className="flex items-center gap-1 sm:gap-2">
+          <a
+            href="/docs"
+            className="rounded-md px-3 py-2 text-sm text-stone-700 transition hover:bg-stone-200/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/35"
+          >
+            Docs
+          </a>
+          <a
+            href="/download"
+            className="rounded-md px-3 py-2 text-sm text-stone-700 transition hover:bg-stone-200/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/35"
+          >
+            Try Alpha
+          </a>
+        </nav>
+      </header>
+
+      <main className="relative z-10 flex flex-1 flex-col justify-center px-6 pb-16 pt-4 sm:px-8">
+        <div className="mx-auto w-full max-w-[22rem]">
+          <header className="fade-up mb-8">
+            <h1 className="font-display text-[2rem] font-semibold tracking-[-0.03em] text-stone-900 sm:text-[2.25rem]">
+              Sign in
+            </h1>
+            <p className="mt-2.5 text-[15px] leading-relaxed text-muted">
+              Continue to your team. Next you’ll create an org or redeem an
+              invite — mail stays on-device.
+            </p>
+          </header>
+
+          <div className="fade-up-delay flex flex-col gap-2.5">
+            <TrackButtonLink
+              href={loginHref}
+              event={AnalyticsEvent.SignInClick}
+              props={{ surface: "login" }}
+              className="w-full"
+            >
+              Sign in
+            </TrackButtonLink>
+            <TrackButtonLink
+              href={signupHref}
+              event={AnalyticsEvent.CreateAccountClick}
+              props={{ surface: "login" }}
+              variant="secondary"
+              className="w-full"
+            >
+              Create account
+            </TrackButtonLink>
+          </div>
+
+          <p className="fade-up-late mt-8 text-sm leading-relaxed text-muted">
+            Joining a team?{" "}
+            <a
+              href="/join"
+              className="font-medium text-stone-800 underline decoration-stone-300 underline-offset-[3px] transition hover:decoration-stone-600 focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/35"
+            >
+              Enter invite
+            </a>
+          </p>
+        </div>
+      </main>
+    </div>
   );
 }

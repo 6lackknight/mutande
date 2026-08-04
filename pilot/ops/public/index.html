@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>mutande ops</title>
+    <link rel="stylesheet" href="/style.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.9/dist/chart.umd.min.js"></script>
+  </head>
+  <body>
+    <header class="top">
+      <div class="brand">
+        <strong>mutande</strong>
+        <span class="muted">ops · localhost</span>
+      </div>
+      <div class="controls">
+        <span id="auth-status" class="muted"></span>
+        <a id="login" class="btn" href="/auth/login">Log in</a>
+        <a id="logout" class="btn secondary" href="/auth/logout" hidden>Log out</a>
+        <button type="button" id="refresh" class="btn secondary">Refresh</button>
+      </div>
+    </header>
+
+    <p id="hub-line" class="hub muted"></p>
+    <p id="error" class="error" hidden></p>
+
+    <section class="kpis" id="kpis" aria-label="Summary"></section>
+
+    <nav class="tabs" role="tablist">
+      <button type="button" class="tab active" data-tab="overview" role="tab">
+        Overview
+      </button>
+      <button type="button" class="tab" data-tab="feedback" role="tab">
+        Feedback
+      </button>
+      <button type="button" class="tab" data-tab="waitlist" role="tab">
+        Waitlist
+      </button>
+    </nav>
+
+    <main>
+      <section id="panel-overview" class="panel active">
+        <div class="charts">
+          <article class="card">
+            <h2>AI hosts</h2>
+            <canvas id="chart-hosts"></canvas>
+          </article>
+          <article class="card">
+            <h2>OS</h2>
+            <canvas id="chart-oses"></canvas>
+          </article>
+          <article class="card">
+            <h2>Share frequency</h2>
+            <canvas id="chart-freq"></canvas>
+          </article>
+          <article class="card">
+            <h2>Share methods</h2>
+            <canvas id="chart-methods"></canvas>
+          </article>
+          <article class="card wide">
+            <h2>Waitlist signups</h2>
+            <canvas id="chart-waitlist-time"></canvas>
+          </article>
+          <article class="card">
+            <h2>Feedback platform</h2>
+            <canvas id="chart-platform"></canvas>
+          </article>
+          <article class="card">
+            <h2>Feedback category</h2>
+            <canvas id="chart-category"></canvas>
+          </article>
+          <article class="card wide">
+            <h2>Feedback over time</h2>
+            <canvas id="chart-feedback-time"></canvas>
+          </article>
+        </div>
+      </section>
+
+      <section id="panel-feedback" class="panel">
+        <div class="toolbar">
+          <input
+            id="filter-feedback"
+            type="search"
+            placeholder="Filter feedback…"
+          />
+          <span id="count-feedback" class="muted"></span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>When</th>
+                <th>Handle</th>
+                <th>Email</th>
+                <th>Platform</th>
+                <th>Category</th>
+                <th>Version</th>
+                <th>Message</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-feedback"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="panel-waitlist" class="panel">
+        <div class="toolbar">
+          <input
+            id="filter-waitlist"
+            type="search"
+            placeholder="Filter waitlist…"
+          />
+          <span id="count-waitlist" class="muted"></span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>When</th>
+                <th>Email</th>
+                <th>Hosts</th>
+                <th>OS</th>
+                <th>Frequency</th>
+                <th>Methods</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-waitlist"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

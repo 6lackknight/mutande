@@ -70,6 +70,15 @@ Daemon prefers loopback port **8732** (`http://127.0.0.1:8732/callback`). If tha
 
 ```
 http://127.0.0.1:8732/callback
+http://127.0.0.1:3848/auth/callback
+```
+
+(`3848` is the local pilot ops dashboard — see `pilot/ops`.)
+
+**Allowed Logout URLs / Web Origins** (ops)
+
+```
+http://127.0.0.1:3848
 ```
 
 No client secret. Grant types: Authorization Code, Refresh Token. Enable Offline Access. Request `audience=https://hub.mutande.app` so access tokens validate on the hub.
@@ -85,7 +94,8 @@ Auth0 MCP in this workspace has no connection/passwordless tools. Do this in the
 3. **Authentication → Passwordless** → enable **Email** (magic link and/or code) if you want that Universal Login option.
 4. **Applications → Mutande Web → Connections** and **Mutande Mac → Connections**: enable the DB (and Passwordless Email) connections on both apps.
 
-Tenant: [chevrondigital](https://manage.auth0.com/dashboard/us/chevrondigital/).
+Custom login domain: `auth.mutande.online` (set as `AUTH0_DOMAIN` everywhere — JWKS + authorize).  
+Manage tenant: [chevrondigital](https://manage.auth0.com/dashboard/us/chevrondigital/).
 
 ## 5. Environment variables
 
@@ -93,7 +103,7 @@ Tenant: [chevrondigital](https://manage.auth0.com/dashboard/us/chevrondigital/).
 
 | Variable | Notes |
 |----------|--------|
-| `AUTH0_DOMAIN` | Tenant host, e.g. `your-tenant.us.auth0.com` (no `https://`) |
+| `AUTH0_DOMAIN` | Auth0 host / custom domain, e.g. `auth.mutande.online` (no `https://`) |
 | `AUTH0_AUDIENCE` | API Identifier, e.g. `https://hub.mutande.app` |
 
 Plus R2 vars from `hub/.env.example` for real blobs.

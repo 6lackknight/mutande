@@ -1,0 +1,17 @@
+# Keep CLI uploads small — Vercel Root Directory is `web/`
+app
+core
+hub
+proto
+skill
+video
+dist
+target
+.cursor
+docs
+scripts
+**/.git
+**/node_modules
+**/build
+**/.dart_tool
+**/DerivedData

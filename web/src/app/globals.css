@@ -128,6 +128,15 @@
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .fade-up,
+  .fade-up-delay,
+  .fade-up-late,
+  .seal-pulse {
+    animation: none !important;
+  }
+}
+
 @keyframes seal-pulse {
   0%,
   100% {

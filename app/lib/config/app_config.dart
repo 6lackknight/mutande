@@ -17,7 +17,7 @@ class AppConfig {
   static const defaultWebAppUrl = 'https://mutande.online';
 
   /// Auth0 tenant host (no scheme). Matches core `auth0_defaults`.
-  static const defaultAuth0Domain = 'chevrondigital.auth0.com';
+  static const defaultAuth0Domain = 'auth.mutande.online';
 
   /// Auth0 Native Application client id (public).
   static const defaultAuth0NativeClientId =

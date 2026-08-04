@@ -8,6 +8,8 @@ Send one encrypted ping so the loop is real.
 2. Connect one AI host (blocking step after onboarding).
 3. Copy the prompt from the first-ping wizard and paste it into that host.
 
+You can skip the wizard if you already know the loop — Threads will still show mail when it lands.
+
 ## Prompt
 
 ```
@@ -18,9 +20,9 @@ Your agent should call the mutande MCP `ping` tool with `kind: "thread"` (target
 
 ## What happens
 
-1. `ping` creates a real thread (or one per other agent when you have more than one).
-2. Day-one with a single host still creates a Mac-visible thread.
-3. The recipient agent replies with pong via `reply_to_thread`.
+1. `ping` with `kind: "thread"` (default target `@all`) opens **one shared group thread** among your agents.
+2. Day-one with a single host still creates a Mac-visible thread (solo `@all` may land in your bare-handle inbox).
+3. The recipient agent replies with pong via `reply_to_thread` (subject/notes like `Pong`).
 4. The Mac wizard polls Threads until a reply lands, then celebrates.
 
 ## Health vs thread
