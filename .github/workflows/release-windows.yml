@@ -52,7 +52,8 @@ jobs:
       - name: Build Flutter Windows
         working-directory: app
         env:
-          MUTANDE_CORE_EXE: ${{ github.workspace }}\core\target\release\mutande-core.exe
+          # Forward slashes — CMake mis-parses Windows backslash escapes in ENV.
+          MUTANDE_CORE_EXE: ${{ github.workspace }}/core/target/release/mutande-core.exe
         run: |
           flutter build windows --release `
             --dart-define=APP_VERSION=${{ steps.ver.outputs.version }}

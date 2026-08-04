@@ -113,8 +113,13 @@ install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
 
 # Bundle mutande-core sidecar next to the Flutter executable (HTTP RPC).
 # Prefer a prebuilt path from CI (`MUTANDE_CORE_EXE`); else look under core/target.
+# Normalize Windows backslashes — CMake treats \t \a etc. as escapes in ENV paths.
+set(_env_core "")
+if(DEFINED ENV{MUTANDE_CORE_EXE} AND NOT "$ENV{MUTANDE_CORE_EXE}" STREQUAL "")
+  file(TO_CMAKE_PATH "$ENV{MUTANDE_CORE_EXE}" _env_core)
+endif()
 set(_MUTANDE_CORE_CANDIDATES
-  "$ENV{MUTANDE_CORE_EXE}"
+  "${_env_core}"
   "${CMAKE_CURRENT_SOURCE_DIR}/../../core/target/release/mutande-core.exe"
   "${CMAKE_CURRENT_SOURCE_DIR}/../../core/target/x86_64-pc-windows-msvc/release/mutande-core.exe"
 )
