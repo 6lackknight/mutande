@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Analytics } from "@vercel/analytics/next";
 import { MixpanelProvider } from "@/components/mixpanel-provider";
 import "./globals.css";
 
@@ -27,6 +28,7 @@ export default function RootLayout({
     <html lang="en" dir="ltr" suppressHydrationWarning className="h-full antialiased">
       <body className="flex min-h-full flex-col font-sans">
         <MixpanelProvider>{children}</MixpanelProvider>
+        <Analytics />
       </body>
     </html>
   );

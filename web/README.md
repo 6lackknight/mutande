@@ -63,7 +63,8 @@ Typed client: `src/lib/hub.ts`. Network / 4xx–5xx surface as friendly UI error
 1. Import the monorepo; set **Root Directory** to `web`.
 2. Framework: Next.js (auto).
 3. Add the env vars above. Set production `APP_BASE_URL=https://mutande.online` and Auth0 callbacks/logout/web origins for that host.
-4. Deploy. Production host: `https://mutande.online` until `mutande.ai`.
+4. Enable **Web Analytics** in the Vercel project (Analytics → Enable). The app mounts `@vercel/analytics` in the root layout.
+5. Deploy. Production host: `https://mutande.online` until `mutande.ai`.
 
 ## Structure
 
