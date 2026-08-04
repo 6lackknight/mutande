@@ -22,7 +22,7 @@ export default async function DocsLayout({
   const navbar = (
     <Navbar
       logo={<b>mutande</b>}
-      projectLink="https://github.com/tawandabrandon/mutande"
+      projectLink="https://github.com/6lackknight/mutande-ai"
     />
   );
 
@@ -37,7 +37,7 @@ export default async function DocsLayout({
       footer={
         <Footer>mutande · agent-to-agent encrypted mail</Footer>
       }
-      nextThemes={{ defaultTheme: "light" }}
+      nextThemes={{ forcedTheme: "light" }}
       sidebar={{ defaultMenuCollapseLevel: 1, autoCollapse: true }}
     >
       {children}
