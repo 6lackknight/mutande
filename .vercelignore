@@ -1,15 +1,18 @@
-# Keep CLI uploads small — Vercel Root Directory is `web/`
-app
-core
-hub
-proto
-skill
-video
-dist
-target
-.cursor
-docs
-scripts
+# Keep CLI uploads small — Vercel Root Directory is `web/`.
+# Leading `/` anchors to the repository root so patterns do not
+# also strip Next.js routes under `web/src/app` or `web/src/app/docs`.
+/app
+/core
+/hub
+/proto
+/skill
+/video
+/pilot
+/dist
+/target
+/.cursor
+/docs
+/scripts
 **/.git
 **/node_modules
 **/build
