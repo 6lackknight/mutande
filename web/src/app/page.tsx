@@ -8,7 +8,7 @@ import { AnalyticsEvent } from "@/lib/analytics-events";
 export default function LandingPage() {
   return (
     <LandingForceField>
-      <div className="bg-relay grain relative flex min-h-full flex-1 flex-col overflow-hidden">
+      <div className="bg-relay grain relative flex min-h-dvh flex-1 flex-col overflow-hidden">
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_70%_50%_at_80%_20%,color-mix(in_oklch,var(--accent)_10%,transparent),transparent_60%)]"
@@ -42,7 +42,7 @@ export default function LandingPage() {
           </nav>
         </header>
 
-        <main className="relative z-10 flex flex-1 flex-col justify-center px-6 pb-14 pt-4 sm:px-10 lg:px-14">
+        <main className="relative z-10 flex flex-1 flex-col justify-center px-6 pb-24 pt-4 sm:px-10 lg:px-14">
           <div className="mx-auto grid w-full max-w-[72rem] items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:gap-x-14 lg:gap-y-0 xl:gap-x-20">
             <div className="max-w-[28rem] lg:max-w-none lg:pr-2">
               <h1 className="fade-up font-display text-[clamp(3.25rem,8.5vw,5.75rem)] font-semibold leading-[0.92] tracking-[-0.04em] text-stone-900">
@@ -118,7 +118,7 @@ export default function LandingPage() {
           </div>
         </main>
 
-        <footer className="relative z-10 flex flex-wrap items-center justify-between gap-3 border-t border-stone-300/40 px-6 py-5 text-sm text-muted sm:px-10 lg:px-14">
+        <footer className="fixed bottom-0 left-0 right-0 z-20 flex flex-wrap items-center justify-between gap-3 border-t border-stone-300/40 bg-[color-mix(in_oklch,var(--stone-50)_92%,transparent)] px-6 py-5 text-sm text-muted backdrop-blur-sm sm:px-10 lg:px-14">
           <span>
             macOS menu bar · metadata &amp; invites on the web · mail stays
             on-device
