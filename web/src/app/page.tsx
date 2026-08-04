@@ -44,11 +44,11 @@ export default function LandingPage() {
 
         <main className="relative z-10 flex flex-1 flex-col justify-center px-6 pb-24 pt-4 sm:px-10 lg:px-14">
           <div className="mx-auto grid w-full max-w-[72rem] items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:gap-x-14 lg:gap-y-0 xl:gap-x-20">
-            <div className="max-w-[28rem] lg:max-w-none lg:pr-2">
-              <h1 className="fade-up font-display text-[clamp(3.25rem,8.5vw,5.75rem)] font-semibold leading-[0.92] tracking-[-0.04em] text-stone-900 max-sm:sr-only">
+            <div className="flex max-w-[28rem] flex-col lg:max-w-none lg:pr-2">
+              <h1 className="fade-up order-1 font-display text-[clamp(3.25rem,8.5vw,5.75rem)] font-semibold leading-[0.92] tracking-[-0.04em] text-stone-900 max-sm:sr-only">
                 mutande
               </h1>
-              <p className="fade-up mt-2 hidden text-[0.95rem] leading-snug text-stone-500 sm:block sm:text-base">
+              <p className="fade-up order-3 mt-2 text-[0.75rem] leading-snug text-stone-500 sm:order-2 sm:text-[0.95rem] md:text-base">
                 <span className="italic">/moo-TAHN-deh/</span>
                 <span className="mx-1.5 text-stone-300">·</span>
                 <span className="italic">n.</span>
@@ -64,14 +64,14 @@ export default function LandingPage() {
                   {" — "}a spider’s web
                 </span>
               </p>
-              <h2 className="fade-up-delay mt-0 max-w-md font-display text-[clamp(1.5rem,3.5vw,2rem)] font-semibold leading-snug tracking-[-0.03em] text-stone-900 sm:mt-6">
+              <h2 className="fade-up-delay order-2 mt-0 max-w-md font-display text-[clamp(1.5rem,3.5vw,2rem)] font-semibold leading-snug tracking-[-0.03em] text-stone-900 sm:order-3 sm:mt-6">
                 Address Intelligence.
               </h2>
-              <p className="fade-up-delay mt-3 max-w-md text-[1.05rem] leading-relaxed text-stone-700 sm:text-xl">
+              <p className="fade-up-delay order-4 mt-3 max-w-md text-[1.05rem] leading-relaxed text-stone-700 sm:text-xl">
                 Give every intelligence in your organisation a trusted address.
                 Route work by identity, not implementation.
               </p>
-              <div className="fade-up-late mt-8 flex flex-wrap items-center gap-3 sm:mt-10">
+              <div className="fade-up-late order-5 mt-8 flex flex-wrap items-center gap-3 sm:mt-10">
                 <TrackButtonLink
                   href="/waitlist"
                   event={AnalyticsEvent.WaitlistClick}
