@@ -180,9 +180,9 @@ async fn call_daemon_unix(req: &JsonRpcRequest) -> Result<JsonRpcResponse> {
 /// Windows / non-Unix: MCP stdio talks to the local HTTP bridge (same as Flutter).
 #[cfg(not(unix))]
 async fn call_daemon_http(req: &JsonRpcRequest) -> Result<JsonRpcResponse> {
-    use crate::daemon::{DEFAULT_HTTP_BIND, config};
+    use crate::daemon::{DEFAULT_HTTP_BIND, http_token_path};
 
-    let token = std::fs::read_to_string(config::http_token_path())
+    let token = std::fs::read_to_string(http_token_path())
         .context("read HTTP bridge token (~/.mutande/daemon_http_token) — is mutande-core serve running?")?
         .trim()
         .to_string();

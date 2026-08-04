@@ -30,6 +30,7 @@ use tokio::net::{UnixListener, UnixStream};
 
 use crate::hub_client::{HubClient, HubConfig};
 
+#[cfg(unix)]
 use rpc::{JsonRpcRequest, JsonRpcResponse, handle_request};
 use state::DaemonState;
 
