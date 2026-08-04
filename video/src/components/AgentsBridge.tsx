@@ -23,7 +23,7 @@ export const AgentsBridge: React.FC<{ orbSize?: number }> = ({
   });
   const exit = interpolate(
     frame,
-    [beats.finalDoc.start - 20, beats.finalDoc.start + 28],
+    [beats.critique.end - 20, beats.critique.end + 8],
     [1, 0],
     { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
   );

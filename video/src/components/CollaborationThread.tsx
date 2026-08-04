@@ -134,7 +134,7 @@ export const CollaborationThread: React.FC = () => {
   );
   const fadeOut = interpolate(
     frame,
-    [beats.finalDoc.start - 16, beats.finalDoc.start + 36],
+    [beats.critique.end - 16, beats.critique.end + 8],
     [1, 0],
     { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
   );

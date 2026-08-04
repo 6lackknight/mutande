@@ -6,7 +6,7 @@ Square hero proof for the marketing site: Alice’s agents collaborate, then a s
 
 - **26s** play-once @ **1080×1080 / 60fps**, then hold on MT mark
 - Stone/relay + bronze field; soft Foley later (visual-first)
-- Compose in Claude → mutande thread (orb rail + pings with replies/upvote) → seal → fan-out
+- Compose → bold text (threads) → mutande thread → bold text (E2E) → fan-out → bold text (team) → MT hold
 - Cinematic per-scene camera (YC-style push-ins)
 - Ship static WebM/MP4 + poster into `web/public/brand/`; landing uses `<video muted>`
 

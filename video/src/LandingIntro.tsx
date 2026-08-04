@@ -15,21 +15,11 @@ import { CollaborationThread } from "./components/CollaborationThread";
 import { DocSheets } from "./components/DocSheets";
 import { EncryptedTransit } from "./components/EncryptedTransit";
 import { ComposeWindow } from "./components/ComposeWindow";
+import { ExplainerCard } from "./components/ExplainerCard";
 import { EnvPlate } from "./components/EnvPlate";
 import { RECIPIENTS, SENDER_HANDLE } from "./recipients";
 import { colors, FONT } from "./theme";
-import { beats, critiquePasses } from "./timing";
-
-const passIntensity = (frame: number, index: number) => {
-  const p = critiquePasses[index];
-  if (frame < p.start || frame >= p.end) return 0;
-  return Math.sin(
-    interpolate(frame, [p.start, p.end], [0, Math.PI], {
-      extrapolateLeft: "clamp",
-      extrapolateRight: "clamp",
-    }),
-  );
-};
+import { beats, explainers } from "./timing";
 
 export const LandingIntro: React.FC = () => {
   const frame = useCurrentFrame();
@@ -39,33 +29,49 @@ export const LandingIntro: React.FC = () => {
   const scene =
     frame < beats.compose.end
       ? "compose"
-      : frame < beats.finalDoc.start
-        ? "critique"
-        : frame < beats.transit.start
-          ? "doc"
-          : frame < beats.hold.start
-            ? "transit"
-            : "hold";
+      : frame < beats.explainThreads.end
+        ? "explain"
+        : frame < beats.explainE2E.start
+          ? "critique"
+          : frame < beats.transit.start
+            ? "explain"
+            : frame < beats.explainTeam.start
+              ? "transit"
+              : frame < beats.hold.start
+                ? "explain"
+                : "hold";
 
   const composeOpacity = interpolate(
     frame,
-    [0, 12, beats.compose.end - 36, beats.compose.end],
+    [0, 12, beats.compose.end - 28, beats.compose.end],
     [0, 1, 1, 0],
     { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
   );
-  const agentWorldOpacity = interpolate(
-    frame,
-    [beats.compose.end - 40, beats.critique.start + 12],
-    [0, 1],
-    { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
-  );
 
-  const finalize = interpolate(
-    frame,
-    [beats.finalDoc.start, beats.finalDoc.start + 70],
-    [0, 1],
-    { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
-  );
+  // Product stage visible during critique + transit; muted under text cards
+  const inProductStage = scene === "critique" || scene === "transit";
+  const agentWorldOpacity = inProductStage
+    ? interpolate(
+        frame,
+        scene === "critique"
+          ? [
+              beats.critique.start - 8,
+              beats.critique.start + 16,
+              beats.critique.end - 20,
+              beats.critique.end,
+            ]
+          : [
+              beats.transit.start,
+              beats.transit.start + 20,
+              beats.transit.end - 24,
+              beats.transit.end,
+            ],
+        scene === "critique" ? [0, 1, 1, 0] : [0, 1, 1, 0],
+        { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
+      )
+    : 0;
+
+  const finalize = 1;
 
   // Wide-shot layout (used once camera pulls back)
   const wide = spring({
@@ -84,14 +90,8 @@ export const LandingIntro: React.FC = () => {
   const fanLeft = interpolate(wide, [0, 1], [100, 52]);
   const fanWidth = interpolate(wide, [0, 1], [0, 46]);
 
-  const docLift = interpolate(
-    frame,
-    [beats.finalDoc.start + 50, beats.transit.start - 4],
-    [0, 1],
-    { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
-  );
-  const showDocInAlice =
-    scene === "doc" && docLift < 0.92;
+  const docLift = 1;
+  const showDocInAlice = false;
 
   const receiveDoc = interpolate(
     frame,
@@ -110,8 +110,8 @@ export const LandingIntro: React.FC = () => {
     [
       beats.transit.start + 40,
       beats.transit.start + 70,
-      beats.transit.end - 50,
-      beats.transit.end - 10,
+      beats.transit.end - 40,
+      beats.transit.end - 8,
     ],
     [0, 1, 1, 0],
     { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
@@ -127,21 +127,7 @@ export const LandingIntro: React.FC = () => {
 
   const inCollab = scene === "critique";
 
-  const docScale =
-    scene === "doc"
-      ? interpolate(
-          frame,
-          [beats.finalDoc.start, beats.finalDoc.start + 60],
-          [1.35, 1.55],
-          { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
-        )
-      : interpolate(wide, [0, 1], [1.1, 0.65]);
-
-  const i0 = passIntensity(frame, 0);
-  const i1 = passIntensity(frame, 1);
-  const i2 = passIntensity(frame, 2);
-  const claudeActive = i0 > 0.05 || i2 > 0.05;
-  const chatgptActive = i1 > 0.05 || (i2 > 0.05 && i2 < 0.85);
+  const docScale = interpolate(wide, [0, 1], [1.1, 0.65]);
 
   // Alice chrome only on wide / handover
   const aliceChrome = interpolate(wide, [0.15, 0.55], [0, 1], {
@@ -150,7 +136,7 @@ export const LandingIntro: React.FC = () => {
   });
   const hugChrome = aliceChrome > 0.2 || scene === "transit";
 
-  const orbsOpacity = scene === "doc" || scene === "transit" ? 1 : 0;
+  const orbsOpacity = scene === "transit" ? 1 : 0;
   const aliceOrbSize = interpolate(wide, [0, 1], [72, 44]);
 
   return (
@@ -199,10 +185,7 @@ export const LandingIntro: React.FC = () => {
             padding: hugChrome || inCollab ? 12 : 24,
           }}
         >
-          {inCollab ||
-          (frame >= beats.critique.start &&
-            frame < beats.finalDoc.start + 40 &&
-            wide < 0.5) ? (
+          {inCollab ? (
             <div
               style={{
                 display: "flex",
@@ -214,7 +197,7 @@ export const LandingIntro: React.FC = () => {
               <AgentsBridge />
               <CollaborationThread />
             </div>
-          ) : (
+          ) : scene === "transit" ? (
             <EnvPlate
               title="Alice"
               accent={colors.alice}
@@ -243,40 +226,30 @@ export const LandingIntro: React.FC = () => {
                     brand="claude"
                     label="@claude"
                     accent={colors.alice}
-                    active={claudeActive && frame < beats.transit.start}
-                    intensity={Math.max(i0, i2 * 0.7)}
+                    active={false}
+                    intensity={0.2}
                     size={aliceOrbSize}
                   />
                   <AgentOrb
                     brand="chatgpt"
                     label="@chatgpt"
                     accent={colors.amber}
-                    active={chatgptActive && frame < beats.transit.start}
-                    intensity={i1}
+                    active={false}
+                    intensity={0.2}
                     size={aliceOrbSize}
                   />
                 </div>
-
                 {showDocInAlice ? (
-                  <div
-                    style={{
-                      transform:
-                        scene === "doc"
-                          ? `scale(${1 + finalize * 0.06})`
-                          : undefined,
-                    }}
-                  >
-                    <DocSheets
-                      finalize={finalize}
-                      lift={docLift}
-                      scale={docScale}
-                      critique={finalize < 1}
-                    />
-                  </div>
+                  <DocSheets
+                    finalize={finalize}
+                    lift={docLift}
+                    scale={docScale}
+                    critique={false}
+                  />
                 ) : null}
               </div>
             </EnvPlate>
-          )}
+          ) : null}
         </div>
 
         {/* Fan-out — only meaningful once pulled wide */}
@@ -360,7 +333,7 @@ export const LandingIntro: React.FC = () => {
           })}
         </div>
 
-        {frame >= beats.transit.start - 10 && frame < beats.hold.start ? (
+        {frame >= beats.transit.start - 10 && frame < beats.transit.end ? (
           <EncryptedTransit />
         ) : null}
 
@@ -408,6 +381,10 @@ export const LandingIntro: React.FC = () => {
         </div>
       </AbsoluteFill>
 
+      {explainers.map((e) => (
+        <ExplainerCard key={e.id} text={e.text} start={e.start} end={e.end} />
+      ))}
+
       <AbsoluteFill
         style={{
           justifyContent: "center",
@@ -415,18 +392,39 @@ export const LandingIntro: React.FC = () => {
           opacity: hold,
           backgroundColor:
             hold > 0.05 ? `rgba(250,249,247,${hold * 0.94})` : "transparent",
+          fontFamily: FONT,
         }}
       >
-        <Img
-          src={staticFile("brand/mt-mark.png")}
+        <div
           style={{
-            width: 260,
-            height: 260,
-            borderRadius: 28,
-            boxShadow: "0 24px 60px -28px rgba(28,25,23,0.55)",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 28,
             transform: `scale(${0.86 + hold * 0.14})`,
           }}
-        />
+        >
+          <Img
+            src={staticFile("brand/mt-mark.png")}
+            style={{
+              width: 260,
+              height: 260,
+              borderRadius: 28,
+              boxShadow: "0 24px 60px -28px rgba(28,25,23,0.55)",
+            }}
+          />
+          <div
+            style={{
+              fontSize: 52,
+              fontWeight: 650,
+              letterSpacing: "-0.04em",
+              color: colors.stone900,
+              lineHeight: 1,
+            }}
+          >
+            mutande
+          </div>
+        </div>
       </AbsoluteFill>
     </AbsoluteFill>
   );

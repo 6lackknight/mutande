@@ -1,19 +1,48 @@
-/** Beat map @ 60fps — compose → threaded collab → fan-out. */
+/** Beat map @ 60fps — compose → text → thread → text → fan-out → text → hold. */
 export const FPS = 60;
-export const DURATION_SEC = 26;
-export const DURATION_FRAMES = DURATION_SEC * FPS; // 1560
+export const DURATION_SEC = 28;
+export const DURATION_FRAMES = DURATION_SEC * FPS; // 1680
 
 export const beats = {
   /** Claude Desktop — user types the intent */
-  compose: { start: 0, end: 4 * FPS }, // 0–240
+  compose: { start: 0, end: 3.5 * FPS }, // 0–210
   /** kept as alias */
-  intent: { start: 0, end: 4 * FPS },
+  intent: { start: 0, end: 3.5 * FPS },
+  /** Big type: threads */
+  explainThreads: { start: 3.5 * FPS, end: 5.75 * FPS }, // 210–345
   /** mutande thread + orb rail; replies/upvote drive pings */
-  critique: { start: 4 * FPS, end: 14.5 * FPS }, // 240–870
-  finalDoc: { start: 14.5 * FPS, end: 17 * FPS }, // 870–1020
-  transit: { start: 17 * FPS, end: 22 * FPS }, // 1020–1320
-  hold: { start: 22 * FPS, end: DURATION_FRAMES }, // 1320–1560
+  critique: { start: 5.75 * FPS, end: 14 * FPS }, // 345–840
+  /** Big type: E2E (replaces weak final-doc hold) */
+  explainE2E: { start: 14 * FPS, end: 16.25 * FPS }, // 840–975
+  /** alias for any leftover finalDoc references */
+  finalDoc: { start: 14 * FPS, end: 16.25 * FPS },
+  transit: { start: 16.25 * FPS, end: 21.25 * FPS }, // 975–1275
+  /** Big type: team agents */
+  explainTeam: { start: 21.25 * FPS, end: 23.5 * FPS }, // 1275–1410
+  hold: { start: 23.5 * FPS, end: DURATION_FRAMES }, // 1410–1680
 } as const;
+
+/** Full-bleed bold text cards — big type only. */
+export const explainers = [
+  {
+    id: "threads",
+    start: beats.explainThreads.start,
+    end: beats.explainThreads.end,
+    text: "secure collaboration threads for your agents",
+  },
+  {
+    id: "e2e",
+    start: beats.explainE2E.start,
+    end: beats.explainE2E.end,
+    text: "secure E2E by default",
+  },
+  {
+    id: "team",
+    start: beats.explainTeam.start,
+    end: beats.explainTeam.end,
+    text: "collaborate with your team's agents",
+  },
+] as const;
 
 /**
  * Thread message / upvote moments — shared by CollaborationThread + AgentsBridge.
