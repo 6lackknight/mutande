@@ -1,6 +1,11 @@
 import Image from "next/image";
 import Link from "next/link";
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from "react";
+import type {
+  ButtonHTMLAttributes,
+  InputHTMLAttributes,
+  MouseEventHandler,
+  ReactNode,
+} from "react";
 
 export function Shell({
   children,
@@ -132,14 +137,16 @@ export function ButtonLink({
   variant = "primary",
   className = "",
   children,
+  onClick,
 }: {
   href: string;
   variant?: keyof typeof buttonStyles;
   className?: string;
   children: ReactNode;
+  onClick?: MouseEventHandler<HTMLAnchorElement>;
 }) {
   return (
-    <a href={href} className={buttonClass(variant, className)}>
+    <a href={href} className={buttonClass(variant, className)} onClick={onClick}>
       {children}
     </a>
   );
@@ -173,14 +180,17 @@ export function ChoiceCard({
   href,
   title,
   description,
+  onClick,
 }: {
   href: string;
   title: string;
   description: string;
+  onClick?: MouseEventHandler<HTMLAnchorElement>;
 }) {
   return (
     <a
       href={href}
+      onClick={onClick}
       className="group block rounded-lg border border-stone-300/70 bg-white/50 p-5 transition hover:border-stone-400 hover:bg-white/80"
     >
       <div className="font-display text-lg text-stone-900 group-hover:text-stone-800">

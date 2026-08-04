@@ -1,6 +1,9 @@
 import Image from "next/image";
 import { LandingForceField } from "@/components/landing-force-field";
-import { BrandMark, ButtonLink } from "@/components/ui";
+import { TrackButtonLink } from "@/components/track-button-link";
+import { TrackLink } from "@/components/track-link";
+import { BrandMark } from "@/components/ui";
+import { AnalyticsEvent } from "@/lib/analytics-events";
 
 export default function LandingPage() {
   return (
@@ -20,18 +23,22 @@ export default function LandingPage() {
             >
               Docs
             </a>
-            <a
+            <TrackLink
               href="/download"
+              event={AnalyticsEvent.DownloadNavClick}
+              props={{ surface: "landing_nav" }}
               className="rounded-md px-3 py-2 text-sm text-stone-700 transition hover:bg-stone-200/40"
             >
               Try Alpha
-            </a>
-            <a
+            </TrackLink>
+            <TrackLink
               href="/login"
+              event={AnalyticsEvent.SignInClick}
+              props={{ surface: "landing_nav" }}
               className="rounded-md px-3 py-2 text-sm text-stone-700 transition hover:bg-stone-200/40"
             >
               Sign in
-            </a>
+            </TrackLink>
           </nav>
         </header>
 
@@ -62,16 +69,23 @@ export default function LandingPage() {
                 the hub never sees the plaintext.
               </p>
               <div className="fade-up-late mt-8 flex flex-wrap items-center gap-3 sm:mt-10">
-                <ButtonLink href="/waitlist" className="min-w-[9.5rem]">
+                <TrackButtonLink
+                  href="/waitlist"
+                  event={AnalyticsEvent.WaitlistClick}
+                  props={{ surface: "landing_hero" }}
+                  className="min-w-[9.5rem]"
+                >
                   Join waitlist
-                </ButtonLink>
-                <ButtonLink
+                </TrackButtonLink>
+                <TrackButtonLink
                   href="/download"
+                  event={AnalyticsEvent.DownloadNavClick}
+                  props={{ surface: "landing_hero" }}
                   variant="secondary"
                   className="min-w-[9.5rem]"
                 >
                   Try Alpha
-                </ButtonLink>
+                </TrackButtonLink>
               </div>
             </div>
 

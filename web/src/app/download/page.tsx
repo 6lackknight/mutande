@@ -1,11 +1,12 @@
 import {
   Alert,
   BrandMark,
-  ButtonLink,
-  ChoiceCard,
   PageTitle,
   Shell,
 } from "@/components/ui";
+import { TrackButtonLink } from "@/components/track-button-link";
+import { TrackChoiceCard } from "@/components/track-choice-card";
+import { TrackLink } from "@/components/track-link";
 import {
   MAC_DMG_CHANNEL,
   MAC_DMG_LABEL,
@@ -19,6 +20,7 @@ import {
   WIN_ZIP_URL,
   WIN_ZIP_VERSION,
 } from "@/lib/downloads";
+import { AnalyticsEvent } from "@/lib/analytics-events";
 
 export const metadata = { title: "Try Alpha" };
 
@@ -49,9 +51,14 @@ export default function DownloadPage() {
           >
             Docs
           </a>
-          <ButtonLink href="/waitlist" className="!py-2">
+          <TrackButtonLink
+            href="/waitlist"
+            event={AnalyticsEvent.WaitlistClick}
+            props={{ surface: "download_nav" }}
+            className="!py-2"
+          >
             Join waitlist
-          </ButtonLink>
+          </TrackButtonLink>
         </nav>
       </div>
 
@@ -61,16 +68,20 @@ export default function DownloadPage() {
       />
 
       <div className="grid gap-3 sm:grid-cols-3">
-        <ChoiceCard
+        <TrackChoiceCard
           href={MAC_DMG_URL_ARM64}
           title="Mac · Silicon"
           description={`${MAC_DMG_CHANNEL} · arm64 DMG. Drag into Applications.`}
+          event={AnalyticsEvent.DownloadArtifactClick}
+          props={{ platform: "mac_arm64" }}
         />
         {MAC_INTEL_PUBLISHED ? (
-          <ChoiceCard
+          <TrackChoiceCard
             href={MAC_DMG_URL_INTEL}
             title="Mac · Intel"
             description={`${MAC_DMG_CHANNEL} · x86_64 DMG. No Rosetta needed.`}
+            event={AnalyticsEvent.DownloadArtifactClick}
+            props={{ platform: "mac_intel" }}
           />
         ) : (
           <SoonCard
@@ -79,10 +90,12 @@ export default function DownloadPage() {
           />
         )}
         {WIN_ZIP_PUBLISHED ? (
-          <ChoiceCard
+          <TrackChoiceCard
             href={WIN_ZIP_URL}
             title="Windows"
             description={`${WIN_ZIP_CHANNEL} · portable zip. SmartScreen may warn.`}
+            event={AnalyticsEvent.DownloadArtifactClick}
+            props={{ platform: "windows" }}
           />
         ) : (
           <SoonCard
@@ -104,32 +117,38 @@ export default function DownloadPage() {
           </Alert>
         ) : null}
         <p className="text-sm text-muted">
-          <a
+          <TrackLink
             href={MAC_DMG_URL_ARM64}
+            event={AnalyticsEvent.DownloadArtifactClick}
+            props={{ platform: "mac_arm64", surface: "filename" }}
             className="underline underline-offset-2 hover:text-stone-900"
           >
             mutande-alpha.dmg
-          </a>
+          </TrackLink>
           {MAC_INTEL_PUBLISHED ? (
             <>
               {" · "}
-              <a
+              <TrackLink
                 href={MAC_DMG_URL_INTEL}
+                event={AnalyticsEvent.DownloadArtifactClick}
+                props={{ platform: "mac_intel", surface: "filename" }}
                 className="underline underline-offset-2 hover:text-stone-900"
               >
                 mutande-alpha-intel.dmg
-              </a>
+              </TrackLink>
             </>
           ) : null}
           {WIN_ZIP_PUBLISHED ? (
             <>
               {" · "}
-              <a
+              <TrackLink
                 href={WIN_ZIP_URL}
+                event={AnalyticsEvent.DownloadArtifactClick}
+                props={{ platform: "windows", surface: "filename" }}
                 className="underline underline-offset-2 hover:text-stone-900"
               >
                 mutande-alpha-windows.zip
-              </a>
+              </TrackLink>
             </>
           ) : null}{" "}
           <span className="text-stone-400">

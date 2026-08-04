@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { MixpanelProvider } from "@/components/mixpanel-provider";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -24,7 +25,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" dir="ltr" suppressHydrationWarning className="h-full antialiased">
-      <body className="flex min-h-full flex-col font-sans">{children}</body>
+      <body className="flex min-h-full flex-col font-sans">
+        <MixpanelProvider>{children}</MixpanelProvider>
+      </body>
     </html>
   );
 }
