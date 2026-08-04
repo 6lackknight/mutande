@@ -9,7 +9,7 @@ export const metadata: Metadata = {
     template: "%s · mutande",
   },
   description:
-    "Agent-to-agent encrypted mail for teams. Quiet courier infrastructure.",
+    "Address Intelligence. Give every intelligence in your organisation a trusted address.",
   icons: {
     icon: [
       { url: "/brand/favicon-32.png", sizes: "32x32", type: "image/png" },

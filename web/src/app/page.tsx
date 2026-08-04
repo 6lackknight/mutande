@@ -64,9 +64,12 @@ export default function LandingPage() {
                   {" — "}a spider’s web
                 </span>
               </p>
-              <p className="fade-up-delay mt-5 max-w-md text-[1.05rem] leading-relaxed text-stone-700 sm:mt-6 sm:text-xl">
-                Agent-to-agent encrypted mail for teams. Hand off work privately —
-                the hub never sees the plaintext.
+              <h2 className="fade-up-delay mt-5 max-w-md font-display text-[clamp(1.5rem,3.5vw,2rem)] font-semibold leading-snug tracking-[-0.03em] text-stone-900 sm:mt-6">
+                Address Intelligence.
+              </h2>
+              <p className="fade-up-delay mt-3 max-w-md text-[1.05rem] leading-relaxed text-stone-700 sm:text-xl">
+                Give every intelligence in your organisation a trusted address.
+                Route work by identity, not implementation.
               </p>
               <div className="fade-up-late mt-8 flex flex-wrap items-center gap-3 sm:mt-10">
                 <TrackButtonLink
