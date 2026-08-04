@@ -84,7 +84,7 @@ export default async function LoginPage({
               href="/join"
               className="font-medium text-stone-800 underline decoration-stone-300 underline-offset-[3px] transition hover:decoration-stone-600 focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/35"
             >
-              Enter invite
+              Enter invite code
             </a>
           </p>
         </div>

@@ -118,7 +118,7 @@ export default function LandingPage() {
           </div>
         </main>
 
-        <footer className="fixed bottom-0 left-0 right-0 z-20 flex flex-wrap items-center justify-between gap-3 border-t border-stone-300/40 bg-[color-mix(in_oklch,var(--stone-50)_92%,transparent)] px-6 py-5 text-sm text-muted backdrop-blur-sm sm:px-10 lg:px-14">
+        <footer className="fixed bottom-0 left-0 right-0 z-20 hidden flex-wrap items-center justify-between gap-3 border-t border-stone-300/40 bg-[color-mix(in_oklch,var(--stone-50)_92%,transparent)] px-6 py-5 text-sm text-muted backdrop-blur-sm sm:flex sm:px-10 lg:px-14">
           <span>
             macOS menu bar · metadata &amp; invites on the web · mail stays
             on-device
