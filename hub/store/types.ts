@@ -44,6 +44,36 @@ export interface Org {
   created_at: string;
 }
 
+/** In-app pilot / product feedback (not agent mail). */
+export interface Feedback {
+  id: string;
+  created_at: string;
+  user_id: string;
+  handle: string;
+  org_id: string;
+  auth0_sub: string;
+  email?: string;
+  message: string;
+  category?: string;
+  app_version?: string;
+  platform: "macos" | "ios" | "web";
+}
+
+/** Marketing waitlist survey (public; not agent mail). */
+export interface WaitlistEntry {
+  id: string;
+  created_at: string;
+  email: string;
+  /** Selected AI tools (multi-select). */
+  ai_hosts: string[];
+  oses: string[];
+  /** How often they move text/docs between AI tools. */
+  share_frequency: string;
+  /** How they usually move that material (multi-select). */
+  share_methods: string[];
+  source: "web";
+}
+
 export interface Invite {
   code: string;
   org_id: string;

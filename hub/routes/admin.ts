@@ -21,5 +21,11 @@ export function createAdminRoutes(store: HubStore) {
     const invite = await store.createInviteAsAdmin(c.get("auth"), { email });
     return c.json({ invite }, 201);
   });
+  adminRoutes.get("/feedback", async (c) => {
+    return c.json(await store.listFeedback(c.get("auth")));
+  });
+  adminRoutes.get("/waitlist", async (c) => {
+    return c.json(await store.listWaitlist(c.get("auth")));
+  });
   return adminRoutes;
 }

@@ -37,6 +37,10 @@ deno task check
 | POST | `/v1/onboarding/join` | Auth0 Bearer (not yet onboarded) |
 | POST | `/v1/devices` | Auth0 Bearer (onboarded) |
 | GET/POST | `/v1/admin/invites` | Auth0 Bearer + `org_admin` |
+| GET | `/v1/admin/feedback` | Auth0 Bearer + `org_admin` |
+| GET | `/v1/admin/waitlist` | Auth0 Bearer + `org_admin` |
+| POST | `/v1/feedback` | Auth0 Bearer (onboarded) — in-app pilot feedback |
+| POST | `/v1/waitlist` | — public marketing waitlist survey |
 | GET | `/v1/contacts` | Auth0 Bearer (onboarded) |
 | GET/POST | `/v1/agents` | Auth0 Bearer (onboarded); `?handle=` for recipient slug autocomplete |
 | GET/PUT | `/v1/agents/router` | Auth0 Bearer — default agent + routing rules |

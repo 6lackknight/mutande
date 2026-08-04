@@ -24,7 +24,7 @@ export default function LandingPage() {
               href="/download"
               className="rounded-md px-3 py-2 text-sm text-stone-700 transition hover:bg-stone-200/40"
             >
-              Download
+              Try Alpha
             </a>
             <a
               href="/login"
@@ -62,18 +62,15 @@ export default function LandingPage() {
                 the hub never sees the plaintext.
               </p>
               <div className="fade-up-late mt-8 flex flex-wrap items-center gap-3 sm:mt-10">
-                <ButtonLink
-                  href="/auth/login?returnTo=/signup"
-                  className="min-w-[9.5rem]"
-                >
-                  Get started
+                <ButtonLink href="/waitlist" className="min-w-[9.5rem]">
+                  Join waitlist
                 </ButtonLink>
                 <ButtonLink
                   href="/download"
                   variant="secondary"
                   className="min-w-[9.5rem]"
                 >
-                  Download
+                  Try Alpha
                 </ButtonLink>
               </div>
             </div>

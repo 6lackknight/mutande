@@ -20,6 +20,8 @@ import type {
   DevicePlatform,
   Draft,
   Envelope,
+  Feedback,
+  WaitlistEntry,
   InboxEntry,
   Invite,
   JoinOrgInput,
@@ -59,6 +61,42 @@ import {
   parseUserHandle,
   stripAgentSuffix,
 } from "./address.ts";
+
+function clipRequired(value: string, field: string, max: number): string {
+  const trimmed = value?.trim() ?? "";
+  if (!trimmed) {
+    throw new HubError(`${field} is required`, "invalid_argument", 400);
+  }
+  if (trimmed.length > max) {
+    throw new HubError(`${field} too long (max ${max})`, "invalid_argument", 400);
+  }
+  return trimmed;
+}
+
+function normalizeStringList(
+  values: string[],
+  field: string,
+  opts?: { maxItems?: number; maxLen?: number },
+): string[] {
+  const maxItems = opts?.maxItems ?? 20;
+  const maxLen = opts?.maxLen ?? 64;
+  const cleaned = values
+    .map((v) => v.trim())
+    .filter(Boolean)
+    .map((v) => v.slice(0, maxLen));
+  const unique = [...new Set(cleaned)];
+  if (unique.length === 0) {
+    throw new HubError(`${field} is required`, "invalid_argument", 400);
+  }
+  if (unique.length > maxItems) {
+    throw new HubError(
+      `too many ${field} (max ${maxItems})`,
+      "invalid_argument",
+      400,
+    );
+  }
+  return unique;
+}
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -142,6 +180,18 @@ export class HubStore {
   private userDefaultAgentKey(userId: string) { return ["user_default_agent", userId]; }
   private userRouterKey(userId: string) { return ["user_router", userId]; }
   private userAgentAliasKey(userId: string, slug: string) { return ["user_agent_aliases", userId, slug]; }
+  private feedbackKey(createdAt: string, id: string) {
+    return ["feedback", createdAt, id];
+  }
+  private feedbackPrefix() {
+    return ["feedback"];
+  }
+  private waitlistKey(createdAt: string, id: string) {
+    return ["waitlist", createdAt, id];
+  }
+  private waitlistPrefix() {
+    return ["waitlist"];
+  }
 
   assertEnvelopeSize(envelope: Envelope): void {
     const size = new TextEncoder().encode(JSON.stringify(envelope)).byteLength;
@@ -1372,6 +1422,112 @@ export class HubStore {
     opts?: { email?: string },
   ): Promise<Invite> {
     return this.createInvite(auth, opts);
+  }
+
+  async submitFeedback(
+    auth: AuthContext,
+    input: {
+      message: string;
+      category?: string;
+      app_version?: string;
+      platform?: Feedback["platform"];
+    },
+  ): Promise<Feedback> {
+    const message = input.message?.trim() ?? "";
+    if (!message) {
+      throw new HubError("message is required", "invalid_argument", 400);
+    }
+    if (message.length > 4000) {
+      throw new HubError("message too long (max 4000)", "invalid_argument", 400);
+    }
+    const user = await this.getUser(auth.userId);
+    const id = crypto.randomUUID();
+    const created_at = nowIso();
+    const feedback: Feedback = {
+      id,
+      created_at,
+      user_id: auth.userId,
+      handle: auth.handle,
+      org_id: auth.orgId,
+      auth0_sub: auth.auth0Sub,
+      ...(user?.email ? { email: user.email } : {}),
+      message,
+      ...(input.category?.trim()
+        ? { category: input.category.trim().slice(0, 64) }
+        : {}),
+      ...(input.app_version?.trim()
+        ? { app_version: input.app_version.trim().slice(0, 64) }
+        : {}),
+      platform: input.platform ?? "macos",
+    };
+    await this.kv.set(this.feedbackKey(created_at, id), feedback);
+    return feedback;
+  }
+
+  /** Org admins can list all feedback (pilot ops). */
+  async listFeedback(auth: AuthContext): Promise<{ feedback: Feedback[] }> {
+    if (auth.role !== "org_admin") throw forbidden("Org admin required");
+    const items: Feedback[] = [];
+    const iter = this.kv.list<Feedback>({ prefix: this.feedbackPrefix() });
+    for await (const entry of iter) {
+      if (entry.value) items.push(entry.value);
+    }
+    // Newest first (keys are ISO timestamps ascending).
+    items.sort((a, b) => b.created_at.localeCompare(a.created_at));
+    return { feedback: items };
+  }
+
+  async submitWaitlist(input: {
+    email: string;
+    ai_hosts: string[];
+    oses: string[];
+    share_frequency: string;
+    share_methods: string[];
+  }): Promise<WaitlistEntry> {
+    const email = input.email?.trim().toLowerCase() ?? "";
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      throw new HubError("valid email is required", "invalid_argument", 400);
+    }
+    if (email.length > 254) {
+      throw new HubError("email too long", "invalid_argument", 400);
+    }
+    const ai_hosts = normalizeStringList(input.ai_hosts, "ai_hosts");
+    const oses = normalizeStringList(input.oses, "oses");
+    const share_frequency = clipRequired(
+      input.share_frequency,
+      "share_frequency",
+      64,
+    );
+    const share_methods = normalizeStringList(
+      input.share_methods,
+      "share_methods",
+    );
+    const id = crypto.randomUUID();
+    const created_at = nowIso();
+    const entry: WaitlistEntry = {
+      id,
+      created_at,
+      email,
+      ai_hosts,
+      oses,
+      share_frequency,
+      share_methods,
+      source: "web",
+    };
+    await this.kv.set(this.waitlistKey(created_at, id), entry);
+    return entry;
+  }
+
+  /** Org admins can list waitlist submissions (same ops path as feedback). */
+  async listWaitlist(auth: AuthContext): Promise<{ waitlist: WaitlistEntry[] }> {
+    if (auth.role !== "org_admin") throw forbidden("Org admin required");
+    const items: WaitlistEntry[] = [];
+    const iter = this.kv.list<WaitlistEntry>({ prefix: this.waitlistPrefix() });
+    for await (const entry of iter) {
+      if (entry.value) items.push(entry.value);
+    }
+    items.sort((a, b) => b.created_at.localeCompare(a.created_at));
+    return { waitlist: items };
   }
 
   async listInvitesAsAdmin(auth: AuthContext): Promise<{ invites: Invite[] }> {

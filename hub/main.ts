@@ -7,6 +7,8 @@ import { createBlobRoutes } from "./routes/blobs.ts";
 import { createContactRoutes } from "./routes/contacts.ts";
 import { createDeviceRoutes } from "./routes/devices.ts";
 import { createDraftRoutes } from "./routes/drafts.ts";
+import { createFeedbackRoutes } from "./routes/feedback.ts";
+import { createWaitlistRoutes } from "./routes/waitlist.ts";
 import { healthRoutes } from "./routes/health.ts";
 import { createMeRoutes } from "./routes/me.ts";
 import { createOnboardingRoutes } from "./routes/onboarding.ts";
@@ -39,6 +41,8 @@ export async function createApp(
   app.route("/v1/threads", createThreadRoutes(store));
   app.route("/v1/drafts", createDraftRoutes(store));
   app.route("/v1/blobs", createBlobRoutes(store));
+  app.route("/v1/feedback", createFeedbackRoutes(store));
+  app.route("/v1/waitlist", createWaitlistRoutes(store));
 
   return { app, kv: resolvedKv, store };
 }
