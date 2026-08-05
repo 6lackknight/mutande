@@ -68,6 +68,31 @@ Deno.test("contacts expose device pubkeys", async () => {
   });
 });
 
+Deno.test("registerDevice is idempotent by pubkey", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth } = await setupOrgWithUsers(store);
+    const before = (await store.listDevices(aliceAuth)).devices.length;
+    const first = await store.registerDevice(aliceAuth, {
+      pubkey: "alice-reopen-pk",
+      platform: "macos",
+    });
+    const second = await store.registerDevice(aliceAuth, {
+      pubkey: "alice-reopen-pk",
+      platform: "macos",
+    });
+    assertEquals(second.id, first.id);
+    assertEquals((await store.listDevices(aliceAuth)).devices.length, before + 1);
+
+    const ios = await store.registerDevice(aliceAuth, {
+      pubkey: "alice-reopen-pk",
+      platform: "ios",
+    });
+    assertEquals(ios.id, first.id);
+    assertEquals(ios.platform, "ios");
+    assertEquals((await store.listDevices(aliceAuth)).devices.length, before + 1);
+  });
+});
+
 Deno.test("thread inbox filters", async () => {
   await withTestStore(async ({ store }) => {
     const { aliceAuth, bobAuth } = await setupOrgWithUsers(store);

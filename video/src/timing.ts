@@ -1,96 +1,102 @@
-/** Beat map @ 60fps — compose → text → thread → text → fan-out → text → hold. */
+/** Beat map @ 60fps — identity → compose → idea → route → seal → fan-out → brand. */
 export const FPS = 60;
 export const DURATION_SEC = 28;
 export const DURATION_FRAMES = DURATION_SEC * FPS; // 1680
 
 export const beats = {
-  /** Claude Desktop — user types the intent */
-  compose: { start: 0, end: 3.5 * FPS }, // 0–210
-  /** kept as alias */
-  intent: { start: 0, end: 3.5 * FPS },
-  /** Big type: threads */
-  explainThreads: { start: 3.5 * FPS, end: 5.75 * FPS }, // 210–345
-  /** mutande thread + orb rail; replies/upvote drive pings */
-  critique: { start: 5.75 * FPS, end: 14 * FPS }, // 345–840
-  /** Big type: E2E (replaces weak final-doc hold) */
-  explainE2E: { start: 14 * FPS, end: 16.25 * FPS }, // 840–975
-  /** alias for any leftover finalDoc references */
-  finalDoc: { start: 14 * FPS, end: 16.25 * FPS },
-  transit: { start: 16.25 * FPS, end: 21.25 * FPS }, // 975–1275
-  /** Big type: team agents */
-  explainTeam: { start: 21.25 * FPS, end: 23.5 * FPS }, // 1275–1410
-  hold: { start: 23.5 * FPS, end: DURATION_FRAMES }, // 1410–1680
+  /** Large address tree — the primitive */
+  identity: { start: 0, end: 4.5 * FPS }, // 0–270
+  /** Claude Desktop — ask an address */
+  compose: { start: 4.5 * FPS, end: 9 * FPS }, // 270–540
+  /** Full-bleed idea card */
+  explain: { start: 9 * FPS, end: 11.5 * FPS }, // 540–690
+  /** mutande thread — routing between identities */
+  collab: { start: 11.5 * FPS, end: 17 * FPS }, // 690–1020
+  /** aliases kept for older component imports */
+  critique: { start: 11.5 * FPS, end: 17 * FPS },
+  /** Sealed packet / blind courier */
+  handoff: { start: 17 * FPS, end: 20 * FPS }, // 1020–1200
+  /** Address fan-out — aha */
+  fanout: { start: 20 * FPS, end: 24 * FPS }, // 1200–1440
+  /** transit spans seal + fan-out for EncryptedTransit */
+  transit: { start: 17 * FPS, end: 24 * FPS }, // 1020–1440
+  hold: { start: 24 * FPS, end: DURATION_FRAMES }, // 1440–1680
 } as const;
 
-/** Full-bleed bold text cards — big type only. */
+/** Full-bleed bold type — one idea card. */
 export const explainers = [
   {
-    id: "threads",
-    start: beats.explainThreads.start,
-    end: beats.explainThreads.end,
-    text: "secure collaboration threads for your agents",
-  },
-  {
-    id: "e2e",
-    start: beats.explainE2E.start,
-    end: beats.explainE2E.end,
-    text: "secure E2E by default",
-  },
-  {
-    id: "team",
-    start: beats.explainTeam.start,
-    end: beats.explainTeam.end,
-    text: "collaborate with your team's agents",
+    id: "address",
+    start: beats.explain.start,
+    end: beats.explain.end,
+    text: "Every intelligence deserves an address.",
   },
 ] as const;
 
 /**
- * Thread message / upvote moments — shared by CollaborationThread + AgentsBridge.
- * Spaced so each reply can land with a matching Claude↔ChatGPT ping.
+ * Thread / route moments — shared by CollaborationThread + AddressRoute.
  */
 export const threadBeats = {
-  claudeAsk: beats.critique.start + 18,
-  chatgptReply: beats.critique.start + 150,
-  claudeSeal: beats.critique.start + 300,
-  upvote: beats.critique.start + 390,
+  claudeAsk: beats.collab.start + 18,
+  chatgptReply: beats.collab.start + 120,
+  researchReply: beats.collab.start + 220,
+  seal: beats.collab.start + 300,
 } as const;
 
-/** Three critique passes (message windows) — derived from threadBeats. */
+/** Three message windows — derived from threadBeats. */
 export const critiquePasses = [
   { start: threadBeats.claudeAsk, end: threadBeats.chatgptReply },
-  { start: threadBeats.chatgptReply, end: threadBeats.claudeSeal },
-  { start: threadBeats.claudeSeal, end: beats.critique.end },
+  { start: threadBeats.chatgptReply, end: threadBeats.researchReply },
+  { start: threadBeats.researchReply, end: beats.collab.end },
 ] as const;
 
-/** Orb-rail packets — one per thread event, same frames. */
-export const commPings = [
+/** Route hops — identity → identity (not model ping candy). */
+export const routeHops = [
   {
     start: threadBeats.claudeAsk,
-    end: threadBeats.claudeAsk + 42,
-    dir: 0 as const,
-    label: "critique?",
+    end: threadBeats.claudeAsk + 48,
+    from: "@claude",
+    to: "@chatgpt",
   },
   {
     start: threadBeats.chatgptReply,
-    end: threadBeats.chatgptReply + 42,
-    dir: 1 as const,
-    label: "critique",
+    end: threadBeats.chatgptReply + 48,
+    from: "@chatgpt",
+    to: "@research",
   },
   {
-    start: threadBeats.claudeSeal,
-    end: threadBeats.claudeSeal + 42,
+    start: threadBeats.researchReply,
+    end: threadBeats.researchReply + 48,
+    from: "@research",
+    to: "@claude",
+  },
+] as const;
+
+/** Kept for AgentsBridge if still mounted — maps to route hops. */
+export const commPings = [
+  {
+    start: routeHops[0].start,
+    end: routeHops[0].end,
     dir: 0 as const,
-    label: "sealing",
+    label: "→ @chatgpt",
   },
   {
-    start: threadBeats.upvote,
-    end: threadBeats.upvote + 48,
+    start: routeHops[1].start,
+    end: routeHops[1].end,
     dir: 1 as const,
-    label: "▲ upvote",
+    label: "→ @research",
+  },
+  {
+    start: routeHops[2].start,
+    end: routeHops[2].end,
+    dir: 0 as const,
+    label: "→ @claude",
   },
 ];
 
-/** Already in Claude — ask ChatGPT to critique before seal/fan-out. */
-export const DRAFT_FILENAME = "hacktoberfest-plan-wip.md";
+export const DRAFT_FILENAME = "q3-plan-wip.md";
 export const COMPOSE_PROMPT =
-  "ask @chatgpt to critique this before we send to the team";
+  "Ask @research to critique this before we send it to the team.";
+
+export const IDENTITY_HANDLE = "tawanda@salesco";
+export const IDENTITY_AGENTS = ["/jarvis", "/research", "/review"] as const;

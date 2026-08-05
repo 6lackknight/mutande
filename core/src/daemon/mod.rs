@@ -92,6 +92,7 @@ pub const DEFAULT_HTTP_BIND: &str = "127.0.0.1:3847";
 
 pub async fn run(socket_path: &str, http_bind: Option<&str>) -> Result<()> {
     let state = Arc::new(DaemonState::bootstrap()?);
+    spawn_device_register(Arc::clone(&state));
 
     #[cfg(unix)]
     {
@@ -126,6 +127,16 @@ pub async fn run(socket_path: &str, http_bind: Option<&str>) -> Result<()> {
         );
         http_bridge::run(state, bind, &token).await
     }
+}
+
+/// Best-effort pubkey publish as soon as the sidecar is up (covers cases where
+/// the UI never reaches get_status, e.g. MCP-only hosts).
+fn spawn_device_register(state: Arc<DaemonState>) {
+    tokio::spawn(async move {
+        if let Err(err) = state.ensure_device_registered().await {
+            tracing::warn!(error = %err, "device pubkey register on daemon boot failed");
+        }
+    });
 }
 
 fn spawn_http_bridge(state: Arc<DaemonState>, bind: &str) -> Result<()> {

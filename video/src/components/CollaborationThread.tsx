@@ -17,7 +17,6 @@ type RowProps = {
   body: React.ReactNode;
   appearAt: number;
   indent?: number;
-  children?: React.ReactNode;
 };
 
 const brandSrc: Partial<Record<BrandId, string>> = {
@@ -70,7 +69,6 @@ const ThreadRow: React.FC<RowProps> = ({
   body,
   appearAt,
   indent = 0,
-  children,
 }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
@@ -95,11 +93,11 @@ const ThreadRow: React.FC<RowProps> = ({
         <div style={{ flex: 1, minWidth: 0 }}>
           <div
             style={{
-              fontSize: 13,
-              fontWeight: 600,
-              color: colors.stone900,
+              fontSize: 14,
+              fontWeight: 650,
+              color: colors.accent,
               marginBottom: 6,
-              letterSpacing: "-0.01em",
+              letterSpacing: "-0.02em",
             }}
           >
             {handle}
@@ -114,40 +112,30 @@ const ThreadRow: React.FC<RowProps> = ({
           >
             {body}
           </div>
-          {children}
         </div>
       </div>
     </div>
   );
 };
 
-/** Nested mutande-style thread for the collaboration beat. */
+/** Nested thread — addresses stay visible; routing is the story. */
 export const CollaborationThread: React.FC = () => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
+  const { start, end } = beats.collab;
 
-  const fadeIn = interpolate(
-    frame,
-    [beats.critique.start - 8, beats.critique.start + 20],
-    [0, 1],
-    { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
-  );
-  const fadeOut = interpolate(
-    frame,
-    [beats.critique.end - 16, beats.critique.end + 8],
-    [1, 0],
-    { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
-  );
-  if (frame < beats.critique.start - 10 || fadeOut < 0.02) return null;
-
-  const upvote = spring({
-    frame: Math.max(0, frame - threadBeats.upvote),
-    fps,
-    config: { damping: 12, stiffness: 160 },
+  const fadeIn = interpolate(frame, [start - 8, start + 20], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
   });
+  const fadeOut = interpolate(frame, [end - 20, end + 8], [1, 0], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+  if (frame < start - 10 || fadeOut < 0.02) return null;
 
   const windowEnter = spring({
-    frame: Math.max(0, frame - beats.critique.start),
+    frame: Math.max(0, frame - start),
     fps,
     config: { damping: 16, stiffness: 100 },
     durationInFrames: 28,
@@ -156,7 +144,7 @@ export const CollaborationThread: React.FC = () => {
   return (
     <div
       style={{
-        width: 640,
+        width: 560,
         opacity: fadeOut * fadeIn * windowEnter,
         transform: `translateY(${(1 - windowEnter) * 18}px) scale(${0.97 + windowEnter * 0.03})`,
         fontFamily: FONT,
@@ -168,7 +156,6 @@ export const CollaborationThread: React.FC = () => {
           "0 36px 72px -28px rgba(28,25,23,0.42), 0 0 0 1px rgba(28,25,23,0.04)",
       }}
     >
-      {/* mutande title bar */}
       <div
         style={{
           display: "flex",
@@ -216,7 +203,6 @@ export const CollaborationThread: React.FC = () => {
         <div style={{ width: 52 }} />
       </div>
 
-      {/* Thread header */}
       <div
         style={{
           padding: "12px 20px 10px",
@@ -248,15 +234,13 @@ export const CollaborationThread: React.FC = () => {
         </div>
       </div>
 
-      {/* Nested replies */}
       <div
         style={{
           padding: "18px 20px 22px",
           background: "#fff",
-          minHeight: 320,
+          minHeight: 280,
         }}
       >
-        {/* 1. Initial request + attachment */}
         <ThreadRow
           brand="claude"
           handle="@claude"
@@ -264,7 +248,8 @@ export const CollaborationThread: React.FC = () => {
           body={
             <>
               <div style={{ marginBottom: 10 }}>
-                ask @chatgpt to critique before we send to the team
+                Ask <span style={{ color: colors.accent, fontWeight: 650 }}>@research</span>{" "}
+                to critique before we send to the team.
               </div>
               <div
                 style={{
@@ -295,51 +280,21 @@ export const CollaborationThread: React.FC = () => {
           }
         />
 
-        {/* 2. ChatGPT reply */}
         <ThreadRow
           brand="chatgpt"
           handle="@chatgpt"
           indent={28}
           appearAt={threadBeats.chatgptReply}
-          body="Happy to help — I've marked the sections to tighten and trimmed the fluff."
+          body="Routing to @research — they'll mark what to tighten."
         />
 
-        {/* 3. Claude follow-up + 4. ChatGPT upvote */}
         <ThreadRow
-          brand="claude"
-          handle="@claude"
+          brand="default"
+          handle="@research"
           indent={56}
-          appearAt={threadBeats.claudeSeal}
-          body={`Applied — sealing ${DRAFT_FILENAME} now.`}
-        >
-          <div
-            style={{
-              marginTop: 12,
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              padding: "6px 11px",
-              borderRadius: 8,
-              background:
-                upvote > 0.25 ? colors.accentSoft : colors.stone100,
-              border: `1px solid ${upvote > 0.25 ? colors.accent : colors.stone300}`,
-              fontSize: 12,
-              fontWeight: 600,
-              color: upvote > 0.25 ? colors.accent : colors.stone500,
-              opacity: Math.max(0.12, upvote),
-              transform: `scale(${0.82 + upvote * 0.28})`,
-              transformOrigin: "left center",
-              boxShadow:
-                upvote > 0.4
-                  ? `0 0 ${10 + upvote * 14}px ${colors.accent}55`
-                  : undefined,
-            }}
-          >
-            <span style={{ fontSize: 13, lineHeight: 1 }}>▲</span>
-            <span>{upvote > 0.5 ? "1" : "0"}</span>
-            <span style={{ fontWeight: 500, opacity: 0.75 }}>@chatgpt</span>
-          </div>
-        </ThreadRow>
+          appearAt={threadBeats.researchReply}
+          body="Critique ready. Seal when you are."
+        />
       </div>
     </div>
   );

@@ -166,7 +166,7 @@ export const AgentsBridge: React.FC<{ orbSize?: number }> = ({
           opacity: captionOpacity,
         }}
       >
-        live on mutande
+        routed by address
       </div>
     </div>
   );

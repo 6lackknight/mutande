@@ -28,7 +28,7 @@
     "lint": "eslint src && tsc",
     "render": "remotion render LandingIntro out/landing-intro.mp4",
     "render:webm": "remotion render LandingIntro out/landing-intro.webm --codec=vp8",
-    "poster": "remotion still LandingIntro out/landing-intro-poster.png --frame=1679"
+    "poster": "remotion still LandingIntro out/landing-intro-poster.png --frame=1560"
   },
   "sideEffects": [
     "*.css"

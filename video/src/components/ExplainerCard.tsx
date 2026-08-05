@@ -55,9 +55,9 @@ export const ExplainerCard: React.FC<Props> = ({ text, start, end }) => {
           maxWidth: 860,
           textAlign: "center",
           transform: `translateY(${y}px) scale(${scale})`,
-          fontSize: 68,
+          fontSize: 64,
           fontWeight: 700,
-          lineHeight: 1.08,
+          lineHeight: 1.1,
           letterSpacing: "-0.045em",
           color: colors.stone900,
         }}

@@ -10,35 +10,40 @@ import {
 import { colors, FONT } from "../theme";
 import { COMPOSE_PROMPT, DRAFT_FILENAME, beats } from "../timing";
 
-/** Claude Desktop window — user is already in Claude, typing a mutande ask. */
+/** Claude Desktop — work begins in a host; destination is an address. */
 export const ComposeWindow: React.FC = () => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
+  const local = frame - beats.compose.start;
+
+  if (frame < beats.compose.start - 2 || frame > beats.compose.end + 4) {
+    return null;
+  }
 
   const enter = spring({
-    frame,
+    frame: Math.max(0, local),
     fps,
     config: { damping: 16, stiffness: 90 },
     durationInFrames: 28,
   });
 
-  const typeStart = 36;
+  const typeStart = 28;
   const typeEnd = 200;
   const typedCount = Math.floor(
-    interpolate(frame, [typeStart, typeEnd], [0, COMPOSE_PROMPT.length], {
+    interpolate(local, [typeStart, typeEnd], [0, COMPOSE_PROMPT.length], {
       extrapolateLeft: "clamp",
       extrapolateRight: "clamp",
     }),
   );
   const typed = COMPOSE_PROMPT.slice(0, typedCount);
   const caretOn =
-    frame < typeEnd + 20
-      ? Math.floor(frame / 16) % 2 === 0
-      : frame < beats.compose.end - 20;
+    local < typeEnd + 20
+      ? Math.floor(local / 16) % 2 === 0
+      : local < beats.compose.end - beats.compose.start - 20;
 
   const doneTyping = typedCount >= COMPOSE_PROMPT.length;
   const sendPulse = spring({
-    frame: Math.max(0, frame - typeEnd - 8),
+    frame: Math.max(0, local - typeEnd - 8),
     fps,
     config: { damping: 12, stiffness: 160 },
   });
@@ -50,15 +55,22 @@ export const ComposeWindow: React.FC = () => {
     { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
   );
 
+  const resolveOpacity = interpolate(
+    local,
+    [typeEnd + 4, typeEnd + 24, typeEnd + 70, typeEnd + 95],
+    [0, 1, 1, 0],
+    { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
+  );
+
   const renderTyped = () => {
     const parts: React.ReactNode[] = [];
-    const re = /(@chatgpt)|(\s+)|([^\s@]+)/g;
+    const re = /(@research)|(\s+)|([^\s@]+)/g;
     let m: RegExpExecArray | null;
     let key = 0;
     while ((m = re.exec(typed)) !== null) {
       if (m[1]) {
         parts.push(
-          <span key={key++} style={{ color: colors.amber, fontWeight: 600 }}>
+          <span key={key++} style={{ color: colors.accent, fontWeight: 650 }}>
             {m[1]}
           </span>,
         );
@@ -84,7 +96,6 @@ export const ComposeWindow: React.FC = () => {
           "0 40px 80px -28px rgba(28,25,23,0.45), 0 0 0 1px rgba(28,25,23,0.04)",
       }}
     >
-      {/* Claude title bar */}
       <div
         style={{
           display: "flex",
@@ -133,15 +144,13 @@ export const ComposeWindow: React.FC = () => {
         <div style={{ width: 52 }} />
       </div>
 
-      {/* Chat body */}
       <div
         style={{
           padding: "22px 24px 12px",
-          minHeight: 200,
+          minHeight: 180,
           background: "#f5f0e8",
         }}
       >
-        {/* Prior Claude turn */}
         <div
           style={{
             display: "flex",
@@ -191,8 +200,7 @@ export const ComposeWindow: React.FC = () => {
                 maxWidth: 520,
               }}
             >
-              I drafted this plan. Want a second pass from another agent before
-              we seal it to the team?
+              Draft ready. Want another intelligence to review before we send?
             </div>
           </div>
         </div>
@@ -224,15 +232,33 @@ export const ComposeWindow: React.FC = () => {
           />
           {DRAFT_FILENAME}
         </div>
+
+        {resolveOpacity > 0.02 ? (
+          <div
+            style={{
+              marginTop: 16,
+              marginLeft: 40,
+              opacity: resolveOpacity,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "8px 12px",
+              borderRadius: 10,
+              background: colors.accentSoft,
+              border: `1px solid ${colors.accent}55`,
+              fontSize: 13,
+              fontWeight: 600,
+              color: colors.stone900,
+              letterSpacing: "-0.02em",
+            }}
+          >
+            <span style={{ color: colors.accent }}>→</span>
+            tawanda@salesco/research
+          </div>
+        ) : null}
       </div>
 
-      {/* Claude-style input */}
-      <div
-        style={{
-          padding: "10px 16px 16px",
-          background: "#f5f0e8",
-        }}
-      >
+      <div style={{ padding: "10px 16px 16px", background: "#f5f0e8" }}>
         <div
           style={{
             borderRadius: 18,

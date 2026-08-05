@@ -525,7 +525,9 @@ impl DaemonState {
             .context("hub client missing after auth_login")?;
         let me = hub.me().await.context("GET /v1/me after Auth0 login")?;
         if me.is_onboarded() {
-            let _ = self.register_local_device(&hub).await;
+            self.register_local_device(&hub)
+                .await
+                .context("register device pubkey after login")?;
         }
         let hub_url = self.config.lock().unwrap().hub_url.clone();
         Ok(status_from_me(&hub_url, &me))
@@ -578,7 +580,9 @@ impl DaemonState {
         let me = hub
             .create_org(slug, name.map(str::trim).filter(|s| !s.is_empty()), handle.map(str::trim).filter(|s| !s.is_empty()))
             .await?;
-        let _ = self.register_local_device(&hub).await;
+        self.register_local_device(&hub)
+            .await
+            .context("register device pubkey after create_org")?;
         onboard_from_me(&me)
     }
 
@@ -599,7 +603,9 @@ impl DaemonState {
                 handle.map(str::trim).filter(|s| !s.is_empty()),
             )
             .await?;
-        let _ = self.register_local_device(&hub).await;
+        self.register_local_device(&hub)
+            .await
+            .context("register device pubkey after join_org")?;
         onboard_from_me(&me)
     }
 
@@ -609,6 +615,20 @@ impl DaemonState {
         hub.register_device(&pubkey, super::device_platform(), agent_slug.as_deref())
             .await?;
         Ok(())
+    }
+
+    /// Publish this device pubkey to the hub when signed in + onboarded.
+    /// Soft-fails (logs) so status/bootstrap stay usable offline; hard paths
+    /// (login / create / join) call [`register_local_device`] directly.
+    pub async fn ensure_device_registered(&self) -> Result<()> {
+        let Some(hub) = self.hub_client() else {
+            return Ok(());
+        };
+        let me = hub.me().await.context("GET /v1/me before device register")?;
+        if !me.is_onboarded() {
+            return Ok(());
+        }
+        self.register_local_device(&hub).await
     }
 
     pub fn connected_agent_slug(&self) -> Option<String> {
@@ -786,6 +806,12 @@ impl DaemonState {
             .hub_client()
             .context("signed in but hub client missing")?;
         let me = hub.me().await.context("GET /v1/me for status")?;
+        if me.is_onboarded() {
+            // App open / status poll: re-publish pubkey so teammates can always seal replies.
+            if let Err(err) = self.register_local_device(&hub).await {
+                tracing::warn!(error = %err, "device pubkey register on get_status failed");
+            }
+        }
         let mut status = status_from_me(&cfg.hub_url, &me);
         status.connected_agent = self.connected_agent_slug();
         status.default_agent = self.default_agent_slug().await;
@@ -1666,7 +1692,7 @@ impl DaemonState {
                 .collect();
             let keys: Vec<DevicePubKey> = others
                 .iter()
-                .filter_map(|c| c.pubkey.as_deref().and_then(pubkey_from_hub_string))
+                .flat_map(|c| contact_device_pubkeys(c))
                 .collect();
             if !keys.is_empty() {
                 return Ok(keys);
@@ -1684,12 +1710,9 @@ impl DaemonState {
         let contacts = self.list_contacts().await?;
         for contact in &contacts {
             if contact.handle == bare {
-                if let Some(pk) = contact
-                    .pubkey
-                    .as_deref()
-                    .and_then(pubkey_from_hub_string)
-                {
-                    return Ok(vec![pk]);
+                let keys = contact_device_pubkeys(contact);
+                if !keys.is_empty() {
+                    return Ok(keys);
                 }
                 bail!("contact {bare} has no pubkey");
             }
@@ -1781,6 +1804,25 @@ fn status_from_me(hub_url: &Option<String>, me: &MeResponse) -> StatusResult {
         connected_agent: None,
         default_agent: None,
     }
+}
+
+/// All device pubkeys for a contact (multi-device fan-out), falling back to legacy `pubkey`.
+fn contact_device_pubkeys(contact: &Contact) -> Vec<DevicePubKey> {
+    let mut keys: Vec<DevicePubKey> = contact
+        .devices
+        .iter()
+        .filter_map(|d| pubkey_from_hub_string(&d.pubkey))
+        .collect();
+    if keys.is_empty() {
+        if let Some(pk) = contact.pubkey.as_deref().and_then(pubkey_from_hub_string) {
+            keys.push(pk);
+        }
+    } else if let Some(pk) = contact.pubkey.as_deref().and_then(pubkey_from_hub_string) {
+        if !keys.iter().any(|k| k == &pk) {
+            keys.push(pk);
+        }
+    }
+    keys
 }
 
 fn agent_matches_display(display: &str, slug: &str, default_slug: &str) -> bool {

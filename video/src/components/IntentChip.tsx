@@ -42,8 +42,8 @@ export const IntentChip: React.FC<Props> = ({ appearFrame = 0 }) => {
         boxShadow: "0 18px 44px -18px rgba(28,25,23,0.6)",
       }}
     >
-      {COMPOSE_PROMPT.split(/(@chatgpt)/).map((part, i) =>
-        part === "@chatgpt" ? (
+      {COMPOSE_PROMPT.split(/(@research)/).map((part, i) =>
+        part === "@research" ? (
           <span key={i} style={{ color: colors.amber }}>
             {part}
           </span>

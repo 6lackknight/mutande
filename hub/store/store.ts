@@ -352,10 +352,20 @@ export class HubStore {
     if (input.agent_slug?.trim()) {
       await this.registerAgent(auth, { slug: input.agent_slug.trim() });
     }
+    const pubkey = input.pubkey.trim();
+    // Idempotent by pubkey: re-open / reconnect must not mint duplicate wraps.
+    const { devices } = await this.listDevices(auth);
+    const existing = devices.find((d) => d.pubkey === pubkey);
+    if (existing) {
+      if (existing.platform === input.platform) return existing;
+      const updated: Device = { ...existing, platform: input.platform };
+      await this.kv.set(this.deviceKey(existing.id), updated);
+      return updated;
+    }
     const device: Device = {
       id: crypto.randomUUID(),
       user_id: auth.userId,
-      pubkey: input.pubkey.trim(),
+      pubkey,
       platform: input.platform,
       created_at: nowIso(),
     };

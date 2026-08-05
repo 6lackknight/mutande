@@ -1,7 +1,7 @@
 import { BrandId } from "./components/BrandMark";
 import { colors } from "./theme";
 
-/** Fan-out destinations (wrap-to-N). */
+/** Fan-out destinations — addresses are the hero. */
 export const RECIPIENTS: readonly {
   id: string;
   title: string;
@@ -36,4 +36,31 @@ export const RECIPIENTS: readonly {
   },
 ] as const;
 
-export const SENDER_HANDLE = "alice@salesco";
+export const SENDER_HANDLE = "tawanda@salesco";
+
+/** Your agents — left column of the beam graph. */
+export const SENDER_AGENTS: readonly {
+  id: string;
+  handle: string;
+  brand: BrandId;
+  accent: string;
+}[] = [
+  {
+    id: "claude",
+    handle: "@claude",
+    brand: "claude",
+    accent: colors.alice,
+  },
+  {
+    id: "chatgpt",
+    handle: "@chatgpt",
+    brand: "chatgpt",
+    accent: colors.amber,
+  },
+  {
+    id: "research",
+    handle: "@research",
+    brand: "default",
+    accent: colors.accent,
+  },
+] as const;
