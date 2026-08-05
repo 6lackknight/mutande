@@ -6,10 +6,11 @@ import '../services/daemon_client.dart';
 import '../services/first_run_store.dart';
 import '../services/host_link_store.dart';
 import '../widgets/ai_host_icon.dart';
+import '../widgets/connect_host_flow.dart';
 import '../widgets/connect_host_picker.dart';
 import '../widgets/thinking_orb.dart';
 
-/// Blocking post-onboard step: connect one AI host, wait for agent registration.
+/// Blocking post-onboard step: connect one AI host (MCP + skill), wait for agent registration.
 class FirstRunConnectScreen extends StatefulWidget {
   const FirstRunConnectScreen({
     super.key,
@@ -29,7 +30,6 @@ class FirstRunConnectScreen extends StatefulWidget {
 }
 
 class _FirstRunConnectScreenState extends State<FirstRunConnectScreen> {
-  bool _connecting = false;
   bool _waiting = false;
   String? _host;
   String? _error;
@@ -50,7 +50,7 @@ class _FirstRunConnectScreenState extends State<FirstRunConnectScreen> {
       barrierDismissible: false,
       builder: (ctx) => ConnectHostPicker(
         title: 'Connect an AI host',
-        subtitle: 'Pick one host to link MCP. You can add more later in Settings.',
+        subtitle: 'Pick one host to link MCP and the collaboration skill.',
         hostLinks: links,
       ),
     );
@@ -60,48 +60,30 @@ class _FirstRunConnectScreenState extends State<FirstRunConnectScreen> {
 
   Future<void> _connect(String host) async {
     setState(() {
-      _connecting = true;
-      _waiting = false;
       _host = host;
       _error = null;
       _hint = null;
+      _waiting = false;
     });
-    try {
-      final result = await widget.daemon.connectHost(host);
-      for (final write in result.hosts) {
-        await widget.hostLinkStore.record(write);
-      }
-      final ok = result.hosts.any((h) => h.ok);
-      if (!ok) {
-        if (!mounted) return;
-        final notes = result.hosts
-            .map((h) => h.note)
-            .whereType<String>()
-            .where((n) => n.isNotEmpty)
-            .toList();
-        setState(() {
-          _connecting = false;
-          _error = notes.isNotEmpty
-              ? notes.first
-              : 'Could not write MCP config.';
-        });
-        return;
-      }
-      if (!mounted) return;
+    final result = await showConnectHostFlow(
+      context: context,
+      daemon: widget.daemon,
+      hostLinkStore: widget.hostLinkStore,
+      host: host,
+      celebrateFirstHost: true,
+    );
+    if (!mounted) return;
+    if (result == null || !result.mcpOk) {
       setState(() {
-        _connecting = false;
-        _waiting = true;
-        _hint = _restartHint(host);
+        _error = 'Host link was cancelled. Choose a host to continue.';
       });
-      await _waitForRegistration(host);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _connecting = false;
-        _waiting = false;
-        _error = e.toString();
-      });
+      return;
     }
+    setState(() {
+      _waiting = true;
+      _hint = result.mcpNote ?? _restartHint(host);
+    });
+    await _waitForRegistration(host);
   }
 
   Future<void> _waitForRegistration(String host) async {
@@ -176,22 +158,20 @@ class _FirstRunConnectScreenState extends State<FirstRunConnectScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'mutande talks to your agents over MCP. Connect one host to send your first ping.',
+                    'mutande talks to your agents over MCP and a small collaboration skill. Connect one host to send your first ping.',
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: const Color(0xFF78716C),
                     ),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 28),
-                  if (_connecting || _waiting) ...[
+                  if (_waiting) ...[
                     const Center(
                       child: MutandeOrb.standard(semanticLabel: 'Connecting…'),
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      _waiting
-                          ? 'Waiting for ${_hostDisplay(_host)} to register…'
-                          : 'Writing MCP config…',
+                      'Waiting for ${_hostDisplay(_host)} to register…',
                       textAlign: TextAlign.center,
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: const Color(0xFF57534E),

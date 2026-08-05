@@ -6,12 +6,7 @@ Branch: `main`
 
 | Priority | Status |
 |----------|--------|
-| 1. Bundle `mutande-core` sidecar; app start/stop; `MUTANDE_CORE_PATH` | Done — `CoreSidecar`, Xcode bundle script, daemon `set_core_path` / `persist_own_exe_path` |
-| 2. Flutter thread UI list/open/reply | Done — Threads / Contacts + Settings (Agents nested) over daemon RPCs |
-| 3. Safety-number / verify contact | Done — fingerprint + QR payload stub + compare RPC |
-| 4. Blob send path E2E | Done — `forward_blob` / auto-blob draft + wiremock E2E open |
-| 5. Sparkle / updates | Documented stub in `docs/UPDATES.md` (explicit gap) |
-| 6. Auth0 native login + agent addresses (`handle/agent`) | Done — loopback PKCE, hub/core address layer, defaults |
+| Host skill + mail nudge | Done — `install_skill` RPC; 2-step connect UI (MCP → skill); inbox skill quiet-when-clear; local notifications + mute + Settings → Notifications |
 
 ## Already done (prior)
 

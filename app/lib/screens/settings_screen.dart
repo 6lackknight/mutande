@@ -4,7 +4,9 @@ import 'package:flutter/services.dart';
 import '../config/app_config.dart';
 import '../services/daemon_client.dart';
 import '../services/host_link_store.dart';
+import '../services/notification_prefs_store.dart';
 import '../widgets/ai_host_icon.dart';
+import '../widgets/connect_host_flow.dart';
 import '../widgets/connect_host_picker.dart';
 import '../widgets/host_link_status.dart';
 import '../widgets/thinking_orb.dart';
@@ -24,7 +26,9 @@ class SettingsScreen extends StatefulWidget {
     this.onOpenThreads,
     this.onOpenAgents,
     HostLinkStore? hostLinkStore,
-  }) : hostLinkStore = hostLinkStore ?? HostLinkStore();
+    NotificationPrefsStore? notificationPrefs,
+  }) : hostLinkStore = hostLinkStore ?? HostLinkStore(),
+       notificationPrefs = notificationPrefs ?? NotificationPrefsStore();
 
   final DaemonClient daemon;
   final bool checking;
@@ -39,6 +43,7 @@ class SettingsScreen extends StatefulWidget {
   /// Close settings and jump home Agents graph.
   final VoidCallback? onOpenAgents;
   final HostLinkStore hostLinkStore;
+  final NotificationPrefsStore notificationPrefs;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -54,6 +59,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _loadingSafety = true;
   Map<String, HostLinkRecord> _hostLinks = const {};
   bool _loadingLinks = true;
+  NotificationPrefs _notifPrefs = const NotificationPrefs();
+  bool _loadingNotif = false;
   static const _bronze = Color(0xFF8B6914);
   static const _stone400 = Color(0xFFA8A29E);
   static const _stone50 = Color(0xFFFAFAF9);
@@ -67,6 +74,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
     _loadSafety();
     _loadHostLinks();
+    _loadNotifPrefs();
+  }
+
+  Future<void> _loadNotifPrefs() async {
+    final prefs = await widget.notificationPrefs.load();
+    if (!mounted) return;
+    setState(() {
+      _notifPrefs = prefs;
+      _loadingNotif = false;
+    });
+  }
+
+  Future<void> _saveNotif(NotificationPrefs prefs) async {
+    await widget.notificationPrefs.save(prefs);
+    if (!mounted) return;
+    setState(() => _notifPrefs = prefs);
   }
 
   Future<void> _loadHostLinks() async {
@@ -110,7 +133,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       barrierColor: const Color(0x660C0A09),
       builder: (context) => const ConnectHostPicker(
         title: 'Connect AI host',
-        subtitle: 'Writes MCP config for the host you choose.',
+        subtitle: 'Links MCP and the collaboration skill for the host you choose.',
       ),
     );
     if (host == null || !mounted) return;
@@ -120,40 +143,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _connectError = null;
     });
     try {
-      final result = await widget.daemon.connectHost(host);
-      HostWriteResult? write;
-      for (final h in result.hosts) {
-        if (h.host.toLowerCase() == host.toLowerCase()) {
-          write = h;
-          break;
-        }
-      }
-      write ??= result.hosts.isNotEmpty ? result.hosts.first : null;
-      if (write != null) {
-        await widget.hostLinkStore.record(write);
-      }
+      final result = await showConnectHostFlow(
+        context: context,
+        daemon: widget.daemon,
+        hostLinkStore: widget.hostLinkStore,
+        host: host,
+      );
       if (!mounted) return;
       await _loadHostLinks();
       if (!mounted) return;
       setState(() => _connecting = false);
 
       final label = AiHostIcon.displayName(host);
-      if (write == null) {
+      if (result == null || !result.mcpOk) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('No result for $label.')),
-        );
-      } else if (write.ok) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Linked $label')),
+          SnackBar(content: Text('Could not link $label.')),
         );
       } else {
-        final note = write.note?.trim();
+        final skill = switch (result.skillStatus) {
+          SkillLinkStatus.installed => 'Skill ready.',
+          SkillLinkStatus.needsSetup => 'Skill needs a quick setup step.',
+          SkillLinkStatus.skipped => 'Skill skipped — finish anytime here.',
+          SkillLinkStatus.none => '',
+        };
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              note != null && note.isNotEmpty
-                  ? 'Could not link $label — $note'
-                  : 'Could not link $label.',
+              skill.isEmpty ? 'Linked $label' : 'Linked $label. $skill',
             ),
           ),
         );
@@ -300,6 +316,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const SizedBox(height: 10),
               _ErrorBanner(message: _connectError!),
             ],
+            const SizedBox(height: 28),
+            _sectionHeader(context, 'NOTIFICATIONS'),
+            const SizedBox(height: 8),
+            _NotificationsCard(
+              prefs: _notifPrefs,
+              loading: _loadingNotif,
+              onChanged: _saveNotif,
+            ),
             const SizedBox(height: 28),
             _sectionHeader(context, 'SECURITY VERIFICATION'),
             const SizedBox(height: 8),
@@ -572,6 +596,121 @@ class _HostTile extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           HostLinkStatusBadge(link: link, style: HostLinkStatusStyle.settings),
+          if (link != null && link!.ok) ...[
+            const SizedBox(height: 4),
+            Text(
+              _skillLabel(link!.skillStatus),
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Color(0xFF78716C),
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _skillLabel(SkillLinkStatus s) {
+    switch (s) {
+      case SkillLinkStatus.installed:
+        return 'Skill · installed';
+      case SkillLinkStatus.needsSetup:
+        return 'Skill · needs setup';
+      case SkillLinkStatus.skipped:
+        return 'Skill · skipped';
+      case SkillLinkStatus.none:
+        return 'Skill · —';
+    }
+  }
+}
+
+class _NotificationsCard extends StatelessWidget {
+  const _NotificationsCard({
+    required this.prefs,
+    required this.loading,
+    required this.onChanged,
+  });
+
+  final NotificationPrefs prefs;
+  final bool loading;
+  final ValueChanged<NotificationPrefs> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    if (loading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 16),
+        child: Center(
+          child: MutandeOrb.loading(semanticLabel: 'Loading notifications…'),
+        ),
+      );
+    }
+
+    return Material(
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: const BorderSide(color: Color(0xFFE7E5E4)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          SwitchListTile.adaptive(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+            title: const Text('Enable notifications'),
+            subtitle: const Text('Local banners when mail arrives for cold hosts'),
+            value: prefs.enabled,
+            onChanged: (v) => onChanged(prefs.copyWith(enabled: v)),
+          ),
+          SwitchListTile.adaptive(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+            title: const Text('New mail for my agents'),
+            value: prefs.mailForAgents,
+            onChanged: prefs.enabled
+                ? (v) => onChanged(prefs.copyWith(mailForAgents: v))
+                : null,
+          ),
+          SwitchListTile.adaptive(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+            title: const Text('Needs you'),
+            subtitle: const Text('Human decisions waiting in mutande'),
+            value: prefs.needsYou,
+            onChanged: prefs.enabled
+                ? (v) => onChanged(prefs.copyWith(needsYou: v))
+                : null,
+          ),
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Agents',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: const Color(0xFFA8A29E),
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.8,
+                    ),
+              ),
+            ),
+          ),
+          for (final slug in const ['cursor', 'claude', 'chatgpt'])
+            SwitchListTile.adaptive(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+              secondary: AiHostIcon(slug, size: 28),
+              title: Text(AiHostIcon.displayName(slug)),
+              value: prefs.isAgentEnabled(slug),
+              onChanged: prefs.enabled && prefs.mailForAgents
+                  ? (v) {
+                      final next = Map<String, bool>.from(prefs.agentSlugsEnabled);
+                      next[slug] = v;
+                      onChanged(prefs.copyWith(agentSlugsEnabled: next));
+                    }
+                  : null,
+            ),
         ],
       ),
     );

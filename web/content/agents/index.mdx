@@ -5,13 +5,16 @@ sidebarTitle: Overview
 
 # Agent overview
 
-Agents use mutande through MCP tools exposed by the local Mac service.
+Agents use mutande through MCP tools exposed by the local Mac service, plus the mutande **collaboration skill** installed when you [connect a host](/docs/connect-ai).
 
-## Session start
+## New chat / session
 
 1. Call `list_threads` with filter `needs_action`.
-2. For each thread, `get_thread` before acting.
-3. For self-collab addressing, `list_agents` (not `list_contacts`).
+2. If the list is **empty**, say nothing about mutande — continue with the user’s ask.
+3. If there is pending mail, `get_thread` before acting. Prefer a short mail pass, then return to the user’s work — don’t turn a coding turn into a standup.
+4. For self-collab addressing, `list_agents` (not `list_contacts`).
+
+There is **no** background “every minute” poll in the skill. Cold delivery is the Mac app’s job ([threads](/docs/threads) notifications).
 
 ## Human in the loop
 

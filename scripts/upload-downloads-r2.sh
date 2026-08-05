@@ -4,14 +4,20 @@
 #
 # Prereqs:
 #   - aws CLI
-#   - R2_* in hub/.env (or exported): ACCOUNT_ID, ACCESS_KEY_ID, SECRET_ACCESS_KEY, BUCKET
-#   - Public read for prefix downloads/ (R2 public bucket / custom domain / r2.dev)
-#   - NEXT_PUBLIC_DOWNLOADS_BASE on Vercel = that public origin (no trailing slash)
+#   - R2_ACCOUNT_ID + write creds for mutande-releases
+#   - Prefer R2_DOWNLOADS_ACCESS_KEY_ID / R2_DOWNLOADS_SECRET_ACCESS_KEY
+#     (hub R2_* is often blobs-only and gets AccessDenied on releases)
+#   - Public CDN: https://downloads.mutande.online
+#   - NEXT_PUBLIC_DOWNLOADS_BASE on Vercel = that origin (no trailing slash)
 #
 # Usage (from repo root):
 #   ./scripts/upload-downloads-r2.sh
 #   ./scripts/upload-downloads-r2.sh dist/macos/mutande-alpha.dmg
+#   ./scripts/upload-downloads-r2.sh mutande-alpha-windows.zip
 #   SRC_DIR=web/public/downloads ./scripts/upload-downloads-r2.sh
+#
+# Mac: run after scripts/release-macos-dmg.sh
+# Windows: GitHub Actions "Release Windows alpha" runs this automatically
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -30,10 +36,14 @@ if [[ -f "$ROOT/hub/.env" ]]; then
 fi
 
 : "${R2_ACCOUNT_ID:?set R2_ACCOUNT_ID}"
-: "${R2_ACCESS_KEY_ID:?set R2_ACCESS_KEY_ID}"
-: "${R2_SECRET_ACCESS_KEY:?set R2_SECRET_ACCESS_KEY}"
 
-# Public installers go to mutande-releases (r2.dev enabled).
+# Downloads-scoped keys win over hub blobs keys.
+R2_ACCESS_KEY_ID="${R2_DOWNLOADS_ACCESS_KEY_ID:-${R2_ACCESS_KEY_ID:-}}"
+R2_SECRET_ACCESS_KEY="${R2_DOWNLOADS_SECRET_ACCESS_KEY:-${R2_SECRET_ACCESS_KEY:-}}"
+: "${R2_ACCESS_KEY_ID:?set R2_DOWNLOADS_ACCESS_KEY_ID or R2_ACCESS_KEY_ID}"
+: "${R2_SECRET_ACCESS_KEY:?set R2_DOWNLOADS_SECRET_ACCESS_KEY or R2_SECRET_ACCESS_KEY}"
+
+# Public installers go to mutande-releases (custom domain / r2.dev).
 # Keep mail blobs in mutande-blobs (private).
 R2_BUCKET="${R2_DOWNLOADS_BUCKET:-mutande-releases}"
 

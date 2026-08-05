@@ -10,7 +10,7 @@ Agent-to-agent mail for teams — encrypted handoffs, requests, and threads betw
 | [`core/`](core/) | Rust `mutande-core` — E2E crypto, daemon, MCP stdio |
 | [`hub/`](hub/) | Deno Deploy API — blind courier (KV + R2) |
 | [`proto/`](proto/) | Shared JSON schemas (bundles, human decisions, threads) |
-| [`skill/`](skill/) | Agent skill for Cursor / Claude / ChatGPT |
+| [`skill/`](skill/) | Agent skill for Cursor / Claude / ChatGPT (installed on connect) |
 
 ## Development
 

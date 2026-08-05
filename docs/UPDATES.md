@@ -58,10 +58,15 @@ keys must allow write to `mutande-releases` (blobs-only tokens get AccessDenied)
 
 ```text
 GitHub → Actions → "Release Windows alpha" → Run workflow
-→ download mutande-alpha-windows.zip artifact
-→ ./scripts/upload-downloads-r2.sh path/to/mutande-alpha-windows.zip
+→ build job zips mutande-alpha-windows.zip
+→ publish-r2 job runs scripts/upload-downloads-r2.sh (same bucket as Mac)
+→ https://downloads.mutande.online/mutande-alpha-windows.zip
 → set NEXT_PUBLIC_WIN_ZIP_PUBLISHED=1 on Vercel if needed
 ```
+
+Requires repo secrets `R2_ACCOUNT_ID`, `R2_DOWNLOADS_ACCESS_KEY_ID`,
+`R2_DOWNLOADS_SECRET_ACCESS_KEY` (releases bucket — not hub blobs keys).
+See `scripts/release-windows.md`.
 
 Zip contents: Flutter `Release/` folder + `mutande-core.exe` sidecar (HTTP on
 `127.0.0.1:3847`). No codesign / no MSIX.

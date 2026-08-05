@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../services/daemon_client.dart';
 import '../services/host_link_store.dart';
 import '../widgets/ai_host_icon.dart';
+import '../widgets/connect_host_flow.dart';
 import '../widgets/connect_host_picker.dart';
 import '../widgets/host_link_status.dart';
 import '../widgets/thinking_orb.dart';
@@ -165,38 +166,24 @@ class _AgentsPanelState extends State<AgentsPanel> {
 
   Future<void> _connectAgentHost(AgentInfo agent) async {
     final host = agent.slug.trim().toLowerCase();
-    final result = await widget.daemon.connectHost(host);
-    HostWriteResult? write;
-    for (final h in result.hosts) {
-      if (h.host.toLowerCase() == host) {
-        write = h;
-        break;
-      }
-    }
-    write ??= result.hosts.isNotEmpty ? result.hosts.first : null;
-    if (write != null) {
-      await widget.hostLinkStore.record(write);
-      await _loadHostLinks();
-    }
+    final result = await showConnectHostFlow(
+      context: context,
+      daemon: widget.daemon,
+      hostLinkStore: widget.hostLinkStore,
+      host: host,
+    );
+    await _loadHostLinks();
     if (!mounted) return;
     final label = agentHostLabel(host);
-    if (write == null) {
-      throw StateError('No result for $label.');
-    }
-    if (!write.ok) {
-      final note = write.note?.trim();
-      throw StateError(
-        note != null && note.isNotEmpty
-            ? 'Could not link $label — $note'
-            : 'Could not link $label.',
-      );
+    if (result == null || !result.mcpOk) {
+      throw StateError('Could not link $label.');
     }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          write.note?.trim().isNotEmpty == true
-              ? 'Linked $label. ${write.note!.trim()}'
-              : 'Linked $label. Quit and reopen $label so it loads mutande MCP.',
+          result.mcpNote?.trim().isNotEmpty == true
+              ? 'Linked $label. ${result.mcpNote!.trim()}'
+              : 'Linked $label.',
         ),
         duration: const Duration(seconds: 6),
       ),
@@ -288,28 +275,17 @@ class _AgentsPanelState extends State<AgentsPanel> {
 
     setState(() => _adding = true);
     try {
-      final result = await widget.daemon.connectHost(host);
+      final result = await showConnectHostFlow(
+        context: context,
+        daemon: widget.daemon,
+        hostLinkStore: widget.hostLinkStore,
+        host: host,
+      );
       if (!mounted) return;
-      HostWriteResult? write;
-      for (final h in result.hosts) {
-        if (h.host.toLowerCase() == host) {
-          write = h;
-          break;
-        }
-      }
-      if (write != null) {
-        await widget.hostLinkStore.record(write);
-        await _loadHostLinks();
-      }
-      if (write != null && !write.ok) {
+      await _loadHostLinks();
+      if (result == null || !result.mcpOk) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              write.note?.isNotEmpty == true
-                  ? write.note!
-                  : 'Could not connect $host.',
-            ),
-          ),
+          SnackBar(content: Text('Could not connect $host.')),
         );
         return;
       }
@@ -1307,8 +1283,8 @@ class _AgentInspectorState extends State<_AgentInspector> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         insetPadding: const EdgeInsets.symmetric(horizontal: 36, vertical: 48),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 320),
-          child: Padding(
+          constraints: const BoxConstraints(maxWidth: 320, maxHeight: 520),
+          child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(20, 14, 14, 18),
             child: FocusTraversalGroup(
               child: Column(

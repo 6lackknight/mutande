@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:flutter/cupertino.dart';
@@ -5,6 +6,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:macos_ui/macos_ui.dart';
+import 'package:window_manager/window_manager.dart';
 
 import 'config/app_config.dart';
 import 'screens/agents_screen.dart';
@@ -20,6 +22,8 @@ import 'services/daemon_client.dart';
 import 'services/daemon_errors.dart';
 import 'services/first_run_store.dart';
 import 'services/host_link_store.dart';
+import 'services/inbox_watch_service.dart';
+import 'services/notification_prefs_store.dart';
 import 'theme/mutande_macos_theme.dart';
 import 'widgets/daemon_error_screen.dart';
 import 'widgets/home_chrome_strip.dart';
@@ -176,6 +180,8 @@ class _RootScreenState extends State<RootScreen> {
   late final bool _ownsDaemon;
   late final HostLinkStore _hostLinkStore;
   late final FirstRunStore _firstRunStore;
+  late final NotificationPrefsStore _notificationPrefs;
+  InboxWatchService? _inboxWatch;
   bool _loading = true;
   String? _loadingHint;
   DaemonStatusResult? _status;
@@ -199,6 +205,7 @@ class _RootScreenState extends State<RootScreen> {
     _ownsDaemon = widget.daemon == null;
     _daemon = widget.daemon ?? DaemonClient();
     _hostLinkStore = widget.hostLinkStore ?? HostLinkStore();
+    _notificationPrefs = NotificationPrefsStore();
     // Widget tests that seed status skip the gate unless they inject a store.
     _firstRunStore = widget.firstRunStore ??
         (widget.seedStatus != null
@@ -206,6 +213,7 @@ class _RootScreenState extends State<RootScreen> {
             : FirstRunStore());
     _lastConnectTick = AppActions.connectHostsTick.value;
     AppActions.connectHostsTick.addListener(_onConnectHostsRequested);
+    AppActions.openThreadRequest.addListener(_onOpenThreadRequested);
     // Memory / seeded stores: sync-ready so animated orb never blocks pumpAndSettle.
     _firstRunStore.loadMemorySync();
     if (_firstRunStore.connectComplete ||
@@ -254,10 +262,35 @@ class _RootScreenState extends State<RootScreen> {
   @override
   void dispose() {
     AppActions.connectHostsTick.removeListener(_onConnectHostsRequested);
+    AppActions.openThreadRequest.removeListener(_onOpenThreadRequested);
+    unawaited(_inboxWatch?.dispose());
     if (_ownsDaemon) {
       _daemon.dispose();
     }
     super.dispose();
+  }
+
+  void _onOpenThreadRequested() {
+    final id = AppActions.openThreadRequest.value?.trim();
+    if (id == null || id.isEmpty) return;
+    AppActions.openThreadRequest.value = null;
+    setState(() => _openThreadId = id);
+    if (!kIsWeb && (Platform.isMacOS || Platform.isWindows)) {
+      unawaited(() async {
+        await windowManager.show();
+        await windowManager.focus();
+      }());
+    }
+  }
+
+  void _ensureInboxWatch() {
+    if (_inboxWatch != null) return;
+    if (widget.seedStatus != null) return; // tests
+    _inboxWatch = InboxWatchService(
+      daemon: _daemon,
+      prefs: _notificationPrefs,
+    );
+    unawaited(_inboxWatch!.start());
   }
 
   Future<void> _refreshStatus({bool bootstrap = false}) async {
@@ -486,6 +519,7 @@ class _RootScreenState extends State<RootScreen> {
       );
     }
 
+    _ensureInboxWatch();
     return HomeScreen(
       config: widget.config,
       daemon: _daemon,
@@ -497,6 +531,7 @@ class _RootScreenState extends State<RootScreen> {
       connectError: _connectError,
       onConnectHosts: _runConnectHosts,
       hostLinkStore: _hostLinkStore,
+      notificationPrefs: _notificationPrefs,
       initialThreadId: _openThreadId,
     );
   }
@@ -515,6 +550,7 @@ class HomeScreen extends StatefulWidget {
     this.connectError,
     required this.onConnectHosts,
     this.hostLinkStore,
+    this.notificationPrefs,
     this.initialThreadId,
   });
 
@@ -528,6 +564,7 @@ class HomeScreen extends StatefulWidget {
   final String? connectError;
   final VoidCallback onConnectHosts;
   final HostLinkStore? hostLinkStore;
+  final NotificationPrefsStore? notificationPrefs;
   final String? initialThreadId;
 
   @override
@@ -567,6 +604,20 @@ class _HomeScreenState extends State<HomeScreen> {
     _openThreadId = widget.initialThreadId;
     _searchFocus.addListener(_onSearchFocusChanged);
     _checkDaemon();
+  }
+
+  @override
+  void didUpdateWidget(covariant HomeScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final next = widget.initialThreadId?.trim();
+    final prev = oldWidget.initialThreadId?.trim();
+    if (next != null && next.isNotEmpty && next != prev) {
+      setState(() {
+        _openThreadId = next;
+        _tab = 0;
+        if (_searchMode) _searchMode = false;
+      });
+    }
   }
 
   @override
@@ -700,6 +751,7 @@ class _HomeScreenState extends State<HomeScreen> {
               onCheckDaemon: _checkDaemon,
               handle: widget.status.handle,
               hostLinkStore: widget.hostLinkStore,
+              notificationPrefs: widget.notificationPrefs,
               onOpenThreads: () {
                 Navigator.of(sheetContext).pop();
                 _selectTab(0);
@@ -732,6 +784,7 @@ class _HomeScreenState extends State<HomeScreen> {
         myHandle: widget.status.handle,
         onReloadReady: _registerThreadsReload,
         composeRecipient: _composeRecipient,
+        notificationPrefs: widget.notificationPrefs,
         onComposeRecipientHandled: () {
           if (_composeRecipient != null) {
             setState(() => _composeRecipient = null);

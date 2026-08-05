@@ -34,7 +34,7 @@ impl Host {
         }
     }
 
-    fn parse(s: &str) -> Result<Self> {
+    pub fn parse(s: &str) -> Result<Self> {
         match s {
             "cursor" => Ok(Host::Cursor),
             "claude" => Ok(Host::Claude),

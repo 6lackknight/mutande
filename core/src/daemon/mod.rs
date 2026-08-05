@@ -4,6 +4,7 @@ mod auth0_defaults;
 mod config;
 mod connect_host;
 mod http_bridge;
+mod install_skill;
 mod oauth;
 pub mod rpc;
 mod state;
@@ -13,6 +14,7 @@ pub use auth0_defaults::{
 };
 
 pub use connect_host::{ConnectHostResult, connect_host};
+pub use install_skill::{InstallSkillResult, install_skill};
 
 pub use config::{
     DaemonConfig, ensure_http_token, http_token_path, load_config, save_config,

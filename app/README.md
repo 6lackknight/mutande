@@ -18,7 +18,11 @@ Xcode Run Script: `macos/Runner/Scripts/bundle_mutande_core.sh`.
 | `lib/config/app_config.dart` | Hub URL and runtime defines |
 | `lib/services/daemon_client.dart` | JSON-RPC client (HTTP bridge + bearer token) |
 | `lib/services/core_sidecar.dart` | Start/stop bundled `mutande-core serve` |
-| `lib/screens/threads_screen.dart` | Thread list / open / reply |
+| `lib/services/host_link_store.dart` | MCP + skill link outcomes (`~/.mutande/host_links.json`) |
+| `lib/services/notification_prefs_store.dart` | Mute + notification toggles |
+| `lib/services/inbox_watch_service.dart` | 30s poll → local OS notifications |
+| `lib/widgets/connect_host_flow.dart` | Two-step MCP → skill connect dialog |
+| `lib/screens/threads_screen.dart` | Thread list / open / reply / mute |
 | `lib/screens/verify_screen.dart` | Safety-number fingerprint + QR payload stub |
 
 ## Tray menu
@@ -94,12 +98,19 @@ flutter test
 
 ## Connect AI
 
-**Connect AI hosts** calls daemon RPC `connect_host` with `host: all`, merge-writing MCP configs:
+Connecting a host is **two steps** in the UI (first-run, Settings → AI HOSTS, Agents add/reconnect):
 
-| Host | Path |
-|------|------|
-| Cursor | `~/.cursor/mcp.json` |
-| Claude Desktop | `~/Library/Application Support/Claude/claude_desktop_config.json` |
-| ChatGPT desktop | `~/Library/Application Support/ChatGPT/mcp.json` (path may vary by build) |
+1. **`connect_host`** — merge-write MCP config for one host (`cursor` | `claude` | `chatgpt`).
+2. **`install_skill`** — place the collaboration skill (auto for Cursor/ChatGPT; Claude ZIP + manual upload). Skip is allowed.
 
-Entry: `{ "command": "<mutande-core>", "args": ["mcp"] }`. Restart the host after connecting.
+| Host | MCP path | Skill |
+|------|----------|-------|
+| Cursor | `~/.cursor/mcp.json` | `~/.cursor/skills/mutande/SKILL.md` |
+| Claude Desktop | `…/Claude/claude_desktop_config.json` | ZIP → Claude Customize → Skills |
+| ChatGPT desktop | `…/ChatGPT/mcp.json` (path may vary) | `~/.agents/skills` + `~/.codex/skills` |
+
+Restart the host after MCP write. Skill status is stored next to MCP outcomes in `~/.mutande/host_links.json`.
+
+## Notifications
+
+`InboxWatchService` polls open threads about every 30s and shows local macOS banners (metadata only), e.g. `new mail for @cursor from alice@acme/claude`. Prefs + muted thread ids live in `~/.mutande/notification_prefs.json`. Mute from the thread menu; Settings → Notifications for master / Needs you / per-agent toggles. Click opens the window on that thread.

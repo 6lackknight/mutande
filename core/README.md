@@ -88,6 +88,8 @@ curl -s -X POST http://127.0.0.1:3847/rpc \
 
 Merge-writes an MCP server entry so hosts launch `mutande-core mcp` (stdio). Daemon must already be running for tools to work.
 
+The Mac UI runs a **two-step** flow per host: `connect_host` then `install_skill` (skill may be skipped).
+
 ```bash
 TOKEN=$(cat ~/.mutande/daemon_http_token)
 curl -s -X POST http://127.0.0.1:3847/rpc \
@@ -119,6 +121,25 @@ Written entry (per-host name `mutande-cursor` / `mutande-claude` / `mutande-chat
   }
 }
 ```
+
+## Install skill (`install_skill`)
+
+Places the bundled collaboration skill (`skill/SKILL.md`) for one host.
+
+```bash
+curl -s -X POST http://127.0.0.1:3847/rpc \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":2,"method":"install_skill","params":{"host":"cursor"}}'
+```
+
+| Host | Behavior |
+|------|----------|
+| Cursor | Writes `~/.cursor/skills/mutande/SKILL.md` (`mode: auto`) |
+| ChatGPT | Writes `~/.agents/skills/mutande/SKILL.md` and `~/.codex/skills/mutande/SKILL.md` |
+| Claude | Stages ZIP at `~/.mutande/skills/mutande-claude.zip` (`mode: manual`) — user uploads in Claude → Customize → Skills |
+
+Result shape: `{ host, ok, mode, path?, zip_path?, hint? }`. Claude always returns `ok: false` with `mode: manual` (account-side upload); Cursor/ChatGPT return `ok: true` when the file write succeeds.
 
 ### Host tool permissions
 

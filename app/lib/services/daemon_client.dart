@@ -174,6 +174,13 @@ class DaemonClient {
     );
   }
 
+  /// Install or stage the mutande agent skill for a host (`cursor`|`claude`|`chatgpt`).
+  Future<InstallSkillResult> installSkill(String host) async {
+    final result = await _call('install_skill', {'host': host});
+    final map = result as Map<String, dynamic>? ?? {};
+    return InstallSkillResult.fromJson(map);
+  }
+
   /// Org members + synthetic `@all@org` via JSON-RPC `list_contacts`.
   Future<List<ContactView>> listContacts() async {
     final result = await _callWithTimeout(
@@ -671,6 +678,39 @@ class HostWriteResult {
 
   @override
   int get hashCode => Object.hash(host, path, ok, command, note);
+}
+
+/// Result of JSON-RPC `install_skill`.
+class InstallSkillResult {
+  const InstallSkillResult({
+    required this.host,
+    required this.ok,
+    required this.mode,
+    this.path,
+    this.zipPath,
+    this.hint,
+  });
+
+  factory InstallSkillResult.fromJson(Map<String, dynamic> map) {
+    return InstallSkillResult(
+      host: map['host'] as String? ?? '',
+      ok: map['ok'] == true,
+      mode: map['mode'] as String? ?? 'auto',
+      path: map['path'] as String?,
+      zipPath: map['zip_path'] as String?,
+      hint: map['hint'] as String?,
+    );
+  }
+
+  final String host;
+  final bool ok;
+  /// `auto` or `manual`.
+  final String mode;
+  final String? path;
+  final String? zipPath;
+  final String? hint;
+
+  bool get isManual => mode == 'manual';
 }
 
 bool _listEq<T>(List<T> a, List<T> b) {

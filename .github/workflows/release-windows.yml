@@ -84,3 +84,44 @@ jobs:
           name: mutande-alpha-windows
           path: mutande-alpha-windows.zip
           if-no-files-found: error
+          retention-days: 14
+
+  # Same bucket + script as local Mac DMG uploads (mutande-releases / downloads.mutande.online).
+  publish-r2:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Windows zip
+        uses: actions/download-artifact@v4
+        with:
+          name: mutande-alpha-windows
+          path: dist/windows
+
+      - name: Install AWS CLI
+        run: |
+          if ! command -v aws >/dev/null 2>&1; then
+            pip install --quiet awscli
+          fi
+          aws --version
+
+      - name: Upload to R2 (mutande-releases)
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_DOWNLOADS_ACCESS_KEY_ID: ${{ secrets.R2_DOWNLOADS_ACCESS_KEY_ID }}
+          R2_DOWNLOADS_SECRET_ACCESS_KEY: ${{ secrets.R2_DOWNLOADS_SECRET_ACCESS_KEY }}
+          R2_DOWNLOADS_BUCKET: mutande-releases
+          R2_DOWNLOADS_PUBLIC_BASE: https://downloads.mutande.online
+        run: |
+          set -euo pipefail
+          test -n "${R2_ACCOUNT_ID:-}"
+          test -n "${R2_DOWNLOADS_ACCESS_KEY_ID:-}"
+          test -n "${R2_DOWNLOADS_SECRET_ACCESS_KEY:-}"
+          zip="$(find dist/windows -name 'mutande-alpha-windows.zip' -type f | head -n1)"
+          test -n "$zip"
+          chmod +x scripts/upload-downloads-r2.sh
+          ./scripts/upload-downloads-r2.sh "$zip"

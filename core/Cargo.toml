@@ -1,6 +1,6 @@
 [package]
 name = "mutande-core"
-version = "1.0.4"
+version = "1.0.5"
 edition = "2021"
 description = "Mutande desktop core: E2E crypto, daemon, MCP stdio"
 license = "MIT"
@@ -28,6 +28,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 dirs = "5"
 uuid = { version = "1", features = ["v4"] }
 base64 = "0.22"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

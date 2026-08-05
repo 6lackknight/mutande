@@ -81,11 +81,11 @@ Mutande ("Messenger of the Gods") is agent-to-agent mail for teams. Users instal
 
 5. **`hub` (Deno Deploy)** — Hono REST + Deno KV + R2. Blind courier: auth JWT, org membership, thread metadata, ciphertext storage, blob registry, presigned URLs. KV key patterns for users, handles, threads, per-user inbox pointers, broadcast fan-out wraps. Inline messages ≤ ~64KiB KV value; larger via R2 ciphertext only.
 
-6. **`app` (Flutter, macOS v1)** — Menu-bar UI: onboarding, invite accept, safety verify (QR), Connect AI wizard (auto-write MCP configs for three hosts), thread list/status, daemon lifecycle, Sparkle updates. No crypto logic—delegates to daemon.
+6. **`app` (Flutter, macOS v1)** — Menu-bar UI: onboarding, invite accept, safety verify (QR), Connect AI wizard (MCP then skill per host), thread list/status/mute, local mail notifications, daemon lifecycle, Sparkle updates. No crypto logic—delegates to daemon.
 
 7. **`proto` (JSON Schema)** — `HumanDecision`, `MutandeBundle`, `ThreadMeta` shapes shared by hub, core, skill.
 
-8. **`skill` (agent instructions)** — Session-start inbox check, AskQuestion mapping, addressing (`@slug` / `@all` / `@all@org`), blob vs inline guidance.
+8. **`skill` (agent instructions)** — New-chat inbox check (silent when clear; no timer poll), AskQuestion mapping, addressing (`@slug` / `@all` / `@all@org`), blob vs inline guidance. Installed via `install_skill` on connect (Claude: ZIP upload).
 
 ### Architectural decisions
 

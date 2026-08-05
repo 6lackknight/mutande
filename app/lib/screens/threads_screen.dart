@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_resizable_container/flutter_resizable_container.dart';
 
 import '../services/daemon_client.dart';
+import '../services/notification_prefs_store.dart';
 import '../theme/mutande_macos_theme.dart';
 import '../util/address_display.dart';
 import '../util/clock_format.dart';
@@ -53,7 +54,7 @@ Future<bool?> confirmThreadAction(
 
 /// Stitch home threads — filters, list rows, search + new thread footer.
 class ThreadsPanel extends StatefulWidget {
-  const ThreadsPanel({
+  ThreadsPanel({
     super.key,
     required this.daemon,
     this.onReloadReady,
@@ -62,7 +63,8 @@ class ThreadsPanel extends StatefulWidget {
     this.onComposeRecipientHandled,
     this.initialThreadId,
     this.onInitialThreadHandled,
-  });
+    NotificationPrefsStore? notificationPrefs,
+  }) : notificationPrefs = notificationPrefs ?? NotificationPrefsStore();
 
   final DaemonClient daemon;
   final ValueChanged<VoidCallback?>? onReloadReady;
@@ -77,6 +79,8 @@ class ThreadsPanel extends StatefulWidget {
   /// When set, opens this thread (e.g. after first-run ping).
   final String? initialThreadId;
   final VoidCallback? onInitialThreadHandled;
+
+  final NotificationPrefsStore notificationPrefs;
 
   @override
   State<ThreadsPanel> createState() => _ThreadsPanelState();
@@ -96,6 +100,7 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
   final GlobalKey<_ThreadDetailPanelState> _detailKey =
       GlobalKey<_ThreadDetailPanelState>();
   final ScrollController _listScroll = ScrollController();
+  Set<String> _mutedIds = {};
 
   ResizableDivider _splitDivider(int id) {
     final hot = _hotDivider == id;
@@ -124,7 +129,33 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
         widget.onInitialThreadHandled?.call();
       });
     }
+    _loadMuted();
     _reload();
+  }
+
+  Future<void> _loadMuted() async {
+    final prefs = await widget.notificationPrefs.load();
+    if (!mounted) return;
+    setState(() => _mutedIds = Set<String>.from(prefs.mutedThreadIds));
+  }
+
+  Future<void> _toggleMute(String threadId) async {
+    final next = !_mutedIds.contains(threadId);
+    await widget.notificationPrefs.setMuted(threadId, next);
+    if (!mounted) return;
+    setState(() {
+      if (next) {
+        _mutedIds = {..._mutedIds, threadId};
+      } else {
+        _mutedIds = {..._mutedIds}..remove(threadId);
+      }
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(next ? 'Thread muted' : 'Thread unmuted'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   @override
@@ -370,6 +401,8 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
             threadId: _openId!,
             myHandle: widget.myHandle,
             embedded: true,
+            muted: _mutedIds.contains(_openId),
+            onMuteToggle: () => _toggleMute(_openId!),
             onBack: () => setState(() => _openId = null),
             onListChanged: () => unawaited(_reload(silent: true)),
             onThreadClosed: _applyClosedLocally,
@@ -442,11 +475,13 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
           thread: t,
           myHandle: widget.myHandle,
           selected: t.id == _openId,
+          muted: _mutedIds.contains(t.id),
           onTap: () => setState(() => _openId = t.id),
           onClose: t.status == 'closed'
               ? null
               : () => _closeThreadFromList(t.id),
           onDelete: () => _deleteThreadFromList(t.id),
+          onMuteToggle: () => _toggleMute(t.id),
         );
       },
     );
@@ -566,16 +601,20 @@ class _ThreadRow extends StatelessWidget {
     required this.onTap,
     this.myHandle,
     this.selected = false,
+    this.muted = false,
     this.onClose,
     this.onDelete,
+    this.onMuteToggle,
   });
 
   final ThreadSummary thread;
   final VoidCallback onTap;
   final String? myHandle;
   final bool selected;
+  final bool muted;
   final VoidCallback? onClose;
   final VoidCallback? onDelete;
+  final VoidCallback? onMuteToggle;
 
   @override
   Widget build(BuildContext context) {
@@ -592,6 +631,11 @@ class _ThreadRow extends StatelessWidget {
           onTap: onTap,
           onSecondaryTapDown: (details) {
             final items = <PopupMenuEntry<String>>[
+              if (onMuteToggle != null)
+                PopupMenuItem(
+                  value: 'mute',
+                  child: Text(muted ? 'Unmute' : 'Mute'),
+                ),
               if (onClose != null)
                 const PopupMenuItem(value: 'close', child: Text('Close')),
               if (onDelete != null)
@@ -608,6 +652,7 @@ class _ThreadRow extends StatelessWidget {
               ),
               items: items,
             ).then((value) {
+              if (value == 'mute') onMuteToggle?.call();
               if (value == 'close') onClose?.call();
               if (value == 'delete') onDelete?.call();
             });
@@ -681,8 +726,19 @@ class _ThreadRow extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(width: 8),
-                          // List pane: Needs you badge, else HH:MM (never Waiting).
-                          if (status == ThreadStatusKind.needsYou)
+                          // List pane: Muted · Needs you · else HH:MM (never Waiting).
+                          if (muted)
+                            Text(
+                              'Muted',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .labelSmall
+                                  ?.copyWith(
+                                    color: MutandeColors.stone400,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                            )
+                          else if (status == ThreadStatusKind.needsYou)
                             ThreadStatusBadge(kind: status, compact: true)
                           else if (time.isNotEmpty)
                             Text(
@@ -1025,6 +1081,8 @@ class ThreadDetailPanel extends StatefulWidget {
     this.onListChanged,
     this.onThreadClosed,
     this.onGone,
+    this.muted = false,
+    this.onMuteToggle,
   });
 
   final DaemonClient daemon;
@@ -1043,6 +1101,9 @@ class ThreadDetailPanel extends StatefulWidget {
 
   /// Remove from list + clear selection after delete.
   final VoidCallback? onGone;
+
+  final bool muted;
+  final VoidCallback? onMuteToggle;
 
   @override
   State<ThreadDetailPanel> createState() => _ThreadDetailPanelState();
@@ -1290,10 +1351,16 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
                 PopupMenuButton<String>(
                   tooltip: 'Thread actions',
                   onSelected: (value) {
+                    if (value == 'mute') widget.onMuteToggle?.call();
                     if (value == 'close') _closeThread();
                     if (value == 'delete') _deleteThread();
                   },
                   itemBuilder: (context) => [
+                    if (widget.onMuteToggle != null)
+                      PopupMenuItem(
+                        value: 'mute',
+                        child: Text(widget.muted ? 'Unmute' : 'Mute'),
+                      ),
                     if (_detail!.status != 'closed')
                       const PopupMenuItem(value: 'close', child: Text('Close')),
                     const PopupMenuItem(value: 'delete', child: Text('Delete')),
@@ -1323,11 +1390,13 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
           _ThreadDetailHeader(
             detail: _detail!,
             myHandle: widget.myHandle,
+            muted: widget.muted,
             onRefresh: widget.embedded && !_loading
                 ? () => _load(silent: _detail != null)
                 : null,
             onClose: _detail!.status == 'closed' ? null : _closeThread,
             onDelete: _deleteThread,
+            onMuteToggle: widget.onMuteToggle,
             onReplyOp: _detail!.status == 'closed'
                 ? null
                 : () {
@@ -1550,9 +1619,11 @@ class _ThreadDetailHeader extends StatelessWidget {
   const _ThreadDetailHeader({
     required this.detail,
     this.myHandle,
+    this.muted = false,
     this.onRefresh,
     this.onClose,
     this.onDelete,
+    this.onMuteToggle,
     this.onReplyOp,
     this.onUpvoteOp,
     this.upvotingOp = false,
@@ -1560,9 +1631,11 @@ class _ThreadDetailHeader extends StatelessWidget {
 
   final ThreadDetailResult detail;
   final String? myHandle;
+  final bool muted;
   final VoidCallback? onRefresh;
   final VoidCallback? onClose;
   final VoidCallback? onDelete;
+  final VoidCallback? onMuteToggle;
   final VoidCallback? onReplyOp;
   final VoidCallback? onUpvoteOp;
   final bool upvotingOp;
@@ -1684,15 +1757,21 @@ class _ThreadDetailHeader extends StatelessWidget {
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
               ),
-            if (onClose != null || onDelete != null)
+            if (onClose != null || onDelete != null || onMuteToggle != null)
               PopupMenuButton<String>(
                 tooltip: 'Thread actions',
                 padding: EdgeInsets.zero,
                 onSelected: (value) {
+                  if (value == 'mute') onMuteToggle?.call();
                   if (value == 'close') onClose?.call();
                   if (value == 'delete') onDelete?.call();
                 },
                 itemBuilder: (context) => [
+                  if (onMuteToggle != null)
+                    PopupMenuItem(
+                      value: 'mute',
+                      child: Text(muted ? 'Unmute' : 'Mute'),
+                    ),
                   if (onClose != null)
                     const PopupMenuItem(value: 'close', child: Text('Close')),
                   if (onDelete != null)

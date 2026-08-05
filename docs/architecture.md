@@ -41,6 +41,8 @@ Free org blob quota: ~500 MB active (platform R2 pool). Premium for heavy artifa
 
 v1: macOS desktop only (MCP + agents).
 
+**Mail delivery:** agents **pull** via MCP on new chat (collaboration skill). When no host turn is running, the Mac app may show a **local metadata notification** (not hub push). Mute is notification-only.
+
 v1.5: iOS Mutande app — full E2E peer (read, reply, blobs, push). Second device key registered on hub. Agents remain desktop-only; ChatGPT/Claude mobile apps are not Mutande clients.
 
 Android: follows iOS v1.5.

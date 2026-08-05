@@ -18,10 +18,61 @@ DaemonClient _mockDaemon(
   Future<http.Response> Function(http.Request) handler,
 ) {
   return DaemonClient(
-    httpClient: MockClient(handler),
+    httpClient: MockClient((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      final method = body['method'] as String?;
+      if (method == 'install_skill') {
+        final params = body['params'] as Map<String, dynamic>? ?? {};
+        final host = params['host'] as String? ?? 'cursor';
+        return _rpcOk(body['id'], {
+          'host': host,
+          'ok': true,
+          'mode': 'auto',
+          'path': '/tmp/.cursor/skills/mutande/SKILL.md',
+          'hint': 'Skill ready',
+        });
+      }
+      if (method == 'list_threads') {
+        // Inbox watch may call this; default empty unless handler overrides.
+      }
+      return handler(request);
+    }),
     httpToken: 'test-token',
     requestTimeout: const Duration(milliseconds: 200),
   );
+}
+
+Future<void> _finishConnectHostFlow(WidgetTester tester) async {
+  // Timed pumps — MutandeOrb's ticker never settles under pumpAndSettle.
+  for (var i = 0; i < 30; i++) {
+    await tester.pump(const Duration(milliseconds: 100));
+    if (find.text('Continue').evaluate().isNotEmpty ||
+        find.text('Skip for now').evaluate().isNotEmpty ||
+        find.text('I’ve added the skill').evaluate().isNotEmpty ||
+        find.text('Retry').evaluate().isNotEmpty) {
+      break;
+    }
+  }
+  final continueBtn = find.text('Continue');
+  if (continueBtn.evaluate().isNotEmpty) {
+    await tester.tap(continueBtn.last);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 700));
+    return;
+  }
+  final added = find.text('I’ve added the skill');
+  if (added.evaluate().isNotEmpty) {
+    await tester.tap(added.last);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 700));
+    return;
+  }
+  final skip = find.text('Skip for now');
+  if (skip.evaluate().isNotEmpty) {
+    await tester.tap(skip.last);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+  }
 }
 
 http.Response _rpcOk(Object? id, Map<String, dynamic> result) {
@@ -244,10 +295,9 @@ void main() {
 
     await tester.tap(find.text('Cursor').last);
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
-    await tester.pumpAndSettle();
+    await _finishConnectHostFlow(tester);
 
-    expect(find.text('Linked Cursor'), findsWidgets);
+    expect(find.textContaining('Linked Cursor'), findsWidgets);
     expect(find.text('Linked'), findsWidgets);
     expect(find.text('Not linked'), findsAtLeastNWidgets(2));
     expect(find.text('Connected 3 AI hosts'), findsNothing);
@@ -329,8 +379,7 @@ void main() {
 
     await tester.tap(find.text('Cursor'));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
-    await tester.pumpAndSettle();
+    await _finishConnectHostFlow(tester);
 
     expect(connectedHost, 'cursor');
     expect(find.text('Added Cursor'), findsWidgets);
@@ -741,9 +790,9 @@ test('validateHandle and validateHubUrl', () {
     expect(find.text('Connect host'), findsOneWidget);
     await tester.tap(find.text('Connect host'));
     await tester.pump();
-    await tester.pumpAndSettle();
+    await _finishConnectHostFlow(tester);
     expect(connectedHost, 'claude');
-    expect(find.text('Linked Claude Desktop'), findsWidgets);
+    expect(find.textContaining('Linked Claude'), findsWidgets);
     expect(find.text('Agent Inspector'), findsNothing);
 
     await tester.tap(find.text('claude').first);
@@ -813,6 +862,8 @@ test('validateHandle and validateHubUrl', () {
 
     expect(find.text('View threads'), findsOneWidget);
     expect(find.text('Set as default'), findsOneWidget);
+    await tester.ensureVisible(find.text('Set as default'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Set as default'));
     await tester.pump();
     await tester.pumpAndSettle();

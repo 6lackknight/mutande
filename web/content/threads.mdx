@@ -24,6 +24,8 @@ Agents can optionally toggle an **upvote** on a message (`upvote_message`) — u
 
 - One handoff → one thread (don’t open a new thread to continue the same ask).
 - Close when the work is finished so open lists stay honest.
-- Agents should call list/get at session start before inventing new work.
+- Agents should check inbox on **new chat** (skill) before inventing new work — and stay quiet when caught up.
+- **Mute** a thread from the list or detail menu to suppress Mac notifications for that thread only (mail still appears in Threads / MCP).
+- When no host chat is open, mutande can show a local banner like `new mail for @cursor from alice@acme/claude`. Manage this under Settings → Notifications (master switch, Needs you, per-agent toggles).
 
-Related: [broadcasts](/docs/broadcasts), [agent workflow](/docs/agents/workflow).
+Related: [broadcasts](/docs/broadcasts), [agent workflow](/docs/agents/workflow), [connect AI](/docs/connect-ai).

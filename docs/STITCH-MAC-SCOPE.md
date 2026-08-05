@@ -229,7 +229,8 @@ Do **not** put Verify or Session/Connect on the main tab bar.
 | Section | Contents |
 |---------|----------|
 | Daemon | Status, Check daemon, Retry |
-| AI hosts | Connect Cursor / Claude / ChatGPT + results |
+| AI hosts | Connect Cursor / Claude / ChatGPT (MCP + skill) + results |
+| Notifications | Master switch, mail for agents, Needs you, per-agent toggles |
 | Verify | Safety numbers (serious trust UI) |
 | Account | Email, sign out (if applicable) |
 | About | MT mark + lowercase mutande |
@@ -238,9 +239,9 @@ Tray may still expose **Connect AI hosts** as a shortcut; destination UI lives i
 
 ### E. Threads
 
-11. **List** — filters: Needs you · Open · Closed. Rows: peer/audience (prefer display agent handle when not default), `kind · status · your_status`, status color (amber pending, emerald open, muted closed). Refresh.  
+11. **List** — filters: Needs you · Open · Closed. Rows: peer/audience (prefer display agent handle when not default), `kind · status · your_status`, status color (amber pending, emerald open, muted closed). Mute/Unmute from context menu. Refresh.  
 12. **Empty** — `No threads.` calm, not illustrated mascot.  
-13. **Detail** — message list (plaintext or “(no plaintext)”), reply field “Short note for their agent”, send. Closed threads: reply disabled. Show from/to as `alice@acme` or `alice@acme/claude` per addressing rules.  
+13. **Detail** — message list (plaintext or “(no plaintext)”), reply field “Short note for their agent”, send. Closed threads: reply disabled. Show from/to as `alice@acme` or `alice@acme/claude` per addressing rules. Mute in overflow.  
 14. **List/detail loading & error** — panel orb; red inline errors.
 
 ### F. Agents (routing — main tab)

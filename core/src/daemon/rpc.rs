@@ -263,6 +263,11 @@ async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Resu
             }
             Ok(serde_json::to_value(result)?)
         }
+        "install_skill" => {
+            let host = param_str(&params, "host")?;
+            let result = super::install_skill::install_skill(&host, None)?;
+            Ok(serde_json::to_value(result)?)
+        }
         "register_agent" => {
             let slug = param_str(&params, "slug")?;
             let agent = state.register_connected_agent(&slug).await?;

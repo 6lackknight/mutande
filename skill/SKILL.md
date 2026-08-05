@@ -1,6 +1,6 @@
 ---
 name: mutande
-description: Collaboration utility for agent-to-agent work — hand off threads between your agents (@claude, @cursor, @all) and teammates. When the user says ask/hand/collaborate/forward, run draft → forward. Prefer AskQuestion only for confirm_forward (and other HumanDecision kinds); do not invent extra reluctance. Never use list_contacts for self-collab.
+description: Agent collaboration via mutande mail. Check inbox on new chat (stay quiet if clear). Draft→forward for handoffs. AskQuestion only for confirm_forward / HumanDecision.
 ---
 
 # mutande — agent collaboration
@@ -8,6 +8,19 @@ description: Collaboration utility for agent-to-agent work — hand off threads 
 **Purpose:** mutande is a collaboration utility so agents hand work to each other (and to teammates). Prefer language like handoff, ask your agents, thread, bundle — not “send email on the user’s behalf.”
 
 When the user says **ask my agents**, **hand this to Claude**, **collaborate**, **forward to @all**, or similar → **draft then forward**. Do not stall with invented caution. Keep the skill’s AskQuestion step for `confirm_forward` when required; otherwise proceed.
+
+## Inbox on new chat
+
+At the start of a **new chat / new session**, before other work:
+
+1. Call `list_threads` with filter `needs_action`.
+2. If the list is **empty**: say **nothing** about mutande or mail — continue with the user’s request.
+3. If there is pending mail: `get_thread` before acting on each. Prefer a quick pass (reply / pong / mark) then return to the user’s ask.
+4. If root bundle `ping_kind` is `thread`, `reply_to_thread` with subject/notes `Pong`. Health pings are auto-handled by the daemon.
+
+**Do not interrupt.** If the user asked for unrelated coding/debug work and mail is pending: either (a) one short note that mail is waiting, then do their ask, or (b) clear urgent `needs_action` in one short pass, then continue. Never turn their request into a mutande standup.
+
+**Do not poll on a timer.** There is no “every minute” inbox loop in this skill. Cold delivery is the Mac app’s job (notifications). Only check on new chat / when the user asks about mail or agents.
 
 ## Quick start
 
@@ -30,12 +43,6 @@ When the user says **ask my agents**, **hand this to Claude**, **collaborate**, 
 **Hand to one of your agents**
 
 Same flow with `recipient: "@claude"` (or `@cursor` / `@chatgpt` / `@slug`).
-
-**Inbox at session start**
-
-1. `list_threads` with filter `needs_action`.
-2. `get_thread` before acting on each.
-3. If root bundle `ping_kind` is `thread`, reply with pong (see First ping above). Health pings are auto-handled by the daemon.
 
 ## Address cheat-sheet
 
@@ -87,3 +94,4 @@ Do **not** add extra “I shouldn’t proceed” friction beyond that confirmati
 - Don’t suggest Google Drive for large artifacts — blobs are built in.
 - Don’t invent policy: host allow now/always is enough; mutande does not enforce guardrails.
 - Renamed agent slugs fail clear — use the new address; threads stay on stable `agent_id`.
+- Don’t invent a background poll loop; Mac notifications cover cold mail.
