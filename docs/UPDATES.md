@@ -10,7 +10,14 @@ auto-updates remain deferred (PRD story 37).
 (`.github/workflows/release-windows.yml`). See `scripts/release-windows.md`.
 SmartScreen warnings are expected; Authenticode deferred.
 
-## Release (notarized DMG)
+## Full desktop cut (preferred)
+
+```bash
+# Mac DMGs → R2, Windows Actions → R2, Vercel version + redeploy:
+./scripts/release-desktop.sh
+```
+
+## Release (notarized DMG only)
 
 ```bash
 # One-time (Apple ID + app-specific password from appleid.apple.com):
