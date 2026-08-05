@@ -516,6 +516,128 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn get_status_hub_failure_is_error_not_needs_onboarding() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let dir = tempfile::tempdir().unwrap();
+        let cfg_path = dir.path().join("config.json");
+        let state = Arc::new(
+            DaemonState::new_in_memory_with_config_path(Some(cfg_path)).unwrap(),
+        );
+
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/me"))
+            .respond_with(ResponseTemplate::new(500).set_body_string("boom"))
+            .mount(&server)
+            .await;
+
+        // auth_login persists tokens before GET /me — session sticks even if /me fails.
+        let login = JsonRpcRequest {
+            jsonrpc: Some("2.0".into()),
+            id: Some(serde_json::json!(1)),
+            method: "auth_login".into(),
+            params: serde_json::json!({
+                "hub_url": server.uri(),
+                "access_token": "auth0-at",
+                "refresh_token": "auth0-rt",
+                "auth0_domain": "tenant.example",
+                "auth0_client_id": "native-id",
+                "open_browser": false,
+            }),
+        };
+        let login_resp = handle_request(&state, login).await;
+        assert!(login_resp.error.is_some(), "login should fail when /me is 500");
+
+        let req = JsonRpcRequest {
+            jsonrpc: Some("2.0".into()),
+            id: Some(serde_json::json!(2)),
+            method: "get_status".into(),
+            params: serde_json::json!({}),
+        };
+        let resp = handle_request(&state, req).await;
+        assert!(resp.error.is_some(), "hub /me failure must be an RPC error");
+        let msg = resp.error.unwrap().message.to_lowercase();
+        assert!(
+            msg.contains("/v1/me") || msg.contains("status"),
+            "unexpected error: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn auth_login_skips_onboarding_when_already_on_org() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let dir = tempfile::tempdir().unwrap();
+        let cfg_path = dir.path().join("config.json");
+        let state = Arc::new(
+            DaemonState::new_in_memory_with_config_path(Some(cfg_path)).unwrap(),
+        );
+
+        let server = MockServer::start().await;
+        let me_ready = serde_json::json!({
+            "auth0_sub": "auth0|web-joined",
+            "email": "a@x.com",
+            "needs_onboarding": false,
+            "onboarded": true,
+            "user": {
+                "id": "u1",
+                "handle": "alice@acme",
+                "org_id": "org-1",
+                "role": "member",
+                "created_at": "2026-01-01T00:00:00Z"
+            },
+            "org": {
+                "id": "org-1",
+                "slug": "acme",
+                "name": "Acme",
+                "created_at": "2026-01-01T00:00:00Z"
+            }
+        });
+        Mock::given(method("GET"))
+            .and(path("/v1/me"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&me_ready))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/v1/devices"))
+            .respond_with(ResponseTemplate::new(201).set_body_json(&serde_json::json!({
+                "device": {
+                    "id": "d1",
+                    "user_id": "u1",
+                    "pubkey": "[0]",
+                    "platform": "macos",
+                    "created_at": "2026-01-01T00:00:00Z"
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        let login = JsonRpcRequest {
+            jsonrpc: Some("2.0".into()),
+            id: Some(serde_json::json!(1)),
+            method: "auth_login".into(),
+            params: serde_json::json!({
+                "hub_url": server.uri(),
+                "access_token": "auth0-at",
+                "refresh_token": "auth0-rt",
+                "auth0_domain": "tenant.example",
+                "auth0_client_id": "native-id",
+                "open_browser": false,
+            }),
+        };
+        let resp = handle_request(&state, login).await;
+        assert!(resp.error.is_none(), "{:?}", resp.error);
+        let result = resp.result.unwrap();
+        assert_eq!(result["configured"], true);
+        assert_eq!(result["needs_onboarding"], false);
+        assert_eq!(result["handle"], "alice@acme");
+        assert_eq!(result["org_id"], "org-1");
+    }
+
+    #[tokio::test]
     async fn auth_login_and_create_org_via_mock_hub() {
         use wiremock::matchers::{method, path};
         use wiremock::{Mock, MockServer, ResponseTemplate};

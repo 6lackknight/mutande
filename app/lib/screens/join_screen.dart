@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../config/app_config.dart';
@@ -38,14 +40,52 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   @override
   void initState() {
     super.initState();
-    final signedIn = widget.status?.signedIn == true ||
-        widget.status?.needsOnboarding == true;
-    _step = signedIn ? _OnboardStep.choose : _OnboardStep.signIn;
+    // Only skip Sign in when hub confirmed signed-in + needs org setup.
+    // Never treat a bare needsOnboarding flag (or hub blip) as create/join.
+    final needsOrg = widget.status?.signedIn == true &&
+        widget.status?.needsOnboarding == true &&
+        widget.status?.configured != true;
+    _step = needsOrg ? _OnboardStep.choose : _OnboardStep.signIn;
     _email = widget.status?.email;
     _slug = TextEditingController();
     _orgName = TextEditingController();
     _handle = TextEditingController();
     _invite = TextEditingController();
+    if (needsOrg) {
+      // Re-check hub: user may have joined on web since local tokens were saved.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(_refreshIfAlreadyOnboarded());
+      });
+    }
+  }
+
+  Future<void> _refreshIfAlreadyOnboarded() async {
+    try {
+      final status = await widget.daemon.getStatus();
+      if (!mounted) return;
+      if (status.configured) {
+        widget.onOnboarded(status);
+        return;
+      }
+      if (status.signedIn && status.needsOnboarding) {
+        setState(() {
+          _email = status.email ?? _email;
+          _step = _OnboardStep.choose;
+        });
+      }
+    } catch (_) {
+      // Leave choose/sign-in as-is; transport errors are handled at RootScreen.
+    }
+  }
+
+  Future<void> _finishIfConfigured() async {
+    final status = await widget.daemon.getStatus();
+    if (!mounted) return;
+    if (status.configured) {
+      widget.onOnboarded(status);
+      return;
+    }
+    throw StateError('Still needs team setup');
   }
 
   @override
@@ -118,11 +158,16 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         name: _orgName.text.trim().isEmpty ? null : _orgName.text.trim(),
         handle: handle.isEmpty ? null : handle,
       );
-      final status = await widget.daemon.getStatus();
-      if (!mounted) return;
-      widget.onOnboarded(status);
+      await _finishIfConfigured();
     } catch (e) {
       if (!mounted) return;
+      // Web join may have completed for this Auth0 account already.
+      if (_looksAlreadyOnboarded(e)) {
+        try {
+          await _finishIfConfigured();
+          return;
+        } catch (_) {}
+      }
       setState(() {
         _submitting = false;
         _error = e.toString();
@@ -153,16 +198,26 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         inviteCode: invite,
         handle: handle.isEmpty ? null : handle,
       );
-      final status = await widget.daemon.getStatus();
-      if (!mounted) return;
-      widget.onOnboarded(status);
+      await _finishIfConfigured();
     } catch (e) {
       if (!mounted) return;
+      if (_looksAlreadyOnboarded(e)) {
+        try {
+          await _finishIfConfigured();
+          return;
+        } catch (_) {}
+      }
       setState(() {
         _submitting = false;
         _error = e.toString();
       });
     }
+  }
+
+  bool _looksAlreadyOnboarded(Object error) {
+    final msg = error.toString().toLowerCase();
+    return msg.contains('already onboarded') ||
+        msg.contains('already has an organization');
   }
 
   @override
@@ -302,6 +357,16 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       }),
               child: const Text('I have an invite'),
             ),
+          ),
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: _submitting
+                ? null
+                : () => setState(() {
+                      _error = null;
+                      _step = _OnboardStep.signIn;
+                    }),
+            child: const Text('Sign in again'),
           ),
         ];
       case _OnboardStep.createTeam:

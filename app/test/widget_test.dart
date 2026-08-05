@@ -455,9 +455,20 @@ void main() {
   });
 
   testWidgets('onboarding choose step when signed in', (WidgetTester tester) async {
+    final daemon = _mockDaemon((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      return _rpcOk(body['id'], {
+        'configured': false,
+        'signed_in': true,
+        'needs_onboarding': true,
+        'email': 'a@x.com',
+      });
+    });
+
     await tester.pumpWidget(
       MutandeApp(
         config: const AppConfig(hubUrl: 'http://localhost:8000'),
+        daemon: daemon,
         seedStatus: const DaemonStatusResult(
           configured: false,
           signedIn: true,
@@ -467,10 +478,78 @@ void main() {
         welcomeDuration: Duration.zero,
       ),
     );
+    await tester.pump(); // post-frame org re-check
 
     expect(find.text('Create a team'), findsOneWidget);
     expect(find.text('I have an invite'), findsOneWidget);
+    expect(find.text('Sign in again'), findsOneWidget);
     expect(find.text('a@x.com'), findsOneWidget);
+  });
+
+  testWidgets('web-joined user refreshes past create/join', (WidgetTester tester) async {
+    final daemon = _mockDaemon((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      return _rpcOk(body['id'], {
+        'configured': true,
+        'signed_in': true,
+        'needs_onboarding': false,
+        'handle': 'alice@acme',
+        'org_id': 'org-1',
+        'email': 'a@x.com',
+      });
+    });
+
+    await tester.pumpWidget(
+      MutandeApp(
+        config: const AppConfig(hubUrl: 'http://localhost:8000'),
+        daemon: daemon,
+        seedStatus: const DaemonStatusResult(
+          configured: false,
+          signedIn: true,
+          needsOnboarding: true,
+          email: 'a@x.com',
+        ),
+        firstRunStore: FirstRunStore.memory(
+          connectComplete: true,
+          pingComplete: true,
+        ),
+        hostLinkStore: HostLinkStore.memory(),
+        welcomeDuration: Duration.zero,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(find.text('Create a team'), findsNothing);
+    expect(find.text('I have an invite'), findsNothing);
+    expect(find.text('Sign in with Auth0'), findsNothing);
+  });
+
+  testWidgets('already onboarded status skips create/join', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MutandeApp(
+        config: const AppConfig(hubUrl: 'http://localhost:8000'),
+        seedStatus: const DaemonStatusResult(
+          configured: true,
+          signedIn: true,
+          needsOnboarding: false,
+          handle: 'alice@acme',
+          orgId: 'org-1',
+          email: 'a@x.com',
+        ),
+        firstRunStore: FirstRunStore.memory(
+          connectComplete: true,
+          pingComplete: true,
+        ),
+        hostLinkStore: HostLinkStore.memory(),
+        welcomeDuration: Duration.zero,
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Create a team'), findsNothing);
+    expect(find.text('I have an invite'), findsNothing);
+    expect(find.text('Sign in with Auth0'), findsNothing);
   });
 
   testWidgets('daemon transport failure shows error not Join', (

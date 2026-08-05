@@ -729,6 +729,10 @@ impl DaemonState {
     }
 
     /// Session status from local tokens + hub `/me` when reachable.
+    ///
+    /// Hub `/me` failures must not look like `needs_onboarding` — that wrongly
+    /// sends already-onboarded users (e.g. joined on web) through create/join.
+    /// Flutter treats RPC errors as transport issues, not onboarding.
     pub async fn get_status(&self) -> Result<StatusResult> {
         let cfg = self.config.lock().unwrap().clone();
         let signed_in = cfg.hub_url.is_some() && cfg.access_token.is_some();
@@ -746,28 +750,14 @@ impl DaemonState {
             });
         }
 
-        if let Some(hub) = self.hub_client() {
-            if let Ok(me) = hub.me().await {
-                let mut status = status_from_me(&cfg.hub_url, &me);
-                status.connected_agent = self.connected_agent_slug();
-                status.default_agent = self.default_agent_slug().await;
-                return Ok(status);
-            }
-        }
-
-        // Tokens present but hub unreachable — keep last-known configured=false
-        // for onboarding routing; Flutter treats transport errors separately.
-        Ok(StatusResult {
-            configured: false,
-            signed_in: true,
-            needs_onboarding: true,
-            hub_url: cfg.hub_url,
-            handle: None,
-            org_id: None,
-            email: None,
-            connected_agent: self.connected_agent_slug(),
-            default_agent: None,
-        })
+        let hub = self
+            .hub_client()
+            .context("signed in but hub client missing")?;
+        let me = hub.me().await.context("GET /v1/me for status")?;
+        let mut status = status_from_me(&cfg.hub_url, &me);
+        status.connected_agent = self.connected_agent_slug();
+        status.default_agent = self.default_agent_slug().await;
+        Ok(status)
     }
 
     pub fn device_public(&self) -> Result<DevicePubKey> {
