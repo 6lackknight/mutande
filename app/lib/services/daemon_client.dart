@@ -26,6 +26,7 @@ import '../platform/user_home.dart';
 /// | `health` | Liveness ping; returns `{ ok, service, version? }` |
 /// | `get_status` / `me` | signed_in / needs_onboarding / configured + handle |
 /// | `auth_login` | Auth0 loopback (or injected token) → persist tokens |
+/// | `auth_logout` | Clear Auth0 tokens; keep hub URL for re-login |
 /// | `create_org` | Create team after Auth0 |
 /// | `join_org` / `onboard` | Join via invite after Auth0 |
 /// | `list_contacts` | Org members + synthetic `@all@org` |
@@ -114,6 +115,13 @@ class DaemonClient {
       params,
       const Duration(minutes: 5),
     );
+    final map = result as Map<String, dynamic>? ?? {};
+    return DaemonStatusResult.fromJson(map);
+  }
+
+  /// Clear Auth0 tokens locally (device Keychain identity kept).
+  Future<DaemonStatusResult> authLogout() async {
+    final result = await _call('auth_logout', null);
     final map = result as Map<String, dynamic>? ?? {};
     return DaemonStatusResult.fromJson(map);
   }

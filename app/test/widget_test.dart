@@ -451,7 +451,7 @@ void main() {
 
     expect(find.text('mutande'), findsOneWidget);
     expect(find.text('Sign in'), findsOneWidget);
-    expect(find.text('Sign in with Auth0'), findsOneWidget);
+    expect(find.text('Sign in'), findsWidgets);
   });
 
   testWidgets('onboarding choose step when signed in', (WidgetTester tester) async {

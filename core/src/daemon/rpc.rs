@@ -105,6 +105,10 @@ async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Resu
                 .await?;
             Ok(serde_json::to_value(result)?)
         }
+        "auth_logout" => {
+            let result = state.auth_logout()?;
+            Ok(serde_json::to_value(result)?)
+        }
         "create_org" => {
             let slug = param_str(&params, "slug")?;
             let name = optional_str(&params, "name");
@@ -759,5 +763,63 @@ mod tests {
         let resp = handle_request(&state, req).await;
         assert!(resp.error.is_some());
         assert!(resp.error.unwrap().message.contains("auth_login"));
+    }
+
+    #[tokio::test]
+    async fn auth_logout_clears_tokens_keeps_hub_url() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let dir = tempfile::tempdir().unwrap();
+        let cfg_path = dir.path().join("config.json");
+        let state = Arc::new(
+            DaemonState::new_in_memory_with_config_path(Some(cfg_path.clone())).unwrap(),
+        );
+
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/me"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                "auth0_sub": "auth0|u",
+                "email": "a@x.com",
+                "needs_onboarding": true,
+                "onboarded": false
+            })))
+            .mount(&server)
+            .await;
+
+        let login = JsonRpcRequest {
+            jsonrpc: Some("2.0".into()),
+            id: Some(serde_json::json!(1)),
+            method: "auth_login".into(),
+            params: serde_json::json!({
+                "hub_url": server.uri(),
+                "access_token": "auth0-at",
+                "refresh_token": "auth0-rt",
+                "auth0_domain": "tenant.example",
+                "auth0_client_id": "native-id",
+                "open_browser": false,
+            }),
+        };
+        assert!(handle_request(&state, login).await.error.is_none());
+
+        let logout = JsonRpcRequest {
+            jsonrpc: Some("2.0".into()),
+            id: Some(serde_json::json!(2)),
+            method: "auth_logout".into(),
+            params: serde_json::json!({}),
+        };
+        let resp = handle_request(&state, logout).await;
+        assert!(resp.error.is_none(), "{:?}", resp.error);
+        let result = resp.result.unwrap();
+        assert_eq!(result["signed_in"], false);
+        assert_eq!(result["configured"], false);
+        assert_eq!(result["hub_url"], server.uri());
+
+        let saved: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&cfg_path).unwrap()).unwrap();
+        assert!(saved.get("access_token").is_none());
+        assert!(saved.get("refresh_token").is_none());
+        assert_eq!(saved["hub_url"], server.uri());
     }
 }

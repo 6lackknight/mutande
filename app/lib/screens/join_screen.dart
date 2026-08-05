@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../config/app_config.dart';
 import '../services/daemon_client.dart';
+import '../theme/mutande_macos_theme.dart';
 import '../widgets/thinking_orb.dart';
 
 enum _OnboardStep { signIn, choose, createTeam, joinInvite }
@@ -42,7 +43,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     super.initState();
     // Only skip Sign in when hub confirmed signed-in + needs org setup.
     // Never treat a bare needsOnboarding flag (or hub blip) as create/join.
-    final needsOrg = widget.status?.signedIn == true &&
+    final needsOrg =
+        widget.status?.signedIn == true &&
         widget.status?.needsOnboarding == true &&
         widget.status?.configured != true;
     _step = needsOrg ? _OnboardStep.choose : _OnboardStep.signIn;
@@ -97,6 +99,18 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     super.dispose();
   }
 
+  String _friendlyError(Object e, {required String what}) {
+    final base = friendlyDaemonError(e, what: what);
+    final lower = base.toLowerCase();
+    if (lower.contains('get /v1/me') || lower.contains('after auth0')) {
+      return 'Browser sign-in worked, but the hub rejected the session. Try again.';
+    }
+    if (lower.contains('open settings') && _step == _OnboardStep.signIn) {
+      return 'Sign-in was rejected. Try again with the same account you use on the web.';
+    }
+    return base;
+  }
+
   Future<void> _signIn() async {
     setState(() {
       _submitting = true;
@@ -123,7 +137,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       if (!mounted) return;
       setState(() {
         _submitting = false;
-        _error = e.toString();
+        _error = _friendlyError(e, what: 'Sign-in');
       });
     }
   }
@@ -170,7 +184,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       }
       setState(() {
         _submitting = false;
-        _error = e.toString();
+        _error = _friendlyError(e, what: 'Create team');
       });
     }
   }
@@ -209,7 +223,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       }
       setState(() {
         _submitting = false;
-        _error = e.toString();
+        _error = _friendlyError(e, what: 'Join');
       });
     }
   }
@@ -217,12 +231,17 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   bool _looksAlreadyOnboarded(Object error) {
     final msg = error.toString().toLowerCase();
     return msg.contains('already onboarded') ||
+        msg.contains('already a member') ||
         msg.contains('already has an organization');
   }
+
+  bool get _welcomeStep =>
+      _step == _OnboardStep.signIn || _step == _OnboardStep.choose;
 
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
 
     return Scaffold(
       body: Stack(
@@ -231,53 +250,71 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           SafeArea(
             child: Center(
               child: SingleChildScrollView(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 28, vertical: 36),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 32,
+                  vertical: 40,
+                ),
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 360),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const _BrandMark(),
-                      const SizedBox(height: 28),
-                      Text(
-                        _title(),
-                        style: text.titleLarge?.copyWith(
-                          color: const Color(0xFF292524),
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: -0.3,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        _subtitle(),
-                        style: text.bodyMedium?.copyWith(
-                          color: const Color(0xFF78716C),
-                          height: 1.35,
-                        ),
-                      ),
-                      if (_email != null && _email!.isNotEmpty) ...[
-                        const SizedBox(height: 4),
+                  constraints: const BoxConstraints(maxWidth: 340),
+                  child: AnimatedSwitcher(
+                    duration: reduceMotion
+                        ? Duration.zero
+                        : const Duration(milliseconds: 280),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeInCubic,
+                    child: Column(
+                      key: ValueKey(_step),
+                      crossAxisAlignment: _welcomeStep
+                          ? CrossAxisAlignment.center
+                          : CrossAxisAlignment.stretch,
+                      children: [
+                        const _BrandMark(),
+                        SizedBox(height: _welcomeStep ? 40 : 32),
                         Text(
-                          _email!,
-                          style: text.bodySmall?.copyWith(
-                            color: const Color(0xFF57534E),
+                          _title(),
+                          textAlign: _welcomeStep
+                              ? TextAlign.center
+                              : TextAlign.start,
+                          style: text.headlineSmall?.copyWith(
+                            color: MutandeColors.stone800,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: -0.4,
+                            height: 1.15,
                           ),
                         ),
-                      ],
-                      const SizedBox(height: 28),
-                      ..._stepBody(text),
-                      if (_error != null) ...[
-                        const SizedBox(height: 14),
+                        const SizedBox(height: 8),
                         Text(
-                          _error!,
-                          style: text.bodySmall?.copyWith(
-                            color: const Color(0xFF991B1B),
-                            height: 1.35,
+                          _subtitle(),
+                          textAlign: _welcomeStep
+                              ? TextAlign.center
+                              : TextAlign.start,
+                          style: text.bodyMedium?.copyWith(
+                            color: MutandeColors.stone500,
+                            height: 1.45,
+                            fontSize: 14.5,
                           ),
                         ),
+                        if (_email != null && _email!.isNotEmpty) ...[
+                          const SizedBox(height: 10),
+                          Text(
+                            _email!,
+                            textAlign: _welcomeStep
+                                ? TextAlign.center
+                                : TextAlign.start,
+                            style: text.bodySmall?.copyWith(
+                              color: MutandeColors.stone600,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                        SizedBox(height: _welcomeStep ? 32 : 28),
+                        ..._stepBody(text),
+                        if (_error != null) ...[
+                          const SizedBox(height: 16),
+                          _ErrorBanner(message: _error!),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -304,14 +341,53 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   String _subtitle() {
     switch (_step) {
       case _OnboardStep.signIn:
-        return 'Use the same Auth0 account as the web app. A browser window will open.';
+        return 'Same account as the web. Your browser will open to continue.';
       case _OnboardStep.choose:
-        return 'Create a new org or join one you were invited to.';
+        return 'Create a new team, or join one you’ve been invited to.';
       case _OnboardStep.createTeam:
-        return 'Pick a team slug and optional handle.';
+        return 'Choose a slug for your team. Handle is optional.';
       case _OnboardStep.joinInvite:
         return 'Paste the invite code from your admin.';
     }
+  }
+
+  ButtonStyle get _primaryStyle => FilledButton.styleFrom(
+    backgroundColor: MutandeColors.stone800,
+    foregroundColor: MutandeColors.stone50,
+    disabledBackgroundColor: MutandeColors.stone200,
+    disabledForegroundColor: MutandeColors.stone500,
+    minimumSize: const Size.fromHeight(48),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    textStyle: const TextStyle(
+      fontWeight: FontWeight.w600,
+      fontSize: 15,
+      letterSpacing: -0.1,
+    ),
+  );
+
+  ButtonStyle get _secondaryStyle => OutlinedButton.styleFrom(
+    foregroundColor: MutandeColors.stone800,
+    side: const BorderSide(color: MutandeColors.stone200),
+    minimumSize: const Size.fromHeight(48),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    textStyle: const TextStyle(
+      fontWeight: FontWeight.w600,
+      fontSize: 15,
+      letterSpacing: -0.1,
+    ),
+  );
+
+  Widget _ghostLink({required String label, required VoidCallback? onPressed}) {
+    return TextButton(
+      onPressed: onPressed,
+      style: TextButton.styleFrom(
+        foregroundColor: MutandeColors.bronze,
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        minimumSize: const Size(44, 44),
+        textStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
+      ),
+      child: Text(label),
+    );
   }
 
   List<Widget> _stepBody(TextTheme text) {
@@ -319,54 +395,57 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       case _OnboardStep.signIn:
         return [
           SizedBox(
-            height: 44,
+            width: double.infinity,
             child: FilledButton(
+              style: _primaryStyle,
               onPressed: _submitting ? null : _signIn,
               child: _submitting
                   ? const MutandeOrb.loading(
                       semanticLabel: 'Signing in…',
                       dark: true,
                     )
-                  : const Text('Sign in with Auth0'),
+                  : const Text('Continue'),
             ),
           ),
         ];
       case _OnboardStep.choose:
         return [
           SizedBox(
-            height: 44,
+            width: double.infinity,
             child: FilledButton(
+              style: _primaryStyle,
               onPressed: _submitting
                   ? null
                   : () => setState(() {
-                        _error = null;
-                        _step = _OnboardStep.createTeam;
-                      }),
+                      _error = null;
+                      _step = _OnboardStep.createTeam;
+                    }),
               child: const Text('Create a team'),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           SizedBox(
-            height: 44,
+            width: double.infinity,
             child: OutlinedButton(
+              style: _secondaryStyle,
               onPressed: _submitting
                   ? null
                   : () => setState(() {
-                        _error = null;
-                        _step = _OnboardStep.joinInvite;
-                      }),
+                      _error = null;
+                      _step = _OnboardStep.joinInvite;
+                    }),
               child: const Text('I have an invite'),
             ),
           ),
-          const SizedBox(height: 8),
-          TextButton(
+          const SizedBox(height: 6),
+          _ghostLink(
+            label: 'Use a different account',
             onPressed: _submitting
                 ? null
                 : () => setState(() {
-                      _error = null;
-                      _step = _OnboardStep.signIn;
-                    }),
-            child: const Text('Sign in again'),
+                    _error = null;
+                    _step = _OnboardStep.signIn;
+                  }),
           ),
         ];
       case _OnboardStep.createTeam:
@@ -397,27 +476,26 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             textInputAction: TextInputAction.done,
             onSubmitted: (_) => _createTeam(),
           ),
-          const SizedBox(height: 22),
-          SizedBox(
-            height: 44,
-            child: FilledButton(
-              onPressed: _submitting ? null : _createTeam,
-              child: _submitting
-                  ? const MutandeOrb.loading(
-                      semanticLabel: 'Creating…',
-                      dark: true,
-                    )
-                  : const Text('Create team'),
-            ),
+          const SizedBox(height: 24),
+          FilledButton(
+            style: _primaryStyle,
+            onPressed: _submitting ? null : _createTeam,
+            child: _submitting
+                ? const MutandeOrb.loading(
+                    semanticLabel: 'Creating…',
+                    dark: true,
+                  )
+                : const Text('Create team'),
           ),
-          TextButton(
+          const SizedBox(height: 4),
+          _ghostLink(
+            label: 'Back',
             onPressed: _submitting
                 ? null
                 : () => setState(() {
-                      _error = null;
-                      _step = _OnboardStep.choose;
-                    }),
-            child: const Text('Back'),
+                    _error = null;
+                    _step = _OnboardStep.choose;
+                  }),
           ),
         ];
       case _OnboardStep.joinInvite:
@@ -441,30 +519,58 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             textInputAction: TextInputAction.done,
             onSubmitted: (_) => _joinInvite(),
           ),
-          const SizedBox(height: 22),
-          SizedBox(
-            height: 44,
-            child: FilledButton(
-              onPressed: _submitting ? null : _joinInvite,
-              child: _submitting
-                  ? const MutandeOrb.loading(
-                      semanticLabel: 'Joining…',
-                      dark: true,
-                    )
-                  : const Text('Join team'),
-            ),
+          const SizedBox(height: 24),
+          FilledButton(
+            style: _primaryStyle,
+            onPressed: _submitting ? null : _joinInvite,
+            child: _submitting
+                ? const MutandeOrb.loading(
+                    semanticLabel: 'Joining…',
+                    dark: true,
+                  )
+                : const Text('Join team'),
           ),
-          TextButton(
+          const SizedBox(height: 4),
+          _ghostLink(
+            label: 'Back',
             onPressed: _submitting
                 ? null
                 : () => setState(() {
-                      _error = null;
-                      _step = _OnboardStep.choose;
-                    }),
-            child: const Text('Back'),
+                    _error = null;
+                    _step = _OnboardStep.choose;
+                  }),
           ),
         ];
     }
+  }
+}
+
+class _ErrorBanner extends StatelessWidget {
+  const _ErrorBanner({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      liveRegion: true,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFEF2F2),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: const Color(0xFFFECACA)),
+        ),
+        child: Text(
+          message,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: const Color(0xFF9F1239),
+            height: 1.4,
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -478,9 +584,9 @@ class _FieldLabel extends StatelessWidget {
     return Text(
       text,
       style: Theme.of(context).textTheme.labelLarge?.copyWith(
-            color: const Color(0xFF57534E),
-            fontWeight: FontWeight.w500,
-          ),
+        color: MutandeColors.stone600,
+        fontWeight: FontWeight.w500,
+      ),
     );
   }
 }
@@ -492,24 +598,40 @@ class _BrandMark extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: Image.asset(
-            'assets/tray_icon.png',
-            width: 44,
-            height: 44,
-            filterQuality: FilterQuality.medium,
+        Container(
+          width: 52,
+          height: 52,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x140C0A09),
+                blurRadius: 16,
+                offset: Offset(0, 6),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: Image.asset(
+              'assets/tray_icon.png',
+              width: 52,
+              height: 52,
+              filterQuality: FilterQuality.medium,
+              semanticLabel: 'mutande',
+            ),
           ),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 16),
         Text(
           'mutande',
           textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                color: const Color(0xFF292524),
-                fontWeight: FontWeight.w600,
-                letterSpacing: -0.6,
-              ),
+          style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+            color: MutandeColors.stone800,
+            fontWeight: FontWeight.w600,
+            letterSpacing: -0.8,
+            height: 1.05,
+          ),
         ),
       ],
     );
@@ -525,30 +647,33 @@ class _JoinAtmosphere extends StatelessWidget {
     return DecoratedBox(
       decoration: const BoxDecoration(
         gradient: RadialGradient(
-          center: Alignment(0, -0.35),
-          radius: 1.15,
+          center: Alignment(0, -0.4),
+          radius: 1.2,
           colors: [
-            Color(0xFFFAFAF9),
-            Color(0xFFF5F5F4),
-            Color(0xFFE7E5E4),
+            Color(0xFFFFFCF9),
+            MutandeColors.stone50,
+            MutandeColors.stone100,
+            MutandeColors.stone200,
           ],
-          stops: [0.0, 0.55, 1.0],
+          stops: [0.0, 0.35, 0.72, 1.0],
         ),
       ),
-      child: CustomPaint(painter: _GrainPainter()),
+      child: const CustomPaint(painter: _GrainPainter()),
     );
   }
 }
 
 class _GrainPainter extends CustomPainter {
+  const _GrainPainter();
+
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = const Color(0x0A44403C);
-    const step = 6.0;
+    final paint = Paint()..color = const Color(0x0844403C);
+    const step = 7.0;
     for (var y = 0.0; y < size.height; y += step) {
       for (var x = 0.0; x < size.width; x += step) {
-        if (((x + y * 3).toInt() * 17) % 11 == 0) {
-          canvas.drawCircle(Offset(x, y), 0.6, paint);
+        if (((x + y * 3).toInt() * 17) % 13 == 0) {
+          canvas.drawCircle(Offset(x, y), 0.55, paint);
         }
       }
     }

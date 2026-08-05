@@ -388,6 +388,16 @@ class _RootScreenState extends State<RootScreen> {
     }
   }
 
+  void _onSignedOut(DaemonStatusResult status) {
+    setState(() {
+      _status = status;
+      _statusError = null;
+      _pendingConnectHosts = false;
+      _connectResult = null;
+      _connectError = null;
+    });
+  }
+
   void _onConnectHostsRequested() {
     final tick = AppActions.connectHostsTick.value;
     if (tick == _lastConnectTick) return;
@@ -530,6 +540,7 @@ class _RootScreenState extends State<RootScreen> {
       connectResult: _connectResult,
       connectError: _connectError,
       onConnectHosts: _runConnectHosts,
+      onSignedOut: _onSignedOut,
       hostLinkStore: _hostLinkStore,
       notificationPrefs: _notificationPrefs,
       initialThreadId: _openThreadId,
@@ -549,6 +560,7 @@ class HomeScreen extends StatefulWidget {
     this.connectResult,
     this.connectError,
     required this.onConnectHosts,
+    this.onSignedOut,
     this.hostLinkStore,
     this.notificationPrefs,
     this.initialThreadId,
@@ -563,6 +575,7 @@ class HomeScreen extends StatefulWidget {
   final ConnectHostResult? connectResult;
   final String? connectError;
   final VoidCallback onConnectHosts;
+  final ValueChanged<DaemonStatusResult>? onSignedOut;
   final HostLinkStore? hostLinkStore;
   final NotificationPrefsStore? notificationPrefs;
   final String? initialThreadId;
@@ -760,6 +773,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 Navigator.of(sheetContext).pop();
                 _selectTab(1);
               },
+              onSignedOut: widget.onSignedOut == null
+                  ? null
+                  : (status) {
+                      Navigator.of(sheetContext).pop();
+                      widget.onSignedOut!(status);
+                    },
             ),
           ),
         );

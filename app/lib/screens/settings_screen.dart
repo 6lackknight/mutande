@@ -25,6 +25,7 @@ class SettingsScreen extends StatefulWidget {
     this.appVersion = AppConfig.appVersion,
     this.onOpenThreads,
     this.onOpenAgents,
+    this.onSignedOut,
     HostLinkStore? hostLinkStore,
     NotificationPrefsStore? notificationPrefs,
   }) : hostLinkStore = hostLinkStore ?? HostLinkStore(),
@@ -42,6 +43,8 @@ class SettingsScreen extends StatefulWidget {
   final VoidCallback? onOpenThreads;
   /// Close settings and jump home Agents graph.
   final VoidCallback? onOpenAgents;
+  /// After local Auth0 logout — parent should leave Home for Sign in.
+  final ValueChanged<DaemonStatusResult>? onSignedOut;
   final HostLinkStore hostLinkStore;
   final NotificationPrefsStore notificationPrefs;
 
@@ -112,6 +115,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } catch (_) {
       if (!mounted) return;
       setState(() => _loadingSafety = false);
+    }
+  }
+
+  Future<void> _signOut() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Sign out?'),
+        content: const Text(
+          'You’ll need to sign in again to use mutande on this Mac. '
+          'Your device keys stay on this machine.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Sign out'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      final status = await widget.daemon.authLogout();
+      if (!mounted) return;
+      widget.onSignedOut?.call(status);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(content: Text('Couldn’t sign out: $e')),
+      );
     }
   }
 
@@ -335,7 +372,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 28),
             _sectionHeader(context, 'ACCOUNT'),
             const SizedBox(height: 8),
-            _AccountCard(handle: widget.handle),
+            _AccountCard(
+              handle: widget.handle,
+              onSignOut: widget.onSignedOut == null ? null : _signOut,
+            ),
             const SizedBox(height: 28),
             _sectionHeader(context, 'FEEDBACK'),
             const SizedBox(height: 8),
@@ -876,9 +916,10 @@ class _DigitBlock extends StatelessWidget {
 }
 
 class _AccountCard extends StatelessWidget {
-  const _AccountCard({this.handle});
+  const _AccountCard({this.handle, this.onSignOut});
 
   final String? handle;
+  final VoidCallback? onSignOut;
 
   @override
   Widget build(BuildContext context) {
@@ -892,26 +933,26 @@ class _AccountCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: const Color(0xFFE7E5E4)),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          CircleAvatar(
-            radius: 20,
-            backgroundColor: const Color(0xFFE7E5E4),
-            child: Text(
-              initial,
-              style: const TextStyle(
-                color: Color(0xFF57534E),
-                fontWeight: FontWeight.w700,
-                fontSize: 16,
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 20,
+                backgroundColor: const Color(0xFFE7E5E4),
+                child: Text(
+                  initial,
+                  style: const TextStyle(
+                    color: Color(0xFF57534E),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 16,
+                  ),
+                ),
               ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
                   h,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: const Color(0xFF292524),
@@ -920,9 +961,25 @@ class _AccountCard extends StatelessWidget {
                         fontSize: 13,
                       ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
+          if (onSignOut != null) ...[
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                onPressed: onSignOut,
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFF9F1239),
+                  padding: EdgeInsets.zero,
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: const Text('Sign out'),
+              ),
+            ),
+          ],
         ],
       ),
     );

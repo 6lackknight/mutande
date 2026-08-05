@@ -531,6 +531,38 @@ impl DaemonState {
         Ok(status_from_me(&hub_url, &me))
     }
 
+    /// Clear Auth0 tokens and hub client; keep hub URL / Auth0 client settings for re-login.
+    /// Does not wipe device Keychain identity.
+    pub fn auth_logout(&self) -> Result<StatusResult> {
+        let mut cfg = self.config.lock().unwrap();
+        cfg.access_token = None;
+        cfg.refresh_token = None;
+        let hub_url = cfg.hub_url.clone();
+        let to_save = cfg.clone();
+        drop(cfg);
+
+        let path = self.config_path.clone().unwrap_or_else(config_path);
+        save_config_at(&path, &to_save)?;
+
+        *self.hub.lock().unwrap() = None;
+        *self.draft.lock().unwrap() = MutandeBundle::default();
+        *self.draft_id.lock().unwrap() = None;
+        self.processed_threads.lock().unwrap().clear();
+        *self.connected_agent_slug.lock().unwrap() = None;
+
+        Ok(StatusResult {
+            configured: false,
+            signed_in: false,
+            needs_onboarding: false,
+            hub_url,
+            handle: None,
+            org_id: None,
+            email: None,
+            connected_agent: None,
+            default_agent: None,
+        })
+    }
+
     /// Create org for signed-in Auth0 user, then register device.
     pub async fn create_org(
         &self,

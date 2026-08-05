@@ -31,7 +31,7 @@ See [`docs/AUTH0.md`](../docs/AUTH0.md) and [`core/.env.example`](.env.example):
 
 Config (`~/.mutande/config.json`, `0o600`): `hub_url`, `access_token`, `refresh_token`, Auth0 domain/client/audience.
 
-RPC: `auth_login` → `create_org` / `join_org` → device `POST /v1/devices`. Hub JWT register is gone.
+RPC: `auth_login` → `create_org` / `join_org` → device `POST /v1/devices`. `auth_logout` clears tokens. Hub JWT register is gone.
 
 ## Build
 
