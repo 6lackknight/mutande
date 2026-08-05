@@ -29,6 +29,7 @@ Addressing now covers same-user agent collaboration (`@claude` / bare `@all`) pl
 - [ ] Sole-member `@all@org` encrypts to own devices (default-agent inbox)
 - [ ] `list_contacts` stays bare handles; shorthand `@slug` is for self only
 - [ ] Flutter routing graph: Add can pick idle hosts; Agent Inspector polish (mention if docs cover Mac UI)
+- [ ] **Linked host ≠ live MCP:** “Linked” means config was installed under `~/.mutande/bin/mutande-core` and written to the host MCP file; user must quit/reopen the host (Claude Desktop / Cursor) and Allow tools — app does not probe the host’s running MCP session
 - [ ] Hub `GET/POST /v1/agents` (etc.) must be **deployed** for prod — call out in hub/ops docs
 
 ## Checklist for the docs agent

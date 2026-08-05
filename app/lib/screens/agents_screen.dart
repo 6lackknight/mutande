@@ -191,9 +191,16 @@ class _AgentsPanelState extends State<AgentsPanel> {
             : 'Could not link $label.',
       );
     }
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('Linked $label')));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          write.note?.trim().isNotEmpty == true
+              ? 'Linked $label. ${write.note!.trim()}'
+              : 'Linked $label. Quit and reopen $label so it loads mutande MCP.',
+        ),
+        duration: const Duration(seconds: 6),
+      ),
+    );
   }
 
   void _openInspector(AgentInfo agent, {required bool isPrimary}) {
@@ -1372,6 +1379,30 @@ class _AgentInspectorState extends State<_AgentInspector> {
                       ),
                     ),
                   ),
+                  if (_linked) ...[
+                    if ((widget.link?.path ?? '').trim().isNotEmpty)
+                      _InspectorField(
+                        label: 'Config path',
+                        value: widget.link!.path!,
+                      ),
+                    if ((widget.link?.command ?? '').trim().isNotEmpty)
+                      _InspectorField(
+                        label: 'MCP command',
+                        value: widget.link!.command!,
+                      ),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Text(
+                        (widget.link?.note ?? '').trim().isNotEmpty
+                            ? widget.link!.note!.trim()
+                            : 'Quit and reopen $_host so it loads the mutande MCP tools.',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: const Color(0xFF78716C),
+                              height: 1.35,
+                            ),
+                      ),
+                    ),
+                  ],
                   AnimatedSize(
                     duration: motion,
                     curve: Curves.easeOutCubic,
@@ -1401,6 +1432,13 @@ class _AgentInspectorState extends State<_AgentInspector> {
                     onPressed: _busy ? null : _onRename,
                     busy: _renaming,
                   ),
+                  if (_linked)
+                    _InspectorTextAction(
+                      icon: Icons.link,
+                      label: _connecting ? 'Reconnecting…' : 'Reconnect host',
+                      onPressed: _busy ? null : _onConnect,
+                      busy: _connecting,
+                    ),
                   if (_linked)
                     _InspectorTextAction(
                       icon: Icons.link_off,

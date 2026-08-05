@@ -1,8 +1,25 @@
 /**
- * Public installers — alpha channel.
- * Binaries live in web/public/downloads/ (gitignored); copy before deploy.
- * Override URLs on Vercel with NEXT_PUBLIC_* if hosting moves off this site.
+ * Public installers — alpha channel on Cloudflare R2 (`mutande-releases`).
+ *
+ * Set NEXT_PUBLIC_DOWNLOADS_BASE to the public origin (no trailing slash), e.g.
+ *   https://downloads.mutande.online
+ * Upload with: ./scripts/upload-downloads-r2.sh
+ *
+ * Relative `/downloads/…` fallbacks are local-dev only (gitignored copies).
  */
+
+const DOWNLOADS_BASE = (
+  process.env.NEXT_PUBLIC_DOWNLOADS_BASE ??
+  "https://downloads.mutande.online"
+).replace(/\/$/, "");
+
+function installerUrl(fileName: string, legacyPath: string): string {
+  if (DOWNLOADS_BASE) {
+    return `${DOWNLOADS_BASE}/${fileName}`;
+  }
+  return legacyPath;
+}
+
 export const MAC_DMG_CHANNEL =
   process.env.NEXT_PUBLIC_MAC_DMG_CHANNEL ?? "alpha";
 
@@ -10,17 +27,20 @@ export const MAC_DMG_VERSION =
   process.env.NEXT_PUBLIC_MAC_DMG_VERSION ?? "1.0.4";
 
 /**
- * Apple Silicon — rolling public alias on the site.
- * Release script also writes mutande-alpha-arm64.dmg; alias is what prod ships.
+ * Apple Silicon — rolling public alias.
+ * Release script also writes mutande-alpha-arm64.dmg; alias is what we publish.
  */
 export const MAC_DMG_URL_ARM64 =
   process.env.NEXT_PUBLIC_MAC_DMG_URL_ARM64 ??
-  "/downloads/mutande-alpha.dmg";
+  installerUrl("mutande-alpha.dmg", "/downloads/mutande-alpha.dmg");
 
-/** Intel (x86_64). Empty string = not published yet. */
+/** Intel (x86_64). */
 export const MAC_DMG_URL_INTEL =
   process.env.NEXT_PUBLIC_MAC_DMG_URL_INTEL ??
-  "/downloads/mutande-alpha-intel.dmg";
+  installerUrl(
+    "mutande-alpha-intel.dmg",
+    "/downloads/mutande-alpha-intel.dmg",
+  );
 
 export const MAC_INTEL_PUBLISHED =
   process.env.NEXT_PUBLIC_MAC_INTEL_PUBLISHED === "1";
@@ -40,7 +60,10 @@ export const WIN_ZIP_VERSION =
 
 export const WIN_ZIP_URL =
   process.env.NEXT_PUBLIC_WIN_ZIP_URL ??
-  "/downloads/mutande-alpha-windows.zip";
+  installerUrl(
+    "mutande-alpha-windows.zip",
+    "/downloads/mutande-alpha-windows.zip",
+  );
 
 export const WIN_ZIP_PUBLISHED =
   process.env.NEXT_PUBLIC_WIN_ZIP_PUBLISHED === "1";

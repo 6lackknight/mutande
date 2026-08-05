@@ -41,14 +41,26 @@ Outputs (rolling alpha, no version archives):
 - `mutande-alpha-arm64.dmg` — Apple Silicon (also copied to `mutande-alpha.dmg`)
 - `mutande-alpha-intel.dmg` — Intel
 
-Copy those into `web/public/downloads/` before deploying (DMGs are gitignored).
+Upload to R2 (not git, not Vercel):
+
+```bash
+./scripts/upload-downloads-r2.sh
+# or: SRC_DIR=dist/macos ./scripts/upload-downloads-r2.sh
+```
+
+Objects land at the root of the public `mutande-releases` bucket (e.g.
+`mutande-alpha.dmg`). Custom domain: `https://downloads.mutande.online`.
+Set Vercel `NEXT_PUBLIC_DOWNLOADS_BASE` to that origin (no trailing slash).
+Keep `web/public/downloads/*` gitignored for local smoke only. Hub `R2_*`
+keys must allow write to `mutande-releases` (blobs-only tokens get AccessDenied).
 
 ## Release (Windows unsigned zip)
 
 ```text
 GitHub → Actions → "Release Windows alpha" → Run workflow
 → download mutande-alpha-windows.zip artifact
-→ copy into web/public/downloads/ → deploy site
+→ ./scripts/upload-downloads-r2.sh path/to/mutande-alpha-windows.zip
+→ set NEXT_PUBLIC_WIN_ZIP_PUBLISHED=1 on Vercel if needed
 ```
 
 Zip contents: Flutter `Release/` folder + `mutande-core.exe` sidecar (HTTP on

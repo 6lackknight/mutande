@@ -11,6 +11,7 @@ class HostLinkRecord {
   const HostLinkRecord({
     required this.ok,
     this.path,
+    this.command,
     this.note,
     required this.updatedAt,
   });
@@ -19,6 +20,7 @@ class HostLinkRecord {
     return HostLinkRecord(
       ok: map['ok'] == true,
       path: map['path'] as String?,
+      command: map['command'] as String?,
       note: map['note'] as String?,
       updatedAt: DateTime.tryParse(map['updated_at'] as String? ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0),
@@ -29,6 +31,7 @@ class HostLinkRecord {
     return HostLinkRecord(
       ok: write.ok,
       path: write.path,
+      command: write.command,
       note: write.note,
       updatedAt: DateTime.now(),
     );
@@ -37,12 +40,16 @@ class HostLinkRecord {
   Map<String, dynamic> toJson() => {
         'ok': ok,
         if (path != null) 'path': path,
+        if (command != null) 'command': command,
         if (note != null) 'note': note,
         'updated_at': updatedAt.toIso8601String(),
       };
 
   final bool ok;
+  /// Host MCP config file path (e.g. claude_desktop_config.json).
   final String? path;
+  /// Absolute `mutande-core` path written into that config.
+  final String? command;
   final String? note;
   final DateTime updatedAt;
 }

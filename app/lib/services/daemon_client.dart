@@ -167,6 +167,7 @@ class DaemonClient {
           host: m['host'] as String? ?? '',
           path: m['path'] as String? ?? '',
           ok: m['ok'] == true,
+          command: m['command'] as String?,
           note: m['note'] as String?,
         );
       }).toList(),
@@ -648,12 +649,14 @@ class HostWriteResult {
     required this.host,
     required this.path,
     required this.ok,
+    this.command,
     this.note,
   });
 
   final String host;
   final String path;
   final bool ok;
+  final String? command;
   final String? note;
 
   @override
@@ -663,10 +666,11 @@ class HostWriteResult {
           host == other.host &&
           path == other.path &&
           ok == other.ok &&
+          command == other.command &&
           note == other.note;
 
   @override
-  int get hashCode => Object.hash(host, path, ok, note);
+  int get hashCode => Object.hash(host, path, ok, command, note);
 }
 
 bool _listEq<T>(List<T> a, List<T> b) {
