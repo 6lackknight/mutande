@@ -7,10 +7,20 @@ export interface TokenVerifier {
 }
 
 export function createAuth0Verifier(config: {
+  /** Host for JWKS (custom domain preferred). */
   domain: string;
   audience: string;
+  /**
+   * Extra Auth0 hosts whose `iss` is also accepted (same JWKS keys).
+   * Used while Mac/web use `auth.mutande.online` and Deploy still has the tenant host.
+   */
+  issuerAliases?: string[];
 }): TokenVerifier {
-  const issuer = `https://${config.domain}/`;
+  const hosts = [
+    config.domain,
+    ...(config.issuerAliases ?? []).map((h) => h.trim()).filter(Boolean),
+  ];
+  const issuers = [...new Set(hosts.map((h) => `https://${h.replace(/\/+$/, "")}/`))];
   const jwks = jose.createRemoteJWKSet(
     new URL(`https://${config.domain}/.well-known/jwks.json`),
   );
@@ -19,7 +29,7 @@ export function createAuth0Verifier(config: {
     async verifyAccessToken(token: string): Promise<Auth0Claims> {
       try {
         const { payload } = await jose.jwtVerify(token, jwks, {
-          issuer,
+          issuer: issuers.length === 1 ? issuers[0] : issuers,
           audience: config.audience,
         });
         const sub = payload.sub;

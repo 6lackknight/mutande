@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import '../config/app_config.dart';
 import '../services/daemon_client.dart';
 import '../theme/mutande_macos_theme.dart';
-import '../widgets/thinking_orb.dart';
+import '../widgets/morphing_orb_button.dart';
 
 enum _OnboardStep { signIn, choose, createTeam, joinInvite }
 
@@ -351,20 +351,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     }
   }
 
-  ButtonStyle get _primaryStyle => FilledButton.styleFrom(
-    backgroundColor: MutandeColors.stone800,
-    foregroundColor: MutandeColors.stone50,
-    disabledBackgroundColor: MutandeColors.stone200,
-    disabledForegroundColor: MutandeColors.stone500,
-    minimumSize: const Size.fromHeight(48),
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    textStyle: const TextStyle(
-      fontWeight: FontWeight.w600,
-      fontSize: 15,
-      letterSpacing: -0.1,
-    ),
-  );
-
   ButtonStyle get _secondaryStyle => OutlinedButton.styleFrom(
     foregroundColor: MutandeColors.stone800,
     side: const BorderSide(color: MutandeColors.stone200),
@@ -394,34 +380,24 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     switch (_step) {
       case _OnboardStep.signIn:
         return [
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              style: _primaryStyle,
-              onPressed: _submitting ? null : _signIn,
-              child: _submitting
-                  ? const MutandeOrb.loading(
-                      semanticLabel: 'Signing in…',
-                      dark: true,
-                    )
-                  : const Text('Continue'),
-            ),
+          MorphingOrbButton(
+            label: 'Continue',
+            loading: _submitting,
+            loadingLabel: 'Signing in…',
+            onPressed: _submitting ? null : _signIn,
           ),
         ];
       case _OnboardStep.choose:
         return [
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              style: _primaryStyle,
-              onPressed: _submitting
-                  ? null
-                  : () => setState(() {
+          MorphingOrbButton(
+            label: 'Create a team',
+            loading: false,
+            onPressed: _submitting
+                ? null
+                : () => setState(() {
                       _error = null;
                       _step = _OnboardStep.createTeam;
                     }),
-              child: const Text('Create a team'),
-            ),
           ),
           const SizedBox(height: 10),
           SizedBox(
@@ -477,15 +453,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             onSubmitted: (_) => _createTeam(),
           ),
           const SizedBox(height: 24),
-          FilledButton(
-            style: _primaryStyle,
+          MorphingOrbButton(
+            label: 'Create team',
+            loading: _submitting,
+            loadingLabel: 'Creating…',
             onPressed: _submitting ? null : _createTeam,
-            child: _submitting
-                ? const MutandeOrb.loading(
-                    semanticLabel: 'Creating…',
-                    dark: true,
-                  )
-                : const Text('Create team'),
           ),
           const SizedBox(height: 4),
           _ghostLink(
@@ -493,9 +465,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             onPressed: _submitting
                 ? null
                 : () => setState(() {
-                    _error = null;
-                    _step = _OnboardStep.choose;
-                  }),
+                      _error = null;
+                      _step = _OnboardStep.choose;
+                    }),
           ),
         ];
       case _OnboardStep.joinInvite:
@@ -520,15 +492,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             onSubmitted: (_) => _joinInvite(),
           ),
           const SizedBox(height: 24),
-          FilledButton(
-            style: _primaryStyle,
+          MorphingOrbButton(
+            label: 'Join team',
+            loading: _submitting,
+            loadingLabel: 'Joining…',
             onPressed: _submitting ? null : _joinInvite,
-            child: _submitting
-                ? const MutandeOrb.loading(
-                    semanticLabel: 'Joining…',
-                    dark: true,
-                  )
-                : const Text('Join team'),
           ),
           const SizedBox(height: 4),
           _ghostLink(

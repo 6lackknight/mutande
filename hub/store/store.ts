@@ -1570,7 +1570,18 @@ export function createStore(
     throw new Error("AUTH0_DOMAIN and AUTH0_AUDIENCE must be set in production");
   }
   if (domain && audience) {
-    return new HubStore(kv, createAuth0Verifier({ domain, audience }));
+    const aliases = (Deno.env.get("AUTH0_ISSUER_ALIASES") ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    // Custom-domain ↔ tenant share JWKS; accept both while Deploy env catches up.
+    if (domain === "auth.mutande.online" && !aliases.includes("chevrondigital.auth0.com")) {
+      aliases.push("chevrondigital.auth0.com");
+    }
+    if (domain === "chevrondigital.auth0.com" && !aliases.includes("auth.mutande.online")) {
+      aliases.push("auth.mutande.online");
+    }
+    return new HubStore(kv, createAuth0Verifier({ domain, audience, issuerAliases: aliases }));
   }
   return new HubStore(kv, {
     async verifyAccessToken() {
