@@ -211,7 +211,8 @@ build_one_arch() {
   fi
 
   # Flutter produces a universal (or host) app; we thin + swap sidecar per arch.
-  if [[ ! -d "$APP_DIR/build/macos/Build/Products/Release/${APP_NAME}" ]]; then
+  built_app="$APP_DIR/build/macos/Build/Products/Release/${APP_NAME}"
+  if [[ ! -x "$built_app/Contents/MacOS/mutande" ]]; then
     echo "==> flutter build macos --release"
     (cd "$APP_DIR" && flutter build macos --release \
       --build-name="${VERSION}" \
@@ -220,14 +221,14 @@ build_one_arch() {
     echo "==> reuse flutter Release app (already built this run)"
   fi
 
-  built_app="$APP_DIR/build/macos/Build/Products/Release/${APP_NAME}"
-  if [[ ! -d "$built_app" ]]; then
-    echo "error: expected app at $built_app" >&2
+  if [[ ! -x "$built_app/Contents/MacOS/mutande" ]]; then
+    echo "error: expected app binary at $built_app/Contents/MacOS/mutande" >&2
     exit 1
   fi
 
   rm -rf "$app_out"
   cp -R "$built_app" "$app_out"
+  mkdir -p "$app_out/Contents/Resources"
   cp -f "$core_src" "$app_out/Contents/Resources/mutande-core"
   chmod 755 "$app_out/Contents/Resources/mutande-core"
   thin_app_to_arch "$app_out" "$macho"
