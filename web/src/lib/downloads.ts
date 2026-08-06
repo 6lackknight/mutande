@@ -24,7 +24,7 @@ export const MAC_DMG_CHANNEL =
   process.env.NEXT_PUBLIC_MAC_DMG_CHANNEL ?? "alpha";
 
 export const MAC_DMG_VERSION =
-  process.env.NEXT_PUBLIC_MAC_DMG_VERSION ?? "1.0.8";
+  process.env.NEXT_PUBLIC_MAC_DMG_VERSION ?? "1.0.9";
 
 /**
  * Apple Silicon — rolling public alias.
