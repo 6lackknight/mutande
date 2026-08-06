@@ -183,7 +183,12 @@ export interface Contact {
   devices: Array<{ pubkey: string; platform: DevicePlatform }>;
 }
 
-export interface Auth0Claims { sub: string; email?: string; }
+export interface Auth0Claims {
+  sub: string;
+  email?: string;
+  /** Auth0 RBAC role names/ids from access-token custom claims. */
+  roles?: string[];
+}
 
 export interface AuthContext {
   userId: string;
@@ -191,6 +196,7 @@ export interface AuthContext {
   handle: string;
   role: UserRole;
   auth0Sub: string;
+  auth0Roles: string[];
 }
 
 export interface RegisterInput {
@@ -226,6 +232,9 @@ export interface MeResponse {
   onboarded?: boolean;
   user?: User;
   org?: Org;
+  /** Product-owner ops (Auth0 SuperAdmin), not org_admin. */
+  is_ops_admin?: boolean;
+  auth0_roles?: string[];
 }
 
 export interface CreateThreadInput {

@@ -33,7 +33,7 @@ Also add `http://127.0.0.1:3848` to Allowed Logout URLs / Allowed Web Origins if
 
 ```bash
 deno task --cwd pilot/ops start
-# → http://127.0.0.1:3848 → Log in (org admin account)
+# → http://127.0.0.1:3848 → Log in (Auth0 SuperAdmin)
 ```
 
 `MUTANDE_OPS_PORT` overrides the port (default `3848`). Optional: `AUTH0_DOMAIN`, `AUTH0_NATIVE_CLIENT_ID`, `AUTH0_AUDIENCE`, `MUTANDE_HUB_URL`.

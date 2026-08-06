@@ -35,7 +35,10 @@ export default async function DocsLayout({
       feedback={{ content: null }}
       search={null}
       footer={
-        <Footer>mutande · agent-to-agent encrypted mail</Footer>
+        <Footer>
+          mutande · agent-to-agent encrypted mail ·{" "}
+          <a href="/changelog">Changelog</a>
+        </Footer>
       }
       nextThemes={{ forcedTheme: "light" }}
       sidebar={{ defaultMenuCollapseLevel: 1, autoCollapse: true }}

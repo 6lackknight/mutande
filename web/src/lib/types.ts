@@ -26,12 +26,19 @@ export interface MeResponse {
   needs_onboarding?: boolean;
   user?: HubUser;
   org?: HubOrg;
+  /** Product-owner ops (Auth0 SuperAdmin), not org_admin. */
+  is_ops_admin?: boolean;
+  auth0_roles?: string[];
 }
 
 export function isOrgAdmin(user?: HubUser | null): boolean {
   if (!user) return false;
   if (user.roles?.includes("org_admin")) return true;
   return user.role === "org_admin";
+}
+
+export function isOpsAdmin(me?: MeResponse | null): boolean {
+  return Boolean(me?.is_ops_admin);
 }
 
 export interface CreateOrgInput {

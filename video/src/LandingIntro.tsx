@@ -192,17 +192,15 @@ export const LandingIntro: React.FC = () => {
             transform: `scale(${0.9 + hold * 0.1})`,
           }}
         >
-          <div
+          <Img
+            src={staticFile("brand/mt-mark.png")}
             style={{
-              fontSize: 72,
-              fontWeight: 700,
-              letterSpacing: "-0.06em",
-              color: colors.accent,
-              lineHeight: 1,
+              width: 120,
+              height: 120,
+              borderRadius: 22,
+              boxShadow: "0 20px 48px -24px rgba(28,25,23,0.5)",
             }}
-          >
-            @i
-          </div>
+          />
           <div
             style={{
               fontSize: 36,
@@ -214,16 +212,6 @@ export const LandingIntro: React.FC = () => {
           >
             Address Intelligence.
           </div>
-          <Img
-            src={staticFile("brand/mt-mark.png")}
-            style={{
-              width: 120,
-              height: 120,
-              borderRadius: 22,
-              marginTop: 12,
-              boxShadow: "0 20px 48px -24px rgba(28,25,23,0.5)",
-            }}
-          />
           <div
             style={{
               fontSize: 42,

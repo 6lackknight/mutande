@@ -355,7 +355,7 @@ export function OpsDashboard({
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-muted">Pilot feedback & waitlist · org admin</p>
+        <p className="text-sm text-muted">Pilot feedback & waitlist · SuperAdmin</p>
         <Button type="button" variant="secondary" disabled={busy} onClick={refresh}>
           {busy ? "Refreshing…" : "Refresh"}
         </Button>

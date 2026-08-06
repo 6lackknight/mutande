@@ -33,7 +33,7 @@ The runtime behind an address can change. The address does not.
 3. Work moves through trusted identities — people, assistants, services.
 4. Mail is E2E encrypted; the hub routes sealed messages (supports trust; not the headline).
 5. Addresses fan out across a team — addresses are the hero, not the packet.
-6. Close on brand: `@i` · Address Intelligence. · mutande — loop-ready.
+6. Close on brand: `@i` mark · Address Intelligence. · mutande — loop-ready (no typed `@i`; the mark is the word).
 
 Landing tagline (do not compete): **Address Intelligence.**
 Supporting: Give every person, assistant and service in your organisation a trusted address. Route work by identity, not implementation.
@@ -63,7 +63,7 @@ Every frame reinforces: **Intelligence has addresses.**
 | **Collaboration** | 11.5–17s | Routing by identity | mutande thread; `@claude` → `@chatgpt` → `@research` | Work routes between addresses |
 | **Handoff** | 17–20s | Trusted sealed relay | Physical sealed packet; hub forwards ciphertext | Encryption supports trust |
 | **Fan-out** | 20–24s | Team aha | Hero addresses: `bob@…/openclaw`, `mary@…/kimi`, `cfo@salesco` | One message → many identities |
-| **Brand** | 24–28s | Close + loop | `@i` · Address Intelligence. · mutande | Brand = Address Intelligence |
+| **Brand** | 24–28s | Close + loop | `@i` mark · Address Intelligence. · mutande | Brand = Address Intelligence |
 
 Camera: identity breathe-in; compose soft push; collab hold; handoff→fan-out pull wide; brand flat.
 

@@ -7,14 +7,14 @@ import {
   listWaitlistAdmin,
 } from "@/lib/hub";
 import { requireOnboarded } from "@/lib/session";
-import { isOrgAdmin, type Feedback, type WaitlistEntry } from "@/lib/types";
+import { isOpsAdmin, type Feedback, type WaitlistEntry } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Ops" };
 
 export default async function AdminOpsPage() {
   const me = await requireOnboarded();
-  if (!isOrgAdmin(me.user)) {
+  if (!isOpsAdmin(me)) {
     redirect("/dashboard");
   }
 
@@ -47,7 +47,7 @@ export default async function AdminOpsPage() {
       </div>
       <PageTitle
         title="Ops"
-        subtitle="Feedback and waitlist from the pilot — org admin only."
+        subtitle="Feedback and waitlist — Auth0 SuperAdmin only."
       />
       <OpsDashboard
         initialFeedback={feedback}

@@ -49,8 +49,18 @@ Deno.test("POST /v1/waitlist + GET /v1/admin/waitlist", async () => {
       body: JSON.stringify({ slug: "co", name: "Co" }),
     });
 
-    const list = await app.request("/v1/admin/waitlist", {
+    const orgAdminOnly = await app.request("/v1/admin/waitlist", {
       headers: bearer(token),
+    });
+    assertEquals(orgAdminOnly.status, 403);
+
+    const opsToken = await signToken({
+      sub: "auth0|admin",
+      email: "admin@co.io",
+      roles: ["SuperAdmin"],
+    });
+    const list = await app.request("/v1/admin/waitlist", {
+      headers: bearer(opsToken),
     });
     assertEquals(list.status, 200);
     const body = await list.json();
@@ -86,7 +96,11 @@ Deno.test("POST /v1/waitlist honeypot returns 201 without storing", async () => 
     });
     assertEquals(post.status, 201);
 
-    const token = await signToken({ sub: "auth0|admin2", email: "a2@co.io" });
+    const token = await signToken({
+      sub: "auth0|admin2",
+      email: "a2@co.io",
+      roles: ["SuperAdmin"],
+    });
     await app.request("/v1/orgs", {
       method: "POST",
       headers: { ...bearer(token), "Content-Type": "application/json" },

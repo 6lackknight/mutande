@@ -151,6 +151,27 @@ Persisted in `~/.mutande/config.json` (`0o600`): `access_token`, `refresh_token`
 
 Legacy hub JWT is gone; do not restore it.
 
+## 7. Product-owner ops (SuperAdmin)
+
+`/admin/ops` and hub `GET /v1/admin/feedback` + `GET /v1/admin/waitlist` require Auth0 role **SuperAdmin** (`rol_jsa0BZq7uzz2K4RG`), not hub `org_admin`.
+
+1. **User Management → Roles** — create `SuperAdmin` (already present).
+2. Assign that role to product-owner users.
+3. **Actions → Login / Post Login** — add roles onto the **access token** (Auth0 does not put role names in the token by default):
+
+```js
+exports.onExecutePostLogin = async (event, api) => {
+  const namespace = "https://hub.mutande.app";
+  if (event.authorization?.roles?.length) {
+    api.accessToken.setCustomClaim(`${namespace}/roles`, event.authorization.roles);
+  }
+};
+```
+
+Hub also accepts `https://mutande.app/roles`, `https://mutande.online/roles`, and bare `roles`. Override allowed role names/ids with hub env `MUTANDE_PLATFORM_ADMIN_ROLES` (comma-separated; default `SuperAdmin,rol_jsa0BZq7uzz2K4RG`).
+
+After assigning the role or changing the Action, users must **sign out and sign in** so a fresh access token includes the claim. Org invites stay gated by hub `org_admin`.
+
 ## See also
 
 - `hub/README.md` — API routes + deploy

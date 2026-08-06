@@ -57,7 +57,7 @@ async function api(path) {
     }
     if (res.status === 403) {
       throw new Error(
-        "Forbidden — this Auth0 user must be an org_admin on the hub.",
+        "Forbidden — this Auth0 user needs the SuperAdmin role (roles claim on the access token).",
       );
     }
     throw new Error(body?.error || body?.message || res.statusText || "Request failed");

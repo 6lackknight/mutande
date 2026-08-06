@@ -91,4 +91,4 @@ web/
 | `/join?invite=` | Join flow |
 | `/dashboard` | Handle, org, download CTA |
 | `/admin/invites` | List/create invites, copy link, Plunk email |
-| `/admin/ops` | Pilot feedback + waitlist charts (org admin) |
+| `/admin/ops` | Pilot feedback + waitlist charts (Auth0 SuperAdmin) |

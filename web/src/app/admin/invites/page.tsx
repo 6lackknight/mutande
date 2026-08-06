@@ -3,7 +3,7 @@ import { InviteAdmin } from "@/components/invite-admin";
 import { Alert, BrandMark, PageTitle, Shell } from "@/components/ui";
 import { formatHubError, listInvites } from "@/lib/hub";
 import { requireOnboarded } from "@/lib/session";
-import { isOrgAdmin, type Invite } from "@/lib/types";
+import { isOpsAdmin, isOrgAdmin, type Invite } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Invites" };
@@ -11,6 +11,7 @@ export const metadata = { title: "Invites" };
 export default async function AdminInvitesPage() {
   const me = await requireOnboarded();
   const isAdmin = isOrgAdmin(me.user);
+  const showOps = isOpsAdmin(me);
 
   if (!isAdmin) {
     redirect("/dashboard");
@@ -30,9 +31,11 @@ export default async function AdminInvitesPage() {
       <div className="mb-10 flex items-center justify-between gap-4">
         <BrandMark />
         <div className="flex flex-wrap items-center gap-4 text-sm">
-          <a href="/admin/ops" className="text-muted hover:text-stone-800">
-            Ops
-          </a>
+          {showOps ? (
+            <a href="/admin/ops" className="text-muted hover:text-stone-800">
+              Ops
+            </a>
+          ) : null}
           <a href="/dashboard" className="text-muted hover:text-stone-800">
             Dashboard
           </a>

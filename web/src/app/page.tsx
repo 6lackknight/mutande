@@ -105,12 +105,20 @@ export default function LandingPage() {
             macOS menu bar · metadata &amp; invites on the web · mail stays
             on-device
           </span>
-          <a
-            href="/docs"
-            className="text-stone-700 transition hover:text-stone-900"
-          >
-            Docs
-          </a>
+          <nav className="flex items-center gap-4">
+            <a
+              href="/docs"
+              className="text-stone-700 transition hover:text-stone-900"
+            >
+              Docs
+            </a>
+            <a
+              href="/changelog"
+              className="text-stone-700 transition hover:text-stone-900"
+            >
+              Changelog
+            </a>
+          </nav>
         </footer>
       </div>
     </LandingForceField>

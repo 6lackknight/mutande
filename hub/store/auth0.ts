@@ -1,9 +1,20 @@
 import * as jose from "jose";
 import { unauthorized } from "./errors.ts";
+import { AUTH0_ROLES_CLAIM_KEYS, extractAuth0Roles } from "./platform_admin.ts";
 import type { Auth0Claims } from "./types.ts";
 
 export interface TokenVerifier {
   verifyAccessToken(token: string): Promise<Auth0Claims>;
+}
+
+function claimsFromPayload(payload: jose.JWTPayload): Auth0Claims {
+  const sub = payload.sub;
+  if (typeof sub !== "string" || !sub) {
+    throw unauthorized("Invalid token: missing sub");
+  }
+  const email = typeof payload.email === "string" ? payload.email : undefined;
+  const roles = extractAuth0Roles(payload as Record<string, unknown>);
+  return { sub, email, ...(roles.length ? { roles } : {}) };
 }
 
 export function createAuth0Verifier(config: {
@@ -32,12 +43,7 @@ export function createAuth0Verifier(config: {
           issuer: issuers.length === 1 ? issuers[0] : issuers,
           audience: config.audience,
         });
-        const sub = payload.sub;
-        if (typeof sub !== "string" || !sub) {
-          throw unauthorized("Invalid token: missing sub");
-        }
-        const email = typeof payload.email === "string" ? payload.email : undefined;
-        return { sub, email };
+        return claimsFromPayload(payload);
       } catch (e) {
         if (e instanceof Error && e.message.includes("missing sub")) throw e;
         throw unauthorized("Invalid or expired token");
@@ -67,12 +73,7 @@ export async function createTestTokenVerifier(config: {
     async verifyAccessToken(token: string): Promise<Auth0Claims> {
       try {
         const { payload } = await jose.jwtVerify(token, jwks, { issuer, audience });
-        const sub = payload.sub;
-        if (typeof sub !== "string" || !sub) {
-          throw unauthorized("Invalid token: missing sub");
-        }
-        const email = typeof payload.email === "string" ? payload.email : undefined;
-        return { sub, email };
+        return claimsFromPayload(payload);
       } catch (e) {
         if (e instanceof Error && e.message.includes("missing sub")) throw e;
         throw unauthorized("Invalid or expired token");
@@ -81,7 +82,12 @@ export async function createTestTokenVerifier(config: {
   };
 
   const signToken = async (claims: Auth0Claims): Promise<string> => {
-    const builder = new jose.SignJWT({ email: claims.email })
+    const body: Record<string, unknown> = {};
+    if (claims.email) body.email = claims.email;
+    if (claims.roles?.length) {
+      body[AUTH0_ROLES_CLAIM_KEYS[0]] = claims.roles;
+    }
+    const builder = new jose.SignJWT(body)
       .setProtectedHeader({ alg: "RS256", kid: "test-key" })
       .setSubject(claims.sub)
       .setIssuer(issuer)

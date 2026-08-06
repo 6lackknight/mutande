@@ -8,6 +8,7 @@ import {
   quotaExceeded,
   unauthorized,
 } from "./errors.ts";
+import { isPlatformOpsAdmin } from "./platform_admin.ts";
 import { randomToken } from "./jwt.ts";
 import type {
   Auth0Claims,
@@ -127,7 +128,10 @@ function isOnboarded(user: User | null | undefined): boolean {
   return Boolean(user?.org_id && user?.handle);
 }
 
-function authContextFromUser(user: User): AuthContext {
+function authContextFromUser(
+  user: User,
+  auth0Roles: string[] = [],
+): AuthContext {
   if (!isOnboarded(user)) {
     throw forbidden("Onboarding required");
   }
@@ -137,6 +141,7 @@ function authContextFromUser(user: User): AuthContext {
     handle: user.handle!,
     role: primaryRole(user),
     auth0Sub: user.auth0_sub,
+    auth0Roles,
   };
 }
 
@@ -220,6 +225,7 @@ export class HubStore {
     const user = await this.getUserByAuth0Sub(claims.sub);
     const onboarded = isOnboarded(user);
     const org = user?.org_id ? await this.getOrg(user.org_id) : null;
+    const auth0_roles = claims.roles ?? [];
     return {
       auth0_sub: claims.sub,
       email: claims.email ?? user?.email,
@@ -227,6 +233,8 @@ export class HubStore {
       needs_onboarding: !onboarded,
       user: user ?? undefined,
       org: org ?? undefined,
+      is_ops_admin: isPlatformOpsAdmin(auth0_roles),
+      auth0_roles,
     };
   }
 
@@ -240,7 +248,7 @@ export class HubStore {
     if (!isOnboarded(user)) {
       throw forbidden("Onboarding required");
     }
-    return authContextFromUser(user!);
+    return authContextFromUser(user!, claims.roles ?? []);
   }
 
   async createOrgWithAdmin(
@@ -1504,9 +1512,11 @@ export class HubStore {
     return feedback;
   }
 
-  /** Org admins can list all feedback (pilot ops). */
+  /** Product-owner ops: Auth0 SuperAdmin (not org_admin). */
   async listFeedback(auth: AuthContext): Promise<{ feedback: Feedback[] }> {
-    if (auth.role !== "org_admin") throw forbidden("Org admin required");
+    if (!isPlatformOpsAdmin(auth.auth0Roles)) {
+      throw forbidden("Platform admin required");
+    }
     const items: Feedback[] = [];
     const iter = this.kv.list<Feedback>({ prefix: this.feedbackPrefix() });
     for await (const entry of iter) {
@@ -1558,9 +1568,11 @@ export class HubStore {
     return entry;
   }
 
-  /** Org admins can list waitlist submissions (same ops path as feedback). */
+  /** Product-owner ops: Auth0 SuperAdmin (same gate as feedback). */
   async listWaitlist(auth: AuthContext): Promise<{ waitlist: WaitlistEntry[] }> {
-    if (auth.role !== "org_admin") throw forbidden("Org admin required");
+    if (!isPlatformOpsAdmin(auth.auth0Roles)) {
+      throw forbidden("Platform admin required");
+    }
     const items: WaitlistEntry[] = [];
     const iter = this.kv.list<WaitlistEntry>({ prefix: this.waitlistPrefix() });
     for await (const entry of iter) {

@@ -1,6 +1,6 @@
 import { BrandMark, ButtonLink, PageTitle, Shell } from "@/components/ui";
 import { requireOnboarded } from "@/lib/session";
-import { isOrgAdmin } from "@/lib/types";
+import { isOpsAdmin, isOrgAdmin } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Dashboard" };
@@ -8,6 +8,7 @@ export const metadata = { title: "Dashboard" };
 export default async function DashboardPage() {
   const me = await requireOnboarded();
   const isAdmin = isOrgAdmin(me.user);
+  const showOps = isOpsAdmin(me);
 
   return (
     <Shell wide>
@@ -52,12 +53,12 @@ export default async function DashboardPage() {
 
       <div className="mt-10 flex flex-wrap gap-3">
         {isAdmin ? (
-          <>
-            <ButtonLink href="/admin/invites">Manage invites</ButtonLink>
-            <ButtonLink href="/admin/ops" variant="secondary">
-              Ops
-            </ButtonLink>
-          </>
+          <ButtonLink href="/admin/invites">Manage invites</ButtonLink>
+        ) : null}
+        {showOps ? (
+          <ButtonLink href="/admin/ops" variant="secondary">
+            Ops
+          </ButtonLink>
         ) : null}
         <ButtonLink href="/download" variant="secondary">
           Download desktop app

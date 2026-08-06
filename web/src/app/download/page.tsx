@@ -7,6 +7,7 @@ import {
 import { TrackButtonLink } from "@/components/track-button-link";
 import { TrackChoiceCard } from "@/components/track-choice-card";
 import { TrackLink } from "@/components/track-link";
+import { CHANGELOG, LATEST_CHANGELOG } from "@/lib/changelog";
 import {
   MAC_DMG_CHANNEL,
   MAC_DMG_LABEL,
@@ -50,6 +51,12 @@ export default function DownloadPage() {
             className="text-muted transition hover:text-stone-800"
           >
             Docs
+          </a>
+          <a
+            href="/changelog"
+            className="text-muted transition hover:text-stone-800"
+          >
+            Changelog
           </a>
           <TrackButtonLink
             href="/waitlist"
@@ -157,6 +164,43 @@ export default function DownloadPage() {
           </span>
         </p>
       </div>
+
+      <section className="mt-12 border-t border-stone-300/50 pt-8">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
+          <h2 className="font-display text-lg font-semibold tracking-tight text-stone-900">
+            Recent versions
+          </h2>
+          <a
+            href="/changelog"
+            className="text-sm text-stone-700 underline underline-offset-2 transition hover:text-stone-900"
+          >
+            Full changelog
+          </a>
+        </div>
+        <p className="mt-2 text-sm leading-relaxed text-muted">
+          Latest:{" "}
+          <span className="tabular-nums text-stone-800">
+            {LATEST_CHANGELOG.version}
+          </span>
+          {" — "}
+          {LATEST_CHANGELOG.title}.{" "}
+          {CHANGELOG.slice(0, 4)
+            .map((e) => e.version)
+            .join(" · ")}
+          .
+        </p>
+        <ul className="mt-4 space-y-2 text-sm leading-relaxed text-stone-700">
+          {LATEST_CHANGELOG.notes.slice(0, 2).map((note) => (
+            <li key={note} className="flex gap-2.5">
+              <span
+                aria-hidden
+                className="mt-[0.55em] h-1 w-1 shrink-0 rounded-full bg-stone-400"
+              />
+              <span>{note}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
     </Shell>
   );
 }
