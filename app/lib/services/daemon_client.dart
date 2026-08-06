@@ -41,6 +41,8 @@ import '../platform/user_home.dart';
 /// | `delete_thread` | Remove from inbox (sender purges body) |
 /// | `mark_processed` | Clear local pending / processed flags |
 /// | `connect_host` | Write MCP configs (`host`: cursor\|claude\|chatgpt\|all) |
+/// | `get_safety_number` | Own fingerprint + URI + hex `pubkey` |
+/// | `register_device` | Force-publish this device pubkey to the hub |
 ///
 /// MCP tools forward to the same daemon surface via `mutande-core mcp` stdio —
 /// not called directly from Flutter.
@@ -161,8 +163,13 @@ class DaemonClient {
   /// Write MCP host configs via JSON-RPC `connect_host`.
   ///
   /// [host] is `cursor`, `claude`, `chatgpt`, or `all`.
+  /// Longer timeout: copies `mutande-core` into `~/.mutande/bin` + preflight.
   Future<ConnectHostResult> connectHost(String host) async {
-    final result = await _call('connect_host', {'host': host});
+    final result = await _callWithTimeout(
+      'connect_host',
+      {'host': host},
+      const Duration(seconds: 60),
+    );
     final map = result as Map<String, dynamic>? ?? {};
     final hostsRaw = map['hosts'] as List<dynamic>? ?? const [];
     return ConnectHostResult(
@@ -184,7 +191,11 @@ class DaemonClient {
 
   /// Install or stage the mutande agent skill for a host (`cursor`|`claude`|`chatgpt`).
   Future<InstallSkillResult> installSkill(String host) async {
-    final result = await _call('install_skill', {'host': host});
+    final result = await _callWithTimeout(
+      'install_skill',
+      {'host': host},
+      const Duration(seconds: 45),
+    );
     final map = result as Map<String, dynamic>? ?? {};
     return InstallSkillResult.fromJson(map);
   }
@@ -274,12 +285,19 @@ class DaemonClient {
             .toList();
         final resourceReqs =
             bundle?['resource_requests'] as List<dynamic>? ?? const [];
-        final resources = resourceReqs
+        final resourceRequests = resourceReqs
             .map((r) {
               final map = r as Map<String, dynamic>? ?? const {};
               return map['description'] as String? ?? map['id'] as String? ?? '';
             })
             .where((d) => d.trim().isNotEmpty)
+            .toList();
+        final resourcesRaw = bundle?['resources'] as List<dynamic>? ?? const [];
+        final resources = resourcesRaw
+            .map((r) => BundleResourceView.fromJson(
+                  r as Map<String, dynamic>? ?? const {},
+                ))
+            .where((r) => r.name.trim().isNotEmpty)
             .toList();
         final answersRaw = bundle?['answers'] as List<dynamic>? ?? const [];
         final answers = answersRaw
@@ -300,7 +318,8 @@ class DaemonClient {
               bundle?['notes'] as String? ?? bundle?['context'] as String?,
           pingKind: bundle?['ping_kind'] as String?,
           questionPrompts: questions,
-          resourceRequests: resources,
+          resourceRequests: resourceRequests,
+          resources: resources,
           answerTexts: answers,
           openError: m['open_error'] as String?,
           upvotes: MessageUpvoteSummaryView.fromJson(
@@ -424,6 +443,13 @@ class DaemonClient {
   Future<SafetyNumberResult> getSafetyNumber() async {
     final result = await _call('get_safety_number');
     return SafetyNumberResult.fromJson(result as Map<String, dynamic>? ?? {});
+  }
+
+  /// Force-publish this device pubkey to the hub. Returns hex pubkey on success.
+  Future<String> registerDevice() async {
+    final result = await _call('register_device');
+    final map = result as Map<String, dynamic>? ?? {};
+    return map['pubkey'] as String? ?? '';
   }
 
   Future<SafetyNumberResult> contactSafetyNumber(String handle) async {
@@ -933,6 +959,124 @@ class ThreadDetailResult {
   final List<ThreadMessageView> messages;
 }
 
+class BundleResourceView {
+  const BundleResourceView({
+    required this.name,
+    this.mime = 'application/octet-stream',
+    this.content,
+    this.path,
+    this.size,
+  });
+
+  factory BundleResourceView.fromJson(Map<String, dynamic> map) {
+    final sizeRaw = map['size'];
+    int? size;
+    if (sizeRaw is int) {
+      size = sizeRaw;
+    } else if (sizeRaw is num) {
+      size = sizeRaw.toInt();
+    }
+    return BundleResourceView(
+      name: map['name'] as String? ?? '',
+      mime: map['mime'] as String? ?? 'application/octet-stream',
+      content: map['content'] as String?,
+      path: map['path'] as String?,
+      size: size,
+    );
+  }
+
+  final String name;
+  final String mime;
+  final String? content;
+  final String? path;
+  final int? size;
+
+  String get extension {
+    final dot = name.lastIndexOf('.');
+    if (dot < 0 || dot >= name.length - 1) return '';
+    return name.substring(dot + 1).toLowerCase();
+  }
+
+  bool get hasPath => path != null && path!.trim().isNotEmpty;
+  bool get hasContent => content != null && content!.trim().isNotEmpty;
+
+  /// Local file or inline text the UI can show / open.
+  bool get isAvailable => hasPath || hasContent;
+
+  bool get isImage {
+    final m = mime.toLowerCase();
+    if (m.startsWith('image/')) {
+      return m.contains('png') ||
+          m.contains('jpeg') ||
+          m.contains('jpg') ||
+          m.contains('gif') ||
+          m.contains('webp');
+    }
+    return const {'png', 'jpg', 'jpeg', 'gif', 'webp'}.contains(extension);
+  }
+
+  bool get isVideo {
+    final m = mime.toLowerCase();
+    if (m.startsWith('video/')) {
+      return m.contains('mp4') ||
+          m.contains('quicktime') ||
+          m.contains('webm') ||
+          m == 'video/mov';
+    }
+    return const {'mp4', 'mov', 'webm'}.contains(extension);
+  }
+
+  bool get isText {
+    final m = mime.toLowerCase();
+    if (m.startsWith('text/')) return true;
+    if (m == 'application/json' ||
+        m == 'application/xml' ||
+        m.endsWith('+json') ||
+        m.endsWith('+xml')) {
+      return true;
+    }
+    return const {
+      'md',
+      'markdown',
+      'txt',
+      'text',
+      'json',
+      'csv',
+      'xml',
+      'yaml',
+      'yml',
+      'toml',
+    }.contains(extension);
+  }
+
+  bool get isPdf {
+    final m = mime.toLowerCase();
+    return m == 'application/pdf' || extension == 'pdf';
+  }
+
+  String get kindLabel {
+    if (isImage) return 'Image';
+    if (isVideo) return 'Video';
+    if (isPdf) return 'PDF';
+    if (isText) return 'Text';
+    if (mime.isNotEmpty && mime != 'application/octet-stream') return mime;
+    if (extension.isNotEmpty) return extension.toUpperCase();
+    return 'File';
+  }
+
+  String? get sizeLabel {
+    final n = size;
+    if (n == null || n < 0) return null;
+    if (n < 1024) return '$n B';
+    if (n < 1024 * 1024) {
+      final kb = n / 1024;
+      return kb >= 10 ? '${kb.round()} KB' : '${kb.toStringAsFixed(1)} KB';
+    }
+    final mb = n / (1024 * 1024);
+    return mb >= 10 ? '${mb.round()} MB' : '${mb.toStringAsFixed(1)} MB';
+  }
+}
+
 class ThreadMessageView {
   const ThreadMessageView({
     required this.id,
@@ -945,6 +1089,7 @@ class ThreadMessageView {
     this.pingKind,
     this.questionPrompts = const [],
     this.resourceRequests = const [],
+    this.resources = const [],
     this.answerTexts = const [],
     this.openError,
     this.upvotes,
@@ -961,6 +1106,8 @@ class ThreadMessageView {
   final String? pingKind;
   final List<String> questionPrompts;
   final List<String> resourceRequests;
+  /// Opened file attachments (`resources[]` with optional `path` / `content`).
+  final List<BundleResourceView> resources;
   final List<String> answerTexts;
   final String? openError;
   final MessageUpvoteSummaryView? upvotes;
@@ -977,6 +1124,7 @@ class ThreadMessageView {
       pingKind: pingKind,
       questionPrompts: questionPrompts,
       resourceRequests: resourceRequests,
+      resources: resources,
       answerTexts: answerTexts,
       openError: openError,
       upvotes: upvotes,
@@ -989,14 +1137,40 @@ class ThreadMessageView {
   /// True when decrypt succeeded but the bundle has no displayable content.
   bool get isEmptyBody {
     if (openError != null && openError!.trim().isNotEmpty) return false;
+    if (resources.isNotEmpty) return false;
     return _contentParts.isEmpty;
+  }
+
+  /// Notes that only describe materialization / stubs — shown via attachment UI.
+  static bool isArtifactPlumbingNote(String notes) {
+    final n = notes.trim().toLowerCase();
+    if (n.isEmpty) return false;
+    return n.contains('too large to inline') ||
+        n.contains('resource.content is standard base64') ||
+        n.contains('content not inlined') ||
+        n.contains('artifact available on this device') ||
+        n.contains('opened encrypted blob') ||
+        (n.startsWith('binary artifact') && n.contains('bytes'));
+  }
+
+  String? get _displayNotes {
+    final notes = bundleNotes?.trim();
+    if (notes == null || notes.isEmpty) return null;
+    if (resources.isNotEmpty && isArtifactPlumbingNote(notes)) return null;
+    // Drop plumbing lines when mixed with real notes.
+    final kept = notes
+        .split('\n')
+        .map((l) => l.trimRight())
+        .where((l) => l.isNotEmpty && !isArtifactPlumbingNote(l))
+        .toList();
+    if (kept.isEmpty) return null;
+    return kept.join('\n');
   }
 
   List<String> get _contentParts => [
         if (bundleSubject != null && bundleSubject!.trim().isNotEmpty)
           bundleSubject!.trim(),
-        if (bundleNotes != null && bundleNotes!.trim().isNotEmpty)
-          bundleNotes!.trim(),
+        if (_displayNotes != null) _displayNotes!,
         ...questionPrompts.map((q) => q.trim()).where((q) => q.isNotEmpty),
         ...answerTexts.map((a) => a.trim()).where((a) => a.isNotEmpty),
         ...resourceRequests
@@ -1011,7 +1185,10 @@ class ThreadMessageView {
       return openError!;
     }
     final parts = _contentParts;
-    if (parts.isEmpty) return 'No message body';
+    if (parts.isEmpty) {
+      if (resources.isNotEmpty) return '';
+      return 'No message body';
+    }
     return parts.join('\n\n');
   }
 }
@@ -1078,6 +1255,7 @@ class SafetyNumberResult {
     required this.fingerprint,
     required this.uri,
     this.verified,
+    this.pubkey,
   });
 
   factory SafetyNumberResult.fromJson(Map<String, dynamic> map) {
@@ -1086,6 +1264,7 @@ class SafetyNumberResult {
       fingerprint: map['fingerprint'] as String? ?? '',
       uri: map['uri'] as String? ?? '',
       verified: map['verified'] as bool?,
+      pubkey: map['pubkey'] as String?,
     );
   }
 
@@ -1093,6 +1272,8 @@ class SafetyNumberResult {
   final String fingerprint;
   final String uri;
   final bool? verified;
+  /// Hex-encoded X25519 device public key (own device only).
+  final String? pubkey;
 }
 
 /// Light client-side checks before calling register RPC.

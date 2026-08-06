@@ -227,7 +227,8 @@ void main() {
     expect(find.text('CONNECTED'), findsNothing);
     expect(find.text('Not linked'), findsAtLeastNWidgets(3));
     expect(find.text('Safety Numbers'), findsOneWidget);
-    expect(find.text('Sign out'), findsNothing);
+    expect(find.text('Sign out'), findsOneWidget);
+    expect(find.text('On this Mac'), findsOneWidget);
     expect(find.text('Standard Professional License'), findsNothing);
   });
 
@@ -402,6 +403,13 @@ void main() {
           'handle': 'me',
           'fingerprint': '11111 22222 33333 44444 55555 66666 77777 88888 99999 00000 12345 67890',
           'uri': 'mutande:safety:me:11111 22222',
+          'pubkey': '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+        });
+      }
+      if (method == 'register_device') {
+        return _rpcOk(body['id'], {
+          'ok': true,
+          'pubkey': '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
         });
       }
       return _rpcOk(body['id'], {'ok': true});
@@ -427,6 +435,8 @@ void main() {
     await tester.ensureVisible(find.text('Safety Numbers'));
     expect(find.text('Safety Numbers'), findsOneWidget);
     expect(find.text('Compare safety numbers'), findsOneWidget);
+    expect(find.text('This device pubkey'), findsOneWidget);
+    expect(find.text('Register this device'), findsOneWidget);
     expect(find.text('11111'), findsOneWidget);
     expect(find.text('22222'), findsOneWidget);
 
@@ -720,6 +730,55 @@ test('validateHandle and validateHubUrl', () {
     );
     expect(errored.isEmptyBody, isFalse);
     expect(errored.displayBody, 'Could not decrypt');
+  });
+
+  test('ThreadMessageView surfaces attachments and hides stub notes', () {
+    const stub = ThreadMessageView(
+      id: 'm5',
+      fromHandle: 'tawanda@tbhco/cursor',
+      createdAt: '2026-08-05T20:09:12.297Z',
+      bundleSubject: 'Landing intro sample render',
+      bundleNotes:
+          'Binary artifact (3127062 bytes); too large to inline in opened bundle.',
+      resources: [
+        BundleResourceView(
+          name: 'landing-intro.mp4',
+          mime: 'video/mp4',
+        ),
+      ],
+    );
+    expect(stub.isEmptyBody, isFalse);
+    expect(stub.displayBody, 'Landing intro sample render');
+    expect(stub.displayBody.contains('too large'), isFalse);
+    expect(stub.resources.single.isAvailable, isFalse);
+    expect(stub.resources.single.isVideo, isTrue);
+
+    const ready = ThreadMessageView(
+      id: 'm6',
+      fromHandle: 'tawanda@tbhco/cursor',
+      createdAt: '2026-08-05T20:09:12.297Z',
+      bundleNotes: 'Artifact available on this device: landing-intro.mp4',
+      resources: [
+        BundleResourceView(
+          name: 'landing-intro.mp4',
+          mime: 'video/mp4',
+          path: '/tmp/landing-intro.mp4',
+          size: 3127062,
+        ),
+      ],
+    );
+    expect(ready.displayBody, '');
+    expect(ready.resources.single.isAvailable, isTrue);
+    expect(ready.resources.single.sizeLabel, '3.0 MB');
+
+    const textInline = BundleResourceView(
+      name: 'notes.md',
+      mime: 'text/markdown',
+      content: '# hello',
+      size: 7,
+    );
+    expect(textInline.isText, isTrue);
+    expect(textInline.isAvailable, isTrue);
   });
 
   testWidgets('agent inspector harden paths', (WidgetTester tester) async {

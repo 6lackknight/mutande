@@ -2,7 +2,9 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
@@ -171,23 +173,63 @@ pub fn source_binary_path() -> Result<PathBuf> {
 }
 
 /// Spawn `bin --help` and require exit 0 (catches Bad CPU type / missing binary).
+///
+/// Bounded wait — macOS Gatekeeper can hang on a freshly copied binary.
 pub fn preflight_mutande_core(bin: &Path) -> Result<()> {
     if !bin.is_file() {
         bail!("mutande-core not found at {}", bin.display());
     }
-    let output = Command::new(bin)
+    let mut child = Command::new(bin)
         .arg("--help")
-        .output()
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
         .with_context(|| {
             format!(
                 "failed to spawn {} (wrong architecture or not executable)",
                 bin.display()
             )
         })?;
-    if output.status.success() {
+
+    const PREFLIGHT_TIMEOUT: Duration = Duration::from_secs(8);
+    let started = Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => {
+                if started.elapsed() >= PREFLIGHT_TIMEOUT {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    bail!(
+                        "mutande-core preflight timed out at {} \
+                         (macOS may be scanning a newly installed binary — retry)",
+                        bin.display()
+                    );
+                }
+                thread::sleep(Duration::from_millis(40));
+            }
+            Err(err) => {
+                return Err(err).with_context(|| {
+                    format!("wait for mutande-core preflight at {}", bin.display())
+                });
+            }
+        }
+    };
+
+    if status.success() {
         return Ok(());
     }
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let stderr = child
+        .stderr
+        .take()
+        .and_then(|mut pipe| {
+            use std::io::Read;
+            let mut buf = String::new();
+            pipe.read_to_string(&mut buf).ok()?;
+            Some(buf)
+        })
+        .unwrap_or_default();
+    let stderr = stderr.trim().to_string();
     bail!(
         "mutande-core preflight failed at {}{}",
         bin.display(),
@@ -235,6 +277,17 @@ pub fn install_stable_mutande_core(home: &Path) -> Result<String> {
         fs::rename(&tmp, &dest).with_context(|| {
             format!("install {} → {}", src.display(), dest.display())
         })?;
+        // Fresh copies from the app bundle often carry quarantine; clear so
+        // MCP hosts can spawn without a Gatekeeper stall.
+        #[cfg(target_os = "macos")]
+        {
+            let _ = Command::new("xattr")
+                .args(["-dr", "com.apple.quarantine"])
+                .arg(&dest)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+        }
     }
 
     preflight_mutande_core(&dest)?;

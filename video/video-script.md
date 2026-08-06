@@ -14,11 +14,11 @@ Every person. Every assistant. Every service. Every workflow.
 Can have a trusted address inside an organisation.
 
 ```text
-tawanda@salesco
-tawanda@salesco/jarvis
+alice@salesco
+alice@salesco/jarvis
 alice@salesco/research
+bob@salesco
 finance@salesco
-review@salesco
 ```
 
 These are identities. Not implementations.
@@ -42,7 +42,8 @@ Supporting: Give every person, assistant and service in your organisation a trus
 
 # Format
 
-- 1080 × 1080 · 60fps · ~28s · muted · seamless loop · Remotion
+- 1080 × 1080 · 60fps · ~28s · muted · seamless loop
+- Implementations: Remotion (`video/`, primary ship) · Motion Canvas (`video-mc/`, diagram alternative)
 - Subtle camera · cinematic but restrained
 - Mood: calm, trustworthy, infrastructure, modern macOS (Linear / Tailscale / Apple / Arc / Notion)
 - Not: crypto, neon AI, hacker movie, particle soup
@@ -56,7 +57,7 @@ Every frame reinforces: **Intelligence has addresses.**
 
 | Beat | Time | Purpose | Visual | Visitor understands |
 |------|------|---------|--------|---------------------|
-| **Identity** | 0–4.5s | Introduce the primitive | Large address tree `tawanda@salesco` + `/jarvis` `/research` `/review` | “People and agents have addresses” |
+| **Identity** | 0–4.5s | Introduce the primitive | Large address tree `alice@salesco` + `/jarvis` `/research` `/review` | “People and agents have addresses” |
 | **Compose** | 4.5–9s | Hosts are where work begins | Claude Desktop; types ask `@research` | “I send work to an identity from Claude” |
 | **Explainer** | 9–11.5s | Name the idea | Full-bleed: “Every intelligence deserves an address.” | Address Intelligence, not chat UI |
 | **Collaboration** | 11.5–17s | Routing by identity | mutande thread; `@claude` → `@chatgpt` → `@research` | Work routes between addresses |

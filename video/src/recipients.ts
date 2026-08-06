@@ -36,7 +36,7 @@ export const RECIPIENTS: readonly {
   },
 ] as const;
 
-export const SENDER_HANDLE = "tawanda@salesco";
+export const SENDER_HANDLE = "alice@salesco";
 
 /** Your agents — left column of the beam graph. */
 export const SENDER_AGENTS: readonly {

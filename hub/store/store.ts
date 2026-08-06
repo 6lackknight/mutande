@@ -159,6 +159,10 @@ export class HubStore {
   private deviceKey(id: string) { return ["devices", id]; }
   private userDeviceKey(userId: string, deviceId: string) { return ["user_devices", userId, deviceId]; }
   private userDevicesPrefix(userId: string) { return ["user_devices", userId]; }
+  /** Deterministic index so concurrent registerDevice cannot mint duplicate wraps. */
+  private userPubkeyKey(userId: string, pubkey: string) {
+    return ["user_pubkeys", userId, pubkey];
+  }
   private threadKey(id: string) { return ["threads", id]; }
   private inboxKey(userId: string, threadId: string) { return ["inbox", userId, threadId]; }
   private inboxPrefix(userId: string) { return ["inbox", userId]; }
@@ -353,15 +357,30 @@ export class HubStore {
       await this.registerAgent(auth, { slug: input.agent_slug.trim() });
     }
     const pubkey = input.pubkey.trim();
-    // Idempotent by pubkey: re-open / reconnect must not mint duplicate wraps.
-    const { devices } = await this.listDevices(auth);
-    const existing = devices.find((d) => d.pubkey === pubkey);
-    if (existing) {
+    const pubkeyIndex = this.userPubkeyKey(auth.userId, pubkey);
+
+    const returnOrUpdate = async (existing: Device): Promise<Device> => {
       if (existing.platform === input.platform) return existing;
       const updated: Device = { ...existing, platform: input.platform };
       await this.kv.set(this.deviceKey(existing.id), updated);
       return updated;
+    };
+
+    // Fast path: atomic pubkey index.
+    const idxRes = await this.kv.get<string>(pubkeyIndex);
+    if (idxRes.value) {
+      const existing = await this.kv.get<Device>(this.deviceKey(idxRes.value));
+      if (existing.value) return await returnOrUpdate(existing.value);
     }
+
+    // Legacy devices registered before the pubkey index existed.
+    const { devices } = await this.listDevices(auth);
+    const legacy = devices.find((d) => d.pubkey === pubkey);
+    if (legacy) {
+      await this.kv.set(pubkeyIndex, legacy.id);
+      return await returnOrUpdate(legacy);
+    }
+
     const device: Device = {
       id: crypto.randomUUID(),
       user_id: auth.userId,
@@ -370,10 +389,20 @@ export class HubStore {
       created_at: nowIso(),
     };
     const tx = this.kv.atomic();
+    tx.check(idxRes);
     tx.set(this.deviceKey(device.id), device);
     tx.set(this.userDeviceKey(auth.userId, device.id), device.id);
+    tx.set(pubkeyIndex, device.id);
     const res = await tx.commit();
-    if (!res.ok) throw conflict("Device register conflict");
+    if (!res.ok) {
+      // Lost a race — return the winner.
+      const again = await this.kv.get<string>(pubkeyIndex);
+      if (again.value) {
+        const winner = await this.kv.get<Device>(this.deviceKey(again.value));
+        if (winner.value) return await returnOrUpdate(winner.value);
+      }
+      throw conflict("Device register conflict");
+    }
     return device;
   }
 

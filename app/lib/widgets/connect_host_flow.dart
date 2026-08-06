@@ -23,7 +23,14 @@ class ConnectHostFlowResult {
   final String? mcpNote;
 }
 
+/// Hero tag for host icon shared between Settings tile and connect dialog.
+String connectHostIconHeroTag(String host) =>
+    'mutande-connect-host-icon-${host.toLowerCase()}';
+
 /// Run the quiet-courier 2-step host link dialog for [host].
+///
+/// When [morphOrigin] is set (and motion is allowed), the dialog scales out
+/// from that tile rect — shared-element feel without a package dependency.
 ///
 /// Returns null if the user dismisses before MCP succeeds.
 Future<ConnectHostFlowResult?> showConnectHostFlow({
@@ -32,17 +39,55 @@ Future<ConnectHostFlowResult?> showConnectHostFlow({
   required HostLinkStore hostLinkStore,
   required String host,
   bool celebrateFirstHost = false,
+  Rect? morphOrigin,
 }) {
-  return showDialog<ConnectHostFlowResult>(
+  final reduceMotion =
+      MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+  final dialog = _ConnectHostFlowDialog(
+    daemon: daemon,
+    hostLinkStore: hostLinkStore,
+    host: host,
+    celebrateFirstHost: celebrateFirstHost,
+    useIconHero: morphOrigin != null && !reduceMotion,
+  );
+
+  if (morphOrigin == null || reduceMotion) {
+    return showDialog<ConnectHostFlowResult>(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: const Color(0x660C0A09),
+      builder: (ctx) => dialog,
+    );
+  }
+
+  final screen = MediaQuery.sizeOf(context);
+  final alignment = Alignment(
+    ((morphOrigin.center.dx / screen.width) * 2 - 1).clamp(-1.0, 1.0),
+    ((morphOrigin.center.dy / screen.height) * 2 - 1).clamp(-1.0, 1.0),
+  );
+
+  return showGeneralDialog<ConnectHostFlowResult>(
     context: context,
     barrierDismissible: false,
+    barrierLabel: 'Connect AI host',
     barrierColor: const Color(0x660C0A09),
-    builder: (ctx) => _ConnectHostFlowDialog(
-      daemon: daemon,
-      hostLinkStore: hostLinkStore,
-      host: host,
-      celebrateFirstHost: celebrateFirstHost,
-    ),
+    transitionDuration: const Duration(milliseconds: 420),
+    pageBuilder: (ctx, animation, secondary) => dialog,
+    transitionBuilder: (ctx, animation, secondary, child) {
+      final curved = CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeInCubic,
+      );
+      return FadeTransition(
+        opacity: curved,
+        child: ScaleTransition(
+          scale: Tween<double>(begin: 0.78, end: 1).animate(curved),
+          alignment: alignment,
+          child: child,
+        ),
+      );
+    },
   );
 }
 
@@ -54,12 +99,14 @@ class _ConnectHostFlowDialog extends StatefulWidget {
     required this.hostLinkStore,
     required this.host,
     required this.celebrateFirstHost,
+    this.useIconHero = false,
   });
 
   final DaemonClient daemon;
   final HostLinkStore hostLinkStore;
   final String host;
   final bool celebrateFirstHost;
+  final bool useIconHero;
 
   @override
   State<_ConnectHostFlowDialog> createState() => _ConnectHostFlowDialogState();
@@ -143,7 +190,7 @@ class _ConnectHostFlowDialogState extends State<_ConnectHostFlowDialog>
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = e.toString();
+        _error = friendlyDaemonError(e, what: 'Connect');
       });
     }
   }
@@ -179,10 +226,11 @@ class _ConnectHostFlowDialogState extends State<_ConnectHostFlowDialog>
       }
     } catch (e) {
       if (!mounted) return;
+      final hint = friendlyDaemonError(e, what: 'Skill install');
       await widget.hostLinkStore.recordSkill(
         host: widget.host,
         status: SkillLinkStatus.needsSetup,
-        hint: e.toString(),
+        hint: hint,
       );
       if (!mounted) return;
       setState(() {
@@ -192,7 +240,7 @@ class _ConnectHostFlowDialogState extends State<_ConnectHostFlowDialog>
           host: widget.host,
           ok: false,
           mode: 'auto',
-          hint: e.toString(),
+          hint: hint,
         );
       });
     }
@@ -268,7 +316,17 @@ class _ConnectHostFlowDialogState extends State<_ConnectHostFlowDialog>
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Center(child: AiHostIcon(widget.host, size: 48)),
+              Center(
+                child: widget.useIconHero
+                    ? Hero(
+                        tag: connectHostIconHeroTag(widget.host),
+                        child: Material(
+                          type: MaterialType.transparency,
+                          child: AiHostIcon(widget.host, size: 48),
+                        ),
+                      )
+                    : AiHostIcon(widget.host, size: 48),
+              ),
               const SizedBox(height: 12),
               Text(
                 'Connect $label',

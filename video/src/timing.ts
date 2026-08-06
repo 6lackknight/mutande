@@ -98,5 +98,5 @@ export const DRAFT_FILENAME = "q3-plan-wip.md";
 export const COMPOSE_PROMPT =
   "Ask @research to critique this before we send it to the team.";
 
-export const IDENTITY_HANDLE = "tawanda@salesco";
+export const IDENTITY_HANDLE = "alice@salesco";
 export const IDENTITY_AGENTS = ["/jarvis", "/research", "/review"] as const;

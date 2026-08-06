@@ -11,6 +11,33 @@ import '../widgets/connect_host_picker.dart';
 import '../widgets/host_link_status.dart';
 import '../widgets/thinking_orb.dart';
 
+// Compact tray settings — stone surfaces, tight-within / air-between sections.
+const Color _kStone50 = Color(0xFFFAFAF9);
+const Color _kStone100 = Color(0xFFF5F5F4);
+const Color _kStone200 = Color(0xFFE7E5E4);
+const Color _kStone300 = Color(0xFFD6D3D1);
+const Color _kStone400 = Color(0xFFA8A29E);
+const Color _kStone500 = Color(0xFF78716C);
+const Color _kStone700 = Color(0xFF44403C);
+const Color _kStone800 = Color(0xFF292524);
+const Color _kStone900 = Color(0xFF1C1917);
+const Color _kBronze = Color(0xFF8B6914);
+const Color _kGreen = Color(0xFF166534);
+const Color _kRed = Color(0xFF991B1B);
+const Color _kRose = Color(0xFF9F1239);
+const double _kSectionGap = 28;
+const double _kHeaderGap = 8;
+const double _kCardRadius = 12;
+const EdgeInsets _kCardPad = EdgeInsets.fromLTRB(14, 14, 14, 14);
+
+BoxDecoration _settingsCardDecoration({Color? borderColor, Color? fill}) {
+  return BoxDecoration(
+    color: fill ?? Colors.white,
+    borderRadius: BorderRadius.circular(_kCardRadius),
+    border: Border.all(color: borderColor ?? _kStone200),
+  );
+}
+
 /// Plumbing + trust — pushed from the home gear (Stitch Settings hub).
 class SettingsScreen extends StatefulWidget {
   SettingsScreen({
@@ -60,14 +87,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   DateTime? _lastPingAt;
   SafetyNumberResult? _ours;
   bool _loadingSafety = true;
+  bool _registeringDevice = false;
+  bool _signingOut = false;
   Map<String, HostLinkRecord> _hostLinks = const {};
   bool _loadingLinks = true;
   NotificationPrefs _notifPrefs = const NotificationPrefs();
+  /// Starts false so the card paints immediately with defaults (orb loaders
+  /// never settle in widget tests). Fresh prefs still replace via [_loadNotifPrefs].
   bool _loadingNotif = false;
-  static const _bronze = Color(0xFF8B6914);
-  static const _stone400 = Color(0xFFA8A29E);
-  static const _stone50 = Color(0xFFFAFAF9);
-  static const _green = Color(0xFF166534);
 
   @override
   void initState() {
@@ -78,6 +105,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _loadSafety();
     _loadHostLinks();
     _loadNotifPrefs();
+  }
+
+  @override
+  void didUpdateWidget(covariant SettingsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.checking != widget.checking) {
+      _checking = widget.checking;
+    }
+    if (oldWidget.connecting != widget.connecting) {
+      _connecting = widget.connecting;
+    }
+    if (oldWidget.health != widget.health) {
+      _health = widget.health;
+    }
+    if (oldWidget.connectError != widget.connectError) {
+      _connectError = widget.connectError;
+    }
   }
 
   Future<void> _loadNotifPrefs() async {
@@ -118,7 +162,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _forceRegisterDevice() async {
+    if (_registeringDevice) return;
+    setState(() => _registeringDevice = true);
+    try {
+      await widget.daemon.registerDevice();
+      final ours = await widget.daemon.getSafetyNumber();
+      if (!mounted) return;
+      setState(() {
+        _ours = ours;
+        _registeringDevice = false;
+      });
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        const SnackBar(content: Text('Device pubkey registered with the hub.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _registeringDevice = false);
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(
+          content: Text(friendlyDaemonError(e, what: 'Register device')),
+        ),
+      );
+    }
+  }
+
   Future<void> _signOut() async {
+    if (_signingOut) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -134,20 +204,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
+            style: TextButton.styleFrom(foregroundColor: _kRose),
             child: const Text('Sign out'),
           ),
         ],
       ),
     );
     if (confirmed != true || !mounted) return;
+    setState(() => _signingOut = true);
     try {
       final status = await widget.daemon.authLogout();
       if (!mounted) return;
       widget.onSignedOut?.call(status);
     } catch (e) {
       if (!mounted) return;
+      setState(() => _signingOut = false);
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        SnackBar(content: Text('Couldn’t sign out: $e')),
+        SnackBar(
+          content: Text(friendlyDaemonError(e, what: 'Sign out')),
+        ),
       );
     }
   }
@@ -174,7 +249,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     );
     if (host == null || !mounted) return;
+    await _connectHost(host);
+  }
 
+  Future<void> _connectHost(String host, {Rect? morphOrigin}) async {
+    if (_connecting) return;
     setState(() {
       _connecting = true;
       _connectError = null;
@@ -185,6 +264,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         daemon: widget.daemon,
         hostLinkStore: widget.hostLinkStore,
         host: host,
+        morphOrigin: morphOrigin,
       );
       if (!mounted) return;
       await _loadHostLinks();
@@ -193,6 +273,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
       final label = AiHostIcon.displayName(host);
       if (result == null || !result.mcpOk) {
+        if (result == null) return; // dismissed
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Could not link $label.')),
         );
@@ -224,7 +305,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: _stone50,
+      backgroundColor: _kStone50,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -240,11 +321,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final connected = _health?.connected == true;
+    final agentsEnabled = widget.onOpenAgents != null;
 
     return Scaffold(
-      backgroundColor: _stone50,
+      backgroundColor: _kStone50,
       appBar: AppBar(
-        backgroundColor: _stone50,
+        backgroundColor: _kStone50,
         surfaceTintColor: Colors.transparent,
         titleSpacing: 0,
         automaticallyImplyLeading: false,
@@ -256,86 +338,92 @@ class _SettingsScreenState extends State<SettingsScreen> {
         title: const Text('Settings'),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 4, 20, 32),
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 40),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _sectionHeader(
+            _section(
               context,
-              'DAEMON',
+              label: 'DAEMON',
               trailing: Text(
                 connected ? 'Connected' : 'Unreachable',
                 style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: connected ? _green : const Color(0xFF991B1B),
+                      color: connected ? _kGreen : _kRed,
                       fontWeight: FontWeight.w600,
                     ),
               ),
+              child: _DaemonCard(
+                health: _health,
+                checking: _checking,
+                lastPingAt: _lastPingAt,
+                connected: connected,
+                onCheck: _check,
+                onRetry: _check,
+              ),
             ),
-            const SizedBox(height: 8),
-            _DaemonCard(
-              health: _health,
-              checking: _checking,
-              lastPingAt: _lastPingAt,
-              connected: connected,
-              onCheck: _check,
-              onRetry: _check,
-            ),
-            const SizedBox(height: 28),
-            _sectionHeader(context, 'AGENTS'),
-            const SizedBox(height: 8),
-            Material(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: () {
-                  if (widget.onOpenAgents != null) {
-                    widget.onOpenAgents!();
-                  }
-                },
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Agents & routing',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 14,
-                                color: Color(0xFF292524),
+            _section(
+              context,
+              label: 'AGENTS',
+              child: Material(
+                color: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(_kCardRadius),
+                  side: const BorderSide(color: _kStone200),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: agentsEnabled ? widget.onOpenAgents : null,
+                  child: Padding(
+                    padding: _kCardPad,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Agents & routing',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                  color: agentsEnabled
+                                      ? _kStone800
+                                      : _kStone400,
+                                ),
                               ),
-                            ),
-                            SizedBox(height: 2),
-                            Text(
-                              'Open the Agents graph tab',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Color(0xFFA8A29E),
+                              const SizedBox(height: 2),
+                              Text(
+                                agentsEnabled
+                                    ? 'Open the Agents graph tab'
+                                    : 'Unavailable in this window',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: _kStone400,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                      Icon(Icons.chevron_right, color: Color(0xFFA8A29E)),
-                    ],
+                        Icon(
+                          Icons.chevron_right,
+                          color: agentsEnabled ? _kStone400 : _kStone300,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
-            const SizedBox(height: 28),
-            _sectionHeader(
+            _section(
               context,
-              'AI HOSTS',
+              label: 'AI HOSTS',
               trailing: TextButton(
                 onPressed: _connecting ? null : _pickAndConnect,
                 style: TextButton.styleFrom(
-                  foregroundColor: _bronze,
-                  padding: EdgeInsets.zero,
-                  minimumSize: Size.zero,
+                  foregroundColor: _kBronze,
+                  disabledForegroundColor: _kStone400,
+                  minimumSize: const Size(0, 32),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
                 child: Text(
@@ -346,45 +434,84 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
               ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _HostsCard(
+                    links: _hostLinks,
+                    loading: _loadingLinks,
+                    enabled: !_connecting,
+                    onHostTap: (host, origin) =>
+                        _connectHost(host, morphOrigin: origin),
+                  ),
+                  if (_connectError != null) ...[
+                    const SizedBox(height: 10),
+                    _ErrorBanner(
+                      message: _connectError!,
+                      onDismiss: () => setState(() => _connectError = null),
+                    ),
+                  ],
+                ],
+              ),
             ),
-            const SizedBox(height: 8),
-            _HostsCard(links: _hostLinks, loading: _loadingLinks),
-            if (_connectError != null) ...[
-              const SizedBox(height: 10),
-              _ErrorBanner(message: _connectError!),
-            ],
-            const SizedBox(height: 28),
-            _sectionHeader(context, 'NOTIFICATIONS'),
-            const SizedBox(height: 8),
-            _NotificationsCard(
-              prefs: _notifPrefs,
-              loading: _loadingNotif,
-              onChanged: _saveNotif,
+            _section(
+              context,
+              label: 'NOTIFICATIONS',
+              child: _NotificationsCard(
+                prefs: _notifPrefs,
+                loading: _loadingNotif,
+                onChanged: _saveNotif,
+              ),
             ),
-            const SizedBox(height: 28),
-            _sectionHeader(context, 'SECURITY VERIFICATION'),
-            const SizedBox(height: 8),
-            _SafetyCard(
-              ours: _ours,
-              loading: _loadingSafety,
-              onCompare: _openCompare,
+            _section(
+              context,
+              label: 'SECURITY VERIFICATION',
+              child: _SafetyCard(
+                ours: _ours,
+                loading: _loadingSafety,
+                registering: _registeringDevice,
+                onCompare: _openCompare,
+                onRegisterDevice: _forceRegisterDevice,
+              ),
             ),
-            const SizedBox(height: 28),
-            _sectionHeader(context, 'ACCOUNT'),
-            const SizedBox(height: 8),
-            _AccountCard(
-              handle: widget.handle,
-              onSignOut: widget.onSignedOut == null ? null : _signOut,
+            _section(
+              context,
+              label: 'ACCOUNT',
+              child: _AccountCard(
+                handle: widget.handle,
+                signingOut: _signingOut,
+                onSignOut: widget.onSignedOut == null ? null : _signOut,
+              ),
             ),
-            const SizedBox(height: 28),
-            _sectionHeader(context, 'FEEDBACK'),
-            const SizedBox(height: 8),
-            _FeedbackCard(
-              daemon: widget.daemon,
-              appVersion: widget.appVersion,
+            _section(
+              context,
+              label: 'FEEDBACK',
+              child: _FeedbackCard(
+                daemon: widget.daemon,
+                appVersion: widget.appVersion,
+              ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _section(
+    BuildContext context, {
+    required String label,
+    required Widget child,
+    Widget? trailing,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: _kSectionGap),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _sectionHeader(context, label, trailing: trailing),
+          const SizedBox(height: _kHeaderGap),
+          child,
+        ],
       ),
     );
   }
@@ -396,16 +523,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }) {
     return Row(
       children: [
-        Text(
-          label,
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: _stone400,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 1.1,
-                fontSize: 11,
-              ),
+        Expanded(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: _kStone400,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.1,
+                  fontSize: 11,
+                ),
+          ),
         ),
-        const Spacer(),
         ?trailing,
       ],
     );
@@ -440,28 +570,28 @@ class _DaemonCard extends StatelessWidget {
         ? 'Last check: —'
         : 'Last check: ${_relativePing(lastPingAt!)}';
 
+    final checkLabel = checking ? 'Checking…' : 'Check daemon';
+
     return Container(
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE7E5E4)),
-      ),
+      padding: _kCardPad,
+      decoration: _settingsCardDecoration(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
             title,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: const Color(0xFF292524),
+                  color: _kStone800,
                   fontWeight: FontWeight.w600,
                 ),
           ),
           const SizedBox(height: 2),
           Text(
             checking ? 'Checking…' : detail,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: const Color(0xFF78716C),
+                  color: _kStone500,
                 ),
           ),
           if (!checking && connected) ...[
@@ -469,7 +599,7 @@ class _DaemonCard extends StatelessWidget {
             Text(
               ping,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: const Color(0xFFA8A29E),
+                    color: _kStone400,
                     fontSize: 11,
                   ),
             ),
@@ -481,9 +611,9 @@ class _DaemonCard extends StatelessWidget {
               child: OutlinedButton(
                 onPressed: checking ? null : onCheck,
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF44403C),
-                  side: const BorderSide(color: Color(0xFFD6D3D1)),
-                  backgroundColor: const Color(0xFFF5F5F4),
+                  foregroundColor: _kStone700,
+                  side: const BorderSide(color: _kStone300),
+                  backgroundColor: _kStone100,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 16,
                     vertical: 10,
@@ -494,7 +624,7 @@ class _DaemonCard extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                child: Text(checking ? '…' : 'Check daemon'),
+                child: Text(checkLabel),
               ),
             )
           else
@@ -504,9 +634,9 @@ class _DaemonCard extends StatelessWidget {
                   child: OutlinedButton(
                     onPressed: checking ? null : onCheck,
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF44403C),
-                      side: const BorderSide(color: Color(0xFFD6D3D1)),
-                      backgroundColor: const Color(0xFFF5F5F4),
+                      foregroundColor: _kStone700,
+                      side: const BorderSide(color: _kStone300),
+                      backgroundColor: _kStone100,
                       padding: const EdgeInsets.symmetric(vertical: 10),
                       minimumSize: const Size(0, 36),
                       textStyle: const TextStyle(
@@ -514,7 +644,7 @@ class _DaemonCard extends StatelessWidget {
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    child: Text(checking ? '…' : 'Check daemon'),
+                    child: Text(checkLabel),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -522,7 +652,7 @@ class _DaemonCard extends StatelessWidget {
                   child: FilledButton(
                     onPressed: checking ? null : onRetry,
                     style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFF8B6914),
+                      backgroundColor: _kBronze,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 10),
                       minimumSize: const Size(0, 36),
@@ -531,7 +661,7 @@ class _DaemonCard extends StatelessWidget {
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    child: const Text('Retry'),
+                    child: Text(checking ? '…' : 'Retry'),
                   ),
                 ),
               ],
@@ -551,18 +681,30 @@ class _DaemonCard extends StatelessWidget {
 }
 
 class _HostsCard extends StatelessWidget {
-  const _HostsCard({required this.links, required this.loading});
+  const _HostsCard({
+    required this.links,
+    required this.loading,
+    required this.enabled,
+    required this.onHostTap,
+  });
 
   final Map<String, HostLinkRecord> links;
   final bool loading;
+  final bool enabled;
+  final void Function(String host, Rect? morphOrigin) onHostTap;
 
   @override
   Widget build(BuildContext context) {
     if (loading) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 24),
-        child: Center(
-          child: MutandeOrb.loading(semanticLabel: 'Loading hosts…'),
+      return Container(
+        padding: const EdgeInsets.symmetric(vertical: 28),
+        alignment: Alignment.center,
+        decoration: _settingsCardDecoration(),
+        child: Text(
+          'Loading hosts…',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: _kStone400,
+              ),
         ),
       );
     }
@@ -571,12 +713,14 @@ class _HostsCard extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         for (var i = 0; i < AiHostCatalog.hosts.length; i++) ...[
-          if (i > 0) const SizedBox(width: 8),
+          if (i > 0) const SizedBox(width: 10),
           Expanded(
             child: _HostTile(
               host: AiHostCatalog.hosts[i].$1,
               label: AiHostCatalog.hosts[i].$2,
               link: links[AiHostCatalog.hosts[i].$1],
+              enabled: enabled,
+              onTap: onHostTap,
             ),
           ),
         ],
@@ -590,11 +734,15 @@ class _HostTile extends StatelessWidget {
     required this.host,
     required this.label,
     required this.link,
+    required this.enabled,
+    required this.onTap,
   });
 
   final String host;
   final String label;
   final HostLinkRecord? link;
+  final bool enabled;
+  final void Function(String host, Rect? morphOrigin) onTap;
 
   String get _compactLabel {
     switch (host) {
@@ -605,55 +753,8 @@ class _HostTile extends StatelessWidget {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final linked = link?.ok == true;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: linked ? const Color(0xFFBBF7D0) : const Color(0xFFE7E5E4),
-        ),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          AiHostIcon(host, size: 40),
-          const SizedBox(height: 10),
-          Text(
-            _compactLabel,
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: const Color(0xFF292524),
-                  fontWeight: FontWeight.w600,
-                  height: 1.25,
-                ),
-          ),
-          const SizedBox(height: 8),
-          HostLinkStatusBadge(link: link, style: HostLinkStatusStyle.settings),
-          if (link != null && link!.ok) ...[
-            const SizedBox(height: 4),
-            Text(
-              _skillLabel(link!.skillStatus),
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Color(0xFF78716C),
-                fontSize: 11,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  String _skillLabel(SkillLinkStatus s) {
+  String _skillLabel(SkillLinkStatus? s) {
+    if (s == null) return 'Tap to connect';
     switch (s) {
       case SkillLinkStatus.installed:
         return 'Skill · installed';
@@ -662,8 +763,101 @@ class _HostTile extends StatelessWidget {
       case SkillLinkStatus.skipped:
         return 'Skill · skipped';
       case SkillLinkStatus.none:
-        return 'Skill · —';
+        return link?.ok == true ? 'Skill · —' : 'Tap to connect';
     }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final linked = link?.ok == true;
+    final failed = link != null && !link!.ok;
+    final skillLine = linked
+        ? _skillLabel(link!.skillStatus)
+        : (failed ? 'Tap to retry' : 'Tap to connect');
+
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      label: '$_compactLabel, ${linked ? 'linked' : failed ? 'failed' : 'not linked'}. $skillLine',
+      child: Material(
+        color: linked ? const Color(0xFFF7FDF9) : Colors.white,
+        borderRadius: BorderRadius.circular(_kCardRadius),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(_kCardRadius),
+          onTap: !enabled
+              ? null
+              : () {
+                  final box = context.findRenderObject() as RenderBox?;
+                  final origin = (box != null && box.hasSize)
+                      ? box.localToGlobal(Offset.zero) & box.size
+                      : null;
+                  onTap(host, origin);
+                },
+          child: Ink(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(_kCardRadius),
+              border: Border.all(
+                color: linked
+                    ? const Color(0xFF86EFAC)
+                    : failed
+                        ? const Color(0xFFFECACA)
+                        : _kStone200,
+                width: linked || failed ? 1.5 : 1,
+              ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(10, 14, 10, 12),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Hero(
+                    tag: connectHostIconHeroTag(host),
+                    child: Material(
+                      type: MaterialType.transparency,
+                      child: AiHostIcon(host, size: 40),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _compactLabel,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: _kStone800,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                          height: 1.2,
+                        ),
+                  ),
+                  const SizedBox(height: 8),
+                  HostLinkStatusBadge(
+                    link: link,
+                    style: HostLinkStatusStyle.settings,
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    height: 28,
+                    child: Text(
+                      skillLine,
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: linked ? _kStone500 : _kBronze,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        height: 1.25,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -681,10 +875,15 @@ class _NotificationsCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (loading) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 16),
-        child: Center(
-          child: MutandeOrb.loading(semanticLabel: 'Loading notifications…'),
+      return Container(
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        alignment: Alignment.center,
+        decoration: _settingsCardDecoration(),
+        child: Text(
+          'Loading…',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: _kStone400,
+              ),
         ),
       );
     }
@@ -692,21 +891,23 @@ class _NotificationsCard extends StatelessWidget {
     return Material(
       color: Colors.white,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: const BorderSide(color: Color(0xFFE7E5E4)),
+        borderRadius: BorderRadius.circular(_kCardRadius),
+        side: const BorderSide(color: _kStone200),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
           SwitchListTile.adaptive(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14),
             title: const Text('Enable notifications'),
-            subtitle: const Text('Local banners when mail arrives for cold hosts'),
+            subtitle: const Text(
+              'Local banners when mail arrives for cold hosts',
+            ),
             value: prefs.enabled,
             onChanged: (v) => onChanged(prefs.copyWith(enabled: v)),
           ),
           SwitchListTile.adaptive(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14),
             title: const Text('New mail for my agents'),
             value: prefs.mailForAgents,
             onChanged: prefs.enabled
@@ -714,7 +915,7 @@ class _NotificationsCard extends StatelessWidget {
                 : null,
           ),
           SwitchListTile.adaptive(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14),
             title: const Text('Needs you'),
             subtitle: const Text('Human decisions waiting in mutande'),
             value: prefs.needsYou,
@@ -722,7 +923,7 @@ class _NotificationsCard extends StatelessWidget {
                 ? (v) => onChanged(prefs.copyWith(needsYou: v))
                 : null,
           ),
-          const Divider(height: 1),
+          const Divider(height: 1, thickness: 1, color: _kStone100),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
             child: Align(
@@ -730,7 +931,7 @@ class _NotificationsCard extends StatelessWidget {
               child: Text(
                 'Agents',
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: const Color(0xFFA8A29E),
+                      color: _kStone400,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 0.8,
                     ),
@@ -739,9 +940,13 @@ class _NotificationsCard extends StatelessWidget {
           ),
           for (final slug in const ['cursor', 'claude', 'chatgpt'])
             SwitchListTile.adaptive(
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14),
               secondary: AiHostIcon(slug, size: 28),
-              title: Text(AiHostIcon.displayName(slug)),
+              title: Text(
+                AiHostIcon.displayName(slug),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
               value: prefs.isAgentEnabled(slug),
               onChanged: prefs.enabled && prefs.mailForAgents
                   ? (v) {
@@ -761,21 +966,28 @@ class _SafetyCard extends StatelessWidget {
   const _SafetyCard({
     required this.ours,
     required this.loading,
+    required this.registering,
     required this.onCompare,
+    required this.onRegisterDevice,
   });
 
   final SafetyNumberResult? ours;
   final bool loading;
+  final bool registering;
   final VoidCallback onCompare;
+  final VoidCallback onRegisterDevice;
 
   @override
   Widget build(BuildContext context) {
     final groups = _digitGroups(ours?.fingerprint ?? '');
+    final pubkey = ours?.pubkey?.trim() ?? '';
+
+    final canCompare = !loading && groups.isNotEmpty;
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
       decoration: BoxDecoration(
-        color: const Color(0xFF1C1917),
+        color: _kStone900,
         borderRadius: BorderRadius.circular(14),
       ),
       child: Stack(
@@ -801,9 +1013,9 @@ class _SafetyCard extends StatelessWidget {
               ),
               const SizedBox(height: 6),
               Text(
-                'Compare these numbers with your host to ensure the connection is end-to-end encrypted.',
+                'Compare these numbers with your teammate out of band to confirm end-to-end encryption.',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: const Color(0xFFA8A29E),
+                      color: _kStone400,
                       height: 1.4,
                     ),
               ),
@@ -819,7 +1031,7 @@ class _SafetyCard extends StatelessWidget {
                 Text(
                   'Safety numbers unavailable until the daemon is configured.',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: const Color(0xFFA8A29E),
+                        color: _kStone400,
                       ),
                 )
               else
@@ -827,18 +1039,29 @@ class _SafetyCard extends StatelessWidget {
                   children: [
                     for (var i = 0; i < groups.length; i++) ...[
                       if (i > 0) const SizedBox(width: 8),
-                      Expanded(child: _DigitBlock(top: groups[i].$1, bottom: groups[i].$2)),
+                      Expanded(
+                        child: _DigitBlock(
+                          top: groups[i].$1,
+                          bottom: groups[i].$2,
+                        ),
+                      ),
                     ],
                   ],
                 ),
+              if (!loading) ...[
+                const SizedBox(height: 14),
+                _DevicePubkeyRow(pubkey: pubkey),
+              ],
               const SizedBox(height: 16),
               SizedBox(
                 height: 44,
                 child: FilledButton.icon(
-                  onPressed: onCompare,
+                  onPressed: canCompare ? onCompare : null,
                   style: FilledButton.styleFrom(
                     backgroundColor: Colors.white,
-                    foregroundColor: const Color(0xFF1C1917),
+                    disabledBackgroundColor: const Color(0xFF44403C),
+                    foregroundColor: _kStone900,
+                    disabledForegroundColor: _kStone400,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
                     ),
@@ -846,7 +1069,23 @@ class _SafetyCard extends StatelessWidget {
                   icon: const Icon(Icons.qr_code_2, size: 18),
                   label: const Text(
                     'Compare safety numbers',
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: registering ? null : onRegisterDevice,
+                style: TextButton.styleFrom(
+                  foregroundColor: _kStone400,
+                  disabledForegroundColor: _kStone500,
+                  minimumSize: const Size(0, 40),
+                ),
+                child: Text(
+                  registering ? 'Registering…' : 'Register this device',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ),
@@ -872,6 +1111,80 @@ class _SafetyCard extends StatelessWidget {
   }
 }
 
+class _DevicePubkeyRow extends StatelessWidget {
+  const _DevicePubkeyRow({required this.pubkey});
+
+  final String pubkey;
+
+  @override
+  Widget build(BuildContext context) {
+    final missing = pubkey.isEmpty;
+    final preview = missing
+        ? 'No local device key yet'
+        : pubkey.length <= 20
+            ? pubkey
+            : '${pubkey.substring(0, 10)}…${pubkey.substring(pubkey.length - 8)}';
+
+    return Material(
+      color: _kStone800,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        onTap: missing
+            ? null
+            : () async {
+                await Clipboard.setData(ClipboardData(text: pubkey));
+                if (!context.mounted) return;
+                ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+                  const SnackBar(content: Text('Device pubkey copied')),
+                );
+              },
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'This device pubkey',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: _kStone400,
+                            letterSpacing: 0.3,
+                          ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      preview,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: 'Menlo',
+                        fontSize: 12,
+                        height: 1.3,
+                        color: missing
+                            ? _kStone500
+                            : Colors.white.withValues(alpha: 0.92),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (!missing)
+                Icon(
+                  Icons.copy_rounded,
+                  size: 16,
+                  color: Colors.white.withValues(alpha: 0.45),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _DigitBlock extends StatelessWidget {
   const _DigitBlock({required this.top, required this.bottom});
 
@@ -881,32 +1194,38 @@ class _DigitBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12),
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
       decoration: BoxDecoration(
-        color: const Color(0xFF292524),
+        color: _kStone800,
         borderRadius: BorderRadius.circular(10),
       ),
       child: Column(
         children: [
-          Text(
-            top,
-            style: const TextStyle(
-              fontFamily: 'Menlo',
-              fontSize: 15,
-              fontWeight: FontWeight.w500,
-              color: Colors.white,
-              letterSpacing: 1.2,
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              top,
+              style: const TextStyle(
+                fontFamily: 'Menlo',
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+                color: Colors.white,
+                letterSpacing: 1.2,
+              ),
             ),
           ),
           const SizedBox(height: 4),
-          Text(
-            bottom,
-            style: const TextStyle(
-              fontFamily: 'Menlo',
-              fontSize: 15,
-              fontWeight: FontWeight.w500,
-              color: Colors.white,
-              letterSpacing: 1.2,
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              bottom,
+              style: const TextStyle(
+                fontFamily: 'Menlo',
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+                color: Colors.white,
+                letterSpacing: 1.2,
+              ),
             ),
           ),
         ],
@@ -916,67 +1235,126 @@ class _DigitBlock extends StatelessWidget {
 }
 
 class _AccountCard extends StatelessWidget {
-  const _AccountCard({this.handle, this.onSignOut});
+  const _AccountCard({
+    this.handle,
+    this.signingOut = false,
+    this.onSignOut,
+  });
 
   final String? handle;
+  final bool signingOut;
   final VoidCallback? onSignOut;
 
   @override
   Widget build(BuildContext context) {
-    final h = (handle != null && handle!.isNotEmpty) ? handle! : '—';
-    final initial = h != '—' ? h[0].toUpperCase() : '?';
+    final hasHandle = handle != null && handle!.trim().isNotEmpty;
+    final h = hasHandle ? handle!.trim() : 'Not signed in';
+    final initial = hasHandle ? h.characters.first.toUpperCase() : '?';
+    final handleText = Text(
+      h,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: hasHandle ? _kStone800 : _kStone500,
+            fontWeight: FontWeight.w600,
+            fontSize: 13,
+            height: 1.25,
+          ),
+    );
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(14, 14, 12, 14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE7E5E4)),
-      ),
+      decoration: _settingsCardDecoration(),
+      clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              CircleAvatar(
-                radius: 20,
-                backgroundColor: const Color(0xFFE7E5E4),
-                child: Text(
-                  initial,
-                  style: const TextStyle(
-                    color: Color(0xFF57534E),
-                    fontWeight: FontWeight.w700,
-                    fontSize: 16,
+          Padding(
+            padding: _kCardPad,
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 22,
+                  backgroundColor: _kStone100,
+                  child: Text(
+                    initial,
+                    style: const TextStyle(
+                      color: Color(0xFF57534E),
+                      fontWeight: FontWeight.w600,
+                      fontSize: 15,
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  h,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: const Color(0xFF292524),
-                        fontWeight: FontWeight.w600,
-                        fontFamily: 'Menlo',
-                        fontSize: 13,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (hasHandle)
+                        Tooltip(
+                          message: 'Copy handle',
+                          child: InkWell(
+                            onTap: () async {
+                              await Clipboard.setData(ClipboardData(text: h));
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+                                const SnackBar(content: Text('Handle copied')),
+                              );
+                            },
+                            borderRadius: BorderRadius.circular(4),
+                            child: handleText,
+                          ),
+                        )
+                      else
+                        handleText,
+                      const SizedBox(height: 3),
+                      Text(
+                        hasHandle
+                            ? 'On this Mac'
+                            : 'Sign in to use mutande on this Mac',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: _kStone400,
+                              fontSize: 12,
+                              height: 1.3,
+                            ),
                       ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
           if (onSignOut != null) ...[
-            const SizedBox(height: 12),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton(
-                onPressed: onSignOut,
-                style: TextButton.styleFrom(
-                  foregroundColor: const Color(0xFF9F1239),
-                  padding: EdgeInsets.zero,
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            const Divider(height: 1, thickness: 1, color: _kStone100),
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: signingOut ? null : onSignOut,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 44),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.logout_rounded,
+                          size: 16,
+                          color: signingOut ? _kStone300 : _kRose,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          signingOut ? 'Signing out…' : 'Sign out',
+                          style: TextStyle(
+                            color: signingOut ? _kStone400 : _kRose,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-                child: const Text('Sign out'),
               ),
             ),
           ],
@@ -1017,6 +1395,10 @@ class _FeedbackCardState extends State<_FeedbackCard> {
       setState(() => _error = 'Write a short note first.');
       return;
     }
+    if (message.length > 4000) {
+      setState(() => _error = 'Keep feedback under 4,000 characters.');
+      return;
+    }
     setState(() {
       _sending = true;
       _error = null;
@@ -1038,7 +1420,7 @@ class _FeedbackCardState extends State<_FeedbackCard> {
       if (!mounted) return;
       setState(() {
         _sending = false;
-        _error = e.toString();
+        _error = friendlyDaemonError(e, what: 'Feedback');
       });
     }
   }
@@ -1046,19 +1428,15 @@ class _FeedbackCardState extends State<_FeedbackCard> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE7E5E4)),
-      ),
+      padding: _kCardPad,
+      decoration: _settingsCardDecoration(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
             'Tell us what broke or felt off. Goes to the mutande team — not into threads.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: const Color(0xFF78716C),
+                  color: _kStone500,
                   height: 1.35,
                 ),
           ),
@@ -1067,9 +1445,19 @@ class _FeedbackCardState extends State<_FeedbackCard> {
             controller: _controller,
             minLines: 3,
             maxLines: 6,
+            maxLength: 4000,
             enabled: !_sending,
+            onChanged: (_) {
+              if (_sent || _error != null) {
+                setState(() {
+                  _sent = false;
+                  _error = null;
+                });
+              }
+            },
             decoration: const InputDecoration(
               hintText: 'e.g. Connect hosts failed on Claude…',
+              counterText: '',
             ),
           ),
           if (_error != null) ...[
@@ -1077,7 +1465,7 @@ class _FeedbackCardState extends State<_FeedbackCard> {
             Text(
               _error!,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: const Color(0xFF991B1B),
+                    color: _kRed,
                   ),
             ),
           ],
@@ -1086,7 +1474,7 @@ class _FeedbackCardState extends State<_FeedbackCard> {
             Text(
               'Sent — thank you.',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: const Color(0xFF166534),
+                    color: _kGreen,
                   ),
             ),
           ],
@@ -1107,9 +1495,10 @@ class _FeedbackCardState extends State<_FeedbackCard> {
 }
 
 class _ErrorBanner extends StatelessWidget {
-  const _ErrorBanner({required this.message});
+  const _ErrorBanner({required this.message, this.onDismiss});
 
   final String message;
+  final VoidCallback? onDismiss;
 
   @override
   Widget build(BuildContext context) {
@@ -1118,17 +1507,39 @@ class _ErrorBanner extends StatelessWidget {
       msg = msg.substring('DaemonException: '.length);
     }
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.fromLTRB(12, 10, 6, 10),
       decoration: BoxDecoration(
         color: const Color(0xFFFEF2F2),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: const Color(0xFFFECACA)),
       ),
-      child: Text(
-        msg,
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: const Color(0xFF991B1B),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(top: 2),
+            child: Icon(Icons.error_outline, size: 16, color: _kRed),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              msg,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: _kRed,
+                    height: 1.35,
+                  ),
             ),
+          ),
+          if (onDismiss != null)
+            IconButton(
+              tooltip: 'Dismiss',
+              onPressed: onDismiss,
+              visualDensity: VisualDensity.compact,
+              iconSize: 18,
+              color: _kRed,
+              icon: const Icon(Icons.close),
+            ),
+        ],
       ),
     );
   }
@@ -1184,8 +1595,9 @@ class _CompareSheetState extends State<_CompareSheet> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = friendlyDaemonError(e, what: 'Compare');
         _loading = false;
+        _verified = null;
       });
     }
   }
@@ -1200,15 +1612,19 @@ class _CompareSheetState extends State<_CompareSheet> {
           children: [
             Row(
               children: [
-                Text(
-                  'Compare safety numbers',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: const Color(0xFF292524),
-                      ),
+                Expanded(
+                  child: Text(
+                    'Compare safety numbers',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: _kStone800,
+                        ),
+                  ),
                 ),
-                const Spacer(),
                 IconButton(
+                  tooltip: 'Close',
                   onPressed: () => Navigator.pop(context),
                   icon: const Icon(Icons.close, size: 20),
                 ),
@@ -1219,7 +1635,7 @@ class _CompareSheetState extends State<_CompareSheet> {
               Text(
                 'Your number',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: const Color(0xFF78716C),
+                      color: _kStone500,
                     ),
               ),
               SelectableText(
@@ -1227,7 +1643,7 @@ class _CompareSheetState extends State<_CompareSheet> {
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       fontFamily: 'Menlo',
                       fontSize: 12,
-                      color: const Color(0xFF292524),
+                      color: _kStone800,
                     ),
               ),
               Align(
@@ -1236,6 +1652,9 @@ class _CompareSheetState extends State<_CompareSheet> {
                   onPressed: () {
                     Clipboard.setData(
                       ClipboardData(text: widget.ours!.uri),
+                    );
+                    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+                      const SnackBar(content: Text('Safety URI copied')),
                     );
                   },
                   icon: const Icon(Icons.copy, size: 16),
@@ -1250,6 +1669,7 @@ class _CompareSheetState extends State<_CompareSheet> {
                 hintText: 'alice@acme',
               ),
               enabled: !_loading,
+              textInputAction: TextInputAction.next,
             ),
             const SizedBox(height: 10),
             TextField(
@@ -1261,12 +1681,16 @@ class _CompareSheetState extends State<_CompareSheet> {
               enabled: !_loading,
               minLines: 1,
               maxLines: 3,
+              onSubmitted: (_) {
+                if (!_loading) _verify();
+              },
             ),
             const SizedBox(height: 14),
             FilledButton(
               onPressed: _loading ? null : _verify,
               style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF1C1917),
+                backgroundColor: _kStone900,
+                minimumSize: const Size(0, 44),
               ),
               child: _loading
                   ? const Row(
@@ -1289,9 +1713,7 @@ class _CompareSheetState extends State<_CompareSheet> {
                     ? 'Match — contact verified.'
                     : 'No match — do not trust yet.',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: _verified!
-                          ? const Color(0xFF166534)
-                          : const Color(0xFF991B1B),
+                      color: _verified! ? _kGreen : _kRed,
                       fontWeight: FontWeight.w600,
                     ),
               ),
@@ -1308,7 +1730,7 @@ class _CompareSheetState extends State<_CompareSheet> {
               Text(
                 _error!,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: const Color(0xFF991B1B),
+                      color: _kRed,
                     ),
               ),
             ],

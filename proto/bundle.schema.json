@@ -30,12 +30,22 @@
         "properties": {
           "name": { "type": "string" },
           "mime": { "type": "string" },
-          "content": { "type": "string" },
+          "content": {
+            "type": "string",
+            "description": "Inline text for small UTF-8 artifacts. Large/binary resources omit this after open and set path instead."
+          },
+          "path": {
+            "type": "string",
+            "description": "Absolute local plaintext path after open (this device's daemon cache). Prefer reading this for binary/large artifacts."
+          },
           "storage": { "type": "string", "enum": ["inline", "blob"] },
           "blob_id": { "type": "string" },
           "wrapped_key": { "type": "string" },
           "sha256": { "type": "string" },
-          "size": { "type": "integer" }
+          "size": {
+            "type": "integer",
+            "description": "Plaintext byte length when known."
+          }
         }
       }
     },

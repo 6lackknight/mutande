@@ -316,6 +316,10 @@ async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Resu
             let result = state.own_safety_number()?;
             Ok(serde_json::to_value(result)?)
         }
+        "register_device" => {
+            let pubkey = state.register_device_now().await?;
+            Ok(serde_json::json!({ "ok": true, "pubkey": pubkey }))
+        }
         "contact_safety_number" => {
             let handle = param_str(&params, "handle")?;
             let result = state.contact_safety_number(&handle).await?;
@@ -332,37 +336,61 @@ async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Resu
             Ok(serde_json::to_value(result)?)
         }
         "forward_blob" => {
-            let recipient = param_str(&params, "recipient")?;
+            let recipient = optional_str(&params, "recipient");
+            let thread_id = optional_str(&params, "thread_id");
+            let in_reply_to = optional_str(&params, "in_reply_to");
             let agent_slug = optional_str(&params, "agent_slug");
             let subject = params
                 .get("subject")
                 .and_then(|v| v.as_str())
                 .map(str::to_string);
-            let (plaintext, filename) =
-                if let Some(b64) = params.get("content_base64").and_then(|v| v.as_str()) {
-                    let name = params
-                        .get("filename")
-                        .and_then(|v| v.as_str())
-                        .map(str::to_string);
-                    (decode_base64(b64)?, name)
-                } else if let Some(path) = params.get("path").and_then(|v| v.as_str()) {
-                    let bytes = std::fs::read(path)
-                        .with_context(|| format!("read blob path {path}"))?;
-                    let name = std::path::Path::new(path)
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .map(str::to_string);
-                    (bytes, name)
-                } else {
-                    anyhow::bail!("missing param: content_base64 or path");
-                };
+            if thread_id.is_none() && recipient.is_none() {
+                anyhow::bail!("missing param: recipient (required unless thread_id is set)");
+            }
+            let has_b64 = params
+                .get("content_base64")
+                .and_then(|v| v.as_str())
+                .is_some_and(|s| !s.trim().is_empty());
+            let has_path = params
+                .get("path")
+                .and_then(|v| v.as_str())
+                .is_some_and(|s| !s.trim().is_empty());
+            if has_b64 && has_path {
+                anyhow::bail!("provide content_base64 or path, not both");
+            }
+            let (plaintext, filename) = if has_b64 {
+                let b64 = params
+                    .get("content_base64")
+                    .and_then(|v| v.as_str())
+                    .unwrap();
+                let name = params
+                    .get("filename")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string);
+                let bytes = decode_base64(b64)?;
+                if bytes.len() > super::state::BLOB_PLAINTEXT_MAX {
+                    anyhow::bail!(
+                        "blob too large ({} bytes); max is {}",
+                        bytes.len(),
+                        super::state::BLOB_PLAINTEXT_MAX
+                    );
+                }
+                (bytes, name)
+            } else if has_path {
+                let path = params.get("path").and_then(|v| v.as_str()).unwrap().trim();
+                read_blob_file(path)?
+            } else {
+                anyhow::bail!("missing param: content_base64 or path");
+            };
             let result = state
                 .forward_blob(
-                    &recipient,
+                    recipient.as_deref(),
                     &plaintext,
                     subject.as_deref(),
                     filename.as_deref(),
                     agent_slug.as_deref(),
+                    thread_id.as_deref(),
+                    in_reply_to.as_deref(),
                 )
                 .await?;
             let thread_id = result
@@ -371,6 +399,7 @@ async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Resu
                 .cloned()
                 .context("forward_blob produced no threads")?;
             Ok(serde_json::json!({
+                "ok": true,
                 "thread_id": thread_id,
                 "thread_ids": result.thread_ids,
                 "recipients": result.recipients,
@@ -421,6 +450,33 @@ fn decode_base64(input: &str) -> Result<Vec<u8>> {
         }
     }
     Ok(out)
+}
+
+/// Stat + read a local file for `forward_blob`, rejecting empty / oversized / non-files.
+fn read_blob_file(path: &str) -> Result<(Vec<u8>, Option<String>)> {
+    if path.is_empty() {
+        anyhow::bail!("missing param: path");
+    }
+    let meta = std::fs::metadata(path).with_context(|| format!("stat blob path {path}"))?;
+    if !meta.is_file() {
+        anyhow::bail!("blob path is not a file: {path}");
+    }
+    let len = meta.len() as usize;
+    if len == 0 {
+        anyhow::bail!("blob plaintext empty");
+    }
+    if len > super::state::BLOB_PLAINTEXT_MAX {
+        anyhow::bail!(
+            "blob too large ({len} bytes); max is {}",
+            super::state::BLOB_PLAINTEXT_MAX
+        );
+    }
+    let bytes = std::fs::read(path).with_context(|| format!("read blob path {path}"))?;
+    let name = std::path::Path::new(path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .map(str::to_string);
+    Ok((bytes, name))
 }
 
 fn param_str(params: &Value, key: &str) -> Result<String> {
@@ -812,7 +868,7 @@ mod tests {
                     "created_at": "2026-01-01T00:00:00Z"
                 }
             })))
-            .expect(2) // auth_login + get_status
+            .expect(1) // auth_login registers; get_status is TTL-throttled
             .mount(&server)
             .await;
 
@@ -897,5 +953,97 @@ mod tests {
         assert!(saved.get("access_token").is_none());
         assert!(saved.get("refresh_token").is_none());
         assert_eq!(saved["hub_url"], server.uri());
+    }
+
+    #[tokio::test]
+    async fn forward_blob_rejects_empty_path_and_both_params() {
+        let state = Arc::new(DaemonState::new_in_memory_for_test().unwrap());
+
+        let empty_path = JsonRpcRequest {
+            jsonrpc: Some("2.0".into()),
+            id: Some(serde_json::json!(1)),
+            method: "forward_blob".into(),
+            params: serde_json::json!({
+                "recipient": "@claude",
+                "path": "   "
+            }),
+        };
+        let resp = handle_request(&state, empty_path).await;
+        let err = resp.error.expect("empty path should error");
+        assert!(
+            err.message.contains("missing param"),
+            "got: {}",
+            err.message
+        );
+
+        let both = JsonRpcRequest {
+            jsonrpc: Some("2.0".into()),
+            id: Some(serde_json::json!(2)),
+            method: "forward_blob".into(),
+            params: serde_json::json!({
+                "recipient": "@claude",
+                "path": "/tmp/x.md",
+                "content_base64": "YQ=="
+            }),
+        };
+        let resp2 = handle_request(&state, both).await;
+        let err2 = resp2.error.expect("both params should error");
+        assert!(
+            err2.message.contains("not both"),
+            "got: {}",
+            err2.message
+        );
+    }
+
+    #[tokio::test]
+    async fn forward_blob_rpc_requires_recipient_without_thread_id() {
+        let state = Arc::new(DaemonState::new_in_memory_for_test().unwrap());
+        let req = JsonRpcRequest {
+            jsonrpc: Some("2.0".into()),
+            id: Some(serde_json::json!(1)),
+            method: "forward_blob".into(),
+            params: serde_json::json!({
+                "content_base64": "YQ==",
+                "filename": "a.txt"
+            }),
+        };
+        let resp = handle_request(&state, req).await;
+        let err = resp.error.expect("missing recipient should error");
+        assert!(
+            err.message.contains("recipient"),
+            "got: {}",
+            err.message
+        );
+    }
+
+    #[tokio::test]
+    async fn forward_blob_rejects_missing_file() {
+        let state = Arc::new(DaemonState::new_in_memory_for_test().unwrap());
+        let req = JsonRpcRequest {
+            jsonrpc: Some("2.0".into()),
+            id: Some(serde_json::json!(1)),
+            method: "forward_blob".into(),
+            params: serde_json::json!({
+                "recipient": "@claude",
+                "path": "/tmp/mutande-no-such-blob-file-xyz.md"
+            }),
+        };
+        let resp = handle_request(&state, req).await;
+        let err = resp.error.expect("missing file should error");
+        assert!(
+            err.message.contains("stat blob path") || err.message.contains("No such"),
+            "got: {}",
+            err.message
+        );
+    }
+
+    #[test]
+    fn read_blob_file_rejects_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let err = read_blob_file(dir.path().to_str().unwrap()).unwrap_err();
+        assert!(
+            err.to_string().contains("not a file"),
+            "got: {err}"
+        );
     }
 }

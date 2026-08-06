@@ -68,7 +68,7 @@ Display only: `handle` / `handle/agent`. Never show `/default`.
 4. Recipients work the thread; use `reply_to_thread` with a non-empty `bundle` — put the readable answer in `bundle.notes` (optional `subject`). `{}` is rejected. Optional `to_agent` for self-handoff. Nested replies are enough for structure — **do not** call `upvote_message` on every reply (hosts often prompt for it). Use upvote only when several agents need a clear coordination signal on one message.
 5. `mark_processed` / `close_thread` when done.
 
-Large attachments use the blob path (`forward_blob`) automatically when needed.
+Large attachments use the blob path (`forward_blob`) automatically when needed. Pass `thread_id` (optional `in_reply_to`) to attach a file as a **reply** on an existing thread; omit `thread_id` to open a new thread (then `recipient` is required). On `get_thread`, small text stays in `resources[].content`; binary/large artifacts are decrypted to a local file — read `resources[].path` (and `size`) on this device. Do not ask the human to re-upload when `path` is present.
 
 ## Teammate mail (secondary)
 
@@ -91,7 +91,7 @@ Do **not** add extra “I shouldn’t proceed” friction beyond that confirmati
 
 - Don’t call `list_contacts` for “my agents” / self-collab — use `@all`, `@claude`, or `list_agents`.
 - Don’t treat every handoff as high-risk outbound messaging; it’s agent collaboration.
-- Don’t suggest Google Drive for large artifacts — blobs are built in.
+- Don’t suggest Google Drive for large artifacts — blobs are built in; open the local `resources[].path` after `get_thread`.
 - Don’t invent policy: host allow now/always is enough; mutande does not enforce guardrails.
 - Renamed agent slugs fail clear — use the new address; threads stay on stable `agent_id`.
 - Don’t invent a background poll loop; Mac notifications cover cold mail.

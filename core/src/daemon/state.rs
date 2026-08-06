@@ -1,12 +1,14 @@
 use std::collections::HashSet;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use crypto_box::aead::OsRng;
 use crypto_box::SecretKey;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use crate::address::{
     agent_suffix, bare_handle, is_broadcast_handle, is_my_agents_handle, parse_display_address,
@@ -25,8 +27,9 @@ use crate::hub_client::{
     ThreadMeta, ThreadStatus, YourStatus, pubkey_from_hub_string,
 };
 
-use super::config::{DaemonConfig, config_path, load_config, save_config_at};
+use super::config::{DaemonConfig, config_path, load_config, save_config_at, write_restricted_file};
 use super::oauth::{self, Auth0NativeConfig};
+use super::expand_path;
 
 /// Product ping kinds — `health` gets daemon auto-pong; `thread` expects agent mail reply.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -95,8 +98,16 @@ pub struct ResourceRequest {
 pub struct BundleResource {
     pub name: String,
     pub mime: String,
+    /// Inline text (or base64 for sealed binary wire format). Cleared for large/binary
+    /// after open once bytes are materialized to [`Self::path`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content: Option<String>,
+    /// Absolute local plaintext path after open (this device's `~/.mutande/blob_cache/`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    /// Plaintext byte length when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<u64>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -326,7 +337,10 @@ pub struct StatusResult {
     pub default_agent: Option<String>,
 }
 
-/// Safety-number compare result (no raw pubkey in agent/MCP responses).
+/// Safety-number compare result.
+///
+/// Own-device responses may include `pubkey` (hex) for Settings / debug.
+/// Contact responses omit it so MCP agents do not receive teammate keys.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SafetyNumberResult {
     pub handle: String,
@@ -334,19 +348,52 @@ pub struct SafetyNumberResult {
     pub uri: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verified: Option<bool>,
+    /// Hex-encoded X25519 device public key (own device only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pubkey: Option<String>,
 }
 
+
+/// Skip re-publishing the local pubkey to the hub within this window.
+const DEVICE_REGISTER_TTL: Duration = Duration::from_secs(5 * 60);
+
+/// Max plaintext bytes accepted by `forward_blob` / RPC path reads (memory bound).
+pub const BLOB_PLAINTEXT_MAX: usize = 64 * 1024 * 1024;
+
+/// Suggest a different peer when rejecting same-agent self-loops.
+fn same_agent_handoff_hint(from_slug: &str, target_bare: Option<&str>) -> String {
+    const PEERS: &[&str] = &["claude", "cursor", "chatgpt"];
+    let alt = PEERS
+        .iter()
+        .copied()
+        .find(|p| *p != from_slug)
+        .unwrap_or("cursor");
+    match target_bare {
+        Some(bare) => format!(
+            "cannot hand off to the same agent ({from_slug}); send to a different agent address, e.g. @{alt} or {bare}/{alt}"
+        ),
+        None => format!(
+            "cannot hand off to the same agent ({from_slug}); send to a different agent address, e.g. @{alt} or @all"
+        ),
+    }
+}
 
 pub struct DaemonState {
     config: Arc<Mutex<DaemonConfig>>,
     /// Override config.json path (tests); `None` → `~/.mutande/config.json`.
     config_path: Option<PathBuf>,
+    /// Override blob plaintext cache (tests); `None` → `~/.mutande/blob_cache/`.
+    blob_cache_dir: Option<PathBuf>,
     identity: Box<dyn IdentityStore>,
     hub: Mutex<Option<HubClient>>,
     draft: Mutex<MutandeBundle>,
     draft_id: Mutex<Option<String>>,
     processed_threads: Mutex<HashSet<String>>,
     connected_agent_slug: Mutex<Option<String>>,
+    /// Last successful hub device register (throttle status-path re-publish).
+    last_device_register: Mutex<Option<Instant>>,
+    /// Last known bare handle from hub `/me` (same-agent checks when `/me` is down).
+    cached_bare_handle: Mutex<Option<String>>,
 }
 
 impl DaemonState {
@@ -373,12 +420,15 @@ impl DaemonState {
         let state = Self {
             config,
             config_path: None,
+            blob_cache_dir: None,
             identity,
             hub: Mutex::new(hub),
             draft: Mutex::new(MutandeBundle::default()),
             draft_id: Mutex::new(None),
             processed_threads: Mutex::new(HashSet::new()),
             connected_agent_slug: Mutex::new(None),
+            last_device_register: Mutex::new(None),
+            cached_bare_handle: Mutex::new(None),
         };
         // So Connect AI / MCP host configs resolve the bundled sidecar absolute path.
         let _ = state.persist_own_exe_path();
@@ -434,13 +484,21 @@ impl DaemonState {
         Ok(Self {
             config: Arc::new(Mutex::new(DaemonConfig::default())),
             config_path,
+            blob_cache_dir: None,
             identity: Box::new(store),
             hub: Mutex::new(None),
             draft: Mutex::new(MutandeBundle::default()),
             draft_id: Mutex::new(None),
             processed_threads: Mutex::new(HashSet::new()),
             connected_agent_slug: Mutex::new(None),
+            last_device_register: Mutex::new(None),
+            cached_bare_handle: Mutex::new(None),
         })
+    }
+
+    #[cfg(test)]
+    pub fn set_blob_cache_dir_for_test(&mut self, dir: PathBuf) {
+        self.blob_cache_dir = Some(dir);
     }
 
     #[cfg(test)]
@@ -451,6 +509,23 @@ impl DaemonState {
     #[cfg(test)]
     pub fn set_connected_agent_slug_for_test(&self, slug: Option<&str>) {
         *self.connected_agent_slug.lock().unwrap() = slug.map(str::to_string);
+    }
+
+    #[cfg(test)]
+    pub fn set_cached_bare_handle_for_test(&self, handle: Option<&str>) {
+        *self.cached_bare_handle.lock().unwrap() = handle.map(|h| strip_agent_suffix(h).to_string());
+    }
+
+    fn remember_bare_handle(&self, handle: &str) {
+        let bare = strip_agent_suffix(handle.trim());
+        if bare.is_empty() {
+            return;
+        }
+        *self.cached_bare_handle.lock().unwrap() = Some(bare.to_string());
+    }
+
+    fn cached_bare_handle(&self) -> Option<String> {
+        self.cached_bare_handle.lock().unwrap().clone()
     }
 
     fn hub_client(&self) -> Option<HubClient> {
@@ -525,9 +600,8 @@ impl DaemonState {
             .context("hub client missing after auth_login")?;
         let me = hub.me().await.context("GET /v1/me after Auth0 login")?;
         if me.is_onboarded() {
-            self.register_local_device(&hub)
-                .await
-                .context("register device pubkey after login")?;
+            // Soft-fail: session is already persisted; boot/status will retry.
+            self.register_local_device_soft(&hub).await;
         }
         let hub_url = self.config.lock().unwrap().hub_url.clone();
         Ok(status_from_me(&hub_url, &me))
@@ -551,6 +625,7 @@ impl DaemonState {
         *self.draft_id.lock().unwrap() = None;
         self.processed_threads.lock().unwrap().clear();
         *self.connected_agent_slug.lock().unwrap() = None;
+        *self.last_device_register.lock().unwrap() = None;
 
         Ok(StatusResult {
             configured: false,
@@ -580,9 +655,8 @@ impl DaemonState {
         let me = hub
             .create_org(slug, name.map(str::trim).filter(|s| !s.is_empty()), handle.map(str::trim).filter(|s| !s.is_empty()))
             .await?;
-        self.register_local_device(&hub)
-            .await
-            .context("register device pubkey after create_org")?;
+        // Soft-fail: org already exists on hub; boot/status will retry pubkey publish.
+        self.register_local_device_soft(&hub).await;
         onboard_from_me(&me)
     }
 
@@ -603,9 +677,8 @@ impl DaemonState {
                 handle.map(str::trim).filter(|s| !s.is_empty()),
             )
             .await?;
-        self.register_local_device(&hub)
-            .await
-            .context("register device pubkey after join_org")?;
+        // Soft-fail: invite already consumed; boot/status will retry pubkey publish.
+        self.register_local_device_soft(&hub).await;
         onboard_from_me(&me)
     }
 
@@ -614,12 +687,25 @@ impl DaemonState {
         let agent_slug = self.connected_agent_slug.lock().unwrap().clone();
         hub.register_device(&pubkey, super::device_platform(), agent_slug.as_deref())
             .await?;
+        *self.last_device_register.lock().unwrap() = Some(Instant::now());
         Ok(())
     }
 
+    async fn register_local_device_soft(&self, hub: &HubClient) {
+        if let Err(err) = self.register_local_device(hub).await {
+            tracing::warn!(error = %err, "device pubkey register failed");
+        }
+    }
+
+    fn should_reregister_device(&self) -> bool {
+        match *self.last_device_register.lock().unwrap() {
+            None => true,
+            Some(t) => t.elapsed() >= DEVICE_REGISTER_TTL,
+        }
+    }
+
     /// Publish this device pubkey to the hub when signed in + onboarded.
-    /// Soft-fails (logs) so status/bootstrap stay usable offline; hard paths
-    /// (login / create / join) call [`register_local_device`] directly.
+    /// Soft-fails (logs) so status/bootstrap stay usable offline.
     pub async fn ensure_device_registered(&self) -> Result<()> {
         let Some(hub) = self.hub_client() else {
             return Ok(());
@@ -628,7 +714,19 @@ impl DaemonState {
         if !me.is_onboarded() {
             return Ok(());
         }
-        self.register_local_device(&hub).await
+        self.register_local_device_soft(&hub).await;
+        Ok(())
+    }
+
+    /// Force-publish this device pubkey (Settings fallback). Returns hex pubkey.
+    pub async fn register_device_now(&self) -> Result<String> {
+        let hub = self.hub_client().context("hub not configured")?;
+        let me = hub.me().await.context("GET /v1/me before device register")?;
+        if !me.is_onboarded() {
+            bail!("not onboarded — finish create/join before registering this device");
+        }
+        self.register_local_device(&hub).await?;
+        Ok(hex::encode(self.device_public()?.0))
     }
 
     pub fn connected_agent_slug(&self) -> Option<String> {
@@ -806,11 +904,12 @@ impl DaemonState {
             .hub_client()
             .context("signed in but hub client missing")?;
         let me = hub.me().await.context("GET /v1/me for status")?;
-        if me.is_onboarded() {
-            // App open / status poll: re-publish pubkey so teammates can always seal replies.
-            if let Err(err) = self.register_local_device(&hub).await {
-                tracing::warn!(error = %err, "device pubkey register on get_status failed");
-            }
+        if let Some(handle) = me.user.as_ref().and_then(|u| u.handle.as_deref()) {
+            self.remember_bare_handle(handle);
+        }
+        if me.is_onboarded() && self.should_reregister_device() {
+            // Throttled re-publish so teammates can seal; skip if login/boot just did it.
+            self.register_local_device_soft(&hub).await;
         }
         let mut status = status_from_me(&cfg.hub_url, &me);
         status.connected_agent = self.connected_agent_slug();
@@ -1111,6 +1210,17 @@ impl DaemonState {
         self.finish_opened_message(msg, plain)
     }
 
+    fn blob_cache_dir(&self) -> PathBuf {
+        self.blob_cache_dir
+            .clone()
+            .unwrap_or_else(default_blob_cache_dir)
+    }
+
+    /// After decrypt: keep small text in `content`; materialize binary/large to `path`.
+    fn surface_opened_bundle_resources(&self, bundle: &mut MutandeBundle) {
+        surface_bundle_resources_at(bundle, &self.blob_cache_dir());
+    }
+
     fn finish_opened_message(
         &self,
         msg: ThreadMessage,
@@ -1135,22 +1245,8 @@ impl DaemonState {
 
         let mut opened = match plain {
             Ok(plain) => match serde_json::from_slice::<MutandeBundle>(&plain) {
-                Ok(bundle) => OpenedThreadMessage {
-                    id: msg.id,
-                    thread_id: msg.thread_id,
-                    from_user_id: msg.from_user_id,
-                    from_handle: msg.from_handle,
-                    created_at: msg.created_at,
-                    sender_only: msg.sender_only,
-                    parent_message_id: parent_message_id.clone(),
-                    bundle: Some(bundle),
-                    envelope: None,
-                    open_error: None,
-                    upvotes: upvotes.clone(),
-                },
-                Err(_err) if is_blob => {
-                    // Legacy/raw blob plaintext (not a MutandeBundle). Inline small
-                    // UTF-8 so agents can read .md/.txt; stub binary/large.
+                Ok(mut bundle) => {
+                    self.surface_opened_bundle_resources(&mut bundle);
                     OpenedThreadMessage {
                         id: msg.id,
                         thread_id: msg.thread_id,
@@ -1159,7 +1255,26 @@ impl DaemonState {
                         created_at: msg.created_at,
                         sender_only: msg.sender_only,
                         parent_message_id: parent_message_id.clone(),
-                        bundle: Some(bundle_from_raw_blob_plaintext(&plain)),
+                        bundle: Some(bundle),
+                        envelope: None,
+                        open_error: None,
+                        upvotes: upvotes.clone(),
+                    }
+                }
+                Err(_err) if is_blob => {
+                    // Legacy/raw blob plaintext (not a MutandeBundle). Inline small
+                    // UTF-8; materialize binary/large to local cache for agents.
+                    let mut bundle = bundle_from_raw_blob_plaintext(&plain);
+                    self.surface_opened_bundle_resources(&mut bundle);
+                    OpenedThreadMessage {
+                        id: msg.id,
+                        thread_id: msg.thread_id,
+                        from_user_id: msg.from_user_id,
+                        from_handle: msg.from_handle,
+                        created_at: msg.created_at,
+                        sender_only: msg.sender_only,
+                        parent_message_id: parent_message_id.clone(),
+                        bundle: Some(bundle),
                         envelope: None,
                         open_error: None,
                         upvotes: upvotes.clone(),
@@ -1203,15 +1318,21 @@ impl DaemonState {
         };
         let sealed =
             seal_to_temp(plaintext, recipients).map_err(|e| anyhow::anyhow!("{e}"))?;
+        // Always remove temp ciphertext — including presign/PUT failures.
+        struct TempCipherCleanup(PathBuf);
+        impl Drop for TempCipherCleanup {
+            fn drop(&mut self) {
+                let _ = fs::remove_file(&self.0);
+            }
+        }
+        let _cleanup = TempCipherCleanup(sealed.ciphertext_path.clone());
         let upload = hub
             .blob_upload_url(sealed.size_bytes, Some("application/octet-stream"))
             .await?;
         let bytes = fs::read(&sealed.ciphertext_path)
             .with_context(|| format!("read {}", sealed.ciphertext_path.display()))?;
         hub.put_presigned(&upload.upload_url, &bytes).await?;
-        let env = with_blob_id(sealed.envelope, upload.blob_id);
-        let _ = fs::remove_file(&sealed.ciphertext_path);
-        Ok(env)
+        Ok(with_blob_id(sealed.envelope, upload.blob_id))
     }
 
     /// Create one hub thread per expanded recipient. Bare `@all` expands to a
@@ -1267,51 +1388,95 @@ impl DaemonState {
         Ok(result)
     }
 
-    /// Explicit blob send: seal bytes → upload → create thread with blob envelope.
+    /// Explicit blob send: seal bytes → upload → create thread **or reply** with blob envelope.
     ///
-    /// Seals raw `plaintext` (artifact bytes). Recipient `get_thread` opens and
-    /// surfaces a summary bundle (size/name) without inlining ciphertext.
+    /// When `thread_id` is set, uploads as a reply on that thread (hub `reply_to_thread`);
+    /// `recipient` may be omitted and seal keys come from reply recipient resolution.
+    /// When `thread_id` is absent, creates a new thread — `recipient` is required.
+    ///
+    /// Seals a MutandeBundle wrapping the artifact. Recipient `get_thread` opens and
+    /// surfaces subject/name/mime plus inline `content` (small text) or local `path`
+    /// (binary/large) for agents.
     pub async fn forward_blob(
         &self,
-        recipient: &str,
+        recipient: Option<&str>,
         plaintext: &[u8],
         subject: Option<&str>,
         filename: Option<&str>,
         agent_slug: Option<&str>,
+        thread_id: Option<&str>,
+        in_reply_to: Option<&str>,
     ) -> Result<ForwardThreadsResult> {
         if plaintext.is_empty() {
             bail!("blob plaintext empty");
         }
+        if plaintext.len() > BLOB_PLAINTEXT_MAX {
+            bail!(
+                "blob too large ({} bytes); max is {BLOB_PLAINTEXT_MAX}",
+                plaintext.len()
+            );
+        }
+        let thread_id = thread_id.map(str::trim).filter(|s| !s.is_empty());
+        if in_reply_to.is_some() && thread_id.is_none() {
+            bail!("in_reply_to requires thread_id");
+        }
+
+        let mut bundle = bundle_for_blob_artifact(plaintext, subject, filename);
+        if let Some(parent) = in_reply_to.map(str::trim).filter(|s| !s.is_empty()) {
+            bundle.in_reply_to = Some(parent.to_string());
+        }
+        let plain = serde_json::to_vec(&bundle).context("serialize blob bundle")?;
+
+        if let Some(tid) = thread_id {
+            // Reply path: seal to thread participants (same as reply_to_thread).
+            let hub = self
+                .hub_client()
+                .context("hub not configured — forward_blob requires hub upload")?;
+            let detail = self.fetch_and_open_thread(tid).await?;
+            let seal_keys = self.resolve_reply_recipients(&detail).await?;
+            let env = self.seal_and_upload_blob(&plain, &seal_keys).await?;
+            let from_agent = self.from_agent_for_send(agent_slug);
+            hub.reply_to_thread(
+                tid,
+                &env,
+                from_agent.as_deref(),
+                None,
+                bundle.in_reply_to.as_deref(),
+            )
+            .await?;
+            return Ok(ForwardThreadsResult {
+                recipients: vec![detail.thread.from.clone()],
+                thread_ids: vec![tid.to_string()],
+            });
+        }
+
+        let recipient = recipient
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .context("missing param: recipient (required unless thread_id is set)")?;
         self.assert_recipient_allowed(recipient, agent_slug).await?;
         let seal_keys = self.resolve_recipient_pubkeys(recipient).await?;
-        // Wrap artifact in a bundle so open yields subject/name/mime/content for agents.
-        let bundle = bundle_for_blob_artifact(plaintext, subject, filename);
-        let plain = serde_json::to_vec(&bundle).context("serialize blob bundle")?;
         let env = self.seal_and_upload_blob(&plain, &seal_keys).await?;
 
-        if let Some(hub) = self.hub_client() {
-            let hub_tos = self.expand_hub_recipients(recipient, agent_slug).await?;
-            let from_agent = self.from_agent_for_send(agent_slug);
-            let mut thread_ids = Vec::with_capacity(hub_tos.len());
-            for to in &hub_tos {
-                let resp = hub
-                    .create_thread(to, &env, from_agent.as_deref())
-                    .await?;
-                thread_ids.push(resp.thread.id);
-            }
-            if thread_ids.is_empty() {
-                bail!("no hub recipients after expand");
-            }
-            Ok(ForwardThreadsResult {
-                recipients: hub_tos,
-                thread_ids,
-            })
-        } else {
-            Ok(ForwardThreadsResult {
-                recipients: vec![recipient.to_string()],
-                thread_ids: vec![uuid::Uuid::new_v4().to_string()],
-            })
+        let hub = self
+            .hub_client()
+            .context("hub not configured — forward_blob requires hub upload")?;
+        let hub_tos = self.expand_hub_recipients(recipient, agent_slug).await?;
+        let from_agent = self.from_agent_for_send(agent_slug);
+        let mut thread_ids = Vec::with_capacity(hub_tos.len());
+        for to in &hub_tos {
+            let resp = hub
+                .create_thread(to, &env, from_agent.as_deref())
+                .await?;
+            thread_ids.push(resp.thread.id);
         }
+        if thread_ids.is_empty() {
+            bail!("no hub recipients after expand");
+        }
+        Ok(ForwardThreadsResult {
+            recipients: hub_tos,
+            thread_ids,
+        })
     }
 
     async fn seal_inline_or_blob(
@@ -1353,6 +1518,16 @@ impl DaemonState {
         to_agent: Option<&str>,
         agent_slug: Option<&str>,
     ) -> Result<()> {
+        if let Some(to) = to_agent.map(str::trim).filter(|s| !s.is_empty()) {
+            let from_slug = self
+                .effective_agent_slug(agent_slug)
+                .await
+                .context("connected agent unknown — cannot validate self-handoff")?;
+            let to_slug = to.strip_prefix('@').unwrap_or(to);
+            if from_slug == to_slug {
+                bail!("{}", same_agent_handoff_hint(&from_slug, None));
+            }
+        }
         let plain = serde_json::to_vec(&bundle)?;
         let recipients = self.resolve_reply_recipients(detail).await?;
         let env = self.seal_inline_or_blob(&plain, &recipients).await?;
@@ -1460,7 +1635,7 @@ impl DaemonState {
             .await
     }
 
-    /// Own device safety number + QR/compare URI.
+    /// Own device safety number + QR/compare URI (+ hex pubkey for Settings).
     pub fn own_safety_number(&self) -> Result<SafetyNumberResult> {
         let pk = self.device_public()?;
         let fingerprint = safety_number(&pk);
@@ -1470,6 +1645,7 @@ impl DaemonState {
             fingerprint,
             uri,
             verified: None,
+            pubkey: Some(hex::encode(pk.0)),
         })
     }
 
@@ -1483,7 +1659,8 @@ impl DaemonState {
         let contacts = self.list_contacts().await?;
         for c in &contacts {
             if c.handle == handle {
-                let Some(pk) = c.pubkey.as_deref().and_then(pubkey_from_hub_string) else {
+                // Primary device fingerprint (first registered / legacy pubkey).
+                let Some(pk) = contact_device_pubkeys(c).into_iter().next() else {
                     bail!("contact {handle} has no pubkey");
                 };
                 let fingerprint = safety_number(&pk);
@@ -1492,6 +1669,7 @@ impl DaemonState {
                     fingerprint: fingerprint.clone(),
                     uri: safety_uri(handle, &pk),
                     verified: None,
+                    pubkey: None,
                 });
             }
         }
@@ -1509,6 +1687,8 @@ impl DaemonState {
                         fingerprint: safety_number(&pk),
                         uri: safety_uri(handle, &pk),
                         verified: None,
+                        // Self-lookup via handle: include hex so Settings can confirm key material.
+                        pubkey: Some(hex::encode(pk.0)),
                     });
                 }
             }
@@ -1566,12 +1746,15 @@ impl DaemonState {
     async fn my_bare_handle(&self) -> Result<String> {
         let hub = self.hub_client().context("hub not configured")?;
         let me = hub.me().await?;
-        me.user
+        let bare = me
+            .user
             .as_ref()
             .and_then(|u| u.handle.as_deref())
             .map(strip_agent_suffix)
             .map(|s| s.to_string())
-            .context("local handle unknown — cannot expand self-collaboration address")
+            .context("local handle unknown — cannot expand self-collaboration address")?;
+        self.remember_bare_handle(&bare);
+        Ok(bare)
     }
 
     /// Expand `@claude` to `you@org/slug` for hubs that lack shorthand.
@@ -1629,9 +1812,7 @@ impl DaemonState {
                     .as_deref()
                     .context("self-agent shorthand missing slug")?;
                 if from_slug == to_slug {
-                    bail!(
-                        "cannot hand off to the same agent ({from_slug}); send to a different agent address, e.g. @claude"
-                    );
+                    bail!("{}", same_agent_handoff_hint(&from_slug, None));
                 }
                 return Ok(());
             }
@@ -1641,17 +1822,28 @@ impl DaemonState {
         let Some(hub) = self.hub_client() else {
             return Ok(());
         };
-        let Ok(me) = hub.me().await else {
-            // Offline / mock hubs without /me: skip local check; hub still enforces.
+        let my_bare = match hub.me().await {
+            Ok(me) => {
+                let bare = me
+                    .user
+                    .as_ref()
+                    .and_then(|u| u.handle.as_deref())
+                    .map(strip_agent_suffix)
+                    .map(|s| s.to_string());
+                if let Some(ref b) = bare {
+                    self.remember_bare_handle(b);
+                }
+                bare
+            }
+            // Prefer last-known handle so same-agent loops stay blocked when /me flaps.
+            Err(_) => self.cached_bare_handle(),
+        };
+        let Some(my_bare) = my_bare else {
+            // No /me and no cache: cannot tell self from teammate — allow (hub enforces).
             return Ok(());
         };
-        let my_bare = me
-            .user
-            .as_ref()
-            .and_then(|u| u.handle.as_deref())
-            .map(strip_agent_suffix);
         let target_bare = bare_handle(&parsed.local, &parsed.org_slug);
-        if my_bare != Some(target_bare.as_str()) {
+        if my_bare != target_bare {
             return Ok(());
         }
 
@@ -1667,9 +1859,7 @@ impl DaemonState {
                 .context("default agent unknown — cannot validate bare self-send")?,
         };
         if from_slug == to_slug {
-            bail!(
-                "cannot hand off to the same agent ({from_slug}); send to a different agent address, e.g. @claude or {target_bare}/claude"
-            );
+            bail!("{}", same_agent_handoff_hint(&from_slug, Some(&target_bare)));
         }
         Ok(())
     }
@@ -1678,9 +1868,9 @@ impl DaemonState {
         let trimmed = recipient.trim();
         let parsed = parse_display_address(trimmed)?;
 
-        // Bare @all (my agents) and @slug (self agent): seal once to own device pubkeys.
+        // Bare @all (my agents) and @slug (self agent): seal to all own devices.
         if matches!(parsed.kind, AddressKind::MyAgents | AddressKind::SelfAgent) {
-            return Ok(vec![self.device_public()?]);
+            return self.own_device_pubkeys().await;
         }
 
         let bare = strip_agent_suffix(trimmed);
@@ -1700,7 +1890,7 @@ impl DaemonState {
             if others.is_empty() {
                 // Sole-member org: list_contacts excludes self, so @all@org has no other
                 // keys — encrypt to own device(s) for default-agent inbox delivery.
-                return Ok(vec![self.device_public()?]);
+                return self.own_device_pubkeys().await;
             }
             bail!(
                 "broadcast {recipient} has no registered pubkeys — no other members have onboarded devices"
@@ -1727,13 +1917,37 @@ impl DaemonState {
                     .map(strip_agent_suffix)
                     == Some(bare)
                 {
-                    // Self-send / agent handoff: seal to local identity (not in contacts).
-                    return Ok(vec![self.device_public()?]);
+                    // Self-send / agent handoff: all registered devices for this handle.
+                    return self.own_device_pubkeys().await;
                 }
             }
         }
 
         bail!("unknown recipient {recipient}");
+    }
+
+    /// Local device plus any other hub-registered devices for this user.
+    async fn own_device_pubkeys(&self) -> Result<Vec<DevicePubKey>> {
+        let local = self.device_public()?;
+        let mut keys = vec![local];
+        let Some(hub) = self.hub_client() else {
+            return Ok(keys);
+        };
+        match hub.list_devices().await {
+            Ok(devices) => {
+                for d in devices {
+                    if let Some(pk) = pubkey_from_hub_string(&d.pubkey) {
+                        if !keys.iter().any(|k| k == &pk) {
+                            keys.push(pk);
+                        }
+                    }
+                }
+            }
+            Err(err) => {
+                tracing::warn!(error = %err, "list_devices for own pubkey fan-out failed");
+            }
+        }
+        Ok(keys)
     }
 
     /// Seal replies to the original sender's devices.
@@ -1808,21 +2022,20 @@ fn status_from_me(hub_url: &Option<String>, me: &MeResponse) -> StatusResult {
 
 /// All device pubkeys for a contact (multi-device fan-out), falling back to legacy `pubkey`.
 fn contact_device_pubkeys(contact: &Contact) -> Vec<DevicePubKey> {
-    let mut keys: Vec<DevicePubKey> = contact
+    let keys: Vec<DevicePubKey> = contact
         .devices
         .iter()
         .filter_map(|d| pubkey_from_hub_string(&d.pubkey))
         .collect();
-    if keys.is_empty() {
-        if let Some(pk) = contact.pubkey.as_deref().and_then(pubkey_from_hub_string) {
-            keys.push(pk);
-        }
-    } else if let Some(pk) = contact.pubkey.as_deref().and_then(pubkey_from_hub_string) {
-        if !keys.iter().any(|k| k == &pk) {
-            keys.push(pk);
-        }
+    if !keys.is_empty() {
+        return keys;
     }
-    keys
+    contact
+        .pubkey
+        .as_deref()
+        .and_then(pubkey_from_hub_string)
+        .into_iter()
+        .collect()
 }
 
 fn agent_matches_display(display: &str, slug: &str, default_slug: &str) -> bool {
@@ -2026,8 +2239,69 @@ fn bundle_is_empty(bundle: &MutandeBundle) -> bool {
         && bundle.ping_kind.is_none()
 }
 
-/// Max raw-blob UTF-8 bytes to inline into an opened bundle for agents.
+/// Max bytes to keep in `resource.content` when presenting an opened bundle to agents.
+/// Larger text and all binary artifacts are materialized under `blob_cache/`.
 const RAW_BLOB_INLINE_MAX: usize = 256 * 1024;
+
+fn default_blob_cache_dir() -> PathBuf {
+    expand_path("~/.mutande/blob_cache")
+}
+
+fn resource_mime_is_text(mime: &str) -> bool {
+    let m = mime.trim().to_ascii_lowercase();
+    m.starts_with("text/")
+        || m == "application/json"
+        || m == "application/xml"
+        || m.ends_with("+json")
+        || m.ends_with("+xml")
+}
+
+fn sanitize_blob_filename(name: &str) -> String {
+    let base = Path::new(name)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("artifact.bin");
+    let cleaned: String = base
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if cleaned.is_empty() {
+        "artifact.bin".into()
+    } else {
+        cleaned
+    }
+}
+
+/// Write plaintext artifact bytes into the local blob cache (0o700 dir / 0o600 file).
+fn materialize_blob_bytes(bytes: &[u8], filename: &str, cache_dir: &Path) -> Result<PathBuf> {
+    fs::create_dir_all(cache_dir)
+        .with_context(|| format!("create blob cache {}", cache_dir.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(cache_dir, fs::Permissions::from_mode(0o700));
+    }
+    let digest = hex::encode(Sha256::digest(bytes));
+    let short = &digest[..16.min(digest.len())];
+    let safe = sanitize_blob_filename(filename);
+    let path = cache_dir.join(format!("{short}-{safe}"));
+    if path.is_file() {
+        if let Ok(meta) = fs::metadata(&path) {
+            if meta.len() == bytes.len() as u64 {
+                return Ok(path);
+            }
+        }
+    }
+    write_restricted_file(&path, bytes)
+        .with_context(|| format!("materialize blob {}", path.display()))?;
+    Ok(path)
+}
 
 fn guess_blob_mime(name: &str) -> &'static str {
     match std::path::Path::new(name)
@@ -2049,11 +2323,16 @@ fn guess_blob_mime(name: &str) -> &'static str {
         Some("webp") => "image/webp",
         Some("pdf") => "application/pdf",
         Some("zip") => "application/zip",
+        Some("mp4") => "video/mp4",
+        Some("mov") => "video/quicktime",
+        Some("webm") => "video/webm",
         _ => "application/octet-stream",
     }
 }
 
 /// Build the sealed plaintext for `forward_blob`: a MutandeBundle carrying the artifact.
+/// Always embeds full bytes (text or base64) — R2 holds the sealed ciphertext. Agent-facing
+/// open strips large/binary `content` and materializes a local `path` instead.
 fn bundle_for_blob_artifact(
     plaintext: &[u8],
     subject: Option<&str>,
@@ -2067,20 +2346,12 @@ fn bundle_for_blob_artifact(
     let mime = guess_blob_mime(&name).to_string();
     let (content, notes) = if let Ok(text) = std::str::from_utf8(plaintext) {
         (Some(text.to_string()), None)
-    } else if plaintext.len() <= RAW_BLOB_INLINE_MAX {
+    } else {
         use base64::Engine;
         (
             Some(base64::engine::general_purpose::STANDARD.encode(plaintext)),
             Some(format!(
-                "Binary artifact ({} bytes); resource.content is standard base64.",
-                plaintext.len()
-            )),
-        )
-    } else {
-        (
-            None,
-            Some(format!(
-                "Binary artifact ({} bytes); too large to inline in opened bundle.",
+                "Binary artifact ({} bytes); resource.content is standard base64 until open.",
                 plaintext.len()
             )),
         )
@@ -2096,43 +2367,136 @@ fn bundle_for_blob_artifact(
             name,
             mime,
             content,
+            path: None,
+            size: Some(plaintext.len() as u64),
         }],
         ..Default::default()
     }
 }
 
-/// Legacy raw blob plaintext → agent-readable bundle (UTF-8 inline when small).
-fn bundle_from_raw_blob_plaintext(plain: &[u8]) -> MutandeBundle {
-    if plain.len() <= RAW_BLOB_INLINE_MAX {
-        if let Ok(text) = std::str::from_utf8(plain) {
-            let name = if text.trim_start().starts_with('#') {
-                "artifact.md"
-            } else {
-                "artifact.txt"
-            };
-            let mime = guess_blob_mime(name).to_string();
-            return MutandeBundle {
-                subject: Some("blob artifact".into()),
-                notes: Some(text.to_string()),
-                resources: vec![BundleResource {
-                    name: name.into(),
-                    mime,
-                    content: Some(text.to_string()),
-                }],
-                ..Default::default()
-            };
+/// Present opened resources: small text stays in `content`; binary/large → local `path`.
+fn surface_bundle_resources_at(bundle: &mut MutandeBundle, cache_dir: &Path) {
+    use base64::Engine;
+
+    let mut materialized: Vec<String> = Vec::new();
+    for resource in &mut bundle.resources {
+        let Some(content) = resource.content.clone() else {
+            continue;
+        };
+
+        let (bytes, is_text) = if resource_mime_is_text(&resource.mime) {
+            (content.into_bytes(), true)
+        } else {
+            match base64::engine::general_purpose::STANDARD.decode(content.as_bytes()) {
+                Ok(b) => (b, false),
+                Err(_) => {
+                    // Unexpected non-base64 binary payload — keep content for small, else drop.
+                    if content.len() > RAW_BLOB_INLINE_MAX {
+                        resource.content = None;
+                        materialized.push(format!(
+                            "{}: sealed content was not valid base64 ({} bytes)",
+                            resource.name,
+                            content.len()
+                        ));
+                    }
+                    continue;
+                }
+            }
+        };
+
+        resource.size = Some(bytes.len() as u64);
+        if is_text && bytes.len() <= RAW_BLOB_INLINE_MAX {
+            continue;
+        }
+
+        match materialize_blob_bytes(&bytes, &resource.name, cache_dir) {
+            Ok(path) => {
+                let path_str = path.display().to_string();
+                resource.path = Some(path_str.clone());
+                resource.content = None;
+                materialized.push(format!(
+                    "{} ({} bytes) at {}",
+                    resource.name,
+                    bytes.len(),
+                    path_str
+                ));
+            }
+            Err(err) => {
+                if bytes.len() > RAW_BLOB_INLINE_MAX {
+                    resource.content = None;
+                }
+                materialized.push(format!(
+                    "{}: failed to materialize locally ({err})",
+                    resource.name
+                ));
+            }
         }
     }
+
+    if materialized.is_empty() {
+        return;
+    }
+    let line = format!(
+        "Artifact available on this device: {}",
+        materialized.join("; ")
+    );
+    bundle.notes = Some(match bundle.notes.take() {
+        Some(existing)
+            if existing.contains("too large to inline")
+                || existing.contains("resource.content is standard base64")
+                || existing.contains("content not inlined") =>
+        {
+            line
+        }
+        Some(existing) if !existing.trim().is_empty() => format!("{existing}\n{line}"),
+        _ => line,
+    });
+}
+
+/// Legacy raw blob plaintext → agent-readable bundle (UTF-8 inline when small).
+/// Binary keeps base64 `content` so [`surface_bundle_resources_at`] can materialize.
+fn bundle_from_raw_blob_plaintext(plain: &[u8]) -> MutandeBundle {
+    if let Ok(text) = std::str::from_utf8(plain) {
+        let name = if text.trim_start().starts_with('#') {
+            "artifact.md"
+        } else {
+            "artifact.txt"
+        };
+        let mime = guess_blob_mime(name).to_string();
+        let notes = if plain.len() <= RAW_BLOB_INLINE_MAX {
+            Some(text.to_string())
+        } else {
+            Some(format!(
+                "Opened encrypted blob ({} bytes); materializing locally on open.",
+                plain.len()
+            ))
+        };
+        return MutandeBundle {
+            subject: Some("blob artifact".into()),
+            notes,
+            resources: vec![BundleResource {
+                name: name.into(),
+                mime,
+                content: Some(text.to_string()),
+                path: None,
+                size: Some(plain.len() as u64),
+            }],
+            ..Default::default()
+        };
+    }
+    use base64::Engine;
     MutandeBundle {
         subject: Some("blob artifact".into()),
         notes: Some(format!(
-            "Opened encrypted blob ({} bytes); content not inlined (binary or too large).",
+            "Opened encrypted blob ({} bytes); materializing locally on open.",
             plain.len()
         )),
         resources: vec![BundleResource {
             name: "artifact.bin".into(),
             mime: "application/octet-stream".into(),
-            content: None,
+            content: Some(base64::engine::general_purpose::STANDARD.encode(plain)),
+            path: None,
+            size: Some(plain.len() as u64),
         }],
         ..Default::default()
     }
@@ -2528,10 +2892,12 @@ mod tests {
         let artifact = b"large codebase tarball bytes for e2e";
         let forwarded = state
             .forward_blob(
-                "bob@acme",
+                Some("bob@acme"),
                 artifact,
                 Some("code drop"),
                 Some("codebase.txt"),
+                None,
+                None,
                 None,
             )
             .await
@@ -2712,6 +3078,81 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn contact_multi_device_fans_out_all_pubkeys() {
+        use crate::hub_client::{pubkey_to_hub_string, HubConfig};
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let state = DaemonState::new_in_memory_for_test().unwrap();
+        let pk_a = DevicePubKey([11u8; 32]);
+        let pk_b = DevicePubKey([22u8; 32]);
+        let server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/v1/contacts"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                "contacts": [{
+                    "handle": "bob@acme",
+                    "pubkey": pubkey_to_hub_string(&pk_a),
+                    "devices": [
+                        { "pubkey": pubkey_to_hub_string(&pk_a), "platform": "macos" },
+                        { "pubkey": pubkey_to_hub_string(&pk_b), "platform": "ios" }
+                    ]
+                }]
+            })))
+            .mount(&server)
+            .await;
+
+        state.attach_hub_for_test(HubClient::new(HubConfig::new(server.uri(), "tok")).unwrap());
+        let keys = state.resolve_recipient_pubkeys("bob@acme").await.unwrap();
+        assert_eq!(keys.len(), 2);
+        assert!(keys.iter().any(|k| k.0 == pk_a.0));
+        assert!(keys.iter().any(|k| k.0 == pk_b.0));
+    }
+
+    #[tokio::test]
+    async fn own_device_pubkeys_includes_hub_sibling_devices() {
+        use crate::hub_client::{pubkey_to_hub_string, HubConfig};
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let state = DaemonState::new_in_memory_for_test().unwrap();
+        let local = state.device_public().unwrap();
+        let sibling = DevicePubKey([33u8; 32]);
+        let server = MockServer::start().await;
+        mock_solo_hub(&server).await;
+
+        Mock::given(method("GET"))
+            .and(path("/v1/devices"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                "devices": [
+                    {
+                        "id": "d-local",
+                        "user_id": "u-solo",
+                        "pubkey": pubkey_to_hub_string(&local),
+                        "platform": "macos",
+                        "created_at": "2026-01-01T00:00:00Z"
+                    },
+                    {
+                        "id": "d-ios",
+                        "user_id": "u-solo",
+                        "pubkey": pubkey_to_hub_string(&sibling),
+                        "platform": "ios",
+                        "created_at": "2026-01-02T00:00:00Z"
+                    }
+                ]
+            })))
+            .mount(&server)
+            .await;
+
+        state.attach_hub_for_test(HubClient::new(HubConfig::new(server.uri(), "tok")).unwrap());
+        let keys = state.resolve_recipient_pubkeys("@all").await.unwrap();
+        assert_eq!(keys.len(), 2);
+        assert_eq!(keys[0].0, local.0);
+        assert!(keys.iter().any(|k| k.0 == sibling.0));
+    }
+
+    #[tokio::test]
     async fn same_agent_self_loop_rejected() {
         use crate::hub_client::HubConfig;
         use wiremock::MockServer;
@@ -2726,10 +3167,11 @@ mod tests {
             .assert_recipient_allowed("solo@tbhco/cursor", None)
             .await
             .unwrap_err();
-        assert!(
-            err.to_string().contains("same agent"),
-            "got: {err}"
-        );
+        let msg = err.to_string();
+        assert!(msg.contains("same agent"), "got: {msg}");
+        // Hint a different peer — never the sender slug.
+        assert!(msg.contains("@claude") || msg.contains("@chatgpt"), "got: {msg}");
+        assert!(!msg.contains("@cursor"), "hint must not suggest sender: {msg}");
 
         let bare_err = state
             .assert_recipient_allowed("solo@tbhco", None)
@@ -2739,6 +3181,246 @@ mod tests {
             bare_err.to_string().contains("same agent"),
             "got: {bare_err}"
         );
+    }
+
+    #[tokio::test]
+    async fn same_agent_shorthand_hint_skips_sender_slug() {
+        let state = DaemonState::new_in_memory_for_test().unwrap();
+        state.set_connected_agent_slug_for_test(Some("claude"));
+        let err = state
+            .assert_recipient_allowed("@claude", Some("claude"))
+            .await
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("same agent"), "got: {msg}");
+        assert!(msg.contains("@cursor") || msg.contains("@chatgpt"), "got: {msg}");
+        // Must not suggest @claude as the alternative.
+        assert!(
+            !msg.contains("e.g. @claude"),
+            "hint must not suggest sender: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn same_agent_uses_cached_handle_when_me_down() {
+        use crate::hub_client::HubConfig;
+        use wiremock::MockServer;
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, ResponseTemplate};
+
+        let state = DaemonState::new_in_memory_for_test().unwrap();
+        let server = MockServer::start().await;
+        // No /v1/me — only a 500 so me() fails.
+        Mock::given(method("GET"))
+            .and(path("/v1/me"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server)
+            .await;
+        state.attach_hub_for_test(HubClient::new(HubConfig::new(server.uri(), "tok")).unwrap());
+        state.set_connected_agent_slug_for_test(Some("claude"));
+        state.set_cached_bare_handle_for_test(Some("solo@tbhco"));
+
+        let err = state
+            .assert_recipient_allowed("solo@tbhco/claude", Some("claude"))
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("same agent"), "got: {err}");
+
+        // Teammate address still allowed without /me.
+        state
+            .assert_recipient_allowed("bob@acme/claude", Some("claude"))
+            .await
+            .unwrap();
+    }
+
+    #[test]
+    fn same_agent_handoff_hint_never_suggests_sender() {
+        let for_claude = same_agent_handoff_hint("claude", None);
+        assert!(for_claude.contains("@cursor") || for_claude.contains("@chatgpt"));
+        assert!(!for_claude.contains("e.g. @claude"));
+
+        let for_cursor = same_agent_handoff_hint("cursor", Some("solo@tbhco"));
+        assert!(for_cursor.contains("solo@tbhco/claude") || for_cursor.contains("@claude"));
+        assert!(!for_cursor.contains("@cursor"));
+    }
+
+    #[test]
+    fn blob_artifact_guesses_video_mime() {
+        let b = bundle_for_blob_artifact(b"not-utf8-\xff", Some("clip"), Some("landing.mp4"));
+        assert_eq!(b.resources[0].mime, "video/mp4");
+        assert_eq!(b.subject.as_deref(), Some("clip"));
+    }
+
+    #[test]
+    fn blob_artifact_seals_large_binary_content() {
+        use base64::Engine;
+        let mut huge = vec![0u8; RAW_BLOB_INLINE_MAX + 64];
+        huge[0] = 0xff;
+        huge[1] = 0x00;
+        let b = bundle_for_blob_artifact(&huge, Some("clip"), Some("landing.mp4"));
+        let content = b.resources[0].content.as_deref().expect("sealed content");
+        assert!(
+            !b.notes
+                .as_deref()
+                .unwrap_or("")
+                .contains("too large to inline"),
+            "seal must not stub large binary: {:?}",
+            b.notes
+        );
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(content)
+            .expect("sealed base64");
+        assert_eq!(decoded, huge);
+        assert_eq!(b.resources[0].size, Some(huge.len() as u64));
+    }
+
+    #[test]
+    fn surface_keeps_small_text_inline() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut bundle = bundle_for_blob_artifact(b"hello notes", Some("hi"), Some("note.txt"));
+        surface_bundle_resources_at(&mut bundle, dir.path());
+        assert_eq!(bundle.resources[0].content.as_deref(), Some("hello notes"));
+        assert!(bundle.resources[0].path.is_none());
+        assert_eq!(bundle.resources[0].size, Some(11));
+    }
+
+    #[test]
+    fn surface_materializes_binary_blob_to_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        let bytes = b"not-utf8-\xff\x00video-bytes".to_vec();
+        let mut bundle =
+            bundle_for_blob_artifact(&bytes, Some("clip"), Some("landing.mp4"));
+        surface_bundle_resources_at(&mut bundle, dir.path());
+        let path = bundle.resources[0]
+            .path
+            .as_deref()
+            .expect("path after materialize");
+        assert!(bundle.resources[0].content.is_none());
+        assert_eq!(bundle.resources[0].size, Some(bytes.len() as u64));
+        assert_eq!(fs::read(path).unwrap(), bytes);
+        assert!(
+            bundle
+                .notes
+                .as_deref()
+                .unwrap_or("")
+                .contains("Artifact available on this device"),
+            "notes: {:?}",
+            bundle.notes
+        );
+        assert!(
+            !bundle
+                .notes
+                .as_deref()
+                .unwrap_or("")
+                .contains("too large to inline"),
+            "notes: {:?}",
+            bundle.notes
+        );
+    }
+
+    #[test]
+    fn open_thread_materializes_binary_blob_for_agents() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = DaemonState::new_in_memory_for_test().unwrap();
+        state.set_blob_cache_dir_for_test(dir.path().to_path_buf());
+
+        let bytes: Vec<u8> = (0u8..255).cycle().take(RAW_BLOB_INLINE_MAX + 128).collect();
+        let sealed = bundle_for_blob_artifact(&bytes, Some("landing"), Some("landing.mp4"));
+        let plain = serde_json::to_vec(&sealed).unwrap();
+        let mut env = state.seal_to_self(&plain).unwrap();
+        env.blob_id = Some("blob-mat-1".into());
+
+        let detail = ThreadDetail {
+            thread: ThreadMeta {
+                id: "t-mat".into(),
+                kind: ThreadKind::Direct,
+                status: ThreadStatus::Open,
+                from: "alice@acme/cursor".into(),
+                from_user_id: "u1".into(),
+                from_agent_id: None,
+                audience: "alice@acme/claude".into(),
+                audience_agent_id: None,
+                audience_wire_path: None,
+                org_id: "o1".into(),
+                participant_count: 2,
+                reply_count: 0,
+                your_status: None,
+                created_at: "2026-01-01T00:00:00Z".into(),
+                updated_at: "2026-01-01T00:00:00Z".into(),
+                last_from: None,
+                last_subject: None,
+                last_preview: None,
+            },
+            messages: vec![ThreadMessage {
+                id: "m-mat".into(),
+                thread_id: "t-mat".into(),
+                from_user_id: "u1".into(),
+                from_handle: "alice@acme/cursor".into(),
+                envelope: env,
+                created_at: "2026-01-01T00:00:00Z".into(),
+                sender_only: None,
+                parent_message_id: None,
+                upvotes: None,
+            }],
+        };
+        let opened = state.open_thread_detail(detail);
+        let bundle = opened.messages[0].bundle.as_ref().expect("bundle");
+        let path = bundle.resources[0].path.as_deref().expect("materialized path");
+        assert!(bundle.resources[0].content.is_none());
+        assert_eq!(bundle.resources[0].name, "landing.mp4");
+        assert_eq!(bundle.resources[0].mime, "video/mp4");
+        assert_eq!(bundle.resources[0].size, Some(bytes.len() as u64));
+        assert_eq!(fs::read(path).unwrap(), bytes);
+        assert!(opened.messages[0].open_error.is_none());
+    }
+
+    #[test]
+    fn legacy_raw_binary_blob_materializes_for_agents() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = DaemonState::new_in_memory_for_test().unwrap();
+        state.set_blob_cache_dir_for_test(dir.path().to_path_buf());
+        let body = b"raw-\xff-bytes-not-a-bundle";
+        let mut env = state.seal_to_self(body).unwrap();
+        env.blob_id = Some("legacy-bin-1".into());
+        let detail = ThreadDetail {
+            thread: ThreadMeta {
+                id: "t-raw".into(),
+                kind: ThreadKind::Direct,
+                status: ThreadStatus::Open,
+                from: "alice@acme/cursor".into(),
+                from_user_id: "u1".into(),
+                from_agent_id: None,
+                audience: "alice@acme/claude".into(),
+                audience_agent_id: None,
+                audience_wire_path: None,
+                org_id: "o1".into(),
+                participant_count: 2,
+                reply_count: 0,
+                your_status: None,
+                created_at: "2026-01-01T00:00:00Z".into(),
+                updated_at: "2026-01-01T00:00:00Z".into(),
+                last_from: None,
+                last_subject: None,
+                last_preview: None,
+            },
+            messages: vec![ThreadMessage {
+                id: "m-raw".into(),
+                thread_id: "t-raw".into(),
+                from_user_id: "u1".into(),
+                from_handle: "alice@acme/cursor".into(),
+                envelope: env,
+                created_at: "2026-01-01T00:00:00Z".into(),
+                sender_only: None,
+                parent_message_id: None,
+                upvotes: None,
+            }],
+        };
+        let opened = state.open_thread_detail(detail);
+        let bundle = opened.messages[0].bundle.as_ref().expect("bundle");
+        let path = bundle.resources[0].path.as_deref().expect("path");
+        assert_eq!(fs::read(path).unwrap(), body);
+        assert!(bundle.resources[0].content.is_none());
+        assert!(opened.messages[0].open_error.is_none());
     }
 
     #[test]
@@ -2914,6 +3596,232 @@ mod tests {
         state.assert_recipient_allowed("@all", None).await.unwrap();
 
         let err = state.assert_recipient_allowed("@cursor", None).await.unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("same agent"), "got: {msg}");
+        assert!(msg.contains("@claude") || msg.contains("@chatgpt") || msg.contains("@all"), "got: {msg}");
+    }
+
+    #[tokio::test]
+    async fn forward_blob_rejects_oversized_plaintext() {
+        let state = DaemonState::new_in_memory_for_test().unwrap();
+        state.set_connected_agent_slug_for_test(Some("cursor"));
+        let huge = vec![b'a'; BLOB_PLAINTEXT_MAX + 1];
+        let err = state
+            .forward_blob(
+                Some("@claude"),
+                &huge,
+                Some("too big"),
+                Some("big.txt"),
+                Some("cursor"),
+                None,
+                None,
+            )
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("blob too large"), "got: {err}");
+    }
+
+    #[tokio::test]
+    async fn forward_blob_replies_on_existing_thread() {
+        use crate::hub_client::{pubkey_to_hub_string, HubConfig};
+        use std::sync::Mutex as StdMutex;
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, Request, ResponseTemplate};
+
+        let state = DaemonState::new_in_memory_for_test().unwrap();
+        let own_pk = state.device_public().unwrap();
+        let pk_hub = pubkey_to_hub_string(&own_pk);
+
+        let server = MockServer::start().await;
+        let blob_store: Arc<StdMutex<Option<Vec<u8>>>> = Arc::new(StdMutex::new(None));
+        let blob_store_put = Arc::clone(&blob_store);
+
+        Mock::given(method("GET"))
+            .and(path("/v1/me"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                "auth0_sub": "auth0|bob",
+                "needs_onboarding": false,
+                "onboarded": true,
+                "user": {
+                    "id": "u-bob",
+                    "handle": "bob@acme",
+                    "org_id": "org-1",
+                    "created_at": "2026-01-01T00:00:00Z"
+                },
+                "org": {
+                    "id": "org-1",
+                    "slug": "acme",
+                    "name": "Acme",
+                    "created_at": "2026-01-01T00:00:00Z"
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/v1/contacts"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                "contacts": [
+                    { "handle": "alice@acme", "pubkey": pk_hub }
+                ]
+            })))
+            .mount(&server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/v1/threads/thread-existing"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                "thread": {
+                    "id": "thread-existing",
+                    "kind": "direct",
+                    "status": "open",
+                    "from": "alice@acme/cursor",
+                    "from_user_id": "u-alice",
+                    "audience": "bob@acme/claude",
+                    "org_id": "org-1",
+                    "participant_count": 2,
+                    "reply_count": 1,
+                    "created_at": "2026-01-01T00:00:00Z",
+                    "updated_at": "2026-01-01T00:00:00Z"
+                },
+                "messages": []
+            })))
+            .mount(&server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/blobs/upload-url"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                "blob_id": "blob-reply-1",
+                "upload_url": format!("{}/mock-r2/blob-reply-1?upload=1", server.uri()),
+                "expires_at": "2099-01-01T00:00:00Z"
+            })))
+            .mount(&server)
+            .await;
+
+        Mock::given(method("PUT"))
+            .and(path("/mock-r2/blob-reply-1"))
+            .respond_with(move |req: &Request| {
+                *blob_store_put.lock().unwrap() = Some(req.body.clone());
+                ResponseTemplate::new(200)
+            })
+            .mount(&server)
+            .await;
+
+        let captured_reply: Arc<StdMutex<Option<serde_json::Value>>> =
+            Arc::new(StdMutex::new(None));
+        let captured_reply_write = Arc::clone(&captured_reply);
+        Mock::given(method("POST"))
+            .and(path("/v1/threads/thread-existing/replies"))
+            .respond_with(move |req: &Request| {
+                let body: serde_json::Value = serde_json::from_slice(&req.body).unwrap();
+                *captured_reply_write.lock().unwrap() = Some(body);
+                ResponseTemplate::new(201).set_body_json(&serde_json::json!({
+                    "message_id": "msg-blob-reply"
+                }))
+            })
+            .mount(&server)
+            .await;
+
+        // Creating a new thread must not happen on the reply path.
+        Mock::given(method("POST"))
+            .and(path("/v1/threads"))
+            .respond_with(ResponseTemplate::new(500).set_body_string("should not create thread"))
+            .mount(&server)
+            .await;
+
+        let hub = HubClient::new(HubConfig::new(server.uri(), "test-jwt")).unwrap();
+        state.attach_hub_for_test(hub);
+        state.set_connected_agent_slug_for_test(Some("claude"));
+
+        let artifact = b"sample mp4 bytes for reply";
+        let forwarded = state
+            .forward_blob(
+                None,
+                artifact,
+                Some("sample video"),
+                Some("sample.mp4"),
+                Some("claude"),
+                Some("thread-existing"),
+                Some("msg-root"),
+            )
+            .await
+            .unwrap();
+        assert_eq!(forwarded.thread_ids, vec!["thread-existing".to_string()]);
+        assert_eq!(forwarded.recipients, vec!["alice@acme/cursor".to_string()]);
+
+        let reply = captured_reply.lock().unwrap().clone().expect("reply posted");
+        assert_eq!(reply["envelope"]["blob_id"], "blob-reply-1");
+        assert!(reply["envelope"]["ciphertext"].as_array().unwrap().is_empty());
+        assert_eq!(reply["parent_message_id"], "msg-root");
+        assert!(blob_store.lock().unwrap().as_ref().unwrap().len() > 0);
+    }
+
+    #[tokio::test]
+    async fn forward_blob_requires_recipient_without_thread_id() {
+        let state = DaemonState::new_in_memory_for_test().unwrap();
+        let err = state
+            .forward_blob(
+                None,
+                b"bytes",
+                Some("x"),
+                Some("x.bin"),
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("recipient"),
+            "got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn reply_to_agent_rejects_same_agent_loop() {
+        use crate::hub_client::HubConfig;
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let state = DaemonState::new_in_memory_for_test().unwrap();
+        let server = MockServer::start().await;
+        mock_solo_hub(&server).await;
+        Mock::given(method("GET"))
+            .and(path("/v1/threads/t-reply"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                "thread": {
+                    "id": "t-reply",
+                    "kind": "direct",
+                    "status": "open",
+                    "from": "solo@tbhco/cursor",
+                    "from_user_id": "u-solo",
+                    "audience": "solo@tbhco/claude",
+                    "org_id": "org-solo",
+                    "participant_count": 2,
+                    "reply_count": 0,
+                    "created_at": "2026-01-01T00:00:00Z",
+                    "updated_at": "2026-01-01T00:00:00Z"
+                },
+                "messages": []
+            })))
+            .mount(&server)
+            .await;
+        state.attach_hub_for_test(HubClient::new(HubConfig::new(server.uri(), "tok")).unwrap());
+        state.set_connected_agent_slug_for_test(Some("claude"));
+
+        let err = state
+            .reply_to_thread(
+                "t-reply",
+                MutandeBundle {
+                    notes: Some("pong".into()),
+                    ..Default::default()
+                },
+                Some("claude"),
+                Some("claude"),
+            )
+            .await
+            .unwrap_err();
         assert!(err.to_string().contains("same agent"), "got: {err}");
     }
 

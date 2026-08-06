@@ -31,6 +31,9 @@ Thumbs.db
 
 # Remotion (video)
 /video/node_modules/
+/video-mc/node_modules/
+/video-mc/output/
+/video-mc/dist/
 /video/out/
 /video/dist/
 

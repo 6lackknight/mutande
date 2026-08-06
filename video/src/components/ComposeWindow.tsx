@@ -253,7 +253,7 @@ export const ComposeWindow: React.FC = () => {
             }}
           >
             <span style={{ color: colors.accent }}>→</span>
-            tawanda@salesco/research
+            alice@salesco/research
           </div>
         ) : null}
       </div>

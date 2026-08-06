@@ -288,6 +288,11 @@ pub struct RegisterDeviceResponse {
     pub device: Device,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ListDevicesResponse {
+    pub devices: Vec<Device>,
+}
+
 /// Auth0 `/oauth/token` response (native + refresh).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Auth0TokenResponse {

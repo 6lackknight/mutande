@@ -55,12 +55,19 @@ class HostLinkStatusBadge extends StatelessWidget {
     }
     if (link!.ok) {
       if (style == HostLinkStatusStyle.settings) {
-        return const Text(
-          'Linked',
-          style: TextStyle(
-            color: Color(0xFF166534),
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: const Color(0xFFDCFCE7),
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: const Text(
+            'Linked',
+            style: TextStyle(
+              color: Color(0xFF166534),
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         );
       }
@@ -72,12 +79,19 @@ class HostLinkStatusBadge extends StatelessWidget {
       );
     }
     if (style == HostLinkStatusStyle.settings) {
-      return const Text(
-        'Failed',
-        style: TextStyle(
-          color: Color(0xFF991B1B),
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFEE2E2),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: const Text(
+          'Failed',
+          style: TextStyle(
+            color: Color(0xFF991B1B),
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
         ),
       );
     }

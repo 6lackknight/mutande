@@ -45,7 +45,7 @@ const READ_TOOLS: &[(&str, &str, ValueFn)] = &[
     ),
     (
         "get_thread",
-        "Get thread metadata and bundles (opened locally on this device when possible). Read-only.",
+        "Get thread metadata and bundles (opened locally on this device when possible). Blob artifacts: small text stays in resources[].content; binary/large are decrypted to a local file — use resources[].path (and size). Read-only.",
         || {
             json!({
                 "type": "object",
@@ -263,15 +263,16 @@ const SEND_TOOLS: &[(&str, &str, ValueFn)] = &[
     ),
     (
         "forward_blob",
-        "Hand off a large artifact as a sealed blob on a new thread (hub presign PUT). Wraps bytes in a MutandeBundle (subject + resource with name/mime/content) so recipients can read text artifacts. Provide content_base64 or path. Same recipients as forward_draft. Confirm via AskQuestion when the skill requires it.",
+        "Hand off a large artifact as a sealed blob (hub presign PUT). Omit thread_id to open a new thread (recipient required). Pass thread_id to attach the file as a reply on an existing thread — recipient may be omitted; optional in_reply_to nests under a parent message. Wraps bytes in a MutandeBundle (subject + resource name/mime). Recipients open via get_thread: small text in content, binary/large at resources[].path on that device. Provide content_base64 OR path (not both). New-thread path: cannot send to the same agent as this connection (e.g. Claude MCP → use @cursor/@chatgpt/@all). Confirm via AskQuestion when the skill requires it.",
         || {
             json!({
                 "type": "object",
-                "required": ["recipient"],
                 "properties": {
-                    "recipient": { "type": "string", "description": "Self: @all or @claude/@cursor/@chatgpt. Teammates: alice@org, alice@org/claude, @all@org." },
-                    "content_base64": { "type": "string" },
-                    "path": { "type": "string", "description": "local file path to seal and upload" },
+                    "recipient": { "type": "string", "description": "Required when creating a new thread. Self: @all or a different agent (@claude/@cursor/@chatgpt — not this connection's slug). Teammates: alice@org, alice@org/claude, @all@org. Omit when thread_id is set." },
+                    "thread_id": { "type": "string", "description": "When set, upload as a reply on this thread instead of creating a new one" },
+                    "in_reply_to": { "type": "string", "description": "optional parent message id for nested reply (requires thread_id)" },
+                    "content_base64": { "type": "string", "description": "artifact bytes as standard base64 (mutually exclusive with path)" },
+                    "path": { "type": "string", "description": "local file path to seal and upload (mutually exclusive with content_base64)" },
                     "filename": { "type": "string", "description": "optional name when using content_base64; path uses the basename automatically" },
                     "subject": { "type": "string" }
                 },

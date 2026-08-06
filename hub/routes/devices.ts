@@ -6,6 +6,9 @@ import type { RegisterDeviceInput } from "../store/types.ts";
 export function createDeviceRoutes(store: HubStore) {
   const deviceRoutes = new Hono<HubEnv>();
   deviceRoutes.use("*", authMiddleware(store));
+  deviceRoutes.get("/", async (c) => {
+    return c.json(await store.listDevices(c.get("auth")));
+  });
   deviceRoutes.post("/", async (c) => {
     const body = await c.req.json<RegisterDeviceInput>();
     const device = await store.registerDevice(c.get("auth"), body);

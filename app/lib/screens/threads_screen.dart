@@ -10,6 +10,7 @@ import '../theme/mutande_macos_theme.dart';
 import '../util/address_display.dart';
 import '../util/clock_format.dart';
 import '../widgets/ai_host_icon.dart';
+import '../widgets/message_attachments.dart';
 import '../widgets/thinking_orb.dart';
 import '../widgets/thread_message_tree.dart';
 import '../widgets/thread_status_badge.dart';
@@ -1387,48 +1388,48 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
             ),
           )
         else ...[
-          _ThreadDetailHeader(
-            detail: _detail!,
-            myHandle: widget.myHandle,
-            muted: widget.muted,
-            onRefresh: widget.embedded && !_loading
-                ? () => _load(silent: _detail != null)
-                : null,
-            onClose: _detail!.status == 'closed' ? null : _closeThread,
-            onDelete: _deleteThread,
-            onMuteToggle: widget.onMuteToggle,
-            onReplyOp: _detail!.status == 'closed'
-                ? null
-                : () {
-                    final op = _rootOpMessage(_detail!);
-                    if (op != null) _startReplyTo(op);
-                  },
-            onUpvoteOp: _detail!.status == 'closed'
-                ? null
-                : () {
-                    final op = _rootOpMessage(_detail!);
-                    if (op != null) _toggleUpvote(op);
-                  },
-            upvotingOp: () {
-              final op = _rootOpMessage(_detail!);
-              return op != null && _upvotingMessageId == op.id;
-            }(),
-          ),
-          if (_error != null) ...[
-            const SizedBox(height: 12),
-            Text(
-              _error!,
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: const Color(0xFF991B1B)),
-            ),
-          ],
-          const SizedBox(height: 12),
           Expanded(
             child: ListView(
               controller: _messageScroll,
               padding: const EdgeInsets.only(top: 0, bottom: 16),
               children: [
+                _ThreadDetailHeader(
+                  detail: _detail!,
+                  myHandle: widget.myHandle,
+                  muted: widget.muted,
+                  onRefresh: widget.embedded && !_loading
+                      ? () => _load(silent: _detail != null)
+                      : null,
+                  onClose: _detail!.status == 'closed' ? null : _closeThread,
+                  onDelete: _deleteThread,
+                  onMuteToggle: widget.onMuteToggle,
+                  onReplyOp: _detail!.status == 'closed'
+                      ? null
+                      : () {
+                          final op = _rootOpMessage(_detail!);
+                          if (op != null) _startReplyTo(op);
+                        },
+                  onUpvoteOp: _detail!.status == 'closed'
+                      ? null
+                      : () {
+                          final op = _rootOpMessage(_detail!);
+                          if (op != null) _toggleUpvote(op);
+                        },
+                  upvotingOp: () {
+                    final op = _rootOpMessage(_detail!);
+                    return op != null && _upvotingMessageId == op.id;
+                  }(),
+                ),
+                if (_error != null) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    _error!,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: const Color(0xFF991B1B),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 12),
                 for (final node in flattenThreadMessages(_detail!.messages))
                   if (!_isRootOpNode(node, _detail!))
                     _ThreadMessageTile(
@@ -1799,7 +1800,11 @@ class _ThreadDetailHeader extends StatelessWidget {
         ],
         if (op != null) ...[
           const SizedBox(height: 12),
-          _ReadMoreText(text: op.displayBody),
+          if (op.displayBody.isNotEmpty) _ReadMoreText(text: op.displayBody),
+          if (op.resources.isNotEmpty) ...[
+            if (op.displayBody.isNotEmpty) const SizedBox(height: 10),
+            MessageAttachments(resources: op.resources),
+          ],
           if (onReplyOp != null || onUpvoteOp != null) ...[
             const SizedBox(height: 10),
             _MessageActionGroup(
@@ -2243,18 +2248,23 @@ class _ThreadMessageTile extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 8),
-                  SelectableText(
-                    body,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: hasError
-                          ? const Color(0xFF991B1B)
-                          : empty
-                          ? const Color(0xFFA8A29E)
-                          : const Color(0xFF1C1917),
-                      height: 1.5,
-                      fontStyle: empty ? FontStyle.italic : FontStyle.normal,
+                  if (body.isNotEmpty || empty)
+                    SelectableText(
+                      empty && m.resources.isEmpty ? 'No message body' : body,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: hasError
+                            ? const Color(0xFF991B1B)
+                            : empty
+                            ? const Color(0xFFA8A29E)
+                            : const Color(0xFF1C1917),
+                        height: 1.5,
+                        fontStyle: empty ? FontStyle.italic : FontStyle.normal,
+                      ),
                     ),
-                  ),
+                  if (m.resources.isNotEmpty) ...[
+                    if (body.isNotEmpty || empty) const SizedBox(height: 10),
+                    MessageAttachments(resources: m.resources),
+                  ],
                   if (onUpvote != null || count > 0 || onReply != null) ...[
                     const SizedBox(height: 10),
                     Row(

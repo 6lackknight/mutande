@@ -240,6 +240,11 @@ impl HubClient {
         Ok(resp.device)
     }
 
+    pub async fn list_devices(&self) -> Result<Vec<Device>> {
+        let resp: ListDevicesResponse = self.get_json("/v1/devices").await?;
+        Ok(resp.devices)
+    }
+
     pub async fn register_agent(&self, slug: &str) -> Result<Agent> {
         let body = RegisterAgentRequest {
             slug: slug.to_string(),

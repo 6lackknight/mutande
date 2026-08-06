@@ -93,6 +93,24 @@ Deno.test("registerDevice is idempotent by pubkey", async () => {
   });
 });
 
+Deno.test("registerDevice concurrent-style races resolve to one device", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth } = await setupOrgWithUsers(store);
+    const before = (await store.listDevices(aliceAuth)).devices.length;
+    const results = await Promise.all(
+      Array.from({ length: 8 }, () =>
+        store.registerDevice(aliceAuth, {
+          pubkey: "alice-race-pk",
+          platform: "macos",
+        })
+      ),
+    );
+    const ids = new Set(results.map((d) => d.id));
+    assertEquals(ids.size, 1);
+    assertEquals((await store.listDevices(aliceAuth)).devices.length, before + 1);
+  });
+});
+
 Deno.test("thread inbox filters", async () => {
   await withTestStore(async ({ store }) => {
     const { aliceAuth, bobAuth } = await setupOrgWithUsers(store);
