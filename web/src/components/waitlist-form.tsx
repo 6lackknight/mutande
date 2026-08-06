@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { Alert, Button, Field, Input } from "@/components/ui";
+import { WarpBackground } from "@/components/magicui/warp-background";
+import { Alert, Button, ButtonLink, Field, Input } from "@/components/ui";
 
 const AI_HOSTS = [
   "Cursor",
@@ -138,10 +139,27 @@ export function WaitlistForm() {
 
   if (done) {
     return (
-      <Alert tone="ok">
-        You’re on the list. We’ll email when a spot opens — or grab the Mac
-        alpha now if you want to poke around.
-      </Alert>
+      <WarpBackground
+        className="overflow-hidden border-stone-300/60 bg-stone-50/40 p-5 sm:p-6"
+        gridColor="color-mix(in oklch, var(--stone-300) 55%, transparent)"
+        beamsPerSide={2}
+        beamDuration={4}
+      >
+        <div className="rounded-md border border-accent/30 bg-accent-soft/95 px-4 py-3 text-sm leading-relaxed text-stone-800 shadow-sm">
+          <p className="font-medium text-stone-900">You’re on the list.</p>
+          <p className="mt-1.5 text-stone-700">
+            We’ll email when a spot opens — or grab the Mac alpha now if you
+            want to poke around.
+          </p>
+          <ButtonLink
+            href="/download"
+            variant="secondary"
+            className="mt-3 !py-2"
+          >
+            Try Alpha
+          </ButtonLink>
+        </div>
+      </WarpBackground>
     );
   }
 

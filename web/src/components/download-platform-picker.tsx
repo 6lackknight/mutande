@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { WarpBackground } from "@/components/magicui/warp-background";
 import { Alert, ChoiceCard } from "@/components/ui";
 import { TrackLink } from "@/components/track-link";
 import {
@@ -121,6 +122,7 @@ export function DownloadPlatformPicker({
 
   // SSR + first paint: silicon (always published). Client effect upgrades.
   const [selected, setSelected] = useState<DownloadPlatform>("mac_arm64");
+  const [confirmed, setConfirmed] = useState<PlatformOption | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -151,6 +153,7 @@ export function DownloadPlatformPicker({
               selected={selected === option.id}
               onClick={() => {
                 setSelected(option.id);
+                setConfirmed(option);
                 track(AnalyticsEvent.DownloadArtifactClick, {
                   href: option.href,
                   artifact: option.title,
@@ -169,13 +172,37 @@ export function DownloadPlatformPicker({
       </div>
 
       <div className="mt-10 space-y-3">
-        <Alert tone={current.alertTone}>{current.alert}</Alert>
-        {winZipPublished && current.id !== "windows" ? (
-          <Alert>
-            {winLabel} — unsigned zip from CI. SmartScreen may warn; choose More
-            info → Run anyway. Not publisher-trusted like the Mac DMGs.
-          </Alert>
-        ) : null}
+        {confirmed ? (
+          <WarpBackground
+            className="overflow-hidden border-stone-300/60 bg-stone-50/40 p-5 sm:p-6"
+            gridColor="color-mix(in oklch, var(--stone-300) 55%, transparent)"
+            beamsPerSide={2}
+            beamDuration={4}
+          >
+            <div
+              className={`rounded-md border px-4 py-3 text-sm leading-relaxed shadow-sm ${
+                confirmed.alertTone === "ok"
+                  ? "border-accent/30 bg-accent-soft/95 text-stone-800"
+                  : "border-amber-300/50 bg-amber-50/90 text-stone-800"
+              }`}
+            >
+              <p className="font-medium text-stone-900">
+                Download started — {confirmed.title}
+              </p>
+              <p className="mt-1.5">{confirmed.alert}</p>
+            </div>
+          </WarpBackground>
+        ) : (
+          <>
+            <Alert tone={current.alertTone}>{current.alert}</Alert>
+            {winZipPublished && current.id !== "windows" ? (
+              <Alert>
+                {winLabel} — unsigned zip from CI. SmartScreen may warn; choose
+                More info → Run anyway. Not publisher-trusted like the Mac DMGs.
+              </Alert>
+            ) : null}
+          </>
+        )}
         <p className="text-sm text-muted">
           {options
             .filter((o) => o.published)

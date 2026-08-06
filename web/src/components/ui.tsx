@@ -2,10 +2,12 @@ import Image from "next/image";
 import Link from "next/link";
 import type {
   ButtonHTMLAttributes,
+  CSSProperties,
   InputHTMLAttributes,
   MouseEventHandler,
   ReactNode,
 } from "react";
+import { KineticText } from "@/components/magicui/kinetic-text";
 
 export function Shell({
   children,
@@ -34,28 +36,40 @@ export function BrandMark({
   className?: string;
   size?: "sm" | "md" | "lg";
 }) {
-  const icon = size === "lg" ? 40 : size === "sm" ? 22 : 28;
+  const icon = size === "lg" ? 36 : size === "sm" ? 22 : 26;
   const text =
     size === "lg"
-      ? "text-2xl"
+      ? "text-[1.625rem]"
       : size === "sm"
-        ? "text-base"
-        : "text-xl";
+        ? "text-[15px]"
+        : "text-[1.125rem]";
+  const gap = size === "lg" ? "gap-2.5" : size === "sm" ? "gap-1.5" : "gap-2";
 
   return (
     <Link
       href="/"
-      className={`inline-flex items-center gap-2.5 font-display font-semibold tracking-tight text-stone-900 ${text} ${className}`}
+      className={`group inline-flex items-center font-display tracking-tight text-stone-900 leading-none ${gap} ${text} ${className}`}
     >
       <Image
         src="/brand/tray-icon.png"
         alt=""
         width={icon}
         height={icon}
-        className="rounded-[22%] shadow-sm"
+        className="relative top-px shrink-0 rounded-[22%] shadow-sm"
         priority
       />
-      <span>mutande</span>
+      <KineticText
+        text="mutande"
+        as="span"
+        className="flex-nowrap items-baseline font-semibold leading-none tracking-[-0.02em]"
+        style={
+          {
+            // Quieter kinetic pulse in the nav — less layout shift than the display default
+            "--hover-padding": "0.03em",
+            "--text-stroke-width": "0.02em",
+          } as CSSProperties
+        }
+      />
     </Link>
   );
 }
