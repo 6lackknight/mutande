@@ -2,12 +2,15 @@
 
 import {
   ArcElement,
+  BarController,
   BarElement,
   CategoryScale,
   Chart,
+  DoughnutController,
   Filler,
   Legend,
   LinearScale,
+  LineController,
   LineElement,
   PointElement,
   Tooltip,
@@ -21,8 +24,11 @@ import type { Feedback, WaitlistEntry } from "@/lib/types";
 Chart.register(
   CategoryScale,
   LinearScale,
+  BarController,
   BarElement,
+  DoughnutController,
   ArcElement,
+  LineController,
   PointElement,
   LineElement,
   Filler,

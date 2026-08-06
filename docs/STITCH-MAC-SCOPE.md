@@ -18,13 +18,14 @@ Hosted on prod web — prefer these URLs in Stitch:
 
 | Asset | URL | Use |
 |-------|-----|-----|
-| MT mark (white on black) | https://mutande.online/brand/mt-mark.png | Splash, About-style moments, large brand seal |
-| Tray icon (rounded square) | https://mutande.online/brand/tray-icon.png | Menu-bar glyph, in-app nav mark, small brand |
+| `@i` mark (white on black) | https://mutande.online/brand/mt-mark.png | Primary seal — splash, About-style moments, large brand |
+| MT ligature (legacy) | https://mutande.online/brand/mt-ligature.png | Optional secondary mark where the wordmark ligature still fits |
+| Tray icon (rounded square) | https://mutande.online/brand/tray-icon.png | Menu-bar glyph, in-app nav mark, small brand (`@i`) |
 | Favicon / touch | https://mutande.online/brand/favicon-32.png · [icon-192](https://mutande.online/brand/icon-192.png) · [apple-touch](https://mutande.online/brand/apple-touch-icon.png) | Optional reference only |
 
 **Wordmark:** always lowercase **`mutande`** (never “Mutande”). SF Pro / system UI sans. Slightly tight tracking, semibold for titles.
 
-**Mark rules:** MT ligature — **m** and **t** share the right stem. Prefer **white mark on solid black** for tray and seals. Do not invent a second logo, orb-as-logo, envelope mascot, or gradient lock.
+**Mark rules:** Brand mark is **`@i`** (Address Intelligence). Prefer **white mark on solid black** for tray and seals. Do not invent a second logo, orb-as-logo, envelope mascot, or gradient lock.
 
 ---
 
@@ -115,7 +116,7 @@ Obvious desktop / tray mistakes. If a mock looks like any of these, redesign.
 | Antipattern | Prefer instead |
 |-------------|----------------|
 | Custom window chrome that fights traffic lights | Standard macOS title bar |
-| Colored / glowing tray icon, animated tray glyph | Static MT plate; status lives in the menu text |
+| Colored / glowing tray icon, animated tray glyph | Static `@i` plate; status lives in the menu text |
 | Assuming close = quit | Close **hides**; Quit only from tray |
 | System Settings dump as the home screen | Home = Threads + Agents (+ Contacts); Settings holds plumbing |
 | Windows-style ribbon / oversized toolbar | Minimal AppBar + tabs |
