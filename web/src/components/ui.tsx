@@ -183,22 +183,44 @@ export function ChoiceCard({
   title,
   description,
   onClick,
+  selected = false,
 }: {
-  href: string;
+  href?: string;
   title: string;
   description: string;
-  onClick?: MouseEventHandler<HTMLAnchorElement>;
+  onClick?: MouseEventHandler<HTMLAnchorElement | HTMLButtonElement>;
+  selected?: boolean;
 }) {
-  return (
-    <a
-      href={href}
-      onClick={onClick}
-      className="group block rounded-lg border border-stone-300/70 bg-white/50 p-5 transition hover:border-stone-400 hover:bg-white/80"
-    >
+  const className = `group block w-full rounded-lg border p-5 text-left transition ${
+    selected
+      ? "border-stone-800 bg-white/90 shadow-sm ring-1 ring-stone-800/10"
+      : "border-stone-300/70 bg-white/50 hover:border-stone-400 hover:bg-white/80"
+  }`;
+  const body = (
+    <>
       <div className="font-display text-lg text-stone-900 group-hover:text-stone-800">
         {title}
       </div>
       <p className="mt-1.5 text-sm leading-relaxed text-muted">{description}</p>
-    </a>
+    </>
+  );
+
+  if (href) {
+    return (
+      <a href={href} onClick={onClick} className={className} aria-current={selected ? "true" : undefined}>
+        {body}
+      </a>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={className}
+      aria-pressed={selected}
+    >
+      {body}
+    </button>
   );
 }
