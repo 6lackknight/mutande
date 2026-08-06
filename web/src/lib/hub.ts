@@ -4,7 +4,9 @@ import {
   type CreateInviteResponse,
   type CreateOrgInput,
   type JoinOrgInput,
+  type ListFeedbackResponse,
   type ListInvitesResponse,
+  type ListWaitlistResponse,
   type MeResponse,
 } from "@/lib/types";
 
@@ -121,6 +123,24 @@ export async function createInvite(email?: string): Promise<CreateInviteResponse
     method: "POST",
     body: JSON.stringify(email ? { email } : {}),
   });
+}
+
+export async function listFeedback(): Promise<ListFeedbackResponse> {
+  const data = await hubFetch<ListFeedbackResponse | ListFeedbackResponse["feedback"]>(
+    "/v1/admin/feedback",
+  );
+  if (Array.isArray(data)) return { feedback: data };
+  if (Array.isArray(data.feedback)) return data;
+  return { feedback: [] };
+}
+
+export async function listWaitlistAdmin(): Promise<ListWaitlistResponse> {
+  const data = await hubFetch<
+    ListWaitlistResponse | ListWaitlistResponse["waitlist"]
+  >("/v1/admin/waitlist");
+  if (Array.isArray(data)) return { waitlist: data };
+  if (Array.isArray(data.waitlist)) return data;
+  return { waitlist: [] };
 }
 
 export function formatHubError(err: unknown): string {

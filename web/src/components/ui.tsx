@@ -10,15 +10,17 @@ import type {
 export function Shell({
   children,
   wide,
+  xl,
 }: {
   children: ReactNode;
   wide?: boolean;
+  /** Charts / tables — wider than invite admin. */
+  xl?: boolean;
 }) {
+  const max = xl ? "max-w-6xl" : wide ? "max-w-3xl" : "max-w-lg";
   return (
     <div className="bg-relay grain relative min-h-full flex-1">
-      <div
-        className={`relative mx-auto w-full px-6 py-10 sm:px-8 ${wide ? "max-w-3xl" : "max-w-lg"}`}
-      >
+      <div className={`relative mx-auto w-full px-6 py-10 sm:px-8 ${max}`}>
         {children}
       </div>
     </div>

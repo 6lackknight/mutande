@@ -1,5 +1,6 @@
 /**
  * Local-only pilot ops dashboard with Auth0 login (PKCE).
+ * Prefer prod: https://mutande.online/admin/ops (web app, org admin).
  * Binds 127.0.0.1 — never expose.
  *
  *   deno task start

@@ -7,9 +7,12 @@ import {
   formatHubError,
   getMe,
   joinOrg,
+  listFeedback,
+  listWaitlistAdmin,
 } from "@/lib/hub";
 import { sendInviteEmail } from "@/lib/plunk";
 import { joinUrlForCode, requireSession } from "@/lib/session";
+import type { Feedback, WaitlistEntry } from "@/lib/types";
 
 export type ActionState = {
   error?: string;
@@ -135,6 +138,20 @@ export async function createInviteAction(
       inviteEmail,
       joinUrl,
     };
+  } catch (err) {
+    return { error: formatHubError(err) };
+  }
+}
+
+export async function refreshOpsAction(): Promise<{
+  feedback?: Feedback[];
+  waitlist?: WaitlistEntry[];
+  error?: string;
+}> {
+  await requireSession("/admin/ops");
+  try {
+    const [fb, wl] = await Promise.all([listFeedback(), listWaitlistAdmin()]);
+    return { feedback: fb.feedback, waitlist: wl.waitlist };
   } catch (err) {
     return { error: formatHubError(err) };
   }

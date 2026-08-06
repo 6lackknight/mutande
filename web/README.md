@@ -1,6 +1,6 @@
 # Mutande web
 
-Next.js (App Router) front-end for Auth0 sign-in, org onboarding, and admin invites. Deployed on Vercel. No E2E mail in the browser — metadata and invites only.
+Next.js (App Router) front-end for Auth0 sign-in, org onboarding, admin invites, and pilot ops (feedback/waitlist). Deployed on Vercel. No E2E mail in the browser — metadata and invites only.
 
 **Prod web:** [https://mutande.online](https://mutande.online) (canonical until `mutande.ai`). Optional aliases: `mutande.vercel.app`, `mutande-web.vercel.app`.
 
@@ -55,6 +55,8 @@ Bearer Auth0 access token (audience) on:
 - `POST /v1/orgs` `{ slug, name?, handle? }`
 - `POST /v1/onboarding/join` `{ invite_code, handle }`
 - `GET` / `POST /v1/admin/invites`
+- `GET /v1/admin/feedback`
+- `GET /v1/admin/waitlist`
 
 Typed client: `src/lib/hub.ts`. Network / 4xx–5xx surface as friendly UI errors so the app remains usable while hub Auth0 routes finish landing.
 
@@ -89,3 +91,4 @@ web/
 | `/join?invite=` | Join flow |
 | `/dashboard` | Handle, org, download CTA |
 | `/admin/invites` | List/create invites, copy link, Plunk email |
+| `/admin/ops` | Pilot feedback + waitlist charts (org admin) |

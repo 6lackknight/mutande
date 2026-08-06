@@ -29,12 +29,14 @@ export default async function AdminInvitesPage() {
     <Shell wide>
       <div className="mb-10 flex items-center justify-between gap-4">
         <BrandMark />
-        <a
-          href="/dashboard"
-          className="text-sm text-muted hover:text-stone-800"
-        >
-          Dashboard
-        </a>
+        <div className="flex flex-wrap items-center gap-4 text-sm">
+          <a href="/admin/ops" className="text-muted hover:text-stone-800">
+            Ops
+          </a>
+          <a href="/dashboard" className="text-muted hover:text-stone-800">
+            Dashboard
+          </a>
+        </div>
       </div>
       <PageTitle
         title="Invites"

@@ -52,7 +52,12 @@ export default async function DashboardPage() {
 
       <div className="mt-10 flex flex-wrap gap-3">
         {isAdmin ? (
-          <ButtonLink href="/admin/invites">Manage invites</ButtonLink>
+          <>
+            <ButtonLink href="/admin/invites">Manage invites</ButtonLink>
+            <ButtonLink href="/admin/ops" variant="secondary">
+              Ops
+            </ButtonLink>
+          </>
         ) : null}
         <ButtonLink href="/download" variant="secondary">
           Download desktop app

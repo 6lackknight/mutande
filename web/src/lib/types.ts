@@ -60,6 +60,39 @@ export interface ListInvitesResponse {
   invites: Invite[];
 }
 
+export interface Feedback {
+  id: string;
+  created_at: string;
+  user_id: string;
+  handle: string;
+  org_id: string;
+  auth0_sub: string;
+  email?: string;
+  message: string;
+  category?: string;
+  app_version?: string;
+  platform: "macos" | "ios" | "web";
+}
+
+export interface WaitlistEntry {
+  id: string;
+  created_at: string;
+  email: string;
+  ai_hosts: string[];
+  oses: string[];
+  share_frequency: string;
+  share_methods: string[];
+  source: "web";
+}
+
+export interface ListFeedbackResponse {
+  feedback: Feedback[];
+}
+
+export interface ListWaitlistResponse {
+  waitlist: WaitlistEntry[];
+}
+
 export class HubError extends Error {
   readonly status: number;
   readonly body: unknown;
