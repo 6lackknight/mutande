@@ -103,6 +103,7 @@ class _MutandeAppState extends State<MutandeApp> {
         hostLinkStore: widget.hostLinkStore,
         firstRunStore: widget.firstRunStore,
         startupRetryAttempts: widget.startupRetryAttempts,
+        appVersion: widget.appVersion,
         onRestartCourier: widget.onRestartCourier,
         onBootstrapPhase: (ready, status) {
           // Defer — RootScreen may emit from initState while splash is mounting.
@@ -156,6 +157,7 @@ class RootScreen extends StatefulWidget {
     this.hostLinkStore,
     this.firstRunStore,
     this.startupRetryAttempts = 15,
+    this.appVersion = AppConfig.appVersion,
     this.onRestartCourier,
     this.onBootstrapPhase,
   });
@@ -166,6 +168,7 @@ class RootScreen extends StatefulWidget {
   final HostLinkStore? hostLinkStore;
   final FirstRunStore? firstRunStore;
   final int startupRetryAttempts;
+  final String appVersion;
   final Future<String?> Function()? onRestartCourier;
 
   /// Reports bootstrap readiness + splash status (Keychain wait, etc.).
@@ -544,6 +547,8 @@ class _RootScreenState extends State<RootScreen> {
       hostLinkStore: _hostLinkStore,
       notificationPrefs: _notificationPrefs,
       initialThreadId: _openThreadId,
+      appVersion: widget.appVersion,
+      onRestartCourier: widget.onRestartCourier,
     );
   }
 }
@@ -564,6 +569,8 @@ class HomeScreen extends StatefulWidget {
     this.hostLinkStore,
     this.notificationPrefs,
     this.initialThreadId,
+    this.appVersion = AppConfig.appVersion,
+    this.onRestartCourier,
   });
 
   final AppConfig config;
@@ -579,6 +586,8 @@ class HomeScreen extends StatefulWidget {
   final HostLinkStore? hostLinkStore;
   final NotificationPrefsStore? notificationPrefs;
   final String? initialThreadId;
+  final String appVersion;
+  final Future<String?> Function()? onRestartCourier;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -763,6 +772,8 @@ class _HomeScreenState extends State<HomeScreen> {
               connectError: widget.connectError,
               onCheckDaemon: _checkDaemon,
               handle: widget.status.handle,
+              appVersion: widget.appVersion,
+              onRestartCourier: widget.onRestartCourier,
               hostLinkStore: widget.hostLinkStore,
               notificationPrefs: widget.notificationPrefs,
               onOpenThreads: () {
@@ -821,7 +832,7 @@ class _HomeScreenState extends State<HomeScreen> {
       return AgentsPanel(
         daemon: widget.daemon,
         handle: widget.status.handle,
-        appVersion: AppConfig.appVersion,
+        appVersion: widget.appVersion,
         hostLinkStore: widget.hostLinkStore,
         onReloadReady: _registerAgentsReload,
         onViewThreads: () => _selectTab(0),

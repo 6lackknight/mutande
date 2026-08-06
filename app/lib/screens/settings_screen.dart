@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../config/app_config.dart';
+import '../services/core_sidecar.dart';
 import '../services/daemon_client.dart';
 import '../services/host_link_store.dart';
 import '../services/notification_prefs_store.dart';
@@ -22,6 +23,7 @@ const Color _kStone700 = Color(0xFF44403C);
 const Color _kStone800 = Color(0xFF292524);
 const Color _kStone900 = Color(0xFF1C1917);
 const Color _kBronze = Color(0xFF8B6914);
+const Color _kBronzeSoft = Color(0xFFF5F0E6);
 const Color _kGreen = Color(0xFF166534);
 const Color _kRed = Color(0xFF991B1B);
 const Color _kRose = Color(0xFF9F1239);
@@ -50,6 +52,7 @@ class SettingsScreen extends StatefulWidget {
     required this.onCheckDaemon,
     this.handle,
     this.appVersion = AppConfig.appVersion,
+    this.onRestartCourier,
     this.onOpenThreads,
     this.onOpenAgents,
     this.onSignedOut,
@@ -66,6 +69,8 @@ class SettingsScreen extends StatefulWidget {
   final VoidCallback onCheckDaemon;
   final String? handle;
   final String appVersion;
+  /// Kill stale courier + spawn bundled sidecar (macOS shell).
+  final Future<String?> Function()? onRestartCourier;
   /// Close settings and jump home Threads (e.g. from agent inspector).
   final VoidCallback? onOpenThreads;
   /// Close settings and jump home Agents graph.
@@ -85,6 +90,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late DaemonHealthResult? _health = widget.health;
   late String? _connectError = widget.connectError;
   DateTime? _lastPingAt;
+  bool _restartingCourier = false;
+  String? _restartError;
+  /// Soft status (Keychain wait) — not an error.
+  String? _courierHint;
   SafetyNumberResult? _ours;
   bool _loadingSafety = true;
   bool _registeringDevice = false;
@@ -228,14 +237,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _check() async {
-    setState(() => _checking = true);
+    if (_checking || _restartingCourier) return;
+    setState(() {
+      _checking = true;
+      _restartError = null;
+      _courierHint = null;
+    });
     widget.onCheckDaemon();
     final result = await widget.daemon.pingHealth();
     if (!mounted) return;
     setState(() {
       _checking = false;
       _health = result;
-      if (result.connected) _lastPingAt = DateTime.now();
+      _lastPingAt = DateTime.now();
+      if (result.connected) _courierHint = null;
+    });
+  }
+
+  Future<void> _restartCourier() async {
+    final restart = widget.onRestartCourier;
+    if (restart == null || _checking || _restartingCourier) return;
+    setState(() {
+      _restartingCourier = true;
+      _restartError = null;
+      _courierHint = null;
+    });
+    final err = await restart();
+    if (!mounted) return;
+    final result = await widget.daemon.pingHealth();
+    if (!mounted) return;
+    setState(() {
+      _restartingCourier = false;
+      _health = result;
+      _lastPingAt = DateTime.now();
+      _restartError = err;
+      // Keychain unlock can outlast the restart call — don't treat as hard fail.
+      if (err == null && !result.connected) {
+        _courierHint =
+            'If Keychain asks, unlock to finish starting the courier.';
+      } else {
+        _courierHint = null;
+      }
     });
   }
 
@@ -355,10 +397,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: _DaemonCard(
                 health: _health,
                 checking: _checking,
+                restarting: _restartingCourier,
                 lastPingAt: _lastPingAt,
                 connected: connected,
+                appVersion: widget.appVersion,
+                restartError: _restartError,
+                courierHint: _courierHint,
                 onCheck: _check,
-                onRetry: _check,
+                onRestartCourier:
+                    widget.onRestartCourier == null ? null : _restartCourier,
               ),
             ),
             _section(
@@ -546,40 +593,62 @@ class _DaemonCard extends StatelessWidget {
   const _DaemonCard({
     required this.health,
     required this.checking,
+    required this.restarting,
     required this.lastPingAt,
     required this.connected,
+    required this.appVersion,
+    this.restartError,
+    this.courierHint,
     required this.onCheck,
-    required this.onRetry,
+    this.onRestartCourier,
   });
 
   final DaemonHealthResult? health;
   final bool checking;
+  final bool restarting;
   final DateTime? lastPingAt;
   final bool connected;
+  final String appVersion;
+  final String? restartError;
+  final String? courierHint;
   final VoidCallback onCheck;
-  final VoidCallback onRetry;
+  final VoidCallback? onRestartCourier;
+
+  bool get _busy => checking || restarting;
+
+  bool get _versionMismatch {
+    if (!connected) return false;
+    final app = CoreSidecar.normalizeVersion(appVersion);
+    if (app == null) return false;
+    return !CoreSidecar.versionsMatch(health?.version, app);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final version = health?.version;
-    final title = 'Local courier';
-    final detail = version != null && version.isNotEmpty
-        ? 'mutande-core v$version'
-        : 'mutande-core';
+    final version = CoreSidecar.normalizeVersion(health?.version);
+    final appVer = CoreSidecar.normalizeVersion(appVersion) ?? appVersion;
+    final detail = !connected
+        ? (health?.error?.trim().isNotEmpty == true
+            ? health!.error!.trim()
+            : 'Courier unreachable')
+        : version != null
+            ? 'mutande-core v$version'
+            : 'mutande-core · version unknown';
     final ping = lastPingAt == null
         ? 'Last check: —'
         : 'Last check: ${_relativePing(lastPingAt!)}';
-
-    final checkLabel = checking ? 'Checking…' : 'Check daemon';
+    final showRestart = onRestartCourier != null;
 
     return Container(
       padding: _kCardPad,
-      decoration: _settingsCardDecoration(),
+      decoration: _settingsCardDecoration(
+        borderColor: _versionMismatch ? const Color(0xFFD6C4A1) : null,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            title,
+            'Local courier',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: _kStone800,
                   fontWeight: FontWeight.w600,
@@ -587,85 +656,150 @@ class _DaemonCard extends StatelessWidget {
           ),
           const SizedBox(height: 2),
           Text(
-            checking ? 'Checking…' : detail,
-            maxLines: 1,
+            checking
+                ? 'Checking…'
+                : (restarting ? 'Restarting courier…' : detail),
+            maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: _kStone500,
+                  color: connected ? _kStone500 : _kStone700,
                 ),
           ),
-          if (!checking && connected) ...[
+          const SizedBox(height: 2),
+          Text(
+            ping,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: _kStone400,
+                  fontSize: 11,
+                ),
+          ),
+          if (connected && !_versionMismatch && version != null) ...[
             const SizedBox(height: 2),
             Text(
-              ping,
+              'Matches app v$appVer',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: _kStone400,
                     fontSize: 11,
                   ),
             ),
           ],
-          const SizedBox(height: 12),
-          if (connected)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: OutlinedButton(
-                onPressed: checking ? null : onCheck,
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: _kStone700,
-                  side: const BorderSide(color: _kStone300),
-                  backgroundColor: _kStone100,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 10,
-                  ),
-                  minimumSize: const Size(0, 36),
-                  textStyle: const TextStyle(
+          if (_versionMismatch) ...[
+            const SizedBox(height: 10),
+            _DaemonMismatchBanner(
+              appVersion: appVer,
+              courierVersion: version,
+            ),
+          ],
+          if (courierHint != null && courierHint!.trim().isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              courierHint!.trim(),
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: _kStone500,
                     fontSize: 12,
-                    fontWeight: FontWeight.w600,
+                    height: 1.35,
                   ),
-                ),
-                child: Text(checkLabel),
-              ),
-            )
-          else
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: checking ? null : onCheck,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: _kStone700,
-                      side: const BorderSide(color: _kStone300),
-                      backgroundColor: _kStone100,
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      minimumSize: const Size(0, 36),
-                      textStyle: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
+            ),
+          ],
+          if (restartError != null && restartError!.trim().isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              restartError!.trim(),
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: _kRose,
+                    fontSize: 12,
+                  ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: _busy ? null : onCheck,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _kStone700,
+                    side: const BorderSide(color: _kStone300),
+                    backgroundColor: _kStone100,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
                     ),
-                    child: Text(checkLabel),
+                    minimumSize: const Size(0, 36),
+                    textStyle: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
+                  child: checking
+                      ? const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            MutandeOrb.loading(
+                              semanticLabel: 'Checking daemon',
+                            ),
+                            SizedBox(width: 8),
+                            Text('Checking…'),
+                          ],
+                        )
+                      : const Text('Check daemon'),
                 ),
+              ),
+              if (showRestart) ...[
                 const SizedBox(width: 8),
                 Expanded(
                   child: FilledButton(
-                    onPressed: checking ? null : onRetry,
+                    onPressed: _busy ? null : onRestartCourier,
                     style: FilledButton.styleFrom(
                       backgroundColor: _kBronze,
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      disabledBackgroundColor: _kBronze.withValues(alpha: 0.45),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
                       minimumSize: const Size(0, 36),
                       textStyle: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    child: Text(checking ? '…' : 'Retry'),
+                    child: restarting
+                        ? const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              MutandeOrb.loading(
+                                dark: true,
+                                semanticLabel: 'Restarting courier',
+                              ),
+                              SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  'Restarting…',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          )
+                        : const Text(
+                            'Restart courier',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                   ),
                 ),
               ],
-            ),
+            ],
+          ),
         ],
       ),
     );
@@ -677,6 +811,41 @@ class _DaemonCard extends StatelessWidget {
     final s = DateTime.now().difference(at).inSeconds;
     if (s < 60) return '${s}s ago';
     return '${at.hour.toString().padLeft(2, '0')}:${at.minute.toString().padLeft(2, '0')}';
+  }
+}
+
+class _DaemonMismatchBanner extends StatelessWidget {
+  const _DaemonMismatchBanner({
+    required this.appVersion,
+    required this.courierVersion,
+  });
+
+  final String appVersion;
+  final String? courierVersion;
+
+  @override
+  Widget build(BuildContext context) {
+    final courier = courierVersion == null || courierVersion!.isEmpty
+        ? 'unknown'
+        : 'v$courierVersion';
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+      decoration: BoxDecoration(
+        color: _kBronzeSoft,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFD6C4A1)),
+      ),
+      child: Text(
+        'Sidecar mismatch — app v$appVersion, courier $courier. '
+        'Restart courier to use the binary bundled with mutande.',
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: _kBronze,
+              fontSize: 12,
+              height: 1.35,
+              fontWeight: FontWeight.w500,
+            ),
+      ),
+    );
   }
 }
 

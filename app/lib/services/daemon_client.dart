@@ -596,6 +596,11 @@ class DaemonClient {
 
   static String _expandHome(String path) => expandUserPath(path);
 
+  /// Drop cached bearer token (e.g. after killing a stale courier).
+  void invalidateHttpToken() {
+    _cachedHttpToken = null;
+  }
+
   void dispose() => _http.close();
 }
 

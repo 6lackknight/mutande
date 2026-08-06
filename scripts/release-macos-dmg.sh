@@ -216,7 +216,8 @@ build_one_arch() {
     echo "==> flutter build macos --release"
     (cd "$APP_DIR" && flutter build macos --release \
       --build-name="${VERSION}" \
-      --build-number="${BUILD_NUMBER}")
+      --build-number="${BUILD_NUMBER}" \
+      --dart-define="APP_VERSION=${VERSION}")
   else
     echo "==> reuse flutter Release app (already built this run)"
   fi
