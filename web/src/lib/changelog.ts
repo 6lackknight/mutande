@@ -12,6 +12,15 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "1.0.10",
+    date: "2026-08-06",
+    title: "Restart courier & version mismatch",
+    notes: [
+      "Settings Restart courier clears a stuck or stale mutande-core sidecar without resetting onboarding.",
+      "Detects app vs daemon version mismatch so a leftover core binary no longer blocks the desktop.",
+    ],
+  },
+  {
     version: "1.0.9",
     date: "2026-08-06",
     title: "Attachments & host connect",
