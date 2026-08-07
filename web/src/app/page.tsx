@@ -1,9 +1,11 @@
 import { LandingForceField } from "@/components/landing-force-field";
 import { LandingIntroVideo } from "@/components/landing-intro-video";
+import { LandingNav } from "@/components/landing-nav";
 import { TrackButtonLink } from "@/components/track-button-link";
-import { TrackLink } from "@/components/track-link";
 import { BrandMark } from "@/components/ui";
 import { AnalyticsEvent } from "@/lib/analytics-events";
+
+export const dynamic = "force-dynamic";
 
 export default function LandingPage() {
   return (
@@ -16,30 +18,7 @@ export default function LandingPage() {
 
         <header className="relative z-10 flex items-center justify-between px-6 py-5 sm:px-10 lg:px-14">
           <BrandMark />
-          <nav className="flex items-center gap-1 sm:gap-2">
-            <a
-              href="/docs"
-              className="rounded-md px-3 py-2 text-sm text-stone-700 transition hover:bg-stone-200/40"
-            >
-              Docs
-            </a>
-            <TrackLink
-              href="/download"
-              event={AnalyticsEvent.DownloadNavClick}
-              props={{ surface: "landing_nav" }}
-              className="rounded-md px-3 py-2 text-sm text-stone-700 transition hover:bg-stone-200/40"
-            >
-              Try Alpha
-            </TrackLink>
-            <TrackLink
-              href="/login"
-              event={AnalyticsEvent.SignInClick}
-              props={{ surface: "landing_nav" }}
-              className="rounded-md px-3 py-2 text-sm text-stone-700 transition hover:bg-stone-200/40"
-            >
-              Sign in
-            </TrackLink>
-          </nav>
+          <LandingNav />
         </header>
 
         <main className="relative z-10 flex flex-1 flex-col justify-center px-6 pb-24 pt-4 sm:px-10 lg:px-14">
