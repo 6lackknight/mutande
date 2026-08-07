@@ -149,13 +149,13 @@ export function DownloadPlatformPicker({
   return (
     <div className="space-y-3">
       <WarpBackground
-        className="overflow-hidden border-stone-300/60 bg-stone-50/40 p-4 sm:p-5"
+        className="grid min-h-[40vh] place-items-center overflow-hidden border-stone-300/60 bg-stone-50/40 p-4 sm:p-5"
         gridColor="color-mix(in oklch, var(--stone-300) 55%, transparent)"
         beamsPerSide={2}
         beamDuration={4}
       >
         <div
-          className={`rounded-md border px-4 py-3.5 text-sm leading-relaxed shadow-sm sm:px-5 sm:py-4 ${
+          className={`h-fit w-fit max-w-full rounded-md border px-4 py-3.5 text-sm leading-relaxed shadow-sm sm:px-5 sm:py-4 ${
             current.alertTone === "ok"
               ? "border-accent/30 bg-accent-soft/95 text-stone-800"
               : "border-amber-300/50 bg-amber-50/90 text-stone-800"
