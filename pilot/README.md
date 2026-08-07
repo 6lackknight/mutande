@@ -43,10 +43,10 @@ deno task --cwd pilot/ops start
 ```bash
 # After signing in as org admin (use a short-lived access token)
 curl -sS -H "Authorization: Bearer $TOKEN" \
-  https://mutande.6lackknight.deno.net/v1/admin/feedback | jq .
+  https://hub.mutande.online/v1/admin/feedback | jq .
 
 curl -sS -H "Authorization: Bearer $TOKEN" \
-  https://mutande.6lackknight.deno.net/v1/admin/waitlist | jq .
+  https://hub.mutande.online/v1/admin/waitlist | jq .
 ```
 
 ## After each call

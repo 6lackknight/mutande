@@ -126,7 +126,7 @@ Hub hard-requires `AUTH0_DOMAIN` + `AUTH0_AUDIENCE` when `DENO_DEPLOYMENT_ID` is
 | `AUTH0_SECRET` | `openssl rand -hex 32` (session cookie) |
 | `AUTH0_AUDIENCE` | Same as hub |
 | `APP_BASE_URL` | Local: `http://localhost:3000`. Production: `https://mutande.online` (until `mutande.ai`) |
-| `MUTANDE_HUB_URL` | e.g. `https://mutande.6lackknight.deno.net` |
+| `MUTANDE_HUB_URL` | e.g. `https://hub.mutande.online` |
 | `PLUNK_API_KEY` | Optional invite email |
 
 ### Mac (daemon env or Flutter `--dart-define`)
@@ -136,7 +136,7 @@ Hub hard-requires `AUTH0_DOMAIN` + `AUTH0_AUDIENCE` when `DENO_DEPLOYMENT_ID` is
 | `AUTH0_DOMAIN` | Custom domain `auth.mutande.online` (not tenant `*.auth0.com`) |
 | `AUTH0_NATIVE_CLIENT_ID` | Native Application (no secret) |
 | `AUTH0_AUDIENCE` | Same as hub |
-| `MUTANDE_HUB_URL` | e.g. `https://mutande.6lackknight.deno.net` |
+| `MUTANDE_HUB_URL` | e.g. `https://hub.mutande.online` |
 | `MUTANDE_AUTH0_ACCESS_TOKEN` | Optional — skip OAuth browser |
 | `MUTANDE_AUTH0_REFRESH_TOKEN` | Optional with access token |
 

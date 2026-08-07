@@ -14,7 +14,7 @@ const HOST = "127.0.0.1";
 const PORT = Number(Deno.env.get("MUTANDE_OPS_PORT") ?? "3848");
 const ORIGIN = `http://${HOST}:${PORT}`;
 const HUB = (Deno.env.get("MUTANDE_HUB_URL") ??
-  "https://mutande.6lackknight.deno.net").replace(/\/$/, "");
+  "https://hub.mutande.online").replace(/\/$/, "");
 
 const AUTH0_DOMAIN = (Deno.env.get("AUTH0_DOMAIN") ?? "auth.mutande.online")
   .replace(/^https?:\/\//, "")

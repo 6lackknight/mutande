@@ -42,7 +42,7 @@ Dart-defines (optional; daemon can also read env):
 
 | Define | Default |
 |--------|---------|
-| `MUTANDE_HUB_URL` | `https://mutande.6lackknight.deno.net` |
+| `MUTANDE_HUB_URL` | `https://hub.mutande.online` |
 | `AUTH0_DOMAIN` | (from daemon env if unset) |
 | `AUTH0_NATIVE_CLIENT_ID` | (from daemon env if unset) |
 | `AUTH0_AUDIENCE` | `https://hub.mutande.app` |

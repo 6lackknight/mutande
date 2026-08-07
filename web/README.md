@@ -44,7 +44,7 @@ SDK routes are mounted by `src/proxy.ts`: `/auth/login`, `/auth/logout`, `/auth/
 | `AUTH0_SECRET` | yes | Session cookie encryption |
 | `AUTH0_AUDIENCE` | yes | Hub API audience |
 | `APP_BASE_URL` | recommended | Local `http://localhost:3000`; production `https://mutande.online` (until `mutande.ai`); omit on Vercel previews to infer host |
-| `MUTANDE_HUB_URL` | no | Default `https://mutande.6lackknight.deno.net` |
+| `MUTANDE_HUB_URL` | no | Default `https://hub.mutande.online` |
 | `PLUNK_API_KEY` | no | Invite email; if unset, create + copy link still works |
 
 ## Hub contract

@@ -13,4 +13,4 @@ pub const AUTH0_NATIVE_CLIENT_ID: &str = "2cbPq8c2JelRxBRkvKlSHTmrM91ItUUm";
 pub const AUTH0_AUDIENCE: &str = "https://hub.mutande.app";
 
 /// Production Deno Deploy hub.
-pub const HUB_URL: &str = "https://mutande.6lackknight.deno.net";
+pub const HUB_URL: &str = "https://hub.mutande.online";

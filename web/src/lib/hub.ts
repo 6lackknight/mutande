@@ -10,7 +10,7 @@ import {
   type MeResponse,
 } from "@/lib/types";
 
-const DEFAULT_HUB = "https://mutande.6lackknight.deno.net";
+const DEFAULT_HUB = "https://hub.mutande.online";
 
 export function hubBaseUrl(): string {
   return (process.env.MUTANDE_HUB_URL ?? DEFAULT_HUB).replace(/\/$/, "");

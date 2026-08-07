@@ -12,7 +12,7 @@ class AppConfig {
   });
 
   /// Deployed hub (Deno Deploy).
-  static const defaultHubUrl = 'https://mutande.6lackknight.deno.net';
+  static const defaultHubUrl = 'https://hub.mutande.online';
 
   /// Prod web (signup, invites). Override with `--dart-define=MUTANDE_WEB_APP_URL=…`.
   static const defaultWebAppUrl = 'https://mutande.online';
