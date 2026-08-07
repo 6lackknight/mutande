@@ -35,6 +35,9 @@ BUNDLE_ID="ai.mutande.app"
 APP_NAME="mutande.app"
 
 export PATH="${HOME}/.cargo/bin:${HOME}/flutter/bin:/opt/homebrew/bin:${PATH:-}"
+# Cursor/agent shells may redirect Cargo into a sandbox cache; releases must
+# write into the repo's core/target so Flutter packaging picks up the sidecar.
+unset CARGO_TARGET_DIR
 
 ENTITLEMENTS="$APP_DIR/macos/Runner/Release.entitlements"
 SIDECAR_ENTITLEMENTS="$APP_DIR/macos/Runner/Sidecar.entitlements"
@@ -212,10 +215,23 @@ build_one_arch() {
 
   # Fail the cut if Flutter/app version and embedded core disagree (avoids
   # shipping app vX with Resources/mutande-core still on X-1).
+  # Prefer clap --version when the binary can run on this host; cross-arch
+  # builds (Intel host → arm64 sidecar) cannot exec, so fall back to the
+  # embedded CARGO_PKG_VERSION / clap version string in the Mach-O.
+  core_ver=""
+  set +e
   core_ver="$("$core_src" --version 2>/dev/null | awk '{print $NF}' | tr -d '[:space:]')"
-  if [[ -z "$core_ver" ]]; then
-    echo "error: could not read version from $core_src (--version)" >&2
-    exit 1
+  core_ver_rc=$?
+  set -e
+  if [[ -z "$core_ver" || "$core_ver_rc" -ne 0 ]]; then
+    if grep -aobF "$VERSION" "$core_src" >/dev/null 2>&1; then
+      core_ver="$VERSION"
+      echo "==> mutande-core embeds ${core_ver} (cross-arch; --version not runnable here)"
+    else
+      echo "error: could not verify version of $core_src (expected ${VERSION})" >&2
+      echo "       sync core/Cargo.toml with app/pubspec.yaml and rebuild (cargo clean -p mutande-core)" >&2
+      exit 1
+    fi
   fi
   if [[ "$core_ver" != "$VERSION" ]]; then
     echo "error: mutande-core is v${core_ver} but release VERSION is ${VERSION}" >&2
