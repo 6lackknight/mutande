@@ -149,24 +149,24 @@ export function DownloadPlatformPicker({
   return (
     <div className="space-y-3">
       <WarpBackground
-        className="overflow-hidden border-stone-300/60 bg-stone-50/40 p-8 sm:p-10"
+        className="overflow-hidden border-stone-300/60 bg-stone-50/40 p-4 sm:p-5"
         gridColor="color-mix(in oklch, var(--stone-300) 55%, transparent)"
         beamsPerSide={2}
         beamDuration={4}
       >
         <div
-          className={`flex min-h-[11rem] flex-col justify-center rounded-md border px-6 py-10 text-base leading-relaxed shadow-sm sm:min-h-[13rem] sm:px-8 sm:py-12 ${
+          className={`rounded-md border px-4 py-3.5 text-sm leading-relaxed shadow-sm sm:px-5 sm:py-4 ${
             current.alertTone === "ok"
               ? "border-accent/30 bg-accent-soft/95 text-stone-800"
               : "border-amber-300/50 bg-amber-50/90 text-stone-800"
           }`}
         >
-          <p className="text-lg font-medium text-stone-900">
+          <p className="font-medium text-stone-900">
             {confirmed
               ? `Download started — ${current.title}`
               : `Preparing download — ${current.title}`}
           </p>
-          <p className="mt-3 max-w-prose">{current.alert}</p>
+          <p className="mt-1.5 max-w-prose">{current.alert}</p>
         </div>
       </WarpBackground>
 
