@@ -12,6 +12,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "1.0.12",
+    date: "2026-08-07",
+    title: "Matched app + courier binaries",
+    notes: [
+      "Desktop alpha ships with matching mutande app and mutande-core versions in the bundle (reinstall from /download if Restart courier still reports a mismatch).",
+      "Release packaging verifies mutande-core --version against the app before notarizing DMGs.",
+      "Clearer Settings guidance when the bundled courier is stale — reinstall replaces Contents/Resources; Restart alone cannot.",
+    ],
+  },
+  {
     version: "1.0.11",
     date: "2026-08-07",
     title: "Sentry error reporting",
