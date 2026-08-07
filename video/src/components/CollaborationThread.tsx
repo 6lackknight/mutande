@@ -295,6 +295,65 @@ export const CollaborationThread: React.FC = () => {
           appearAt={threadBeats.researchReply}
           body="Critique ready. Seal when you are."
         />
+
+        {frame >= beats.seal.start ? (
+          <div
+            style={{
+              marginTop: 16,
+              marginLeft: 56,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "10px 14px",
+              borderRadius: 12,
+              background: colors.stone100,
+              border: `1.5px solid ${colors.accent}55`,
+              opacity: interpolate(
+                frame,
+                [beats.seal.start, beats.seal.start + 14],
+                [0, 1],
+                { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
+              ),
+              transform: `translateY(${interpolate(
+                frame,
+                [beats.seal.start, beats.seal.start + 14],
+                [8, 0],
+                { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
+              )}px)`,
+            }}
+          >
+            <span
+              style={{
+                width: 14,
+                height: 16,
+                borderRadius: 3,
+                border: `2px solid ${colors.accent}`,
+                opacity: 0.85,
+              }}
+            />
+            <span
+              style={{
+                fontSize: 13,
+                fontWeight: 650,
+                letterSpacing: "-0.02em",
+                color: colors.stone900,
+              }}
+            >
+              {DRAFT_FILENAME}
+            </span>
+            <span
+              style={{
+                fontSize: 10,
+                fontWeight: 700,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                color: colors.accent,
+              }}
+            >
+              sealed
+            </span>
+          </div>
+        ) : null}
       </div>
     </div>
   );

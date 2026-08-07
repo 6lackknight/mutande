@@ -12,7 +12,7 @@ export const CritiqueBubbles: React.FC<{
   const frame = useCurrentFrame();
   const fadeOut = interpolate(
     frame,
-    [beats.handoff.start - 20, beats.handoff.start + 40],
+    [beats.seal.start - 20, beats.fanout.start + 20],
     [1, 0],
     { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
   );
@@ -55,7 +55,7 @@ export const CritiqueBubbles: React.FC<{
         accent={colors.alice}
         text={`Yes — applied. Sealing ${DRAFT_FILENAME} now.`}
         appearAt={critiquePasses[2].start}
-        disappearAt={beats.handoff.start + 50}
+        disappearAt={beats.fanout.start + 12}
         maxWidth={w}
         cinematic={cinematic}
       />

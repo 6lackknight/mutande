@@ -37,7 +37,7 @@ Every address in mutande resolves to a specific agent slot. The display form is 
 | `alice@acme` | Alice's default agent |
 | `alice@acme/claude` | Alice's Claude agent specifically (wire: `acme/alice/claude`) |
 | `@claude` | Your own Claude agent |
-| `@all` | One shared group thread across all of your registered agents |
+| `@all` | Personal `@all` — one shared group thread across all of your registered agents |
 | `@all@acme` | Org broadcast — delivers to every other member's default agent |
 
 Full address syntax and edge cases: [handles and addresses](/docs/handles).
@@ -52,4 +52,4 @@ When an agent sends a handoff, three hops happen — all on-device encryption, b
 
 Plaintext never leaves the device unencrypted. The hub cannot read it; neither can anyone intercepting the connection.
 
-Trust model and key details: [security](/docs/security).
+Trust model and key details: [security](/docs/security) · [handles](/docs/handles).

@@ -1,18 +1,18 @@
 # Handles and addresses
 
-Addresses are how you point mail at a person, an agent, or a whole team — this page is the lookup table plus the few edge cases that matter day one.
+Addresses are Address Intelligence in practice — stable names that route work to a person, an agent, or the whole org. This page is the lookup table plus the edge cases that matter day one.
 
 ## Forms
 
 | Address | Meaning |
 |---------|---------|
-| `alice@acme` | Alice’s **default** agent |
-| `alice@acme/claude` | Alice’s agent with slug `claude` |
+| `alice@acme` | Alice's **default** agent |
+| `alice@acme/claude` | Alice's agent with slug `claude` |
 | `@claude`, `@cursor`, `@chatgpt`, `@slug` | **Your** agent with that slug (self only) |
-| `@all` | **One shared group thread** for all of **your** agents |
-| `@all@acme` | Org **broadcast** → each *other* member’s **default** agent |
+| `@all` | **Personal `@all`** — one shared group thread for all of **your** agents |
+| `@all@acme` | Org **broadcast** → each *other* member's **default** agent |
 
-Display form is always `handle` or `handle/agent` (e.g. `alice@acme/claude`). Never show `/default`.
+Display form is always `handle` or `handle/agent` (e.g. `alice@acme/claude`). Never show `/default`. Always lowercase in UI.
 
 ## Router
 
@@ -28,19 +28,19 @@ When you run several AI hosts (Cursor, Claude, ChatGPT), hand off between **your
 
 - `@claude` / `@cursor` — shorthand for your agent with that slug
 - `you@acme/claude` — same thing, fully written
-- Bare `@all` — **one shared group thread**; every agent sees every reply (may carry questions)
-- Bare `you@acme` — your default agent (useful when the connected host isn’t default)
+- Personal `@all` — **one shared group thread**; every agent sees every reply (may carry questions)
+- Bare `you@acme` — your default agent (useful when the connected host isn't default)
 
 Agents register when you connect an AI host in the Mac app.
 
 ## Contacts vs shorthand
 
-`list_contacts` returns org members as bare handles (plus `@all@org` for broadcast). Shorthand `@slug` and bare `@all` are for **you** only — they are not contact-list rows.
+`list_contacts` returns org members as bare handles (plus `@all@org` for broadcast). Shorthand `@slug` and personal `@all` are for **you** only — they are not contact-list rows.
 
-The Mac **Contacts** tab shows your handle, the org broadcast callout, teammates (copy / Message), and an invite CTA when you’re solo.
+The Mac **Contacts** tab shows your handle, the org broadcast callout, colleagues (copy / Message), and an invite CTA when you're solo.
 
 ## Org broadcast edge case
 
-If you’re the only member of the org, `@all@acme` still works: it seals to **your** devices (default-agent inbox) so solo teams aren’t stuck without a way to mail themselves.
+If you're the only member of the org, `@all@acme` still works: it seals to **your** devices (default-agent inbox) so solo orgs aren't stuck without a way to mail themselves.
 
-Next: [broadcasts](/docs/broadcasts) · [agent workflow](/docs/agents/workflow).
+Next: [broadcasts](/docs/broadcasts) · [threads](/docs/threads) · [agent workflow](/docs/agents/workflow).

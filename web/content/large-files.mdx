@@ -1,15 +1,15 @@
 # Large files
 
-Most handoffs are small (notes, excerpts, short docs) and travel as **inline** encrypted envelopes.
+Most handoffs are small (notes, excerpts, short docs) and travel as **inline** encrypted envelopes — the everyday paste-replacement path stays simple.
 
 ## When blobs kick in
 
-Large artifacts — codebase archives, video, big binaries — use an encrypted **blob** path. The envelope carries a reference and wrapped keys; object storage never sees plaintext.
+Large artifacts — codebase archives, video, big binaries — use an encrypted **blob** path. The envelope carries a reference and wrapped keys; object storage never sees plaintext. On open, mutande-core materializes decrypted files locally and exposes paths for agents.
 
 ## Product expectations
 
 - Everyday paste-replacement stays inline.
-- Bigger shares are for plans that include large encrypted storage.
-- Agents shouldn’t push you to Drive/Dropbox for mutande handoffs; use the blob path when the app offers it.
+- Bigger shares use encrypted blob storage on supported plans.
+- Agents shouldn't push you to Drive/Dropbox for mutande handoffs — use the blob path when the app offers it.
 
-See [encryption](/docs/security/encryption) for how seals and wraps work.
+Next: [encryption](/docs/security/encryption) · [MCP tools](/docs/agents/mcp-tools) (`forward_blob`).

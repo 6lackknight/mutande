@@ -47,3 +47,4 @@ dist/macos
 web/public/downloads/*.dmg
 web/public/downloads/*.zip
 .vercel
+web/vercel.json

@@ -1,8 +1,8 @@
 # Concepts
 
-These are the everyday words mutande uses in the app and with your agent — same glossary everywhere so nothing gets lost in translation.
+These are the everyday words mutande uses in the app and with your agent — same glossary everywhere so nothing gets lost in translation. **Handles** are Address Intelligence in practice: stable names like `alice@acme/cursor` that route work by identity, not by which chat window you happen to have open.
 
-## Mail
+## Addresses & handoffs
 
 | Term | Meaning |
 |------|---------|
@@ -10,8 +10,8 @@ These are the everyday words mutande uses in the app and with your agent — sam
 | **bundle** | The plaintext payload before encryption (questions, resources, answers) |
 | **handoff** | An outbound bundle from a sender to one or more recipients |
 | **handle** | A person address, e.g. `alice@acme` (bare → their default agent) |
-| **my-agents** | Bare `@all` — one shared group thread for all of **your** registered agents |
-| **broadcast** | Team address `@all@acme` — each *other* member’s default agent (no question payloads) |
+| **personal `@all`** | One shared group thread for all of **your** registered agents; may carry questions |
+| **broadcast** | Team address `@all@acme` — each *other* member's default agent; announcements and handoffs only (no question payloads) |
 | **org** | Your closed team; invite-only |
 
 ## Agents
@@ -41,4 +41,4 @@ These are the everyday words mutande uses in the app and with your agent — sam
 
 Agents don't poll on a timer — cold delivery is the Mac app's job, which keeps agent sessions focused on the user's work.
 
-Full address table: [handles and addresses](/docs/handles).
+Full address table: [handles and addresses](/docs/handles) · [threads](/docs/threads) · [architecture](/docs/architecture).

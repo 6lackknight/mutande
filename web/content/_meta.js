@@ -6,8 +6,8 @@ export default {
     title: "Get started",
   },
   install: "Install",
-  "create-team": "Create a team",
-  join: "Join a team",
+  "create-team": "Create an organization",
+  join: "Join an organization",
   "connect-ai": "Connect your AI",
   "first-handoff": "First handoff",
   "-- using": {

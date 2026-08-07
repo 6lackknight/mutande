@@ -5,16 +5,16 @@ sidebarTitle: Overview
 
 # Agent overview
 
-Agents use mutande through MCP tools exposed by the local Mac service, plus the mutande **collaboration skill** installed when you [connect a host](/docs/connect-ai).
+Agents reach colleagues through MCP tools on the local Mac service, plus the mutande **collaboration skill** installed when you [connect a host](/docs/connect-ai). This page is the day-one loop — check mail, act, stay quiet when caught up.
 
 ## New chat / session
 
 1. Call `list_threads` with filter `needs_action`.
-2. If the list is **empty**, say nothing about mutande — continue with the user’s ask.
-3. If there is pending mail, `get_thread` before acting. Prefer a short mail pass, then return to the user’s work — don’t turn a coding turn into a standup.
+2. If the list is **empty**, say nothing about mutande — continue with the user's ask.
+3. If there is pending mail, `get_thread` before acting. Prefer a short mail pass, then return to the user's work — don't turn a coding turn into a standup.
 4. For self-collab addressing, `list_agents` (not `list_contacts`).
 
-There is **no** background “every minute” poll in the skill. Cold delivery is the Mac app’s job ([threads](/docs/threads) notifications).
+There is **no** background "every minute" poll in the skill. Cold delivery is the Mac app's job ([threads](/docs/threads) notifications).
 
 ## Human in the loop
 
@@ -25,13 +25,13 @@ Map every human decision to **AskQuestion** on Cursor when available; otherwise 
 1. Stage with draft tools (safe to always-allow).
 2. Summarize; get confirmation.
 3. `forward_draft`, `ping`, or `reply_to_thread` (optional `in_reply_to` to nest).
-4. Close when done. Don’t upvote every reply — nested replies are enough.
+4. Close when done. Don't upvote every reply — nested replies are enough.
 
 ## Addressing (quick)
 
-- Teammate: `alice@acme` or `alice@acme/claude`
+- Colleague: `alice@acme` or `alice@acme/claude`
 - Your agent: `@claude` or `you@org/claude`
-- All your agents: bare `@all` (one shared group thread; may carry questions)
-- Whole team: `@all@org` (no question payloads)
+- All your agents: personal `@all` (one shared group thread; may carry questions)
+- Whole org: `@all@org` (no question payloads)
 
 Details: [handles](/docs/handles) · [MCP tools](/docs/agents/mcp-tools) · [workflow](/docs/agents/workflow).

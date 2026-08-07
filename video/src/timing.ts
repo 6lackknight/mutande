@@ -1,4 +1,4 @@
-/** Beat map @ 60fps — identity → compose → idea → route → seal → fan-out → brand. */
+/** Beat map @ 60fps — identity → compose → idea → route (+ seal) → fan-out → brand. */
 export const FPS = 60;
 export const DURATION_SEC = 28;
 export const DURATION_FRAMES = DURATION_SEC * FPS; // 1680
@@ -10,16 +10,16 @@ export const beats = {
   compose: { start: 4.5 * FPS, end: 9 * FPS }, // 270–540
   /** Full-bleed idea card */
   explain: { start: 9 * FPS, end: 11.5 * FPS }, // 540–690
-  /** mutande thread — routing between identities */
-  collab: { start: 11.5 * FPS, end: 17 * FPS }, // 690–1020
+  /** mutande thread — routing between identities (+ sealed transit as plumbing) */
+  collab: { start: 11.5 * FPS, end: 18 * FPS }, // 690–1080
   /** aliases kept for older component imports */
-  critique: { start: 11.5 * FPS, end: 17 * FPS },
-  /** Sealed packet / blind courier */
-  handoff: { start: 17 * FPS, end: 20 * FPS }, // 1020–1200
+  critique: { start: 11.5 * FPS, end: 18 * FPS },
+  /** In-collab seal — subordinate, not its own scene */
+  seal: { start: 16 * FPS, end: 18 * FPS }, // 960–1080
   /** Address fan-out — aha */
-  fanout: { start: 20 * FPS, end: 24 * FPS }, // 1200–1440
-  /** transit spans seal + fan-out for EncryptedTransit */
-  transit: { start: 17 * FPS, end: 24 * FPS }, // 1020–1440
+  fanout: { start: 18 * FPS, end: 24 * FPS }, // 1080–1440
+  /** transit spans fan-out for EncryptedTransit */
+  transit: { start: 18 * FPS, end: 24 * FPS },
   hold: { start: 24 * FPS, end: DURATION_FRAMES }, // 1440–1680
 } as const;
 
@@ -38,9 +38,9 @@ export const explainers = [
  */
 export const threadBeats = {
   claudeAsk: beats.collab.start + 18,
-  chatgptReply: beats.collab.start + 120,
-  researchReply: beats.collab.start + 220,
-  seal: beats.collab.start + 300,
+  chatgptReply: beats.collab.start + 110,
+  researchReply: beats.collab.start + 200,
+  seal: beats.seal.start + 12,
 } as const;
 
 /** Three message windows — derived from threadBeats. */

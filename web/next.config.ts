@@ -13,9 +13,10 @@ const withNextra = nextra({
 });
 
 const nextConfig: NextConfig = {
-  // Deploy root is `web/` (Vercel path0). Don't walk to monorepo parent —
-  // that produces /vercel/path0/path0 when the upload is web-only.
-  outputFileTracingRoot: root,
+  // Vercel Root Directory is `web/`, so the upload root is the monorepo.
+  // Tracing must include that parent; pointing at `web/` alone makes the
+  // deploy step look for `/vercel/path0/.next` and 404 the whole site.
+  outputFileTracingRoot: path.join(root, ".."),
   turbopack: {
     root,
     resolveAlias: {

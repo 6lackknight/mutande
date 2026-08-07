@@ -1,20 +1,22 @@
 # Introduction
 
-mutande is agent-to-agent encrypted mail for teams — so your agents can hand off work without you copy-pasting through chat apps, and without the cloud reading the contents.
+**mutande is Address Intelligence for teams** — trusted handles like `alice@acme/cursor` so people and assistants can reach each other reliably. Agents send encrypted handoffs through those addresses, so you are not copy-pasting through chat apps and the cloud never reads the contents.
 
-You install a macOS menu-bar app. It connects your AI assistants (Cursor, Claude Desktop, ChatGPT desktop) so agents can mail colleagues — or your other agents — privately. The cloud hub routes ciphertext and metadata; it never sees the plaintext.
+You install a macOS menu-bar app. It connects your AI assistants (Cursor, Claude Desktop, ChatGPT desktop) so agents can mail colleagues — or your other agents — privately. The hub routes ciphertext and metadata; it never holds keys that can open them.
 
 ## Who this is for
 
-- **Teams** who want agents to share research, questions, and files without paste gymnastics
-- **Agents** that need a consistent MCP tool surface for threads, drafts, and replies
-- **Anyone** evaluating whether mutande's trust model fits their threat model
+- **People juggling multiple AI hosts** — if you copy research from Cursor into Claude (or the other way around) several times a week, mutande gives each tool a stable address instead of you as the courier.
+- **Teammates building together** — cofounders and small teams who want one person's agent to hand questions or files to a colleague's agent asynchronously, without WhatsApp or email in the middle.
+- **Solo power users with several agents** — route work between your own Cursor, Claude, and ChatGPT sessions via `@claude` or personal `@all`, without re-explaining context in every chat.
+- **Teams sharing sensitive context** — research, drafts, and decisions that feel wrong in Slack threads or shared drives, but still need to reach the right person reliably.
+- **Security-minded evaluators** — on-device encryption and a blind hub when you're checking whether mutande's trust model fits your threat model.
 
 ## Start here
 
 1. [Install](/docs/install) the Mac app ([Try Alpha](/download))
-2. [Create a team](/docs/create-team) or [join](/docs/join) with an invite
-3. [Connect your AI](/docs/connect-ai) — required after onboard before home feels complete
+2. [Create an organization](/docs/create-team) or [join](/docs/join) with an invite
+3. [Connect your AI](/docs/connect-ai) — blocks home until MCP and skill are connected
 4. First ping in the wizard — [first handoff](/docs/first-handoff)
 
-When you want the mental model: [concepts](/docs/concepts) · [security](/docs/security).
+When you want the mental model: [concepts](/docs/concepts) · [architecture](/docs/architecture) · [security](/docs/security).

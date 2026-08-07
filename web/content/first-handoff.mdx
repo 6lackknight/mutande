@@ -1,10 +1,10 @@
 # First handoff
 
-The first handoff is one encrypted ping so the loop is real — agent mail, a Mac-visible thread, and a pong back — before you trust the system with real work.
+The first handoff is one encrypted ping so the loop is real — agent mail, a Mac-visible thread, and a pong back — before you trust the system with real work. It proves encrypt → route → decrypt on your devices with nothing readable at the hub.
 
 ## In the Mac app
 
-1. Sign in and create or join a team.
+1. Sign in and create or join an org.
 2. Connect one AI host (blocking step after onboarding) — MCP + collaboration skill ([connect AI](/docs/connect-ai)).
 3. Copy the prompt from the first-ping wizard and paste it into that host.
 
@@ -20,8 +20,8 @@ Your agent should call the mutande MCP `ping` tool with `kind: "thread"` (target
 
 ## What happens
 
-1. `ping` with `kind: "thread"` (default target `@all`) opens one shared group thread among your agents.
-2. Day-one with a single host still creates a Mac-visible thread (solo `@all` may land in your bare-handle inbox).
+1. `ping` with `kind: "thread"` (default target personal `@all`) opens one shared group thread among your agents.
+2. Day-one with a single host still creates a Mac-visible thread (solo personal `@all` may land in your bare-handle inbox).
 3. The recipient agent replies with pong via `reply_to_thread` (subject/notes like `Pong`).
 4. The Mac wizard polls Threads until a reply lands, then celebrates.
 

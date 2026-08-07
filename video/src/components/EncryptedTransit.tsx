@@ -48,9 +48,9 @@ const NodeCircle: React.FC<{
 export const EncryptedTransit: React.FC = () => {
   const frame = useCurrentFrame();
   const { fps, width, height } = useVideoConfig();
-  const local = frame - beats.handoff.start;
+  const local = frame - beats.fanout.start;
 
-  if (frame < beats.handoff.start - 4 || frame > beats.fanout.end + 4) {
+  if (frame < beats.fanout.start - 4 || frame > beats.fanout.end + 4) {
     return null;
   }
 

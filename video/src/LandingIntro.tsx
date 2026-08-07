@@ -29,11 +29,9 @@ export const LandingIntro: React.FC = () => {
           ? "explain"
           : frame < beats.collab.end
             ? "collab"
-            : frame < beats.handoff.end
-              ? "handoff"
-              : frame < beats.fanout.end
-                ? "fanout"
-                : "hold";
+            : frame < beats.fanout.end
+              ? "fanout"
+              : "hold";
 
   const identityOpacity = interpolate(
     frame,
@@ -54,8 +52,7 @@ export const LandingIntro: React.FC = () => {
     { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
   );
 
-  const inProduct =
-    scene === "collab" || scene === "handoff" || scene === "fanout";
+  const inProduct = scene === "collab" || scene === "fanout";
   const productOpacity = inProduct
     ? interpolate(
         frame,
@@ -67,8 +64,8 @@ export const LandingIntro: React.FC = () => {
               beats.collab.end,
             ]
           : [
-              beats.handoff.start,
-              beats.handoff.start + 16,
+              beats.fanout.start,
+              beats.fanout.start + 16,
               beats.fanout.end - 28,
               beats.fanout.end,
             ],
@@ -137,7 +134,7 @@ export const LandingIntro: React.FC = () => {
         <ComposeWindow />
       </AbsoluteFill>
 
-      {/* 4–6. Collab + handoff + fan-out stage */}
+      {/* 4–5. Collab (+ in-thread seal) + fan-out */}
       <AbsoluteFill
         style={{
           opacity: sceneFade * productOpacity,
@@ -162,7 +159,7 @@ export const LandingIntro: React.FC = () => {
           </div>
         ) : null}
 
-        {(scene === "handoff" || scene === "fanout") && frame < beats.fanout.end ? (
+        {scene === "fanout" && frame < beats.fanout.end ? (
           <EncryptedTransit />
         ) : null}
       </AbsoluteFill>

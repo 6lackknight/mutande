@@ -46,8 +46,8 @@ export const getCameraPose = (frame: number): CameraPose => {
     return { scale: 1.02, x: 0, y: 0 };
   }
 
-  // Collaboration — hold / slight breathe
-  if (frame < beats.handoff.start) {
+  // Collaboration — hold / slight breathe (includes in-thread seal)
+  if (frame < beats.fanout.start) {
     const t = interpolate(
       frame,
       [beats.collab.start, beats.collab.start + 36],
@@ -62,9 +62,19 @@ export const getCameraPose = (frame: number): CameraPose => {
     };
   }
 
-  // Handoff + fan-out — keep beam graph optically centered (no pan/push)
+  // Fan-out — pull wide
   if (frame < beats.hold.start) {
-    return { scale: 1, x: 0, y: 0 };
+    const t = interpolate(
+      frame,
+      [beats.fanout.start, beats.fanout.start + 48],
+      [0, 1],
+      { extrapolateLeft: "clamp", extrapolateRight: "clamp", easing: ease },
+    );
+    return {
+      scale: interpolate(t, [0, 1], [1.08, 0.96]),
+      x: 0,
+      y: 0,
+    };
   }
 
   return { scale: 1, x: 0, y: 0 };
