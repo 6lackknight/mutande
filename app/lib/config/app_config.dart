@@ -8,6 +8,7 @@ class AppConfig {
     this.auth0NativeClientId = defaultAuth0NativeClientId,
     this.auth0Audience = defaultAuth0Audience,
     this.webAppUrl = defaultWebAppUrl,
+    this.sentryDsn = defaultSentryDsn,
   });
 
   /// Deployed hub (Deno Deploy).
@@ -25,6 +26,11 @@ class AppConfig {
 
   /// Auth0 API identifier (must match hub).
   static const defaultAuth0Audience = 'https://hub.mutande.app';
+
+  /// GlitchTip (Sentry-compatible) DSN. Empty disables reporting.
+  /// Override with `--dart-define=SENTRY_DSN=` or a different DSN.
+  static const defaultSentryDsn =
+      'https://2c06fb0fcf2c4390ae727b548aeba5cd@app.glitchtip.com/26609';
 
   /// pubspec `version:` before `+`. Override with `--dart-define=APP_VERSION=`.
   static const appVersion = String.fromEnvironment(
@@ -55,12 +61,17 @@ class AppConfig {
       'MUTANDE_WEB_APP_URL',
       defaultValue: defaultWebAppUrl,
     );
+    const sentryDsn = String.fromEnvironment(
+      'SENTRY_DSN',
+      defaultValue: defaultSentryDsn,
+    );
     return AppConfig(
       hubUrl: hubUrl,
       auth0Domain: auth0Domain,
       auth0NativeClientId: auth0NativeClientId,
       auth0Audience: auth0Audience,
       webAppUrl: webAppUrl,
+      sentryDsn: sentryDsn,
     );
   }
 
@@ -69,4 +80,5 @@ class AppConfig {
   final String? auth0NativeClientId;
   final String? auth0Audience;
   final String webAppUrl;
+  final String sentryDsn;
 }

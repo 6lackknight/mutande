@@ -77,13 +77,15 @@ Inline envelopes limited to ~60KB serialized. Blobs use R2 presigned PUT/GET whe
 | `R2_SECRET_ACCESS_KEY` | for real blobs | R2 API token secret |
 | `R2_BUCKET` | for real blobs | Bucket name |
 | `R2_PUBLIC_BASE` | optional | Mock URL base when R2 is unset (default `https://blobs.mutande.app`) |
+| `MUTANDE_SENTRY_DSN` / `SENTRY_DSN` | optional | GlitchTip DSN (hub project). Default is built-in; empty disables |
+| `SENTRY_SMOKE` | optional | `1` / `true` — capture a smoke message and exit (needs network) |
 
 When any of `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_BUCKET` is missing, the hub logs a clear warning and returns mock upload/download URLs so local tests work without Cloudflare.
 
 ## Deploy
 
 1. Copy values from `hub/.env.example` (or a local `hub/.env`) into the Deno Deploy project **Settings → Environment Variables**:
-   `AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, plus R2 vars.
+   `AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, plus R2 vars. GlitchTip DSN for hub project 26611 is built-in; set `SENTRY_DSN=` (empty) to disable, or override with `MUTANDE_SENTRY_DSN` / `SENTRY_DSN`.
 2. Then:
 
 ```bash

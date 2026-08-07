@@ -1,6 +1,7 @@
 //! Local JSON-RPC API for Flutter UI and MCP subprocess.
 
 mod auth0_defaults;
+mod sentry_defaults;
 mod config;
 mod connect_host;
 mod http_bridge;
@@ -12,6 +13,7 @@ mod state;
 pub use auth0_defaults::{
     AUTH0_AUDIENCE, AUTH0_DOMAIN, AUTH0_NATIVE_CLIENT_ID, HUB_URL as DEFAULT_HUB_URL,
 };
+pub use sentry_defaults::SENTRY_DSN as DEFAULT_SENTRY_DSN;
 
 pub use connect_host::{ConnectHostResult, connect_host};
 pub use install_skill::{InstallSkillResult, install_skill};

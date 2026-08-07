@@ -1,0 +1,5 @@
+import type { BaseTransportOptions, Transport } from '@sentry/core';
+/**
+ * Creates a Transport that uses the Fetch API to send events to Sentry.
+ */
+export declare function makeFetchTransport(options: BaseTransportOptions): Transport;

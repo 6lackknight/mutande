@@ -15,6 +15,11 @@ import { createOnboardingRoutes } from "./routes/onboarding.ts";
 import { createOrgRoutes } from "./routes/orgs.ts";
 import { createThreadRoutes } from "./routes/threads.ts";
 import { assertR2ConfiguredForDeploy } from "./store/r2.ts";
+import {
+  initHubSentry,
+  runSentrySmoke,
+  sentrySmokeEnabled,
+} from "./store/sentry.ts";
 import { createStore } from "./store/store.ts";
 import type { TokenVerifier } from "./store/auth0.ts";
 
@@ -48,6 +53,11 @@ export async function createApp(
 }
 
 if (import.meta.main) {
+  if (sentrySmokeEnabled()) {
+    await runSentrySmoke();
+    Deno.exit(0);
+  }
+  initHubSentry();
   const { app } = await createApp();
   Deno.serve(app.fetch);
 }

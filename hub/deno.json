@@ -4,14 +4,16 @@
   "exports": "./main.ts",
   "tasks": {
     "dev": "deno run --allow-net --allow-env --allow-read --unstable-kv --watch main.ts",
-    "check": "deno check --unstable-kv main.ts store/store_test.ts store/r2_test.ts store/auth0_test.ts routes/auth_test.ts",
+    "check": "deno check --unstable-kv main.ts store/store_test.ts store/r2_test.ts store/auth0_test.ts store/sentry_test.ts routes/auth_test.ts",
     "test": "deno test --allow-env --allow-read --allow-net --unstable-kv store/ routes/",
+    "smoke:sentry": "SENTRY_SMOKE=1 deno run --allow-net --allow-env --allow-read main.ts",
     "deploy": "deployctl deploy --project=mutande main.ts"
   },
   "imports": {
     "hono": "jsr:@hono/hono@^4",
     "jose": "jsr:@panva/jose@^6",
-    "aws4fetch": "npm:aws4fetch@1.0.20"
+    "aws4fetch": "npm:aws4fetch@1.0.20",
+    "@sentry/deno": "npm:@sentry/deno@10.69.0"
   },
   "compilerOptions": {
     "lib": ["deno.window", "deno.unstable"]

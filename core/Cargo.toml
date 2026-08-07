@@ -17,6 +17,14 @@ serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+sentry = { version = "0.38", default-features = false, features = [
+    "backtrace",
+    "contexts",
+    "panic",
+    "reqwest",
+    "rustls",
+] }
+sentry-tracing = "0.38"
 
 chacha20poly1305 = { version = "0.10", features = ["std"] }
 crypto_box = { version = "0.9", features = ["chacha20", "std"] }

@@ -1,5 +1,6 @@
 import type { Context, Next } from "hono";
 import { HubError, unauthorized } from "../store/errors.ts";
+import { captureHubException } from "../store/sentry.ts";
 import type { HubStore } from "../store/store.ts";
 import type { Auth0Claims, AuthContext } from "../store/types.ts";
 
@@ -49,5 +50,7 @@ export function handleHubError(err: unknown): Response {
     return Response.json({ error: err.code, message: err.message }, { status: err.status });
   }
   console.error(err);
+  // Unexpected only — never HubError / never request bodies or mail plaintext.
+  captureHubException(err);
   return Response.json({ error: "internal", message: "Internal server error" }, { status: 500 });
 }
