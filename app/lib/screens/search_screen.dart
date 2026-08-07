@@ -4,6 +4,7 @@ import '../services/daemon_client.dart';
 import '../theme/mutande_macos_theme.dart';
 import '../util/address_display.dart';
 import '../widgets/ai_host_icon.dart';
+import '../widgets/pane_quiet_state.dart';
 import '../widgets/thinking_orb.dart';
 
 /// Threads-first search surface opened from the home chrome strip.
@@ -150,19 +151,11 @@ class _SearchScreenState extends State<SearchScreen> {
       );
     }
     if (_error != null) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              _error!,
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: MutandeColors.stone600),
-            ),
-            const SizedBox(height: 12),
-            TextButton(onPressed: _reload, child: const Text('Retry')),
-          ],
-        ),
+      return PaneQuietState(
+        title: "Couldn't search",
+        body: _error!,
+        onRetry: _reload,
+        icon: Icons.cloud_off_outlined,
       );
     }
     final hits = _hits;

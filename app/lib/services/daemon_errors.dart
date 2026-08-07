@@ -16,13 +16,24 @@ DaemonErrorKind classifyDaemonError({
 }) {
   if (daemonReachable) return DaemonErrorKind.sessionTimeout;
   final lower = error.toLowerCase();
-  if (lower.contains('connection refused') ||
-      lower.contains('missing http token') ||
-      lower.contains('failed host lookup') ||
-      lower.contains('socketexception')) {
+  if (isLocalCourierTransportFailure(lower)) {
     return DaemonErrorKind.keychainOrStarting;
   }
   return DaemonErrorKind.courierDown;
+}
+
+/// True when the failure looks like a local HTTP/RPC transport blip.
+bool isLocalCourierTransportFailure(String lowerError) {
+  return lowerError.contains('connection refused') ||
+      lowerError.contains('connection closed') ||
+      lowerError.contains('connection reset') ||
+      lowerError.contains('broken pipe') ||
+      lowerError.contains('missing http token') ||
+      lowerError.contains('failed host lookup') ||
+      lowerError.contains('socketexception') ||
+      lowerError.contains('clientexception') ||
+      lowerError.contains('httpexception') ||
+      lowerError.contains('matches the running daemon');
 }
 
 /// Plain-language title + body for [DaemonErrorScreen].
@@ -56,9 +67,5 @@ DaemonErrorKind classifyDaemonError({
 }
 
 bool isLikelyStartingError(Object error) {
-  final lower = error.toString().toLowerCase();
-  return lower.contains('connection refused') ||
-      lower.contains('missing http token') ||
-      lower.contains('failed host lookup') ||
-      lower.contains('socketexception');
+  return isLocalCourierTransportFailure(error.toString().toLowerCase());
 }

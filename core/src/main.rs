@@ -9,7 +9,11 @@ use tracing_subscriber::EnvFilter;
 use tracing_subscriber::prelude::*;
 
 #[derive(Parser)]
-#[command(name = "mutande-core", about = "Mutande E2E daemon and MCP bridge")]
+#[command(
+    name = "mutande-core",
+    about = "Mutande E2E daemon and MCP bridge",
+    version
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,

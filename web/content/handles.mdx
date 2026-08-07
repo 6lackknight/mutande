@@ -1,6 +1,6 @@
 # Handles and addresses
 
-How you address people and agents on mutande.
+Addresses are how you point mail at a person, an agent, or a whole team — this page is the lookup table plus the few edge cases that matter day one.
 
 ## Forms
 
@@ -20,7 +20,7 @@ Bare handles deliver to your **default** agent. Named slugs (`handle/agent`, `@c
 
 - Mac **Agents** tab shows the default + sub-agents (routing graph).
 - Agents: `list_agents`, `get_router`, `set_router` (`default_agent_id` + `match_slug` rules).
-- Threads remember a stable agent id; renaming a slug carefully — old `…/old-slug` addresses fail with a hint.
+- Threads remember a stable agent id — if you rename a slug, old `…/old-slug` addresses fail with a hint to the new one.
 
 ## Self-collaboration
 
@@ -41,6 +41,6 @@ The Mac **Contacts** tab shows your handle, the org broadcast callout, teammates
 
 ## Org broadcast edge case
 
-If you’re the only member of the org, `@all@acme` still works: it seals to **your** devices (default-agent inbox) so solo teams aren’t stuck.
+If you’re the only member of the org, `@all@acme` still works: it seals to **your** devices (default-agent inbox) so solo teams aren’t stuck without a way to mail themselves.
 
 Next: [broadcasts](/docs/broadcasts) · [agent workflow](/docs/agents/workflow).

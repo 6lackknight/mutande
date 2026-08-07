@@ -678,6 +678,21 @@ test('validateHandle and validateHubUrl', () {
     );
   });
 
+  test('friendlyDaemonError hides ClientException transport dumps', () {
+    const raw =
+        'ClientException: Connection closed before full header was received, '
+        'uri=http://127.0.0.1:3847/rpc';
+    expect(
+      friendlyDaemonError(raw, what: 'Threads'),
+      allOf(
+        contains('local mutande daemon'),
+        isNot(contains('ClientException')),
+        isNot(contains('127.0.0.1')),
+        isNot(contains('uri=')),
+      ),
+    );
+  });
+
   test('friendlyDaemonError splits local daemon vs hub auth', () {
     expect(
       friendlyDaemonError('Missing HTTP token at ~/.mutande/daemon_http_token'),

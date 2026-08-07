@@ -31,4 +31,22 @@ void main() {
     expect(isLikelyStartingError(Exception('connection refused')), isTrue);
     expect(isLikelyStartingError(Exception('HTTP 500')), isFalse);
   });
+
+  test('isLocalCourierTransportFailure covers closed headers', () {
+    expect(
+      isLocalCourierTransportFailure(
+        'clientexception: connection closed before full header was received, '
+        'uri=http://127.0.0.1:3847/rpc',
+      ),
+      isTrue,
+    );
+    expect(
+      classifyDaemonError(
+        error:
+            'ClientException: Connection closed before full header was received',
+        daemonReachable: false,
+      ),
+      DaemonErrorKind.keychainOrStarting,
+    );
+  });
 }

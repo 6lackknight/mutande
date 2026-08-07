@@ -10,6 +10,7 @@ import '../widgets/ai_host_icon.dart';
 import '../widgets/connect_host_flow.dart';
 import '../widgets/connect_host_picker.dart';
 import '../widgets/host_link_status.dart';
+import '../widgets/pane_quiet_state.dart';
 import '../widgets/thinking_orb.dart';
 
 /// Agent slug rules match hub `assertValidAgentSlug` (`[a-z0-9-]{1,32}`).
@@ -349,35 +350,11 @@ class _AgentsPanelState extends State<AgentsPanel> {
           )
         else if (_error != null)
           Expanded(
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 28),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      friendlyAgentsError(_error!),
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: const Color(0xFF78716C),
-                        height: 1.4,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    OutlinedButton(
-                      onPressed: _reload,
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFF292524),
-                        side: const BorderSide(color: Color(0xFFD6D3D1)),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                      child: const Text('Retry'),
-                    ),
-                  ],
-                ),
-              ),
+            child: PaneQuietState(
+              title: "Couldn't load agents",
+              body: friendlyAgentsError(_error!),
+              onRetry: _reload,
+              icon: Icons.cloud_off_outlined,
             ),
           )
         else

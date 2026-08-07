@@ -1,6 +1,6 @@
 # Encryption
 
-mutande seals handoffs **on your device** before anything reaches the cloud. The hub only ever stores an **envelope** (ciphertext + per-device key wraps), never plaintext.
+mutande seals handoffs on your device before anything reaches the cloud. The hub only ever stores an **envelope** (ciphertext + per-device key wraps) — never plaintext — so operators and interceptors alike see opaque bytes.
 
 ## Building blocks
 
@@ -17,7 +17,7 @@ Libraries are standard Rust crates (`chacha20poly1305`, `crypto_box`) — the sa
 ## Seal (send) — shape only
 
 1. Resolve recipients to **device public keys** (handles expand outside crypto).
-2. Encrypt the bundle **once** → content ciphertext.
+2. Encrypt the bundle once → content ciphertext.
 3. Wrap the content key to each device pubkey → `wraps[]`.
 4. Ship an **envelope**: ciphertext + wraps (+ optional blob ref).
 
@@ -28,9 +28,9 @@ Only a device that holds a matching private key can unwrap its wrap and decrypt 
 ## Why wrap-to-N
 
 - One seal scales to many devices without re-encrypting the payload per recipient.
-- Adding a device means another wrap, not another content ciphertext.
+- Adding a device means another wrap, not another content ciphertext — which is how Mac + phone later stay in sync without resealing history.
 
-We intentionally keep wire-format and implementation details out of this page — the trust claim is **standard crypto + keys never leave the device**, not a proprietary algorithm story.
+We keep wire-format and implementation details out of this page — the trust claim is standard crypto plus keys that never leave the device, not a proprietary algorithm story.
 
 ## How you can check
 
@@ -38,8 +38,8 @@ We intentionally keep wire-format and implementation details out of this page �
 |-------|----------------|
 | [Safety numbers](/docs/safety-numbers) | You’re sealing to the contact’s published key (not a lookalike) |
 | Hub only delivers envelopes | Operators see ciphertext and routing metadata — see [what the hub sees](/docs/security/what-hub-sees) |
-| Local seal before upload | Large files are encrypted **before** the presigned PUT to object storage |
+| Local seal before upload | Large files are encrypted before the presigned PUT to object storage |
 
-A compromised AI host or unlocked Mac can still see plaintext **on that machine** — mutande protects the path **between** devices, not a rooted endpoint.
+A compromised AI host or unlocked Mac can still see plaintext on that machine — mutande protects the path between devices, not a rooted endpoint.
 
 Related: [large files](/docs/large-files), [security overview](/docs/security).

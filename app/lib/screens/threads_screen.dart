@@ -11,6 +11,7 @@ import '../util/address_display.dart';
 import '../util/clock_format.dart';
 import '../widgets/ai_host_icon.dart';
 import '../widgets/message_attachments.dart';
+import '../widgets/pane_quiet_state.dart';
 import '../widgets/thinking_orb.dart';
 import '../widgets/thread_message_tree.dart';
 import '../widgets/thread_status_badge.dart';
@@ -434,36 +435,33 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
       );
     }
     if (_error != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                _error!,
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: const Color(0xFF57534E),
-                  height: 1.35,
-                ),
-              ),
-              const SizedBox(height: 14),
-              OutlinedButton(onPressed: _reload, child: const Text('Retry')),
-            ],
-          ),
-        ),
+      return PaneQuietState(
+        title: "Couldn't load threads",
+        body: _error!,
+        onRetry: _reload,
+        icon: Icons.cloud_off_outlined,
       );
     }
     if (_visible.isEmpty) {
-      return Center(
-        child: Text(
-          'No threads.',
-          style: Theme.of(
-            context,
-          ).textTheme.bodyMedium?.copyWith(color: const Color(0xFF78716C)),
+      final (title, body) = switch (_filter) {
+        'needs_action' => (
+          'Nothing needs you',
+          'Open threads waiting on a human answer show up here.',
         ),
-      );
+        'open' => (
+          'No open threads',
+          'Closed mail is under Closed — or start one with + New.',
+        ),
+        'closed' => (
+          'No closed threads',
+          'Finished handoffs land here after you close them.',
+        ),
+        _ => (
+          'No threads yet',
+          'Compose a handoff with + New, or wait for an agent ping.',
+        ),
+      };
+      return PaneQuietState(title: title, body: body);
     }
     return ListView.builder(
       controller: _listScroll,
@@ -494,31 +492,10 @@ class _EmptyReadingPane extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 48),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Select a thread',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: const Color(0xFF57534E),
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Replies stay nested on the right — list never leaves.',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: const Color(0xFFA8A29E),
-                height: 1.4,
-              ),
-            ),
-          ],
-        ),
-      ),
+    return const PaneQuietState(
+      title: 'Select a thread',
+      body: 'Pick one from the list — replies nest here beside it.',
+      icon: Icons.mark_email_unread_outlined,
     );
   }
 }
@@ -1047,12 +1024,7 @@ class _ComposePanelState extends State<_ComposePanel> {
           ),
           if (_error != null) ...[
             const SizedBox(height: 8),
-            Text(
-              _error!,
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: const Color(0xFF991B1B)),
-            ),
+            PaneInlineError(message: _error!),
           ],
           const SizedBox(height: 8),
           Row(
@@ -1380,14 +1352,11 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
           )
         else if (_detail == null)
           Expanded(
-            child: Center(
-              child: Text(
-                _error ?? 'Thread unavailable',
-                textAlign: TextAlign.center,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: const Color(0xFF991B1B)),
-              ),
+            child: PaneQuietState(
+              title: 'Thread unavailable',
+              body: _error ?? 'This thread couldn’t be opened.',
+              onRetry: _load,
+              icon: Icons.mark_email_unread_outlined,
             ),
           )
         else ...[
@@ -1425,12 +1394,7 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: 12),
-                  Text(
-                    _error!,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: const Color(0xFF991B1B),
-                    ),
-                  ),
+                  PaneInlineError(message: _error!, onRetry: () => _load()),
                 ],
                 const SizedBox(height: 12),
                 for (final node in flattenThreadMessages(_detail!.messages))

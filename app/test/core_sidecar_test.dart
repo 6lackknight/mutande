@@ -200,6 +200,72 @@ void main() {
     expect(result.error, contains('mutande-core not found'));
   });
 
+  test('start errors when spawned binary version still mismatches', () async {
+    var spawnCount = 0;
+    final daemon = DaemonClient(
+      httpClient: MockClient((request) async {
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        if (body['method'] == 'health') {
+          // Down until spawn, then healthy but still stale (bundled is wrong).
+          if (spawnCount >= 1) {
+            return http.Response(
+              jsonEncode({
+                'jsonrpc': '2.0',
+                'id': body['id'],
+                'result': {
+                  'ok': true,
+                  'service': 'mutande-core',
+                  'version': '1.0.10',
+                },
+              }),
+              200,
+              headers: {'Content-Type': 'application/json'},
+            );
+          }
+          return http.Response(
+            jsonEncode({
+              'jsonrpc': '2.0',
+              'id': body['id'],
+              'error': {'code': -32000, 'message': 'down'},
+            }),
+            200,
+            headers: {'Content-Type': 'application/json'},
+          );
+        }
+        return http.Response(
+          jsonEncode({
+            'jsonrpc': '2.0',
+            'id': body['id'],
+            'result': {'ok': true},
+          }),
+          200,
+          headers: {'Content-Type': 'application/json'},
+        );
+      }),
+      httpToken: 'test-token',
+      requestTimeout: const Duration(milliseconds: 50),
+    );
+
+    final sidecar = CoreSidecar(
+      daemon: daemon,
+      expectedVersion: '1.0.11',
+      resolvePath: () => '/tmp/fake-mutande-core',
+      healthTimeout: const Duration(milliseconds: 400),
+      spawnServe: (path) async {
+        spawnCount++;
+        return Process.start('sleep', ['30']);
+      },
+    );
+
+    final result = await sidecar.start(preferBundled: true);
+    expect(result.ok, isFalse);
+    expect(result.stillStarting, isFalse);
+    expect(result.error, contains('Bundled courier is v1.0.10'));
+    expect(result.error, contains('app expects v1.0.11'));
+    expect(spawnCount, 1);
+    await sidecar.stop();
+  });
+
   test('restart kills external listener then starts again', () async {
     var spawnCount = 0;
     var killCalls = 0;

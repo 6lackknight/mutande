@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../config/app_config.dart';
 import '../services/daemon_client.dart';
 import '../util/address_display.dart';
+import '../widgets/pane_quiet_state.dart';
 import '../widgets/thinking_orb.dart';
 
 /// Org address book — hub contacts, broadcast callout, copy handles.
@@ -125,28 +126,11 @@ class _ContactsPanelState extends State<ContactsPanel> {
     }
 
     if (_error != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                _error!,
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: const Color(0xFF57534E),
-                      height: 1.35,
-                    ),
-              ),
-              const SizedBox(height: 14),
-              OutlinedButton(
-                onPressed: _reload,
-                child: const Text('Retry'),
-              ),
-            ],
-          ),
-        ),
+      return PaneQuietState(
+        title: "Couldn't load contacts",
+        body: _error!,
+        onRetry: _reload,
+        icon: Icons.cloud_off_outlined,
       );
     }
 

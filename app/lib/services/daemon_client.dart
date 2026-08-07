@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 
 import '../platform/user_home.dart';
+import 'daemon_errors.dart';
 
 /// Local IPC client for `mutande-core serve`.
 ///
@@ -1305,14 +1306,18 @@ String? validateHubUrl(String hubUrl) {
   return null;
 }
 
-/// User-facing copy for daemon/hub failures — never raw `TimeoutException…`.
+/// User-facing copy for daemon/hub failures — never raw exception dumps.
 String friendlyDaemonError(Object error, {String what = 'That'}) {
-  var msg = error.toString();
-  if (msg.startsWith('DaemonException: ')) {
-    msg = msg.substring('DaemonException: '.length);
-  }
-  if (msg.startsWith('Exception: ')) {
-    msg = msg.substring('Exception: '.length);
+  var msg = error.toString().trim();
+  for (final prefix in const [
+    'DaemonException: ',
+    'ClientException: ',
+    'HttpException: ',
+    'Exception: ',
+  ]) {
+    if (msg.startsWith(prefix)) {
+      msg = msg.substring(prefix.length).trim();
+    }
   }
   if (msg.startsWith('TimeoutException')) {
     msg = 'timed out';
@@ -1321,11 +1326,7 @@ String friendlyDaemonError(Object error, {String what = 'That'}) {
   if (lower.contains('timeout') || lower.contains('timed out')) {
     return '$what took too long. The courier may still be starting — try again.';
   }
-  if (lower.contains('missing http token') ||
-      lower.contains('connection refused') ||
-      lower.contains('failed host lookup') ||
-      lower.contains('socketexception') ||
-      lower.contains('matches the running daemon')) {
+  if (isLocalCourierTransportFailure(lower)) {
     return "Can't reach the local mutande daemon. Open Settings and tap Check daemon.";
   }
   if (lower.contains('401') ||
@@ -1341,5 +1342,18 @@ String friendlyDaemonError(Object error, {String what = 'That'}) {
       lower.contains('503')) {
     return "Couldn't reach the hub. Try again in a moment.";
   }
+  if (_looksLikeRawException(msg)) {
+    return "Couldn't load $what. Try again in a moment.";
+  }
   return msg;
+}
+
+bool _looksLikeRawException(String msg) {
+  final lower = msg.toLowerCase();
+  return lower.contains('exception') ||
+      lower.contains('uri=') ||
+      lower.contains('stack trace') ||
+      lower.contains('errno =') ||
+      RegExp(r'https?://127\.0\.0\.1').hasMatch(lower) ||
+      RegExp(r'https?://\[?::1\]?').hasMatch(lower);
 }

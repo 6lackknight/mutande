@@ -5,25 +5,29 @@ sidebarTitle: Overview
 
 # Security
 
-mutande is built so **your devices** encrypt and decrypt mail. The cloud hub is a **blind courier**.
+mutande is built so your devices encrypt and decrypt mail. The cloud hub is a blind courier — it routes envelopes, but it never holds keys that can open them.
 
 ## Promises
 
 - Private keys stay on your device (macOS Keychain for the Mac app).
 - Handoff content is end-to-end encrypted before it leaves the machine.
-- The hub stores ciphertext and routing metadata — not readable message bodies.
+- The hub stores ciphertext and routing metadata — not readable message bodies, so a compromised hub still can't read your work.
 - Large files are encrypted before upload; object storage never sees plaintext.
 
 ## Building blocks (not custom crypto)
 
-Content seal uses [ChaCha20-Poly1305](https://datatracker.ietf.org/doc/html/rfc8439); per-device key wraps use [X25519](https://datatracker.ietf.org/doc/html/rfc7748) / [NaCl crypto_box](https://nacl.cr.yp.to/box.html). Details and how to verify contacts: [encryption](/docs/security/encryption) · [safety numbers](/docs/safety-numbers).
+Content seal uses [ChaCha20-Poly1305](https://datatracker.ietf.org/doc/html/rfc8439); per-device key wraps use [X25519](https://datatracker.ietf.org/doc/html/rfc7748) / [NaCl crypto_box](https://nacl.cr.yp.to/box.html). Trust rests on standard primitives and on-device keys — not a proprietary cipher.
+
+Details and how to verify contacts: [encryption](/docs/security/encryption) · [safety numbers](/docs/safety-numbers).
 
 ## What this is not
 
-- Not a guarantee against a compromised device or AI host.
-- Not hub-side DLP / “guardrails” — send policy lives in Cursor / Claude / ChatGPT allow lists.
-- Not open-inbox email; orgs are invite-only.
-- Not a published third-party audit (yet) — trust rests on standard primitives + on-device keys.
+Lead with what mutande *does* protect, then the boundaries:
+
+- A compromised AI host or unlocked Mac can still see plaintext **on that machine** — mutande protects the path between devices.
+- Send policy lives in Cursor / Claude / ChatGPT allow lists — there is no hub-side DLP or “guardrails.”
+- Orgs are invite-only — this is not open-inbox email.
+- There is no published third-party audit yet.
 
 ## Go deeper
 

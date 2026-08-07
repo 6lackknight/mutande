@@ -184,13 +184,28 @@ class CoreSidecar {
     }
 
     final ready = await _waitHealthy();
-    if (!ready) {
+    if (ready == null) {
       // Do not stop — the user may still be completing a Keychain prompt.
       return CoreSidecarStartResult(
         alreadyRunning: false,
         path: path,
         error: 'daemon did not become healthy within ${healthTimeout.inSeconds}s',
         stillStarting: true,
+      );
+    }
+
+    // Kill/spawn succeeded but the binary we started is still the wrong
+    // version (stale Contents/Resources or outdated cargo target). Restart
+    // cannot fix that — surface a clear reinstall/rebuild hint.
+    if (!versionsMatch(ready.version, expectedVersion)) {
+      final got = normalizeVersion(ready.version) ?? 'unknown';
+      final want = normalizeVersion(expectedVersion) ?? expectedVersion!;
+      return CoreSidecarStartResult(
+        alreadyRunning: false,
+        path: path,
+        error: 'Bundled courier is v$got but app expects v$want. '
+            'Reinstall mutande (or rebuild Resources/mutande-core) — '
+            'Restart cannot replace a stale sidecar inside the app.',
       );
     }
 
@@ -222,14 +237,14 @@ class CoreSidecar {
     return process;
   }
 
-  Future<bool> _waitHealthy() async {
+  Future<DaemonHealthResult?> _waitHealthy() async {
     final deadline = DateTime.now().add(healthTimeout);
     while (DateTime.now().isBefore(deadline)) {
       final health = await _daemon.pingHealth();
-      if (health.connected) return true;
+      if (health.connected) return health;
       await Future<void>.delayed(const Duration(milliseconds: 200));
     }
-    return false;
+    return null;
   }
 
   Future<bool> _waitUntilDown() async {

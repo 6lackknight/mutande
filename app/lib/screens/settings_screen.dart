@@ -838,7 +838,9 @@ class _DaemonMismatchBanner extends StatelessWidget {
       ),
       child: Text(
         'Sidecar mismatch — app v$appVersion, courier $courier. '
-        'Restart courier to use the binary bundled with mutande.',
+        'Restart courier to replace a stale external daemon. '
+        'If this persists after restart, reinstall mutande — '
+        'the app may ship an outdated courier.',
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: _kBronze,
               fontSize: 12,

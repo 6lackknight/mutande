@@ -210,6 +210,20 @@ build_one_arch() {
     exit 1
   fi
 
+  # Fail the cut if Flutter/app version and embedded core disagree (avoids
+  # shipping app vX with Resources/mutande-core still on X-1).
+  core_ver="$("$core_src" --version 2>/dev/null | awk '{print $NF}' | tr -d '[:space:]')"
+  if [[ -z "$core_ver" ]]; then
+    echo "error: could not read version from $core_src (--version)" >&2
+    exit 1
+  fi
+  if [[ "$core_ver" != "$VERSION" ]]; then
+    echo "error: mutande-core is v${core_ver} but release VERSION is ${VERSION}" >&2
+    echo "       sync core/Cargo.toml with app/pubspec.yaml and rebuild" >&2
+    exit 1
+  fi
+  echo "==> mutande-core --version ${core_ver} (matches app ${VERSION})"
+
   # Flutter produces a universal (or host) app; we thin + swap sidecar per arch.
   built_app="$APP_DIR/build/macos/Build/Products/Release/${APP_NAME}"
   if [[ ! -x "$built_app/Contents/MacOS/mutande" ]]; then
@@ -332,7 +346,26 @@ if not skip:
     print(f"bumped {old} -> {new}", file=__import__("sys").stderr)
 else:
     new = old
-    print(f"skip bump; using {new}", file=__import__("sys").stderr)
+    # Keep Cargo.toml locked to pubspec even when skipping the bump —
+    # otherwise SKIP_BUMP can ship app vX with a stale core crate version.
+    cargo = core_dir / "Cargo.toml"
+    cargo_text = cargo.read_text()
+    cargo2, cn = re.subn(
+        r'(?m)^version\s*=\s*"[^"]*"\s*$',
+        f'version = "{major}.{minor}.{patch}"',
+        cargo_text,
+        count=1,
+    )
+    if cn != 1:
+        raise SystemExit("error: failed to sync core/Cargo.toml version")
+    if cargo2 != cargo_text:
+        cargo.write_text(cargo2)
+        print(
+            f"skip bump; synced Cargo.toml -> {major}.{minor}.{patch}",
+            file=__import__("sys").stderr,
+        )
+    else:
+        print(f"skip bump; using {new}", file=__import__("sys").stderr)
 
 print(f"{major}.{minor}.{patch} {build}")
 PY
