@@ -149,24 +149,27 @@ export function DownloadPlatformPicker({
   return (
     <div className="space-y-3">
       <WarpBackground
-        className="grid min-h-[40vh] place-items-center overflow-hidden border-stone-300/60 bg-stone-50/40 p-4 sm:p-5"
+        className="min-h-[40vh] overflow-hidden border-stone-300/60 bg-stone-50/40 p-4 sm:p-5"
         gridColor="color-mix(in oklch, var(--stone-300) 55%, transparent)"
         beamsPerSide={2}
         beamDuration={4}
       >
-        <div
-          className={`h-fit w-fit max-w-full rounded-md border px-4 py-3.5 text-sm leading-relaxed shadow-sm sm:px-5 sm:py-4 ${
-            current.alertTone === "ok"
-              ? "border-accent/30 bg-accent-soft/95 text-stone-800"
-              : "border-amber-300/50 bg-amber-50/90 text-stone-800"
-          }`}
-        >
-          <p className="font-medium text-stone-900">
-            {confirmed
-              ? `Download started — ${current.title}`
-              : `Preparing download — ${current.title}`}
-          </p>
-          <p className="mt-1.5 max-w-prose">{current.alert}</p>
+        {/* Inner flex: grid/flex on WarpBackground collapses @container-[size] beams. */}
+        <div className="flex min-h-[calc(40vh-2rem)] items-center justify-center sm:min-h-[calc(40vh-2.5rem)]">
+          <div
+            className={`h-fit w-fit max-w-full rounded-md border px-4 py-3.5 text-sm leading-relaxed shadow-sm sm:px-5 sm:py-4 ${
+              current.alertTone === "ok"
+                ? "border-accent/30 bg-accent-soft/95 text-stone-800"
+                : "border-amber-300/50 bg-amber-50/90 text-stone-800"
+            }`}
+          >
+            <p className="font-medium text-stone-900">
+              {confirmed
+                ? `Download started — ${current.title}`
+                : `Preparing download — ${current.title}`}
+            </p>
+            <p className="mt-1.5 max-w-prose">{current.alert}</p>
+          </div>
         </div>
       </WarpBackground>
 
