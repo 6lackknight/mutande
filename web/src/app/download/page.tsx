@@ -3,13 +3,11 @@ import { TrackButtonLink } from "@/components/track-button-link";
 import { DownloadPlatformPicker } from "@/components/download-platform-picker";
 import { CHANGELOG, LATEST_CHANGELOG } from "@/lib/changelog";
 import {
-  MAC_DMG_CHANNEL,
   MAC_DMG_LABEL,
   MAC_DMG_URL_ARM64,
   MAC_DMG_URL_INTEL,
   MAC_DMG_VERSION,
   MAC_INTEL_PUBLISHED,
-  WIN_ZIP_CHANNEL,
   WIN_ZIP_LABEL,
   WIN_ZIP_PUBLISHED,
   WIN_ZIP_URL,
@@ -50,15 +48,13 @@ export default function DownloadPage() {
 
       <PageTitle
         title="Try Alpha"
-        subtitle="Alpha builds for desktop. Pick your platform — expect rough edges."
+        subtitle="Alpha builds for desktop. Your download should start automatically — expect rough edges."
       />
 
       <DownloadPlatformPicker
         macArm64Url={MAC_DMG_URL_ARM64}
         macIntelUrl={MAC_DMG_URL_INTEL}
         winZipUrl={WIN_ZIP_URL}
-        macChannel={MAC_DMG_CHANNEL}
-        winChannel={WIN_ZIP_CHANNEL}
         macLabel={MAC_DMG_LABEL}
         winLabel={WIN_ZIP_LABEL}
         macVersion={MAC_DMG_VERSION}
