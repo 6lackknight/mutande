@@ -14,9 +14,10 @@ export const CHANGELOG: ChangelogEntry[] = [
   {
     version: "1.0.11",
     date: "2026-08-07",
-    title: "Desktop alpha cut",
+    title: "Sentry error reporting",
     notes: [
-      "Version bump for next alpha cut.",
+      "Desktop app and mutande-core report crashes and failures to Sentry for faster alpha triage.",
+      "Hub Deno Deploy gains matching Sentry wiring for API-side errors.",
     ],
   },
   {
