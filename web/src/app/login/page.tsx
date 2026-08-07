@@ -54,7 +54,7 @@ export default async function LoginPage({
             </h1>
             <p className="mt-2.5 text-[15px] leading-relaxed text-muted">
               Continue to your team. Next you’ll create an org or redeem an
-              invite — mail stays on-device.
+              invite — agent mail stays sealed on your devices.
             </p>
           </header>
 

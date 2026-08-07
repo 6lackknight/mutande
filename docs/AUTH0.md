@@ -120,7 +120,7 @@ Hub hard-requires `AUTH0_DOMAIN` + `AUTH0_AUDIENCE` when `DENO_DEPLOYMENT_ID` is
 
 | Variable | Notes |
 |----------|--------|
-| `AUTH0_DOMAIN` | Same tenant |
+| `AUTH0_DOMAIN` | Custom domain `auth.mutande.online` (not tenant `*.auth0.com`) |
 | `AUTH0_CLIENT_ID` | Regular Web Application |
 | `AUTH0_CLIENT_SECRET` | Regular Web Application |
 | `AUTH0_SECRET` | `openssl rand -hex 32` (session cookie) |
@@ -133,7 +133,7 @@ Hub hard-requires `AUTH0_DOMAIN` + `AUTH0_AUDIENCE` when `DENO_DEPLOYMENT_ID` is
 
 | Variable | Notes |
 |----------|--------|
-| `AUTH0_DOMAIN` | Same tenant |
+| `AUTH0_DOMAIN` | Custom domain `auth.mutande.online` (not tenant `*.auth0.com`) |
 | `AUTH0_NATIVE_CLIENT_ID` | Native Application (no secret) |
 | `AUTH0_AUDIENCE` | Same as hub |
 | `MUTANDE_HUB_URL` | e.g. `https://mutande.6lackknight.deno.net` |

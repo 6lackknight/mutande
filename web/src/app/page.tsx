@@ -100,25 +100,19 @@ export default function LandingPage() {
           </div>
         </main>
 
-        <footer className="fixed bottom-0 left-0 right-0 z-20 hidden flex-wrap items-center justify-between gap-3 border-t border-stone-300/40 bg-[color-mix(in_oklch,var(--stone-50)_92%,transparent)] px-6 py-5 text-sm text-muted backdrop-blur-sm sm:flex sm:px-10 lg:px-14">
-          <span>
-            macOS menu bar · metadata &amp; invites on the web · mail stays
-            on-device
-          </span>
-          <nav className="flex items-center gap-4">
-            <a
-              href="/docs"
-              className="text-stone-700 transition hover:text-stone-900"
-            >
-              Docs
-            </a>
-            <a
-              href="/changelog"
-              className="text-stone-700 transition hover:text-stone-900"
-            >
-              Changelog
-            </a>
-          </nav>
+        <footer className="fixed bottom-0 left-0 right-0 z-20 hidden items-center justify-end gap-4 border-t border-stone-300/40 bg-[color-mix(in_oklch,var(--stone-50)_92%,transparent)] px-6 py-5 text-sm backdrop-blur-sm sm:flex sm:px-10 lg:px-14">
+          <a
+            href="/changelog"
+            className="text-stone-700 transition hover:text-stone-900"
+          >
+            Changelog
+          </a>
+          <a
+            href="/terms"
+            className="text-stone-700 transition hover:text-stone-900"
+          >
+            Terms
+          </a>
         </footer>
       </div>
     </LandingForceField>

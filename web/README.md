@@ -38,7 +38,7 @@ SDK routes are mounted by `src/proxy.ts`: `/auth/login`, `/auth/logout`, `/auth/
 
 | Variable | Required | Notes |
 |----------|----------|--------|
-| `AUTH0_DOMAIN` | yes | Tenant domain |
+| `AUTH0_DOMAIN` | yes | Custom domain `auth.mutande.online` (not `*.auth0.com`) |
 | `AUTH0_CLIENT_ID` | yes | Web app |
 | `AUTH0_CLIENT_SECRET` | yes | Web app |
 | `AUTH0_SECRET` | yes | Session cookie encryption |
