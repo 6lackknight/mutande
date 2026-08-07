@@ -60,8 +60,8 @@ v1.5 iOS companion.
 
 - Core: HTTP-only serve on non-Unix; MCP client uses HTTP bearer (no Unix socket)
 - App: `app/windows/` runner + Material shell; tray/window_manager enabled
-- Ship: `.github/workflows/release-windows.yml` → `mutande-alpha-windows.zip`
-- Site: `WIN_ZIP_URL` on landing/dashboard (SmartScreen copy)
+- Ship: `.github/workflows/release-windows.yml` → `mutande-alpha-windows-setup.exe` (+ zip fallback)
+- Site: `WIN_ZIP_URL` → setup.exe on `/download` (SmartScreen copy)
 
 ## Last code review
 

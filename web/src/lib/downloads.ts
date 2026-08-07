@@ -51,7 +51,11 @@ export const MAC_DMG_URL =
 
 export const MAC_DMG_LABEL = `mutande ${MAC_DMG_VERSION} (${MAC_DMG_CHANNEL})`;
 
-/** Unsigned Windows portable zip (SmartScreen may warn). */
+/**
+ * Unsigned Windows Inno Setup installer (SmartScreen may warn).
+ * Env names keep WIN_ZIP_* for Vercel continuity; artifact is setup.exe.
+ * Portable zip remains on R2 as mutande-alpha-windows.zip (not linked here).
+ */
 export const WIN_ZIP_CHANNEL =
   process.env.NEXT_PUBLIC_WIN_ZIP_CHANNEL ?? MAC_DMG_CHANNEL;
 
@@ -61,8 +65,8 @@ export const WIN_ZIP_VERSION =
 export const WIN_ZIP_URL =
   process.env.NEXT_PUBLIC_WIN_ZIP_URL ??
   installerUrl(
-    "mutande-alpha-windows.zip",
-    "/downloads/mutande-alpha-windows.zip",
+    "mutande-alpha-windows-setup.exe",
+    "/downloads/mutande-alpha-windows-setup.exe",
   );
 
 export const WIN_ZIP_PUBLISHED =

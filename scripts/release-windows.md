@@ -1,17 +1,22 @@
 # Windows alpha release
 
 Windows builds **cannot** run on macOS. Use GitHub Actions; the workflow
-uploads the zip to the **same R2 bucket** as Mac DMGs.
+uploads installers to the **same R2 bucket** as Mac DMGs.
 
 ## Flow
 
 1. Push the commit you want built (Actions checks out GitHub, not your laptop).
 2. **Actions** → **Release Windows alpha** → **Run workflow**
 3. Jobs:
-   - `build` — Flutter + core → `mutande-alpha-windows.zip` (artifact, 14 days)
+   - `build` — Flutter + core → Inno Setup `mutande-alpha-windows-setup.exe` (+ portable zip fallback); artifact 14 days
    - `publish-r2` — `scripts/upload-downloads-r2.sh` → `mutande-releases`
-4. Public URL: `https://downloads.mutande.online/mutande-alpha-windows.zip`
+4. Public URLs:
+   - Primary: `https://downloads.mutande.online/mutande-alpha-windows-setup.exe`
+   - Fallback: `https://downloads.mutande.online/mutande-alpha-windows.zip`
 5. Site gate: set Vercel `NEXT_PUBLIC_WIN_ZIP_PUBLISHED=1` (and version if needed)
+
+Installer script: `app/windows/installer/mutande.iss`  
+Default install: `%LOCALAPPDATA%\Programs\mutande` (per-user, no admin).
 
 ## Repo secrets (required for `publish-r2`)
 
@@ -30,6 +35,6 @@ Mac local uploads use the same script + preferred `R2_DOWNLOADS_*` env vars
 
 ## SmartScreen
 
-The zip is **unsigned**. Users choose **More info → Run anyway**. Authenticode deferred.
+The setup.exe (and zip) are **unsigned**. Users choose **More info → Run anyway**. Authenticode deferred.
 
 Mac notarized DMGs: `scripts/release-macos-dmg.sh` then the same upload script.

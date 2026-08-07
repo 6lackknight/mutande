@@ -18,6 +18,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     notes: [
       "Desktop app and mutande-core report crashes and failures to Sentry for faster alpha triage.",
       "Hub Deno Deploy gains matching Sentry wiring for API-side errors.",
+      "Windows alpha ships as an Inno Setup installer (mutande-alpha-windows-setup.exe) on the downloads CDN.",
     ],
   },
   {

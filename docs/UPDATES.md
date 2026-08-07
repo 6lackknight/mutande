@@ -61,13 +61,13 @@ Set Vercel `NEXT_PUBLIC_DOWNLOADS_BASE` to that origin (no trailing slash).
 Keep `web/public/downloads/*` gitignored for local smoke only. Hub `R2_*`
 keys must allow write to `mutande-releases` (blobs-only tokens get AccessDenied).
 
-## Release (Windows unsigned zip)
+## Release (Windows unsigned installer)
 
 ```text
 GitHub → Actions → "Release Windows alpha" → Run workflow
-→ build job zips mutande-alpha-windows.zip
+→ build job: Inno Setup mutande-alpha-windows-setup.exe (+ zip fallback)
 → publish-r2 job runs scripts/upload-downloads-r2.sh (same bucket as Mac)
-→ https://downloads.mutande.online/mutande-alpha-windows.zip
+→ https://downloads.mutande.online/mutande-alpha-windows-setup.exe
 → set NEXT_PUBLIC_WIN_ZIP_PUBLISHED=1 on Vercel if needed
 ```
 
@@ -75,8 +75,8 @@ Requires repo secrets `R2_ACCOUNT_ID`, `R2_DOWNLOADS_ACCESS_KEY_ID`,
 `R2_DOWNLOADS_SECRET_ACCESS_KEY` (releases bucket — not hub blobs keys).
 See `scripts/release-windows.md`.
 
-Zip contents: Flutter `Release/` folder + `mutande-core.exe` sidecar (HTTP on
-`127.0.0.1:3847`). No codesign / no MSIX.
+Installer packs Flutter `Release/` + `mutande-core.exe` sidecar into
+`%LOCALAPPDATA%\Programs\mutande` (per-user). No Authenticode / no MSIX.
 
 ## Intended path (Sparkle)
 
