@@ -11,6 +11,7 @@ abstract final class MutandeColors {
   static const stone600 = Color(0xFF57534E);
   static const stone800 = Color(0xFF292524);
   static const bronze = Color(0xFF92400E);
+  static const bronzeSoft = Color(0xFFF5EDE6);
   static const amber = Color(0xFFB45309);
   static const amberSoft = Color(0xFFFEF3C7);
   static const emerald = Color(0xFF166534);

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
+import '../util/address_display.dart';
 import 'app_actions.dart';
 import 'daemon_client.dart';
 import 'notification_prefs_store.dart';
@@ -153,7 +154,9 @@ class InboxWatchService {
     required bool needsYou,
   }) async {
     await _ensureInitialized();
-    final from = t.from.trim().isNotEmpty ? t.from.trim() : 'someone';
+    final from = t.from.trim().isNotEmpty
+        ? formatMailAddress(t.from)
+        : 'someone';
     final String body;
     if (needsYou) {
       body = 'Needs you — from $from';

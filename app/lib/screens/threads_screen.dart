@@ -923,7 +923,7 @@ class _ComposePanelState extends State<_ComposePanel> {
         final suggestions = <String>[
           '@all',
           if (orgAll != null) orgAll,
-          ...list.agents.map((a) => '@${a.slug}'),
+          ...list.agents.map((a) => '@${a.slug.toLowerCase()}'),
         ];
         if (trimmed.isEmpty || lower == '@') return suggestions;
         return suggestions.where((s) => s.startsWith(lower)).toList();
@@ -944,7 +944,10 @@ class _ComposePanelState extends State<_ComposePanel> {
     if (bare == null) return const [];
     try {
       final list = await widget.daemon.listAgents(handle: bare);
-      return [bare, ...list.agents.map((a) => '$bare/${a.slug}')];
+      return [
+        bare,
+        ...list.agents.map((a) => '$bare/${a.slug.toLowerCase()}'),
+      ];
     } catch (_) {
       return [bare];
     }
@@ -959,7 +962,7 @@ class _ComposePanelState extends State<_ComposePanel> {
     final slash = org.indexOf('/');
     if (slash >= 0) org = org.substring(0, slash);
     if (org.isEmpty) return null;
-    return '@all@$org';
+    return '@all@${org.toLowerCase()}';
   }
 
   String? _bareHandleFromInput(String input) {
@@ -973,7 +976,7 @@ class _ComposePanelState extends State<_ComposePanel> {
     final base = slash >= 0 ? trimmed.substring(0, slash) : trimmed;
     final at = base.lastIndexOf('@');
     if (at <= 0 || at >= base.length - 1) return null;
-    return base;
+    return base.toLowerCase();
   }
 
   Future<void> _send() async {
@@ -1485,12 +1488,38 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
           ),
         ),
         ResizableChild(
-          size: const ResizableSize.pixels(240, min: 180, max: 360),
+          size: const ResizableSize.pixels(200, min: 180, max: 360),
           child: _ThreadStatsPanel(detail: _detail!, myHandle: widget.myHandle),
         ),
       ],
     );
   }
+}
+
+/// Humanize hub kind; null when empty / unknown.
+String? _humanizeThreadKind(String kind) {
+  switch (kind.trim().toLowerCase()) {
+    case 'broadcast':
+      return 'Broadcast';
+    case 'direct':
+      return 'Direct';
+    case '':
+      return null;
+    default:
+      if (kind.isEmpty) return null;
+      return kind[0].toUpperCase() + kind.substring(1);
+  }
+}
+
+/// Direct is obvious from header `to @…`; broadcast less so when audience is `@all@org`.
+bool _kindObviousInHeader(ThreadDetailResult detail) {
+  final k = detail.kind.trim().toLowerCase();
+  if (k == 'direct') return true;
+  if (k == 'broadcast') {
+    final aud = detail.audience.trim();
+    return aud == '@all' || aud.startsWith('@all@');
+  }
+  return false;
 }
 
 class _ThreadStatsPanel extends StatelessWidget {
@@ -1518,78 +1547,108 @@ class _ThreadStatsPanel extends StatelessWidget {
       upvoteTotal += m.upvotes?.count ?? 0;
     }
 
+    // Header already shows compact badge for non-open — don't restate Status.
+    // Fold Waiting into the lead metrics (list pane never shows Waiting).
+    final status = ThreadStatusKindX.resolve(
+      status: detail.status,
+      yourStatus: detail.yourStatus,
+    );
+    final showWaitingInMetrics = status == ThreadStatusKind.waiting;
+
+    final kindLabel = _humanizeThreadKind(detail.kind);
+    final showKind = kindLabel != null && !_kindObviousInHeader(detail);
+
     final labelStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
       color: MutandeColors.stone500,
-      fontWeight: FontWeight.w600,
-      letterSpacing: 0.3,
+      fontWeight: FontWeight.w500,
+      fontSize: 11,
+      letterSpacing: 0.1,
     );
     final valueStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
       color: MutandeColors.stone800,
-      height: 1.35,
+      height: 1.25,
+      fontSize: 13,
+    );
+    final metricStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
+      color: MutandeColors.stone800,
+      fontWeight: FontWeight.w600,
+      height: 1.2,
+      fontSize: 13,
+    );
+    final quietStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
+      color: MutandeColors.stone400,
+      height: 1.2,
+      fontSize: 10.5,
     );
 
-    Widget row(String label, Widget value) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label.toUpperCase(), style: labelStyle),
-            const SizedBox(height: 6),
-            value,
-          ],
-        ),
-      );
-    }
-
-    Widget textValue(String value) => Text(value, style: valueStyle);
+    final msgCount = detail.messages.length;
+    final msgLabel = msgCount == 1 ? '1 message' : '$msgCount messages';
 
     return DecoratedBox(
       decoration: const BoxDecoration(color: MutandeColors.stone50),
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 16),
         children: [
-          Text(
-            'Thread',
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              color: MutandeColors.stone800,
-              fontWeight: FontWeight.w600,
+          // Lead: coordination + volume (+ Waiting when list can't show it).
+          Text.rich(
+            TextSpan(
+              style: metricStyle,
+              children: [
+                TextSpan(
+                  text: '↑ $upvoteTotal',
+                  style: metricStyle?.copyWith(
+                    color: upvoteTotal > 0
+                        ? MutandeColors.bronze
+                        : MutandeColors.stone600,
+                  ),
+                ),
+                TextSpan(text: ' · ', style: quietStyle),
+                TextSpan(text: msgLabel),
+                if (showWaitingInMetrics) ...[
+                  TextSpan(text: ' · ', style: quietStyle),
+                  TextSpan(
+                    text: ThreadStatusKind.waiting.label,
+                    style: metricStyle?.copyWith(
+                      color: MutandeColors.bronze,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
-          const SizedBox(height: 16),
-          row(
-            'Status',
-            ThreadStatusBadge(
-              kind: ThreadStatusKindX.resolve(
-                status: detail.status,
-                yourStatus: detail.yourStatus,
-              ),
-            ),
-          ),
-          row('Kind', textValue(detail.kind.isEmpty ? '—' : detail.kind)),
-          row(
-            'From',
-            textValue(formatMailAddress(detail.from, myHandle: myHandle)),
-          ),
-          if (detail.audience.isNotEmpty && detail.audience != detail.from)
-            row(
-              'Audience',
-              textValue(formatMailAddress(detail.audience, myHandle: myHandle)),
-            ),
-          row('Messages', textValue('${detail.messages.length}')),
-          row('Upvotes', textValue('$upvoteTotal')),
           const SizedBox(height: 4),
-          Text('PARTICIPANTS', style: labelStyle),
+          Text('coordination weight', style: quietStyle),
+          if (showKind && kindLabel != null) ...[
+            const SizedBox(height: 16),
+            Text('Kind', style: labelStyle),
+            const SizedBox(height: 4),
+            Text(kindLabel, style: valueStyle),
+          ],
+          const SizedBox(height: 18),
+          Text('Participants', style: labelStyle),
           const SizedBox(height: 8),
-          ...participants.map(
-            (p) => Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: Text(
-                formatMailAddress(p, myHandle: myHandle),
-                style: valueStyle,
+          ...participants.map((p) {
+            final label = formatMailAddress(p, myHandle: myHandle);
+            final host = _hostSlugFromHandle(p, myHandle: myHandle);
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                children: [
+                  _MessageAvatar(label: label, host: host, size: 22),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: valueStyle?.copyWith(fontSize: 12.5),
+                    ),
+                  ),
+                ],
               ),
-            ),
-          ),
+            );
+          }),
         ],
       ),
     );

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../config/app_config.dart';
 import '../services/daemon_client.dart';
+import '../util/address_display.dart';
 import '../widgets/thinking_orb.dart';
 
 /// Org address book — hub contacts, broadcast callout, copy handles.
@@ -249,7 +250,7 @@ class _YourHandleCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      handle,
+                      formatMailAddress(handle),
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                             color: const Color(0xFF292524),
                             fontWeight: FontWeight.w600,
@@ -305,7 +306,7 @@ class _BroadcastCallout extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      handle,
+                      formatMailAddress(handle),
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                             color: const Color(0xFF292524),
                             fontWeight: FontWeight.w600,
@@ -349,7 +350,8 @@ class _TeammateRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final initial = handle.isNotEmpty ? handle[0].toUpperCase() : '?';
+    final label = formatMailAddress(handle);
+    final initial = label.isNotEmpty ? label[0].toUpperCase() : '?';
 
     return Material(
       color: Colors.transparent,
@@ -377,7 +379,7 @@ class _TeammateRow extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  handle,
+                  label,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: const Color(0xFF292524),
                         fontWeight: FontWeight.w500,

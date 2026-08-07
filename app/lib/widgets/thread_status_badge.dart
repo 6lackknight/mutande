@@ -59,10 +59,11 @@ class ThreadStatusBadge extends StatelessWidget {
           MutandeColors.emeraldSoft,
           MutandeColors.emerald.withValues(alpha: 0.18),
         ),
+      // Soft bronze — distinct from Closed (quiet stone) and Needs you (amber).
       ThreadStatusKind.waiting => (
-          MutandeColors.stone600,
-          MutandeColors.stone100,
-          MutandeColors.stone200,
+          MutandeColors.bronze,
+          MutandeColors.bronzeSoft,
+          MutandeColors.bronze.withValues(alpha: 0.18),
         ),
       ThreadStatusKind.closed => (
           MutandeColors.stone500,

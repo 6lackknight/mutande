@@ -6,6 +6,7 @@ import '../services/core_sidecar.dart';
 import '../services/daemon_client.dart';
 import '../services/host_link_store.dart';
 import '../services/notification_prefs_store.dart';
+import '../util/address_display.dart';
 import '../widgets/ai_host_icon.dart';
 import '../widgets/connect_host_flow.dart';
 import '../widgets/connect_host_picker.dart';
@@ -1417,7 +1418,7 @@ class _AccountCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hasHandle = handle != null && handle!.trim().isNotEmpty;
-    final h = hasHandle ? handle!.trim() : 'Not signed in';
+    final h = hasHandle ? formatMailAddress(handle!) : 'Not signed in';
     final initial = hasHandle ? h.characters.first.toUpperCase() : '?';
     final handleText = Text(
       h,

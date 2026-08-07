@@ -1221,9 +1221,9 @@ class MessageUpvoteView {
   String get chipLabel {
     final slash = fromHandle.indexOf('/');
     if (slash >= 0 && slash < fromHandle.length - 1) {
-      return fromHandle.substring(slash + 1);
+      return fromHandle.substring(slash + 1).toLowerCase();
     }
-    return fromHandle;
+    return fromHandle.toLowerCase();
   }
 }
 

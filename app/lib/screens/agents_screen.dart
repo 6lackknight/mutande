@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../services/daemon_client.dart';
 import '../services/host_link_store.dart';
+import '../util/address_display.dart';
 import '../widgets/ai_host_icon.dart';
 import '../widgets/connect_host_flow.dart';
 import '../widgets/connect_host_picker.dart';
@@ -212,7 +213,9 @@ class _AgentsPanelState extends State<AgentsPanel> {
                 if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('${agent.slug} is now your default agent'),
+                    content: Text(
+                      '${agent.slug.toLowerCase()} is now your default agent',
+                    ),
                   ),
                 );
               },
@@ -523,6 +526,7 @@ class _HandleNode extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final label = formatMailAddress(handle);
     return Column(
       children: [
         Stack(
@@ -563,10 +567,10 @@ class _HandleNode extends StatelessWidget {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 240),
             child: Tooltip(
-              message: handle,
+              message: label,
               waitDuration: const Duration(milliseconds: 400),
               child: Text(
-                handle,
+                label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
@@ -654,6 +658,7 @@ class _PrimaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final label = slug.toLowerCase();
     return Material(
       color: Colors.white,
       elevation: 1,
@@ -681,10 +686,10 @@ class _PrimaryCard extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Tooltip(
-                          message: slug,
+                          message: label,
                           waitDuration: const Duration(milliseconds: 400),
                           child: Text(
-                            slug,
+                            label,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: Theme.of(context).textTheme.titleSmall
@@ -840,6 +845,7 @@ class _SubCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final label = slug.toLowerCase();
     return Material(
       color: Colors.white,
       elevation: 1,
@@ -860,10 +866,10 @@ class _SubCard extends StatelessWidget {
               AiHostIcon(slug, size: 36),
               const SizedBox(height: 8),
               Tooltip(
-                message: slug,
+                message: label,
                 waitDuration: const Duration(milliseconds: 400),
                 child: Text(
-                  slug.isEmpty ? '—' : slug,
+                  label.isEmpty ? '—' : label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
@@ -988,19 +994,20 @@ class _AgentsList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final handleLabel = formatMailAddress(handle);
     return ListView(
       children: [
         ListTile(
           leading: const Icon(Icons.person_outline),
-          title: Text(handle),
+          title: Text(handleLabel),
           subtitle: const Text('Handle'),
         ),
         if (primary != null)
           ListTile(
             contentPadding: const EdgeInsets.only(left: 28, right: 8),
             leading: AiHostIcon(primary!.slug, size: 32),
-            title: Text(primary!.slug),
-            subtitle: Text('Primary · receives $handle & @all'),
+            title: Text(primary!.slug.toLowerCase()),
+            subtitle: Text('Primary · receives $handleLabel & @all'),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -1025,8 +1032,8 @@ class _AgentsList extends StatelessWidget {
           ListTile(
             contentPadding: const EdgeInsets.only(left: 48, right: 8),
             leading: AiHostIcon(a.slug, size: 32),
-            title: Text(a.slug),
-            subtitle: Text('$handle/${a.slug}'),
+            title: Text(a.slug.toLowerCase()),
+            subtitle: Text(formatMailAddress('$handle/${a.slug}')),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -1132,9 +1139,11 @@ class _AgentInspectorState extends State<_AgentInspector> {
   bool get _linked => widget.link != null && widget.link!.ok;
 
   // Bare handle for default; never show /default. Subs: alice@acme/<slug>.
-  String get _display => widget.isPrimary
-      ? widget.handle
-      : '${widget.handle}/${widget.agent.slug}';
+  String get _display => formatMailAddress(
+        widget.isPrimary
+            ? widget.handle
+            : '${widget.handle}/${widget.agent.slug}',
+      );
 
   String get _host => agentHostLabel(widget.agent.slug);
 
@@ -1272,7 +1281,9 @@ class _AgentInspectorState extends State<_AgentInspector> {
   @override
   Widget build(BuildContext context) {
     final motion = _agentsMotion(context, const Duration(milliseconds: 180));
-    final slug = widget.agent.slug.trim().isEmpty ? '—' : widget.agent.slug;
+    final slug = widget.agent.slug.trim().isEmpty
+        ? '—'
+        : widget.agent.slug.trim().toLowerCase();
 
     return PopScope(
       canPop: !_busy,
