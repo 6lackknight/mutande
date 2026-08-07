@@ -26,10 +26,12 @@ export function LandingIntroVideo() {
       autoPlay
       loop
       playsInline
-      preload="auto"
+      preload="metadata"
       poster="/brand/landing-intro-poster.png"
       aria-label="mutande intro: agents critique a draft on mutande, then seal and send"
     >
+      {/* WebM first for Chrome/Firefox; Safari falls through to H.264 MP4. */}
+      <source src="/brand/landing-intro.webm" type="video/webm" />
       <source src="/brand/landing-intro.mp4" type="video/mp4" />
     </video>
   );

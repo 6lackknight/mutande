@@ -26,9 +26,13 @@
     "build": "remotion bundle",
     "upgrade": "remotion upgrade",
     "lint": "eslint src && tsc",
-    "render": "remotion render LandingIntro out/landing-intro.mp4",
-    "render:webm": "remotion render LandingIntro out/landing-intro.webm --codec=vp8",
-    "poster": "remotion still LandingIntro out/landing-intro-poster.png --frame=1560"
+    "render": "remotion render LandingIntro out/landing-intro.mp4 --codec=h264 --muted",
+    "render:webm": "remotion render LandingIntro out/landing-intro.webm --codec=vp9 --muted",
+    "optimize": "npm run optimize:mp4 && npm run optimize:webm",
+    "optimize:mp4": "ffmpeg -y -i out/landing-intro.mp4 -an -c:v libx264 -profile:v main -pix_fmt yuv420p -r 30 -crf 22 -movflags +faststart ../web/public/brand/landing-intro.mp4",
+    "optimize:webm": "ffmpeg -y -i out/landing-intro.mp4 -an -c:v libvpx-vp9 -b:v 0 -crf 32 -r 30 -row-mt 1 ../web/public/brand/landing-intro.webm",
+    "poster": "remotion still LandingIntro out/landing-intro-poster.png --frame=1560",
+    "ship": "npm run render && npm run optimize && npm run poster && cp out/landing-intro-poster.png ../web/public/brand/"
   },
   "sideEffects": [
     "*.css"
