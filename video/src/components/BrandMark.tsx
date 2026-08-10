@@ -2,7 +2,13 @@ import React from "react";
 import { Img, staticFile } from "remotion";
 import { colors } from "../theme";
 
-export type BrandId = "claude" | "chatgpt" | "kimi" | "openclaw" | "default";
+export type BrandId =
+  | "claude"
+  | "chatgpt"
+  | "cursor"
+  | "kimi"
+  | "openclaw"
+  | "default";
 
 const ink = colors.stone900;
 
@@ -11,6 +17,18 @@ export const BrandMark: React.FC<{ brand: BrandId; size: number }> = ({
   brand,
   size,
 }) => {
+  if (brand === "cursor") {
+    // Quiet cursor mark — no host PNG in repo
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden>
+        <path
+          fill={ink}
+          d="M5.5 3.2 18.8 12l-6.2 1.5 2.4 6.6-3.1 1.1-2.4-6.5L5.5 19.2z"
+        />
+      </svg>
+    );
+  }
+
   if (brand === "claude" || brand === "chatgpt") {
     return (
       <Img

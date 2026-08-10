@@ -2,8 +2,8 @@ import { redirect } from "next/navigation";
 import { InviteAdmin } from "@/components/invite-admin";
 import { Alert, BrandMark, PageTitle, Shell } from "@/components/ui";
 import { formatHubError, listInvites } from "@/lib/hub";
-import { requireOnboarded } from "@/lib/session";
-import { isOpsAdmin, isOrgAdmin, type Invite } from "@/lib/types";
+import { requireOnboarded, sessionShowsOps } from "@/lib/session";
+import { isOrgAdmin, type Invite } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Invites" };
@@ -11,7 +11,7 @@ export const metadata = { title: "Invites" };
 export default async function AdminInvitesPage() {
   const me = await requireOnboarded();
   const isAdmin = isOrgAdmin(me.user);
-  const showOps = isOpsAdmin(me);
+  const showOps = await sessionShowsOps(me);
 
   if (!isAdmin) {
     redirect("/dashboard");

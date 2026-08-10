@@ -1,5 +1,6 @@
 import React from "react";
 import {
+  AbsoluteFill,
   Img,
   interpolate,
   spring,
@@ -8,9 +9,21 @@ import {
   useVideoConfig,
 } from "remotion";
 import { colors, FONT } from "../theme";
-import { COMPOSE_PROMPT, DRAFT_FILENAME, beats } from "../timing";
+import {
+  COMPOSE_HIGHLIGHT,
+  COMPOSE_PROMPT,
+  DRAFT_FILENAME,
+  beats,
+} from "../timing";
 
-/** Claude Desktop — work begins in a host; destination is an address. */
+const BACKDROP_ROWS = [
+  "Q3 plan critique",
+  "Ping @all",
+  "Blob handoff",
+  "Safety numbers",
+] as const;
+
+/** Compose beat — same sheet-over-blur UI language as Variant C opening. */
 export const ComposeWindow: React.FC = () => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
@@ -62,132 +75,189 @@ export const ComposeWindow: React.FC = () => {
     { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
   );
 
+  const backdropIn = interpolate(local, [0, 14], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+
   const renderTyped = () => {
-    const parts: React.ReactNode[] = [];
-    const re = /(@research)|(\s+)|([^\s@]+)/g;
-    let m: RegExpExecArray | null;
-    let key = 0;
-    while ((m = re.exec(typed)) !== null) {
-      if (m[1]) {
-        parts.push(
-          <span key={key++} style={{ color: colors.accent, fontWeight: 650 }}>
-            {m[1]}
-          </span>,
-        );
-      } else {
-        parts.push(<span key={key++}>{m[0]}</span>);
-      }
-    }
-    return parts;
+    const hi = COMPOSE_HIGHLIGHT;
+    const idx = typed.indexOf(hi);
+    if (idx < 0) return typed;
+    return (
+      <>
+        {typed.slice(0, idx)}
+        <span style={{ color: colors.accent, fontWeight: 650 }}>
+          {typed.slice(idx, idx + hi.length)}
+        </span>
+        {typed.slice(idx + hi.length)}
+      </>
+    );
   };
 
   return (
-    <div
+    <AbsoluteFill
       style={{
-        opacity: enter * exit,
-        transform: `translateY(${(1 - enter) * 36}px) scale(${0.94 + enter * 0.06})`,
-        width: 760,
         fontFamily: FONT,
-        borderRadius: 16,
-        overflow: "hidden",
-        background: "#f5f0e8",
-        border: `1px solid ${colors.stone300}`,
-        boxShadow:
-          "0 40px 80px -28px rgba(28,25,23,0.45), 0 0 0 1px rgba(28,25,23,0.04)",
+        opacity: enter * exit,
+        backgroundColor: colors.stone200,
       }}
     >
+      {/* Same blurred inbox as opening C */}
       <div
         style={{
+          position: "absolute",
+          inset: 0,
           display: "flex",
-          alignItems: "center",
-          gap: 10,
-          padding: "12px 14px",
-          background: "#efe8dc",
-          borderBottom: `1px solid ${colors.stone300}`,
+          alignItems: "flex-start",
+          justifyContent: "center",
+          padding: "72px 48px",
+          transform: "scale(1.06)",
+          filter: "blur(3.5px) saturate(0.75)",
+          opacity: 0.72 * backdropIn,
+          pointerEvents: "none",
         }}
       >
-        <div style={{ display: "flex", gap: 7 }}>
-          <div style={{ width: 11, height: 11, borderRadius: 99, background: "#ff5f57" }} />
-          <div style={{ width: 11, height: 11, borderRadius: 99, background: "#febc2e" }} />
-          <div style={{ width: 11, height: 11, borderRadius: 99, background: "#28c840" }} />
-        </div>
         <div
           style={{
-            flex: 1,
+            width: "100%",
+            maxWidth: 520,
             display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 8,
+            flexDirection: "column",
+            gap: 14,
           }}
         >
-          <Img
-            src={staticFile("hosts/claude.png")}
-            style={{
-              width: 16,
-              height: 16,
-              objectFit: "contain",
-              filter: "brightness(0) saturate(100%)",
-              opacity: 0.85,
-            }}
-          />
-          <span
-            style={{
-              fontSize: 13,
-              fontWeight: 600,
-              color: colors.stone700,
-              letterSpacing: "-0.01em",
-            }}
-          >
-            Claude
-          </span>
+          {BACKDROP_ROWS.map((title) => (
+            <div
+              key={title}
+              style={{
+                borderRadius: 14,
+                border: `1px solid ${colors.stone300}`,
+                background: colors.stone50,
+                padding: "14px 16px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 16,
+                  fontWeight: 600,
+                  color: colors.stone700,
+                  letterSpacing: "-0.02em",
+                }}
+              >
+                {title}
+              </div>
+              <div
+                style={{
+                  marginTop: 6,
+                  fontSize: 13,
+                  color: colors.stone400,
+                  overflow: "hidden",
+                  whiteSpace: "nowrap",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                {title === BACKDROP_ROWS[0]
+                  ? COMPOSE_PROMPT
+                  : `${DRAFT_FILENAME} · nested replies`}
+              </div>
+            </div>
+          ))}
         </div>
-        <div style={{ width: 52 }} />
       </div>
 
+      {/* Sheet — matches IdentityTree / Variant C */}
       <div
         style={{
-          padding: "22px 24px 12px",
-          minHeight: 180,
-          background: "#f5f0e8",
+          position: "absolute",
+          inset: 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 40,
         }}
       >
         <div
           style={{
-            display: "flex",
-            gap: 12,
-            marginBottom: 18,
-            alignItems: "flex-start",
+            width: 440,
+            borderRadius: 20,
+            border: `1px solid ${colors.stone200}`,
+            background: "rgba(250,249,247,0.96)",
+            padding: 18,
+            boxShadow:
+              "0 36px 72px -28px rgba(28,25,23,0.45), 0 0 0 1px rgba(28,25,23,0.04)",
+            transform: `translateY(${(1 - enter) * 28}px) scale(${0.94 + enter * 0.06})`,
           }}
         >
           <div
             style={{
-              width: 28,
-              height: 28,
-              borderRadius: 8,
-              background: colors.stone200,
               display: "flex",
               alignItems: "center",
-              justifyContent: "center",
-              flexShrink: 0,
+              justifyContent: "space-between",
+              padding: "0 4px 14px",
             }}
           >
-            <Img
-              src={staticFile("hosts/claude.png")}
+            <div
               style={{
-                width: 16,
-                height: 16,
-                filter: "brightness(0) saturate(100%)",
-                opacity: 0.9,
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
               }}
-            />
+            >
+              <Img
+                src={staticFile("hosts/claude.png")}
+                style={{
+                  width: 16,
+                  height: 16,
+                  objectFit: "contain",
+                  filter: "brightness(0) saturate(100%)",
+                  opacity: 0.85,
+                }}
+              />
+              <div
+                style={{
+                  fontSize: 15,
+                  fontWeight: 650,
+                  color: colors.stone800,
+                  letterSpacing: "-0.02em",
+                }}
+              >
+                Claude
+              </div>
+            </div>
+            <div
+              style={{
+                borderRadius: 8,
+                background: colors.stone100,
+                color: colors.stone500,
+                fontSize: 10,
+                fontWeight: 700,
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+                padding: "4px 7px",
+              }}
+            >
+              Host
+            </div>
           </div>
-          <div style={{ flex: 1, paddingTop: 2 }}>
+
+          {/* Message card — same row language as participants */}
+          <div
+            style={{
+              borderRadius: 14,
+              background: "#fff",
+              padding: "14px 14px 12px",
+              boxShadow: `inset 0 0 0 1px ${colors.stone200}`,
+              marginBottom: 10,
+            }}
+          >
             <div
               style={{
                 fontSize: 12,
-                fontWeight: 600,
-                color: colors.stone700,
+                fontWeight: 650,
+                color: colors.stone500,
                 marginBottom: 6,
+                letterSpacing: "-0.01em",
               }}
             >
               Claude
@@ -196,153 +266,176 @@ export const ComposeWindow: React.FC = () => {
               style={{
                 fontSize: 15,
                 color: colors.stone700,
-                lineHeight: 1.45,
-                maxWidth: 520,
+                lineHeight: 1.4,
+                letterSpacing: "-0.015em",
               }}
             >
               Draft ready. Want another intelligence to review before we send?
             </div>
+            <div
+              style={{
+                marginTop: 12,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                borderRadius: 10,
+                background: colors.stone100,
+                padding: "7px 10px",
+                fontSize: 12,
+                fontWeight: 600,
+                color: colors.stone800,
+                letterSpacing: "-0.02em",
+              }}
+            >
+              <span
+                style={{
+                  width: 8,
+                  height: 10,
+                  borderRadius: 2,
+                  border: `1.5px solid ${colors.stone500}`,
+                  opacity: 0.7,
+                }}
+              />
+              {DRAFT_FILENAME}
+            </div>
           </div>
-        </div>
 
-        <div
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 8,
-            padding: "8px 12px",
-            borderRadius: 10,
-            background: "rgba(255,255,255,0.7)",
-            border: `1px solid ${colors.stone300}`,
-            fontSize: 13,
-            fontWeight: 600,
-            color: colors.stone700,
-            letterSpacing: "-0.02em",
-            marginLeft: 40,
-          }}
-        >
-          <span
-            style={{
-              width: 8,
-              height: 10,
-              borderRadius: 2,
-              border: `1.5px solid ${colors.stone500}`,
-              opacity: 0.7,
-            }}
-          />
-          {DRAFT_FILENAME}
-        </div>
+          {resolveOpacity > 0.02 ? (
+            <div
+              style={{
+                marginBottom: 10,
+                opacity: resolveOpacity,
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                borderRadius: 14,
+                background: "#fff",
+                padding: "11px 14px",
+                boxShadow: `inset 0 0 0 1.5px ${colors.accent}55`,
+              }}
+            >
+              <div
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: 99,
+                  background: colors.accent,
+                  flexShrink: 0,
+                }}
+              />
+              <div
+                style={{
+                  flex: 1,
+                  fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: colors.stone900,
+                  letterSpacing: "-0.02em",
+                }}
+              >
+                {COMPOSE_HIGHLIGHT}
+              </div>
+              <div
+                style={{
+                  borderRadius: 8,
+                  background: colors.amberSoft,
+                  color: colors.amber,
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: "0.06em",
+                  textTransform: "uppercase",
+                  padding: "4px 7px",
+                }}
+              >
+                OpenClaw
+              </div>
+            </div>
+          ) : null}
 
-        {resolveOpacity > 0.02 ? (
+          {/* Composer — white inset like C rows */}
           <div
             style={{
-              marginTop: 16,
-              marginLeft: 40,
-              opacity: resolveOpacity,
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "8px 12px",
-              borderRadius: 10,
-              background: colors.accentSoft,
-              border: `1px solid ${colors.accent}55`,
-              fontSize: 13,
-              fontWeight: 600,
-              color: colors.stone900,
-              letterSpacing: "-0.02em",
-            }}
-          >
-            <span style={{ color: colors.accent }}>→</span>
-            alice@salesco/research
-          </div>
-        ) : null}
-      </div>
-
-      <div style={{ padding: "10px 16px 16px", background: "#f5f0e8" }}>
-        <div
-          style={{
-            borderRadius: 18,
-            border: `1.5px solid ${doneTyping ? "#c4a484" : colors.stone300}`,
-            background: "#fff",
-            padding: "14px 14px 12px",
-            boxShadow: doneTyping
-              ? "0 0 0 3px rgba(196,164,132,0.25)"
-              : "0 2px 8px rgba(28,25,23,0.04)",
-          }}
-        >
-          <div
-            style={{
-              minHeight: 44,
-              fontSize: 16,
-              fontWeight: 500,
-              color: colors.stone900,
-              letterSpacing: "-0.02em",
-              display: "flex",
-              alignItems: "flex-start",
-              marginBottom: 10,
-            }}
-          >
-            {typed.length === 0 ? (
-              <span style={{ color: colors.stone500, fontWeight: 400 }}>
-                Reply to Claude…
-                {caretOn ? (
-                  <span
-                    style={{
-                      display: "inline-block",
-                      width: 2,
-                      height: "1.05em",
-                      marginLeft: 2,
-                      background: colors.stone700,
-                      verticalAlign: "text-bottom",
-                    }}
-                  />
-                ) : null}
-              </span>
-            ) : (
-              <span style={{ whiteSpace: "pre-wrap" }}>
-                {renderTyped()}
-                {caretOn ? (
-                  <span
-                    style={{
-                      display: "inline-block",
-                      width: 2,
-                      height: "1.05em",
-                      marginLeft: 1,
-                      background: colors.stone900,
-                      verticalAlign: "text-bottom",
-                    }}
-                  />
-                ) : null}
-              </span>
-            )}
-          </div>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "flex-end",
-              alignItems: "center",
+              borderRadius: 14,
+              background: "#fff",
+              padding: "12px 12px 10px",
+              boxShadow: doneTyping
+                ? `inset 0 0 0 1.5px ${colors.accent}66, 0 0 0 3px ${colors.accent}18`
+                : `inset 0 0 0 1px ${colors.stone200}`,
             }}
           >
             <div
               style={{
-                width: 36,
-                height: 36,
-                borderRadius: 99,
-                background: doneTyping ? "#d97757" : colors.stone300,
-                color: "#fff",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 16,
-                fontWeight: 700,
-                transform: `scale(${0.92 + sendPulse * 0.12})`,
+                minHeight: 52,
+                fontSize: 14,
+                fontWeight: 500,
+                color: colors.stone900,
+                letterSpacing: "-0.02em",
+                lineHeight: 1.4,
+                marginBottom: 10,
               }}
             >
-              ↑
+              {typed.length === 0 ? (
+                <span style={{ color: colors.stone400, fontWeight: 400 }}>
+                  Ask an address…
+                  {caretOn ? (
+                    <span
+                      style={{
+                        display: "inline-block",
+                        width: 2,
+                        height: "1.05em",
+                        marginLeft: 2,
+                        background: colors.stone700,
+                        verticalAlign: "text-bottom",
+                      }}
+                    />
+                  ) : null}
+                </span>
+              ) : (
+                <span style={{ whiteSpace: "pre-wrap" }}>
+                  {renderTyped()}
+                  {caretOn ? (
+                    <span
+                      style={{
+                        display: "inline-block",
+                        width: 2,
+                        height: "1.05em",
+                        marginLeft: 1,
+                        background: colors.stone900,
+                        verticalAlign: "text-bottom",
+                      }}
+                    />
+                  ) : null}
+                </span>
+              )}
+            </div>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                alignItems: "center",
+              }}
+            >
+              <div
+                style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: 99,
+                  background: doneTyping ? colors.stone800 : colors.stone300,
+                  color: "#fff",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 15,
+                  fontWeight: 700,
+                  transform: `scale(${0.92 + sendPulse * 0.12})`,
+                }}
+              >
+                ↑
+              </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
+    </AbsoluteFill>
   );
 };

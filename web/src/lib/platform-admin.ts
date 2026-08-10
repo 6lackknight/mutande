@@ -1,7 +1,7 @@
-/** Auth0 role name (and optional role id) for product-owner ops. */
+/** Mirrors hub `store/platform_admin.ts` — Auth0 SuperAdmin for product-owner ops. */
+
 const DEFAULT_PLATFORM_ADMIN_ROLES = ["SuperAdmin", "rol_jsa0BZq7uzz2K4RG"];
 
-/** Custom claim namespaces we accept for Auth0 role arrays on access tokens. */
 export const AUTH0_ROLES_CLAIM_KEYS = [
   "https://hub.mutande.app/roles",
   "https://mutande.app/roles",
@@ -10,18 +10,14 @@ export const AUTH0_ROLES_CLAIM_KEYS = [
 ] as const;
 
 export function platformAdminRoles(): string[] {
-  let raw: string | undefined;
-  try {
-    raw = Deno.env.get("MUTANDE_PLATFORM_ADMIN_ROLES")?.trim();
-  } catch {
-    // Tests / restricted workers without --allow-env.
-    return [...DEFAULT_PLATFORM_ADMIN_ROLES];
-  }
+  const raw = process.env.MUTANDE_PLATFORM_ADMIN_ROLES?.trim();
   if (!raw) return [...DEFAULT_PLATFORM_ADMIN_ROLES];
   return raw.split(",").map((s) => s.trim()).filter(Boolean);
 }
 
-export function isPlatformOpsAdmin(roles: readonly string[] | undefined): boolean {
+export function isPlatformOpsAdmin(
+  roles: readonly string[] | undefined,
+): boolean {
   if (!roles?.length) return false;
   const have = new Set(roles);
   return platformAdminRoles().some((r) => have.has(r));
@@ -39,6 +35,7 @@ function pushRole(out: Set<string>, item: unknown): void {
   }
 }
 
+/** Pull role names/ids from an Auth0 JWT payload or session user object. */
 export function extractAuth0Roles(payload: Record<string, unknown>): string[] {
   const out = new Set<string>();
   for (const key of AUTH0_ROLES_CLAIM_KEYS) {
@@ -54,4 +51,19 @@ export function extractAuth0Roles(payload: Record<string, unknown>): string[] {
     }
   }
   return [...out];
+}
+
+/** Decode JWT payload (no verify — UI gating only; hub still enforces). */
+export function rolesFromJwt(token: string | undefined | null): string[] {
+  if (!token) return [];
+  const parts = token.split(".");
+  if (parts.length < 2) return [];
+  try {
+    const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const json = Buffer.from(b64, "base64").toString("utf8");
+    const payload = JSON.parse(json) as Record<string, unknown>;
+    return extractAuth0Roles(payload);
+  } catch {
+    return [];
+  }
 }

@@ -9,7 +9,7 @@ export type CameraPose = {
 
 const ease = Easing.bezier(0.4, 0, 0.2, 1);
 
-/** Three signature motions: identity breathe-in, collab hold, fan-out pull-wide. */
+/** Identity breathe-in, compose push, collab hold, fan-out pull-wide; flat on explainers. */
 export const getCameraPose = (frame: number): CameraPose => {
   // Identity — slow absorb
   if (frame < beats.identity.end) {
@@ -27,7 +27,7 @@ export const getCameraPose = (frame: number): CameraPose => {
   }
 
   // Compose — soft push on the host window
-  if (frame < beats.compose.end) {
+  if (frame >= beats.compose.start && frame < beats.compose.end) {
     const t = interpolate(
       frame,
       [beats.compose.start, beats.compose.start + 40],
@@ -41,13 +41,8 @@ export const getCameraPose = (frame: number): CameraPose => {
     };
   }
 
-  // Explainer — flat
-  if (frame < beats.collab.start) {
-    return { scale: 1.02, x: 0, y: 0 };
-  }
-
   // Collaboration — hold / slight breathe (includes in-thread seal)
-  if (frame < beats.fanout.start) {
+  if (frame >= beats.collab.start && frame < beats.fanout.start) {
     const t = interpolate(
       frame,
       [beats.collab.start, beats.collab.start + 36],
@@ -63,7 +58,7 @@ export const getCameraPose = (frame: number): CameraPose => {
   }
 
   // Fan-out — pull wide
-  if (frame < beats.hold.start) {
+  if (frame >= beats.fanout.start && frame < beats.fanout.end) {
     const t = interpolate(
       frame,
       [beats.fanout.start, beats.fanout.start + 48],
@@ -77,5 +72,6 @@ export const getCameraPose = (frame: number): CameraPose => {
     };
   }
 
-  return { scale: 1, x: 0, y: 0 };
+  // Explainers + brand — flat
+  return { scale: 1.02, x: 0, y: 0 };
 };

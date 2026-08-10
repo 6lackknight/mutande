@@ -16,7 +16,7 @@ import { BrandId, BrandMark } from "./BrandMark";
 const AGENT_SIZE = 84;
 const DEST_SIZE = 76;
 const HUB_SIZE = 128;
-const CARD_W = 248;
+const CARD_W = 268;
 
 const NodeCircle: React.FC<{
   size: number;
@@ -79,25 +79,26 @@ export const EncryptedTransit: React.FC = () => {
   const leftX = originX + AGENT_SIZE / 2;
   const midX = originX + AGENT_SIZE + 168 + HUB_SIZE / 2;
   const rightX = originX + AGENT_SIZE + 168 + HUB_SIZE + 168 + DEST_SIZE / 2;
-  const ys = [
-    originY + contentH * 0.18,
-    originY + contentH * 0.5,
-    originY + contentH * 0.82,
-  ] as const;
-  const hub = { x: midX, y: ys[1] };
+  const colCount = Math.max(SENDER_AGENTS.length, RECIPIENTS.length, 1);
+  const ys = Array.from({ length: colCount }, (_, i) =>
+    originY +
+    contentH *
+      (colCount === 1 ? 0.5 : 0.22 + (0.56 * i) / Math.max(colCount - 1, 1)),
+  );
+  const hub = { x: midX, y: ys[Math.floor((ys.length - 1) / 2)] ?? ys[0]! };
 
   const agents = SENDER_AGENTS.map((a, i) => ({
     ...a,
     x: leftX,
-    y: ys[i],
-    curvature: i === 0 ? 48 : i === 2 ? -48 : 0,
+    y: ys[i] ?? ys[0]!,
+    curvature: i === 0 ? 40 : -40,
   }));
 
   const dests = RECIPIENTS.map((r, i) => ({
     ...r,
     x: rightX,
-    y: ys[i],
-    curvature: i === 0 ? -48 : i === 2 ? 48 : 0,
+    y: ys[i] ?? ys[0]!,
+    curvature: i === 0 ? -40 : 40,
   }));
 
   const beamLocal = Math.max(0, local - 24);
@@ -277,7 +278,7 @@ export const EncryptedTransit: React.FC = () => {
             letterSpacing: "-0.01em",
           }}
         >
-          {SENDER_HANDLE}
+          {SENDER_HANDLE ? `@${SENDER_HANDLE}` : null}
         </div>
       </div>
 
@@ -325,11 +326,12 @@ export const EncryptedTransit: React.FC = () => {
             >
               <div
                 style={{
-                  fontSize: 15,
+                  fontSize: d.handle.length > 16 ? 13 : 15,
                   fontWeight: 650,
                   letterSpacing: "-0.025em",
                   color: colors.stone900,
                   lineHeight: 1.2,
+                  wordBreak: "break-all" as const,
                 }}
               >
                 {d.handle}

@@ -1,8 +1,7 @@
 import { TrackLink } from "@/components/track-link";
 import { AnalyticsEvent } from "@/lib/analytics-events";
 import { auth0 } from "@/lib/auth0";
-import { loadMeOrNull } from "@/lib/session";
-import { isOpsAdmin } from "@/lib/types";
+import { loadMeOrNull, sessionShowsOps } from "@/lib/session";
 
 const navLinkClass =
   "rounded-md px-3 py-2 text-sm text-stone-700 transition hover:bg-stone-200/40";
@@ -38,7 +37,7 @@ export async function LandingNav() {
 
   const { me } = await loadMeOrNull();
   const onboarded = Boolean(me?.onboarded);
-  const showOps = isOpsAdmin(me);
+  const showOps = await sessionShowsOps(me);
   const accountHref = onboarded ? "/dashboard" : "/signup";
   const accountLabel = onboarded
     ? (me?.user?.handle ?? "Dashboard")

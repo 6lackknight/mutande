@@ -1,7 +1,12 @@
 import { redirect } from "next/navigation";
 import { auth0 } from "@/lib/auth0";
 import { formatHubError, getMe } from "@/lib/hub";
-import type { MeResponse } from "@/lib/types";
+import {
+  extractAuth0Roles,
+  isPlatformOpsAdmin,
+  rolesFromJwt,
+} from "@/lib/platform-admin";
+import { isOpsAdmin, type MeResponse } from "@/lib/types";
 
 export async function requireSession(returnTo = "/signup") {
   const session = await auth0.getSession();
@@ -21,6 +26,35 @@ export async function loadMeOrNull(): Promise<{
   } catch (err) {
     return { me: null, error: formatHubError(err) };
   }
+}
+
+/**
+ * SuperAdmin for nav chrome: hub `/me`, access-token roles claim, or ID-token
+ * custom claims on the session user (Action may set either).
+ */
+export async function sessionShowsOps(me?: MeResponse | null): Promise<boolean> {
+  if (isOpsAdmin(me)) return true;
+
+  try {
+    const { token } = await auth0.getAccessToken();
+    if (isPlatformOpsAdmin(rolesFromJwt(token))) return true;
+  } catch {
+    // No token / refresh failed — fall through to session user claims.
+  }
+
+  try {
+    const session = await auth0.getSession();
+    const user = session?.user;
+    if (user && typeof user === "object") {
+      if (isPlatformOpsAdmin(extractAuth0Roles(user as Record<string, unknown>))) {
+        return true;
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  return false;
 }
 
 export async function requireOnboarded(): Promise<MeResponse> {

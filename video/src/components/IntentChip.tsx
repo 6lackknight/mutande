@@ -1,7 +1,7 @@
 import React from "react";
 import { interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
 import { colors, FONT } from "../theme";
-import { COMPOSE_PROMPT } from "../timing";
+import { COMPOSE_HIGHLIGHT, COMPOSE_PROMPT } from "../timing";
 
 type Props = {
   appearFrame?: number;
@@ -42,17 +42,21 @@ export const IntentChip: React.FC<Props> = ({ appearFrame = 0 }) => {
         boxShadow: "0 18px 44px -18px rgba(28,25,23,0.6)",
       }}
     >
-      {COMPOSE_PROMPT.split(/(@research)/).map((part, i) =>
-        part === "@research" ? (
-          <span key={i} style={{ color: colors.amber }}>
+      {COMPOSE_PROMPT.split(COMPOSE_HIGHLIGHT).flatMap((part, i, arr) => {
+        const nodes = [
+          <span key={`t-${i}`} style={{ opacity: 0.85 }}>
             {part}
-          </span>
-        ) : (
-          <span key={i} style={{ opacity: 0.85 }}>
-            {part}
-          </span>
-        ),
-      )}
+          </span>,
+        ];
+        if (i < arr.length - 1) {
+          nodes.push(
+            <span key={`h-${i}`} style={{ color: colors.amber }}>
+              {COMPOSE_HIGHLIGHT}
+            </span>,
+          );
+        }
+        return nodes;
+      })}
       <div
         style={{
           position: "absolute",

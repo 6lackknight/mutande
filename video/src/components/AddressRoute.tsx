@@ -5,12 +5,13 @@ import {
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
+import { PARTICIPANT_ADDRESSES } from "../participants";
 import { colors, FONT } from "../theme";
 import { beats, routeHops } from "../timing";
 
-const NODES = ["@claude", "@chatgpt", "@research"] as const;
+const NODES = PARTICIPANT_ADDRESSES;
 
-/** Vertical identity route — the motion is routing, not chat chrome. */
+/** Vertical identity route — same cast as opening stack. */
 export const AddressRoute: React.FC = () => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
@@ -31,7 +32,7 @@ export const AddressRoute: React.FC = () => {
     for (const hop of routeHops) {
       if (frame >= hop.start && frame < hop.end) return hop.to;
     }
-    if (frame >= routeHops[2].end) return "@claude";
+    if (frame >= routeHops[2].end) return NODES[NODES.length - 1];
     return null;
   })();
 
@@ -62,15 +63,17 @@ export const AddressRoute: React.FC = () => {
             ? 0.55
             : 0.25;
 
+        const long = node.length > 12;
+
         return (
           <React.Fragment key={node}>
             <div
               style={{
-                padding: "10px 22px",
+                padding: long ? "8px 14px" : "10px 22px",
                 borderRadius: 12,
                 background: lit ? colors.accentSoft : "rgba(255,255,255,0.85)",
                 border: `1.5px solid ${lit ? colors.accent : colors.stone300}`,
-                fontSize: 26,
+                fontSize: long ? 18 : 24,
                 fontWeight: 650,
                 letterSpacing: "-0.03em",
                 color: lit ? colors.stone900 : colors.stone500,
@@ -79,6 +82,8 @@ export const AddressRoute: React.FC = () => {
                   : "0 6px 16px -14px rgba(28,25,23,0.25)",
                 opacity: 0.45 + pulse * 0.55,
                 transform: `scale(${0.96 + pulse * 0.06})`,
+                maxWidth: 280,
+                textAlign: "center",
               }}
             >
               {node}
@@ -87,15 +92,16 @@ export const AddressRoute: React.FC = () => {
               <div
                 style={{
                   width: 2,
-                  height: 22,
+                  height: 16,
                   background: colors.stone300,
-                  margin: "4px 0",
+                  margin: "3px 0",
                   position: "relative",
                   overflow: "hidden",
                 }}
               >
                 {(() => {
                   const hop = routeHops[i];
+                  if (!hop) return null;
                   const t = interpolate(frame, [hop.start, hop.end], [0, 1], {
                     extrapolateLeft: "clamp",
                     extrapolateRight: "clamp",

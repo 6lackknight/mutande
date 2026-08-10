@@ -1,3 +1,5 @@
+import { isPlatformOpsAdmin } from "@/lib/platform-admin";
+
 export type UserRole = "org_admin" | "member";
 
 export interface HubUser {
@@ -38,7 +40,10 @@ export function isOrgAdmin(user?: HubUser | null): boolean {
 }
 
 export function isOpsAdmin(me?: MeResponse | null): boolean {
-  return Boolean(me?.is_ops_admin);
+  if (!me) return false;
+  if (me.is_ops_admin) return true;
+  // Hub may omit the boolean on older deploys; still honor role claim array.
+  return isPlatformOpsAdmin(me.auth0_roles);
 }
 
 export interface CreateOrgInput {

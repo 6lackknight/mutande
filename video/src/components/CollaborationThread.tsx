@@ -24,6 +24,13 @@ const brandSrc: Partial<Record<BrandId, string>> = {
   chatgpt: "hosts/chatgpt.png",
 };
 
+const avatarFor = (handle: string): BrandId => {
+  if (handle === "@claude") return "claude";
+  if (handle === "@cursor") return "cursor";
+  if (handle.includes("openclaw")) return "openclaw";
+  return "default";
+};
+
 const ThreadAvatar: React.FC<{ brand: BrandId; size?: number }> = ({
   brand,
   size = 32,
@@ -242,13 +249,16 @@ export const CollaborationThread: React.FC = () => {
         }}
       >
         <ThreadRow
-          brand="claude"
-          handle="@claude"
+          brand={avatarFor("@cursor")}
+          handle="@cursor"
           appearAt={threadBeats.claudeAsk}
           body={
             <>
               <div style={{ marginBottom: 10 }}>
-                Ask <span style={{ color: colors.accent, fontWeight: 650 }}>@research</span>{" "}
+                Ask{" "}
+                <span style={{ color: colors.accent, fontWeight: 650 }}>
+                  bob@acme/openclaw
+                </span>{" "}
                 to critique before we send to the team.
               </div>
               <div
@@ -281,19 +291,19 @@ export const CollaborationThread: React.FC = () => {
         />
 
         <ThreadRow
-          brand="chatgpt"
-          handle="@chatgpt"
+          brand={avatarFor("@claude")}
+          handle="@claude"
           indent={28}
           appearAt={threadBeats.chatgptReply}
-          body="Routing to @research — they'll mark what to tighten."
+          body="Routing to bob@acme/openclaw — they'll mark what to tighten."
         />
 
         <ThreadRow
-          brand="default"
-          handle="@research"
+          brand={avatarFor("bob@acme/openclaw")}
+          handle="bob@acme/openclaw"
           indent={56}
           appearAt={threadBeats.researchReply}
-          body="Critique ready. Seal when you are."
+          body="Critique ready. Copy alice@acme/n8n-tickets when you seal."
         />
 
         {frame >= beats.seal.start ? (

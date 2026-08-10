@@ -26,14 +26,13 @@ The runtime behind an address can change. The address does not.
 
 ---
 
-## Ideas (in order)
+## Three messages (Apple-style — on-screen copy)
 
-1. People already work inside AI hosts (Claude, Cursor, ChatGPT) — places work begins, not the product.
-2. Every intelligence has an address. Work goes to identities; models are interchangeable.
-3. Work moves through trusted identities — people, assistants, services.
-4. Mail is E2E encrypted; the hub routes sealed messages (**infrastructure plumbing only** — never the headline).
-5. Addresses fan out across a team — addresses are the hero, not the packet.
-6. Close on brand: `@i` mark · Address Intelligence. · mutande — loop-ready (no typed `@i`; the mark is the word).
+1. **An address for every intelligence.**
+2. **Send work to who should do it.**
+3. **One message. The whole team.**
+
+Visual beats prove each line. Encryption is plumbing only — never a fourth message.
 
 Landing tagline (do not compete): **Address Intelligence.**
 Supporting: Give every person, assistant and service in your organisation a trusted address. Route work by identity, not implementation.
@@ -59,22 +58,24 @@ Updated from @claude critique (2026-08-07): collapse standalone Handoff into Col
 
 | Beat | Time | Purpose | Visual | Visitor understands |
 |------|------|---------|--------|---------------------|
-| **Identity** | 0–4.5s | Introduce the primitive | Large address tree `alice@salesco` + `/jarvis` `/research` `/review` | “People and agents have addresses” |
-| **Compose** | 4.5–9s | Hosts are where work begins | Claude Desktop; types ask `@research` | “I send work to an identity from Claude” |
-| **Explainer** | 9–11.5s | Name the idea | Full-bleed: “Every intelligence deserves an address.” | Address Intelligence, not chat UI |
-| **Collaboration** | 11.5–18s | Routing by identity (+ sealed transit as plumbing) | mutande thread; `@claude` → `@chatgpt` → `@research`; sealed envelope passes between addresses — brief, subordinate, not its own beat | Work routes between addresses; encryption is infrastructure |
-| **Fan-out** | 18–24s | Team aha | Hero addresses: `bob@…/openclaw`, `mary@…/kimi`, `cfo@salesco` | One message → many identities; address outlives the model |
-| **Brand** | 24–28s | Close + loop | `@i` mark · Address Intelligence. · mutande | Brand = Address Intelligence |
+| **Identity** | 0–3.5s | Introduce the primitive | Variant C: participants popover over blurred inbox (`@cursor` · `@claude` · `bob@acme/openclaw` · `alice@acme/n8n-tickets`) | Addresses exist |
+| **Explainer 1** | 3.5–5.7s | Message 1 | Full-bleed: “An address for every intelligence.” | The idea has a name |
+| **Compose** | 5.7–9.5s | Hosts are where work begins | Claude Desktop; types ask `@research` | Work starts in a host |
+| **Explainer 2** | 9.5–11.7s | Message 2 | Full-bleed: “Send work to who should do it.” | Route by identity |
+| **Collaboration** | 11.7–17.2s | Routing by identity (+ seal as plumbing) | mutande thread; `@claude` → `@chatgpt` → `@research` | Peers reply as addresses |
+| **Fan-out** | 17.2–21.8s | Team aha | Hero addresses across the org | One send, many identities |
+| **Explainer 3** | 21.8–24.3s | Message 3 | Full-bleed: “One message. / The whole team.” | Team-scale payoff |
+| **Brand** | 24.3–28s | Close + loop | `@i` mark · mutande | Brand |
 
-Camera: identity breathe-in; compose soft push; collab hold (envelope as detail); fan-out pull wide; brand flat.
+Camera: identity breathe-in; compose soft push; collab hold; fan-out pull wide; explainers + brand flat.
 
 ---
 
-# Copy (explainer)
+# Copy (explainers)
 
-**Every intelligence deserves an address.**
-
-(Do not use weaker alternates for hero/explainer: “Route work by identity” is dry; “Trusted handoffs…” leans enterprise-security.)
+1. **An address for every intelligence.**
+2. **Send work to who should do it.**
+3. **One message. The whole team.**
 
 ---
 

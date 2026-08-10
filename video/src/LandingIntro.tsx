@@ -23,15 +23,19 @@ export const LandingIntro: React.FC = () => {
   const scene =
     frame < beats.identity.end
       ? "identity"
-      : frame < beats.compose.end
-        ? "compose"
-        : frame < beats.explain.end
-          ? "explain"
-          : frame < beats.collab.end
-            ? "collab"
-            : frame < beats.fanout.end
-              ? "fanout"
-              : "hold";
+      : frame < beats.compose.start
+        ? "explain"
+        : frame < beats.compose.end
+          ? "compose"
+          : frame < beats.collab.start
+            ? "explain"
+            : frame < beats.collab.end
+              ? "collab"
+              : frame < beats.fanout.end
+                ? "fanout"
+                : frame < beats.hold.start
+                  ? "explain"
+                  : "hold";
 
   const identityOpacity = interpolate(
     frame,
@@ -103,32 +107,27 @@ export const LandingIntro: React.FC = () => {
         opacity: loopOut,
       }}
     >
-      {/* 1. Identity */}
+      {/* 1. Identity — Variant C popover (full-bleed stage) */}
       <AbsoluteFill
         style={{
-          justifyContent: "center",
-          alignItems: "center",
           opacity: identityOpacity * sceneFade,
           pointerEvents: "none",
           zIndex: 2,
-          transform: `translate(${pose.x}%, ${pose.y}%) scale(${pose.scale})`,
-          transformOrigin: "50% 45%",
-          padding: "0 80px",
+          transform: `translate(${pose.x * 0.35}%, ${pose.y * 0.35}%) scale(${1 + (pose.scale - 1) * 0.35})`,
+          transformOrigin: "50% 50%",
         }}
       >
         <IdentityTree />
       </AbsoluteFill>
 
-      {/* 2. Compose */}
+      {/* 2. Compose — same full-bleed sheet stage as opening C */}
       <AbsoluteFill
         style={{
-          justifyContent: "center",
-          alignItems: "center",
           opacity: composeOpacity * sceneFade,
           pointerEvents: "none",
           zIndex: 2,
-          transform: `translate(${pose.x}%, ${pose.y}%) scale(${pose.scale})`,
-          transformOrigin: "50% 45%",
+          transform: `translate(${pose.x * 0.35}%, ${pose.y * 0.35}%) scale(${1 + (pose.scale - 1) * 0.35})`,
+          transformOrigin: "50% 50%",
         }}
       >
         <ComposeWindow />
@@ -198,17 +197,6 @@ export const LandingIntro: React.FC = () => {
               boxShadow: "0 20px 48px -24px rgba(28,25,23,0.5)",
             }}
           />
-          <div
-            style={{
-              fontSize: 36,
-              fontWeight: 600,
-              letterSpacing: "-0.035em",
-              color: colors.stone900,
-              lineHeight: 1.15,
-            }}
-          >
-            Address Intelligence.
-          </div>
           <div
             style={{
               fontSize: 42,

@@ -162,13 +162,16 @@ Legacy hub JWT is gone; do not restore it.
 ```js
 exports.onExecutePostLogin = async (event, api) => {
   const namespace = "https://hub.mutande.app";
-  if (event.authorization?.roles?.length) {
-    api.accessToken.setCustomClaim(`${namespace}/roles`, event.authorization.roles);
+  const roles = event.authorization?.roles;
+  if (roles?.length) {
+    // Access token → hub + web API gates. ID token → session.user for web nav.
+    api.accessToken.setCustomClaim(`${namespace}/roles`, roles);
+    api.idToken.setCustomClaim(`${namespace}/roles`, roles);
   }
 };
 ```
 
-Hub also accepts `https://mutande.app/roles`, `https://mutande.online/roles`, and bare `roles`. Override allowed role names/ids with hub env `MUTANDE_PLATFORM_ADMIN_ROLES` (comma-separated; default `SuperAdmin,rol_jsa0BZq7uzz2K4RG`).
+Enable **RBAC** on the Auth0 API (`https://hub.mutande.app`) so `event.authorization.roles` is populated. Hub/web also accept `https://mutande.app/roles`, `https://mutande.online/roles`, and bare `roles`. Override allowed role names/ids with hub env `MUTANDE_PLATFORM_ADMIN_ROLES` (comma-separated; default `SuperAdmin,rol_jsa0BZq7uzz2K4RG`).
 
 After assigning the role or changing the Action, users must **sign out and sign in** so a fresh access token includes the claim. Org invites stay gated by hub `org_admin`.
 

@@ -6,15 +6,15 @@ import {
   listFeedback,
   listWaitlistAdmin,
 } from "@/lib/hub";
-import { requireOnboarded } from "@/lib/session";
-import { isOpsAdmin, type Feedback, type WaitlistEntry } from "@/lib/types";
+import { requireOnboarded, sessionShowsOps } from "@/lib/session";
+import type { Feedback, WaitlistEntry } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Ops" };
 
 export default async function AdminOpsPage() {
   const me = await requireOnboarded();
-  if (!isOpsAdmin(me)) {
+  if (!(await sessionShowsOps(me))) {
     redirect("/dashboard");
   }
 

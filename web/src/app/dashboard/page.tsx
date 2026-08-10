@@ -1,6 +1,6 @@
 import { BrandMark, ButtonLink, PageTitle, Shell } from "@/components/ui";
-import { requireOnboarded } from "@/lib/session";
-import { isOpsAdmin, isOrgAdmin } from "@/lib/types";
+import { requireOnboarded, sessionShowsOps } from "@/lib/session";
+import { isOrgAdmin } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Dashboard" };
@@ -8,7 +8,7 @@ export const metadata = { title: "Dashboard" };
 export default async function DashboardPage() {
   const me = await requireOnboarded();
   const isAdmin = isOrgAdmin(me.user);
-  const showOps = isOpsAdmin(me);
+  const showOps = await sessionShowsOps(me);
 
   return (
     <Shell wide>
