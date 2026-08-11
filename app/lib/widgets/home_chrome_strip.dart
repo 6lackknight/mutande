@@ -50,7 +50,7 @@ class HomeChromeStrip extends StatelessWidget {
                 height: 2,
                 width: on ? 28 : 0,
                 decoration: BoxDecoration(
-                  color: MutandeColors.bronze,
+                  color: MutandeColors.stone800,
                   borderRadius: BorderRadius.circular(1),
                 ),
               ),
@@ -75,12 +75,12 @@ class HomeChromeStrip extends StatelessWidget {
             return Row(
               children: [
                 item('Threads', 0),
-                item('Agents', 1),
+                item('Network', 1),
                 item('Contacts', 2),
                 const Spacer(),
                 SizedBox(
                   width: searchWidth,
-                  height: 30,
+                  height: 32,
                   child: ListenableBuilder(
                     listenable:
                         Listenable.merge([searchController, searchFocus]),
@@ -88,18 +88,18 @@ class HomeChromeStrip extends StatelessWidget {
                       final focused = searchFocus.hasFocus;
                       return DecoratedBox(
                         decoration: BoxDecoration(
-                          color: MutandeColors.stone50,
-                          borderRadius: BorderRadius.circular(8),
+                          color: MutandeColors.stone100,
+                          borderRadius: BorderRadius.circular(16),
                           border: Border.all(
                             color: focused
-                                ? MutandeColors.bronze
+                                ? MutandeColors.stone800
                                 : MutandeColors.stone200,
                             width: focused ? 1.5 : 1,
                           ),
                         ),
                         child: Row(
                           children: [
-                            const SizedBox(width: 8),
+                            const SizedBox(width: 10),
                             const Icon(
                               Icons.search,
                               size: 15,
@@ -112,7 +112,7 @@ class HomeChromeStrip extends StatelessWidget {
                                 focusNode: searchFocus,
                                 onChanged: onQueryChanged,
                                 onSubmitted: (_) => onSearchSubmit(),
-                                cursorColor: MutandeColors.bronze,
+                                cursorColor: MutandeColors.stone800,
                                 style: Theme.of(context)
                                     .textTheme
                                     .bodySmall
@@ -120,7 +120,7 @@ class HomeChromeStrip extends StatelessWidget {
                                       color: MutandeColors.stone800,
                                     ),
                                 decoration: const InputDecoration(
-                                  hintText: 'Search…',
+                                  hintText: 'Search threads',
                                   isDense: true,
                                   border: InputBorder.none,
                                   enabledBorder: InputBorder.none,

@@ -1400,6 +1400,18 @@ class BundleResourceView {
   });
 
   factory BundleResourceView.fromJson(Map<String, dynamic> map) {
+    final name = map['name'] as String? ?? '';
+    var mime = map['mime'] as String? ??
+        map['mime_type'] as String? ??
+        '';
+    if (mime.trim().isEmpty ||
+        mime == 'application/octet-stream' ||
+        mime == 'binary/octet-stream') {
+      final guessed = _guessMimeFromName(name);
+      if (guessed != null) mime = guessed;
+    }
+    if (mime.trim().isEmpty) mime = 'application/octet-stream';
+
     final sizeRaw = map['size'];
     int? size;
     if (sizeRaw is int) {
@@ -1407,13 +1419,59 @@ class BundleResourceView {
     } else if (sizeRaw is num) {
       size = sizeRaw.toInt();
     }
+    final content = map['content'] as String?;
+    if (size == null && content != null && content.isNotEmpty) {
+      size = content.length;
+    }
     return BundleResourceView(
-      name: map['name'] as String? ?? '',
-      mime: map['mime'] as String? ?? 'application/octet-stream',
-      content: map['content'] as String?,
+      name: name,
+      mime: mime,
+      content: content,
       path: map['path'] as String?,
       size: size,
     );
+  }
+
+  static String? _guessMimeFromName(String name) {
+    final dot = name.lastIndexOf('.');
+    if (dot < 0 || dot >= name.length - 1) return null;
+    switch (name.substring(dot + 1).toLowerCase()) {
+      case 'md':
+      case 'markdown':
+        return 'text/markdown';
+      case 'txt':
+      case 'text':
+        return 'text/plain';
+      case 'json':
+        return 'application/json';
+      case 'csv':
+        return 'text/csv';
+      case 'xml':
+        return 'application/xml';
+      case 'yaml':
+      case 'yml':
+      case 'toml':
+        return 'text/plain';
+      case 'png':
+        return 'image/png';
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'gif':
+        return 'image/gif';
+      case 'webp':
+        return 'image/webp';
+      case 'pdf':
+        return 'application/pdf';
+      case 'mp4':
+        return 'video/mp4';
+      case 'mov':
+        return 'video/quicktime';
+      case 'webm':
+        return 'video/webm';
+      default:
+        return null;
+    }
   }
 
   final String name;

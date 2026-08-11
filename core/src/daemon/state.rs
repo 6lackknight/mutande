@@ -96,9 +96,19 @@ pub struct ResourceRequest {
     pub description: String,
 }
 
+fn default_resource_mime() -> String {
+    "application/octet-stream".into()
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BundleResource {
     pub name: String,
+    /// Hosted app_envelope often omits mime or sends `mime_type` — default + alias keep parse alive.
+    #[serde(
+        default = "default_resource_mime",
+        alias = "mime_type",
+        skip_serializing_if = "String::is_empty"
+    )]
     pub mime: String,
     /// Inline text (or base64 for sealed binary wire format). Cleared for large/binary
     /// after open once bytes are materialized to [`Self::path`].
@@ -1458,9 +1468,9 @@ impl DaemonState {
             }
         }
         if let Some(r) = app.resources {
-            if let Ok(v) = serde_json::from_value(r) {
-                bundle.resources = v;
-            }
+            // Resilient parse: hosted MCP often sends {name, content} without mime,
+            // or mime_type / content_base64. Strict Vec<BundleResource> used to drop all.
+            bundle.resources = parse_app_envelope_resources(r);
         }
         if let Some(r) = app.resource_requests {
             if let Ok(v) = serde_json::from_value(r) {
@@ -2798,6 +2808,96 @@ fn resource_mime_is_text(mime: &str) -> bool {
         || m.ends_with("+xml")
 }
 
+/// Text when mime says so, or when mime is missing/generic and the filename looks textual.
+fn resource_is_text(resource: &BundleResource) -> bool {
+    if resource_mime_is_text(&resource.mime) {
+        return true;
+    }
+    let m = resource.mime.trim().to_ascii_lowercase();
+    if m.is_empty() || m == "application/octet-stream" || m == "binary/octet-stream" {
+        return resource_mime_is_text(guess_blob_mime(&resource.name));
+    }
+    false
+}
+
+/// Parse hub/hosted app_envelope resources without dropping the whole list on one bad item.
+fn parse_app_envelope_resources(value: serde_json::Value) -> Vec<BundleResource> {
+    let Some(arr) = value.as_array() else {
+        // Fall back to strict deserialize for odd shapes.
+        return serde_json::from_value(value).unwrap_or_default();
+    };
+    let mut out = Vec::with_capacity(arr.len());
+    for item in arr {
+        let Some(obj) = item.as_object() else {
+            continue;
+        };
+        let name = obj
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .trim();
+        if name.is_empty() {
+            continue;
+        }
+        let mime = obj
+            .get("mime")
+            .or_else(|| obj.get("mime_type"))
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| guess_blob_mime(name).to_string());
+
+        let mut content = obj
+            .get("content")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .filter(|s| !s.is_empty());
+        if content.is_none() {
+            // Binary (or text) may arrive as content_base64 / data / body only.
+            for key in ["content_base64", "data", "body"] {
+                if let Some(raw) = obj.get(key).and_then(|v| v.as_str()).map(str::trim) {
+                    if !raw.is_empty() {
+                        content = Some(raw.to_string());
+                        break;
+                    }
+                }
+            }
+        }
+
+        let path = obj
+            .get("path")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
+
+        let size = obj.get("size").and_then(|v| {
+            v.as_u64()
+                .or_else(|| v.as_i64().map(|n| n.max(0) as u64))
+                .or_else(|| {
+                    v.as_f64()
+                        .filter(|n| n.is_finite() && *n >= 0.0)
+                        .map(|n| n as u64)
+                })
+        });
+
+        // Skip name-only stubs with no payload and no local path.
+        if content.is_none() && path.is_none() {
+            continue;
+        }
+
+        out.push(BundleResource {
+            name: name.to_string(),
+            mime,
+            content,
+            path,
+            size,
+        });
+    }
+    out
+}
+
 fn sanitize_blob_filename(name: &str) -> String {
     let base = Path::new(name)
         .file_name()
@@ -2922,11 +3022,20 @@ fn surface_bundle_resources_at(bundle: &mut MutandeBundle, cache_dir: &Path) {
 
     let mut materialized: Vec<String> = Vec::new();
     for resource in &mut bundle.resources {
+        // Fill generic/missing mime from filename before text-vs-binary branching.
+        let mime_trim = resource.mime.trim();
+        if mime_trim.is_empty()
+            || mime_trim.eq_ignore_ascii_case("application/octet-stream")
+            || mime_trim.eq_ignore_ascii_case("binary/octet-stream")
+        {
+            resource.mime = guess_blob_mime(&resource.name).to_string();
+        }
+
         let Some(content) = resource.content.clone() else {
             continue;
         };
 
-        let (bytes, is_text) = if resource_mime_is_text(&resource.mime) {
+        let (bytes, is_text) = if resource_is_text(resource) {
             (content.into_bytes(), true)
         } else {
             match base64::engine::general_purpose::STANDARD.decode(content.as_bytes()) {
@@ -3961,6 +4070,109 @@ mod tests {
         assert_eq!(bundle.resources[0].content.as_deref(), Some("hello notes"));
         assert!(bundle.resources[0].path.is_none());
         assert_eq!(bundle.resources[0].size, Some(11));
+    }
+
+    #[test]
+    fn parse_app_envelope_resources_accepts_name_content_without_mime() {
+        let raw = serde_json::json!([{
+            "name": "mutande-organisations-prd.md",
+            "content": "# PRD — Mutande Organizations\n"
+        }]);
+        let resources = parse_app_envelope_resources(raw);
+        assert_eq!(resources.len(), 1);
+        assert_eq!(resources[0].name, "mutande-organisations-prd.md");
+        assert_eq!(resources[0].mime, "text/markdown");
+        assert!(resources[0].content.as_deref().unwrap().starts_with("# PRD"));
+    }
+
+    #[test]
+    fn parse_app_envelope_resources_accepts_mime_type_alias() {
+        let raw = serde_json::json!([{
+            "name": "notes.md",
+            "mime_type": "text/markdown",
+            "content": "# hi"
+        }]);
+        let resources = parse_app_envelope_resources(raw);
+        assert_eq!(resources[0].mime, "text/markdown");
+        assert_eq!(resources[0].content.as_deref(), Some("# hi"));
+    }
+
+    #[test]
+    fn parse_app_envelope_resources_keeps_content_base64_when_no_content() {
+        use base64::Engine;
+        let b64 = base64::engine::general_purpose::STANDARD.encode(b"\x00\x01\xff");
+        let raw = serde_json::json!([{
+            "name": "blob.bin",
+            "mime": "application/octet-stream",
+            "content_base64": b64
+        }]);
+        let resources = parse_app_envelope_resources(raw);
+        assert_eq!(resources.len(), 1);
+        assert!(resources[0].content.is_some());
+    }
+
+    #[test]
+    fn surface_treats_md_without_mime_as_text() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut bundle = MutandeBundle {
+            resources: vec![BundleResource {
+                name: "prd.md".into(),
+                mime: "application/octet-stream".into(),
+                content: Some("# title\n\nbody".into()),
+                path: None,
+                size: None,
+            }],
+            ..Default::default()
+        };
+        surface_bundle_resources_at(&mut bundle, dir.path());
+        assert_eq!(bundle.resources[0].mime, "text/markdown");
+        assert_eq!(bundle.resources[0].content.as_deref(), Some("# title\n\nbody"));
+        assert!(bundle.resources[0].path.is_none());
+    }
+
+    #[test]
+    fn finish_opened_app_message_hydrates_hosted_prd_shape() {
+        use crate::hub_client::{AppEnvelopePayload, ThreadMessage};
+        let state = DaemonState::new_in_memory_for_test().unwrap();
+        let app = AppEnvelopePayload {
+            version: 1,
+            subject: Some("Review: Mutande Organizations PRD v0.1".into()),
+            notes: Some("Please review".into()),
+            context: None,
+            ping_kind: None,
+            in_reply_to: None,
+            questions: None,
+            answers: None,
+            resources: Some(serde_json::json!([{
+                "name": "mutande-organisations-prd.md",
+                "content": "# PRD\n\nCapability graph"
+            }])),
+            resource_requests: None,
+        };
+        let msg = ThreadMessage {
+            id: "m1".into(),
+            thread_id: "t1".into(),
+            from_user_id: "u1".into(),
+            from_handle: "tawanda@tbhco/chatgpt".into(),
+            from_agent_id: None,
+            created_at: "2026-08-11T19:00:42.011Z".into(),
+            sender_only: None,
+            parent_message_id: None,
+            envelope: None,
+            app_envelope: Some(app.clone()),
+            content_store: None,
+            upvotes: None,
+        };
+        let opened = state.finish_opened_app_message(msg, app);
+        let bundle = opened.bundle.expect("bundle");
+        assert_eq!(bundle.resources.len(), 1);
+        assert_eq!(bundle.resources[0].name, "mutande-organisations-prd.md");
+        assert!(bundle.resources[0]
+            .content
+            .as_deref()
+            .unwrap()
+            .contains("Capability"));
+        assert_eq!(bundle.resources[0].mime, "text/markdown");
     }
 
     #[test]

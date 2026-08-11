@@ -27,7 +27,7 @@ const RESOURCE_ITEM = {
     content: {
       type: "string",
       description:
-        "UTF-8 text for .md/.txt/.json. Prefer this. Never base64 text. Never /mnt/data paths.",
+        "UTF-8 file body for .md/.txt/.json. This IS the attachment (named file in the thread). Prefer this. Never base64 text. Never /mnt/data paths.",
     },
     content_base64: {
       type: "string",
@@ -54,7 +54,7 @@ const BUNDLE_PROPERTIES = {
   resources: {
     type: "array",
     description:
-      "Attachments with INLINE bytes. Text: {name, content}. Binary: {name, content_base64, mime}. Never path-only /mnt/data.",
+      "Named file attachments. Text/markdown: {name, content} UTF-8 — content IS the file (shown on Mac Threads). Binary: {name, content_base64, mime}. Never path-only /mnt/data.",
     items: RESOURCE_ITEM,
   },
   resource_requests: { type: "array" },
@@ -123,7 +123,7 @@ export function toolDefinitions(): McpToolDefinition[] {
     {
       name: "reply_to_thread",
       description:
-        "Reply on an app_envelope thread. Put body in bundle.notes (UTF-8). Attachments: resources[].content for text; content_base64 only for binary. Never /mnt/data paths.",
+        "Reply on an app_envelope thread. Put body in bundle.notes (UTF-8). Attachments: resources[{name, content}] IS the named file; content_base64 only for binary. Never /mnt/data paths.",
       inputSchema: {
         type: "object",
         required: ["thread_id", "bundle"],
@@ -163,7 +163,7 @@ export function toolDefinitions(): McpToolDefinition[] {
     {
       name: "forward_draft",
       description:
-        "Start an app_envelope thread (not E2E). No local draft store. You may pass subject/notes/resources at the top level OR inside bundle (same shape as desktop drafts). Body: notes UTF-8. Text files: resources[{name, content}] — never /mnt/data, never base64 text. Binary pdf/png: content_base64+mime (~1MB). Self: @all/@claude/@cursor/@chatgpt. Teammates: alice@org, alice@org/claude, @all@org. Success JSON always includes thread_id, message_id, resource_count, resource_names.",
+        "Start an app_envelope thread (not E2E). No local draft store. You may pass subject/notes/resources at the top level OR inside bundle (same shape as desktop drafts). Body: notes UTF-8. Attach a .md/.txt file with resources[{name, content}] — that named content IS the real attachment in the thread (Mac file chip / get_thread resources); not a stub, not path-only. Never /mnt/data, never base64 text. Binary pdf/png: content_base64+mime (~1MB). Self: @all/@claude/@cursor/@chatgpt. Teammates: alice@org, alice@org/claude, @all@org. Success JSON includes thread_id, message_id, attachments[{name,bytes}], resource_count, resource_names.",
       inputSchema: {
         type: "object",
         required: ["recipient"],

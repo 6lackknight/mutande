@@ -818,6 +818,15 @@ test('validateHandle and validateHubUrl', () {
     );
     expect(textInline.isText, isTrue);
     expect(textInline.isAvailable, isTrue);
+
+    final hostedPrd = BundleResourceView.fromJson({
+      'name': 'mutande-organisations-prd.md',
+      'content': '# PRD — Mutande Organizations\n',
+    });
+    expect(hostedPrd.isText, isTrue);
+    expect(hostedPrd.isAvailable, isTrue);
+    expect(hostedPrd.mime, 'text/markdown');
+    expect(hostedPrd.size, isNotNull);
   });
 
   testWidgets('agent inspector harden paths', (WidgetTester tester) async {

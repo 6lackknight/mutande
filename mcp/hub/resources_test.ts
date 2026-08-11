@@ -64,4 +64,22 @@ Deno.test("prepareBundleResources decodes content_base64 text", () => {
   });
   const resources = out.resources as Array<Record<string, unknown>>;
   assertEquals(resources[0].content, "hello from base64");
+  assertEquals(resources[0].mime, "text/plain");
+});
+
+Deno.test("prepareBundleResources sets mime from filename and mime_type", () => {
+  const out = prepareBundleResources({
+    resources: [{
+      name: "mutande-organisations-prd.md",
+      content: "# PRD",
+    }, {
+      name: "x.bin",
+      mime_type: "application/pdf",
+      content_base64: btoa("not-really-pdf"),
+    }],
+  });
+  const resources = out.resources as Array<Record<string, unknown>>;
+  assertEquals(resources[0].mime, "text/markdown");
+  assertEquals(resources[1].mime, "application/pdf");
+  assertEquals(resources[1].mime_type, undefined);
 });

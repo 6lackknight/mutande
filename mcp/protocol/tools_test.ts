@@ -223,6 +223,8 @@ Deno.test("initialize returns serverInfo", async () => {
   assertEquals(result.instructions!.includes("/mnt/data"), true);
   assertEquals(result.instructions!.includes("content_base64"), true);
   assertEquals(result.instructions!.includes("filter=open"), true);
+  assertEquals(result.instructions!.includes("IS the named file"), true);
+  assertEquals(result.instructions!.includes("attachments"), true);
 });
 
 function parseToolText(res: Awaited<ReturnType<typeof handleMcpRequest>>) {
@@ -352,6 +354,7 @@ Deno.test("forward_draft creates app_envelope thread", async () => {
   assertEquals(body.message_id, "m1");
   assertEquals(body.resource_count, 0);
   assertEquals(body.resource_names, []);
+  assertEquals(body.attachments, []);
 });
 
 Deno.test("forward_draft @cursor returns thread_id with from_agent_id", async () => {
@@ -401,6 +404,10 @@ Deno.test("forward_draft @cursor returns thread_id with from_agent_id", async ()
   assertEquals(body.encryption_mode, "app_envelope");
   assertEquals(body.resource_count, 1);
   assertEquals(body.resource_names, ["mutande-organisations-prd.md"]);
+  assertEquals(body.attachments, [{
+    name: "mutande-organisations-prd.md",
+    bytes: new TextEncoder().encode("# Organisations\n\nDraft").length,
+  }]);
 });
 
 Deno.test("forward_draft rejects /mnt/data path without content", async () => {
@@ -678,6 +685,7 @@ Deno.test("forward_draft flat top-level resources land in app_envelope", async (
   assertEquals(body.message_id, "m-flat");
   assertEquals(body.resource_count, 1);
   assertEquals(body.resource_names, ["prd.md"]);
+  assertEquals((body.attachments as Array<{ name: string }>)[0].name, "prd.md");
 });
 
 Deno.test("forward_draft nested bundle with content stores resource", async () => {
@@ -731,6 +739,10 @@ Deno.test("forward_draft nested bundle with content stores resource", async () =
   assertEquals(body.thread_id, "nested-t");
   assertEquals(body.resource_count, 1);
   assertEquals(body.resource_names, ["mutande-organisations-prd.md"]);
+  assertEquals(
+    (body.attachments as Array<{ name: string }>)[0].name,
+    "mutande-organisations-prd.md",
+  );
 });
 
 Deno.test("forward_draft mixed flat resources + nested notes prefers top-level resources", async () => {
@@ -776,6 +788,7 @@ Deno.test("forward_draft mixed flat resources + nested notes prefers top-level r
   assertEquals(isError, false);
   assertEquals(body.resource_count, 1);
   assertEquals(body.resource_names, ["top.md"]);
+  assertEquals((body.attachments as Array<{ name: string }>)[0].name, "top.md");
 });
 
 Deno.test("close_thread success", async () => {

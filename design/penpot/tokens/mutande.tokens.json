@@ -1,0 +1,219 @@
+{
+  "Color": {
+    "stone": {
+      "50": {
+        "$value": "#FAFAF9",
+        "$type": "color",
+        "$description": "MutandeColors.stone50 — primary surface"
+      },
+      "100": {
+        "$value": "#F5F5F4",
+        "$type": "color",
+        "$description": "MutandeColors.stone100 — canvas / scaffold"
+      },
+      "200": {
+        "$value": "#E7E5E4",
+        "$type": "color",
+        "$description": "MutandeColors.stone200 — borders / dividers"
+      },
+      "400": {
+        "$value": "#A8A29E",
+        "$type": "color",
+        "$description": "MutandeColors.stone400 — hints / muted icons"
+      },
+      "500": {
+        "$value": "#78716C",
+        "$type": "color",
+        "$description": "MutandeColors.stone500 — secondary text"
+      },
+      "600": {
+        "$value": "#57534E",
+        "$type": "color",
+        "$description": "MutandeColors.stone600 — body / icons"
+      },
+      "800": {
+        "$value": "#292524",
+        "$type": "color",
+        "$description": "MutandeColors.stone800 — primary text / dark CTAs"
+      }
+    },
+    "bronze": {
+      "DEFAULT": {
+        "$value": "#92400E",
+        "$type": "color",
+        "$description": "Legacy brand warm — do not use for interactive chrome (use ink) or pending (use amber)"
+      },
+      "soft": {
+        "$value": "#F5EDE6",
+        "$type": "color",
+        "$description": "Legacy warm wash — prefer stone for callouts"
+      }
+    },
+    "amber": {
+      "DEFAULT": {
+        "$value": "#B45309",
+        "$type": "color",
+        "$description": "Pending / Needs you ONLY — never interactive chrome"
+      },
+      "soft": {
+        "$value": "#FEF3C7",
+        "$type": "color",
+        "$description": "MutandeColors.amberSoft — pending wash"
+      }
+    },
+    "emerald": {
+      "DEFAULT": {
+        "$value": "#166534",
+        "$type": "color",
+        "$description": "MutandeColors.emerald — open / linked / ready"
+      },
+      "soft": {
+        "$value": "#ECFDF5",
+        "$type": "color",
+        "$description": "MutandeColors.emeraldSoft — ready wash"
+      }
+    }
+  },
+  "Semantic": {
+    "surface": {
+      "canvas": {
+        "$value": "{Color.stone.100}",
+        "$type": "color",
+        "$description": "App canvas behind panes"
+      },
+      "pane": {
+        "$value": "{Color.stone.50}",
+        "$type": "color",
+        "$description": "List / reading / sheet surfaces"
+      },
+      "border": {
+        "$value": "{Color.stone.200}",
+        "$type": "color",
+        "$description": "Hairlines, card edges"
+      }
+    },
+    "text": {
+      "primary": {
+        "$value": "{Color.stone.800}",
+        "$type": "color",
+        "$description": "Titles, handles"
+      },
+      "secondary": {
+        "$value": "{Color.stone.500}",
+        "$type": "color",
+        "$description": "Snippets, labels"
+      },
+      "muted": {
+        "$value": "{Color.stone.400}",
+        "$type": "color",
+        "$description": "Placeholders, timestamps"
+      }
+    },
+    "status": {
+      "pending": {
+        "$value": "{Color.amber.DEFAULT}",
+        "$type": "color",
+        "$description": "Waiting / Needs you — status only"
+      },
+      "ready": {
+        "$value": "{Color.emerald.DEFAULT}",
+        "$type": "color",
+        "$description": "Linked / connected / open"
+      }
+    },
+    "interactive": {
+      "ink": {
+        "$value": "{Color.stone.800}",
+        "$type": "color",
+        "$description": "Interactive chrome: tabs, selection, links, PRIMARY outline"
+      },
+      "ink-soft": {
+        "$value": "{Color.stone.100}",
+        "$type": "color",
+        "$description": "Quiet selected / callout wash"
+      }
+    },
+    "action": {
+      "primary": {
+        "$value": "{Color.stone.800}",
+        "$type": "color",
+        "$description": "Primary buttons (Compose, Send, Restart courier)"
+      },
+      "danger": {
+        "$value": "#991B1B",
+        "$type": "color",
+        "$description": "Sign out — calm red, not alarm"
+      }
+    }
+  },
+  "Space": {
+    "1": { "$value": "4", "$type": "spacing", "$description": "Tight within groups" },
+    "2": { "$value": "8", "$type": "spacing", "$description": "" },
+    "3": { "$value": "12", "$type": "spacing", "$description": "Row padding" },
+    "4": { "$value": "16", "$type": "spacing", "$description": "Section rhythm" },
+    "5": { "$value": "24", "$type": "spacing", "$description": "Between sections" },
+    "6": { "$value": "32", "$type": "spacing", "$description": "Pane gutters" }
+  },
+  "Radius": {
+    "sm": { "$value": "8", "$type": "borderRadius", "$description": "Inputs, chips" },
+    "md": { "$value": "10", "$type": "borderRadius", "$description": "Fields (Flutter 10)" },
+    "lg": { "$value": "12", "$type": "borderRadius", "$description": "Cards / sheets" },
+    "xl": { "$value": "16", "$type": "borderRadius", "$description": "Mac window chrome feel" }
+  },
+  "Size": {
+    "window": {
+      "default-w": {
+        "$value": "1280",
+        "$type": "sizing",
+        "$description": "Default Mac window width"
+      },
+      "default-h": {
+        "$value": "720",
+        "$type": "sizing",
+        "$description": "Default Mac window height"
+      },
+      "min-w": {
+        "$value": "960",
+        "$type": "sizing",
+        "$description": "Min window width"
+      },
+      "min-h": {
+        "$value": "540",
+        "$type": "sizing",
+        "$description": "Min window height"
+      }
+    },
+    "sidebar": {
+      "threads": {
+        "$value": "280",
+        "$type": "sizing",
+        "$description": "Threads list pane (approx)"
+      },
+      "meta": {
+        "$value": "220",
+        "$type": "sizing",
+        "$description": "Thread meta rail (approx)"
+      }
+    }
+  },
+  "$themes": [
+    {
+      "id": "mutande-light-always",
+      "name": "Light",
+      "group": "Color mode",
+      "description": "v1 Mac light surface",
+      "selectedTokenSets": {
+        "Color": "enabled",
+        "Semantic": "enabled",
+        "Space": "enabled",
+        "Radius": "enabled",
+        "Size": "enabled"
+      }
+    }
+  ],
+  "$metadata": {
+    "tokenSetOrder": ["Color", "Semantic", "Space", "Radius", "Size"],
+    "activeThemes": ["Color mode/Light"],
+    "activeSets": ["Color", "Semantic", "Space", "Radius", "Size"]
+  }
+}

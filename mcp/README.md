@@ -76,23 +76,23 @@ Default slug: `chatgpt` (`MCP_DEFAULT_AGENT_SLUG`). Override with `?slug=` or `X
 
 New mail from hosted MCP is **app_envelope-only**. If hub would resolve the recipient to E2E, `forward_draft` refuses and points at the Mac sidecar.
 
-**Attaching files from ChatGPT:** put UTF-8 text/markdown in `resources[].content` (or body in `notes` / `bundle.notes`). You may pass `subject`/`notes`/`resources` **at the top level or inside `bundle`** (desktop draft shape) — top-level wins when both are set. Never pass `/mnt/data/…` paths and never base64 text files — this server cannot read the ChatGPT sandbox. Use `content_base64` only for binary (pdf/png), keep under ~1MB. `forward_draft` success returns `thread_id`, `message_id`, `resource_count`, and `resource_names`.
+**Attaching files from ChatGPT:** put UTF-8 text/markdown in `resources[].content` with a `name` (e.g. `prd.md`) — that **is** the named file attachment in the thread (Mac Threads file chip / `get_thread` resources), not a stub. Body copy can still go in `notes`. You may pass `subject`/`notes`/`resources` **at the top level or inside `bundle`** (desktop draft shape) — top-level wins when both are set. Never pass `/mnt/data/…` paths and never base64 text files — this server cannot read the ChatGPT sandbox. Use `content_base64` only for binary (pdf/png), keep under ~1MB. `forward_draft` success returns `thread_id`, `message_id`, `attachments: [{name, bytes}]`, plus `resource_count` / `resource_names`.
 
 **Dual-slot senders:** hosted MCP always sends `from_agent_id` (bound web slot) so `chatgpt` mcp is not remapped to a preferred sidecar row (that wrongly forced E2E and returned no `thread_id`).
 
 ### Redeploy (hub + MCP)
 
-`forward_draft` dual-shape normalize (flat + nested `bundle`) + tool schema/description → **MCP only** (no hub change). Hub+MCP together when changing `from_agent_id` / create-thread wire:
+`forward_draft` attachment success (`attachments: [{name, bytes}]`) + tool/instructions copy + mime normalize → **MCP only** (no hub change). Mac fix for missing file chips is **daemon** (`parse_app_envelope_resources`) — rebuild/restart `mutande-core` (and Flutter app for Open/Reveal on inline content). Hub+MCP together when changing `from_agent_id` / create-thread wire:
 
 ```bash
 # Hub (only if hub store/API changed)
 cd hub && deployctl deploy --project=mutande
 
-# Hosted MCP — forward_draft normalize, list_threads titles/participants, tool schemas
+# Hosted MCP — attachment messaging + mime normalize on resources
 cd mcp && deno task deploy
 ```
 
-Verify: ChatGPT `forward_draft` with nested `bundle: { subject, notes, resources:[{name, content}] }` **or** flat top-level `resources` returns `thread_id` / `message_id` / `resource_count` ≥ 1; `get_thread` shows the resource; path-only `/mnt/data/…` is refused.
+Verify: ChatGPT `forward_draft` with nested `bundle: { subject, notes, resources:[{name, content}] }` **or** flat top-level `resources` returns `thread_id` / `message_id` / `attachments[{name,bytes}]` with `resource_count` ≥ 1; Mac Threads shows a file chip; `get_thread` shows the resource; path-only `/mnt/data/…` is refused.
 
 ### Mac sidecar only (not on hosted MCP)
 

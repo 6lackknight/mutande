@@ -454,11 +454,11 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
             ),
           ],
           const SizedBox(height: 8),
-          Expanded(child: _buildListPane(context)),
-          const SizedBox(height: 8),
-          _ThreadsFooter(
-            onNewThread: () => setState(() => _composeOpen = true),
+          _ThreadsListToolbar(
+            onCompose: () => setState(() => _composeOpen = true),
           ),
+          const SizedBox(height: 8),
+          Expanded(child: _buildListPane(context)),
         ],
       ),
     );
@@ -518,7 +518,7 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
         ),
         'open' => (
           'No open threads',
-          'Closed mail is under Closed — or start one with + New.',
+          'Closed mail is under Closed — or start one with Compose.',
         ),
         'closed' => (
           'No closed threads',
@@ -526,7 +526,7 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
         ),
         _ => (
           'No threads yet',
-          'Compose a handoff with + New, or wait for an agent ping.',
+          'Compose a handoff, or wait for an agent ping.',
         ),
       };
       return PaneQuietState(title: title, body: body);
@@ -618,22 +618,29 @@ class _ThreadsToolbar extends StatelessWidget {
   }
 }
 
-class _ThreadsFooter extends StatelessWidget {
-  const _ThreadsFooter({required this.onNewThread});
+class _ThreadsListToolbar extends StatelessWidget {
+  const _ThreadsListToolbar({required this.onCompose});
 
-  final VoidCallback onNewThread;
+  final VoidCallback onCompose;
 
   @override
   Widget build(BuildContext context) {
     return Align(
-      alignment: Alignment.centerRight,
-      child: TextButton.icon(
-        onPressed: onNewThread,
-        icon: const Icon(Icons.add, size: 16),
-        label: const Text('New'),
-        style: TextButton.styleFrom(
-          foregroundColor: const Color(0xFF57534E),
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      alignment: Alignment.centerLeft,
+      child: FilledButton(
+        onPressed: onCompose,
+        style: FilledButton.styleFrom(
+          backgroundColor: const Color(0xFF292524),
+          foregroundColor: const Color(0xFFFAFAF9),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          minimumSize: const Size(88, 32),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+        ),
+        child: const Text(
+          'Compose',
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
         ),
       ),
     );

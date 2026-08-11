@@ -35,6 +35,18 @@ Future<void> revealAttachmentPath(String path) async {
   await Process.run('open', ['-R', path]);
 }
 
+/// Write inline `content` to a temp file so Open / Reveal work like path-backed blobs.
+Future<String?> materializeInlineAttachment(BundleResourceView resource) async {
+  final content = resource.content;
+  if (content == null || content.isEmpty) return null;
+  final safe = resource.name.replaceAll(RegExp(r'[/\\]'), '_');
+  final name = safe.trim().isEmpty ? 'attachment.txt' : safe.trim();
+  final dir = await Directory.systemTemp.createTemp('mutande-attach-');
+  final file = File('${dir.path}/$name');
+  await file.writeAsString(content);
+  return file.path;
+}
+
 class _AttachmentRow extends StatefulWidget {
   const _AttachmentRow({required this.resource});
 
@@ -167,7 +179,39 @@ class _AttachmentRowState extends State<_AttachmentRow> {
                           minWidth: 32,
                           minHeight: 32,
                         ),
+                      )
+                    else if (r.hasContent) ...[
+                      IconButton(
+                        tooltip: 'Open',
+                        onPressed: () async {
+                          final path = await materializeInlineAttachment(r);
+                          if (path != null) await openAttachmentPath(path);
+                        },
+                        icon: const Icon(Icons.open_in_new, size: 16),
+                        color: MutandeColors.stone500,
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 32,
+                          minHeight: 32,
+                        ),
                       ),
+                      IconButton(
+                        tooltip: 'Reveal in Finder',
+                        onPressed: () async {
+                          final path = await materializeInlineAttachment(r);
+                          if (path != null) await revealAttachmentPath(path);
+                        },
+                        icon: const Icon(Icons.folder_open_outlined, size: 16),
+                        color: MutandeColors.stone500,
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 32,
+                          minHeight: 32,
+                        ),
+                      ),
+                    ],
                   ],
                 ],
               ),

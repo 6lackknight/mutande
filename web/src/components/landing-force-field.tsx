@@ -9,96 +9,101 @@ const ForceField = dynamic(
   { ssr: false },
 );
 
-function canUseForceField(): boolean {
-  if (typeof window === "undefined") return false;
+type FieldTier = "desktop" | "mobile";
+
+function fieldTier(): FieldTier | null {
+  if (typeof window === "undefined") return null;
   if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    return false;
+    return null;
   }
-  // Skip phones / coarse pointers — WebGL lattice destroys mobile TBT.
+  if (navigator.connection?.saveData) return null;
   if (window.matchMedia("(max-width: 767px), (pointer: coarse)").matches) {
-    return false;
+    return "mobile";
   }
-  if (navigator.connection?.saveData) return false;
-  return true;
+  return "desktop";
+}
+
+/** Shared bronze/amber lattice — lighter on mobile, fuller on desktop. */
+function fieldProps(tier: FieldTier) {
+  const mobile = tier === "mobile";
+  return {
+    shape: "hexagon" as const,
+    // Bronze / amber (mutande accent), not cyan demo defaults
+    color: [0.57, 0.25, 0.06] as [number, number, number],
+    edgeColor: [0.9, 0.65, 0.28] as [number, number, number],
+    opacity: mobile ? 0.32 : 0.38,
+    cellScale: mobile ? 12 : 18,
+    lineWidth: 0.022,
+    gridOpacity: mobile ? 0.045 : 0.05,
+    gridReveal: (mobile ? "always" : "hover") as "always" | "hover",
+    gridRevealStrength: mobile ? 0.55 : 0.85,
+    gridRevealRadius: 280,
+    gridFade: 0.45,
+    flashSpeed: mobile ? 0.22 : 0.35,
+    flashIntensity: mobile ? 0.03 : 0.04,
+    flowScale: 2.8,
+    flowSpeed: mobile ? 0.2 : 0.28,
+    flowIntensity: mobile ? 0.1 : 0.12,
+    edgeGlow: mobile ? 0.12 : 0.14,
+    edgeFalloff: 0.22,
+    clickRipples: false,
+    refraction: mobile ? 3 : 6,
+    aberration: mobile ? 0.2 : 0.4,
+    haze: mobile ? 0.08 : 0.12,
+    tint: 0.03,
+    hoverGlow: mobile ? 0 : 0.12,
+    hoverRadius: 320,
+    hoverCharge: mobile ? 0 : 0.55,
+    bloom: mobile ? 0.15 : 0.35,
+    bloomThreshold: 0.45,
+    grain: mobile ? 0.05 : 0.06,
+    dim: 0,
+    pageReact: 0,
+  };
 }
 
 /**
- * Desktop-only Force Field, armed on first pointermove so lab runs (no mouse)
- * and mobile never pay for WebGL. Children stay mounted for LCP/nav stability.
+ * Muted Force Field over the landing shell. Deferred a beat past first paint
+ * for LCP, then wraps content so the lattice composites correctly (not under
+ * the opaque relay background).
  */
 export function LandingForceField({ children }: { children: ReactNode }) {
-  const [mount, setMount] = useState(false);
+  const [tier, setTier] = useState<FieldTier | null>(null);
 
   useEffect(() => {
-    if (!canUseForceField()) return;
+    const next = fieldTier();
+    if (!next) return;
 
     let cancelled = false;
-    const arm = () => {
-      if (cancelled) return;
-      setMount(true);
-    };
-
-    // Real users move the mouse; Lighthouse never does — keep WebGL off the lab path.
-    window.addEventListener("pointermove", arm, { once: true, passive: true });
+    const delay = next === "mobile" ? 1800 : 600;
+    const t = window.setTimeout(() => {
+      if (!cancelled) setTier(next);
+    }, delay);
 
     return () => {
       cancelled = true;
-      window.removeEventListener("pointermove", arm);
+      window.clearTimeout(t);
     };
   }, []);
 
-  return (
-    <div
-      className="relative flex min-h-full flex-1 flex-col"
-      style={{ minHeight: "100%" }}
-    >
-      {mount ? (
-        <div
-          className="pointer-events-none absolute inset-0 z-0 overflow-hidden"
-          aria-hidden
-        >
-          <ForceField
-            className="h-full w-full"
-            style={{ minHeight: "100%" }}
-            shape="hexagon"
-            color={[0.57, 0.25, 0.06]}
-            edgeColor={[0.9, 0.65, 0.28]}
-            opacity={0.38}
-            cellScale={18}
-            lineWidth={0.022}
-            gridOpacity={0.05}
-            gridReveal="always"
-            gridRevealStrength={0.55}
-            gridRevealRadius={280}
-            gridFade={0.45}
-            flashSpeed={0.35}
-            flashIntensity={0.04}
-            flowScale={2.8}
-            flowSpeed={0.28}
-            flowIntensity={0.12}
-            edgeGlow={0.14}
-            edgeFalloff={0.22}
-            clickRipples={false}
-            refraction={0}
-            aberration={0}
-            haze={0.08}
-            tint={0.03}
-            hoverGlow={0}
-            hoverRadius={320}
-            hoverCharge={0}
-            bloom={0.25}
-            bloomThreshold={0.45}
-            grain={0.06}
-            dim={0}
-            pageReact={0}
-          >
-            <div className="h-full min-h-dvh w-full" />
-          </ForceField>
-        </div>
-      ) : null}
-      <div className="relative z-10 flex min-h-full flex-1 flex-col">
+  if (!tier) {
+    return (
+      <div
+        className="flex min-h-full flex-1 flex-col"
+        style={{ minHeight: "100%" }}
+      >
         {children}
       </div>
-    </div>
+    );
+  }
+
+  return (
+    <ForceField
+      className="flex min-h-full flex-1 flex-col"
+      style={{ minHeight: "100%" }}
+      {...fieldProps(tier)}
+    >
+      {children}
+    </ForceField>
   );
 }

@@ -89,12 +89,15 @@ class AgentsPanel extends StatefulWidget {
   State<AgentsPanel> createState() => _AgentsPanelState();
 }
 
+enum _NetworkZoom { me, org, external }
+
 class _AgentsPanelState extends State<AgentsPanel> {
   bool _loading = true;
   bool _adding = false;
   String? _error;
   AgentListResult? _list;
-  bool _graph = true;
+  _NetworkZoom _zoom = _NetworkZoom.me;
+  String? _selectedAgentId;
   Map<String, HostLinkRecord> _hostLinks = const {};
 
   @override
@@ -347,23 +350,23 @@ class _AgentsPanelState extends State<AgentsPanel> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Align(
-          alignment: Alignment.centerRight,
-          child: _ViewToggle(
-            graph: _graph,
-            onChanged: (g) => setState(() => _graph = g),
+          alignment: Alignment.centerLeft,
+          child: _ZoomToggle(
+            zoom: _zoom,
+            onChanged: (z) => setState(() => _zoom = z),
           ),
         ),
         const SizedBox(height: 4),
         if (_loading || _adding)
           const Expanded(
             child: Center(
-              child: MutandeOrb.standard(semanticLabel: 'Loading agents…'),
+              child: MutandeOrb.standard(semanticLabel: 'Loading network…'),
             ),
           )
         else if (_error != null)
           Expanded(
             child: PaneQuietState(
-              title: "Couldn't load agents",
+              title: "Couldn't load network",
               body: friendlyAgentsError(_error!),
               onRetry: _reload,
               icon: Icons.cloud_off_outlined,
@@ -371,47 +374,59 @@ class _AgentsPanelState extends State<AgentsPanel> {
           )
         else
           Expanded(
-            child: _graph
-                ? _AgentsGraph(
-                    handle: handle,
-                    primary: primary,
-                    subs: subs,
-                    hostLinks: _hostLinks,
-                    onSelect: (a, isPrimary) =>
-                        _openInspector(a, isPrimary: isPrimary),
-                    onAdd: _onAdd,
-                  )
-                : _AgentsList(
-                    handle: handle,
-                    primary: primary,
-                    subs: subs,
-                    hostLinks: _hostLinks,
-                    onSelect: (a, isPrimary) =>
-                        _openInspector(a, isPrimary: isPrimary),
-                    onAdd: _onAdd,
-                    onSetDefault: _setDefault,
-                  ),
+            child: switch (_zoom) {
+              _NetworkZoom.me => _AgentsGraph(
+                  handle: handle,
+                  primary: primary,
+                  subs: subs,
+                  selectedId: _selectedAgentId ?? primary?.id,
+                  onSelect: (a, isPrimary) {
+                    setState(() => _selectedAgentId = a.id);
+                    _openInspector(a, isPrimary: isPrimary);
+                  },
+                  onAdd: _onAdd,
+                ),
+              _NetworkZoom.org => _ZoomPlaceholder(
+                  title: 'Org',
+                  body:
+                      'Teammates as ink discs on one orbit — peer agent trees open on select. Coming next.',
+                  hubLabel: _orgSlug(handle),
+                ),
+              _NetworkZoom.external => const _ZoomPlaceholder(
+                  title: 'External',
+                  body:
+                      'Cross-org peers farther out. Trust and pairing stay in the inspector.',
+                  hubLabel: 'you',
+                ),
+            },
           ),
         _AgentsFooter(count: agents.length, version: widget.appVersion),
       ],
     );
   }
+
+  static String _orgSlug(String handle) {
+    final at = handle.lastIndexOf('@');
+    if (at < 0 || at >= handle.length - 1) return handle;
+    return handle.substring(at + 1).toLowerCase();
+  }
 }
 
-class _ViewToggle extends StatelessWidget {
-  const _ViewToggle({required this.graph, required this.onChanged});
+class _ZoomToggle extends StatelessWidget {
+  const _ZoomToggle({required this.zoom, required this.onChanged});
 
-  final bool graph;
-  final ValueChanged<bool> onChanged;
+  final _NetworkZoom zoom;
+  final ValueChanged<_NetworkZoom> onChanged;
 
   @override
   Widget build(BuildContext context) {
-    Widget chip(String label, bool selected, VoidCallback onTap) {
+    Widget chip(String label, _NetworkZoom value) {
+      final selected = zoom == value;
       return InkWell(
-        onTap: onTap,
+        onTap: () => onChanged(value),
         borderRadius: BorderRadius.circular(6),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
             color: selected ? const Color(0xFFE7E5E4) : Colors.transparent,
             borderRadius: BorderRadius.circular(6),
@@ -419,485 +434,96 @@ class _ViewToggle extends StatelessWidget {
           child: Text(
             label,
             style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: selected
-                  ? const Color(0xFF292524)
-                  : const Color(0xFF78716C),
-              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-            ),
+                  color: selected
+                      ? const Color(0xFF292524)
+                      : const Color(0xFF78716C),
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                ),
           ),
         ),
       );
     }
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        chip('List', !graph, () => onChanged(false)),
-        chip('Graph', graph, () => onChanged(true)),
-      ],
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F5F4),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE7E5E4)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(2),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            chip('Me', _NetworkZoom.me),
+            chip('Org', _NetworkZoom.org),
+            chip('External', _NetworkZoom.external),
+          ],
+        ),
+      ),
     );
   }
 }
 
-class _AgentsGraph extends StatelessWidget {
-  const _AgentsGraph({
-    required this.handle,
-    required this.primary,
-    required this.subs,
-    required this.hostLinks,
-    required this.onSelect,
-    required this.onAdd,
+class _ZoomPlaceholder extends StatelessWidget {
+  const _ZoomPlaceholder({
+    required this.title,
+    required this.body,
+    required this.hubLabel,
   });
 
-  final String handle;
-  final AgentInfo? primary;
-  final List<AgentInfo> subs;
-  final Map<String, HostLinkRecord> hostLinks;
-  final void Function(AgentInfo agent, bool isPrimary) onSelect;
-  final VoidCallback onAdd;
+  final String title;
+  final String body;
+  final String hubLabel;
 
   @override
   Widget build(BuildContext context) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
-      child: CustomPaint(
-        painter: _DotGridPainter(),
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 12),
+      child: ColoredBox(
+        color: const Color(0xFFF5F5F4),
+        child: Center(
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              _HandleNode(handle: handle),
-              _Trunk(solid: true),
-              if (primary == null)
-                _EmptyPrimary(onAdd: onAdd)
-              else ...[
-                _PrimaryCard(
-                  agent: primary!,
-                  link: hostLinkForSlug(primary!.slug, hostLinks),
-                  onTap: () => onSelect(primary!, true),
-                ),
-                _Trunk(solid: false),
-                _BranchRow(
-                  subs: subs,
-                  hostLinks: hostLinks,
-                  onSelect: (a) => onSelect(a, false),
-                  onAdd: onAdd,
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _DotGridPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = const Color(0xFFE7E5E4);
-    const step = 14.0;
-    for (var y = 0.0; y < size.height; y += step) {
-      for (var x = 0.0; x < size.width; x += step) {
-        canvas.drawCircle(Offset(x, y), 0.8, paint);
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class _HandleNode extends StatelessWidget {
-  const _HandleNode({required this.handle});
-
-  final String handle;
-
-  @override
-  Widget build(BuildContext context) {
-    final label = formatMailAddress(handle);
-    return Column(
-      children: [
-        Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                color: const Color(0xFFE7E5E4),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFD6D3D1)),
-              ),
-              child: const Icon(Icons.person, color: Color(0xFF57534E)),
-            ),
-            Positioned(
-              right: -2,
-              bottom: -2,
-              child: Container(
-                width: 12,
-                height: 12,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF166534),
+              Container(
+                width: 88,
+                height: 88,
+                alignment: Alignment.center,
+                decoration: const BoxDecoration(
+                  color: Color(0xFF292524),
                   shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 2),
                 ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1C1917),
-            borderRadius: BorderRadius.circular(999),
-          ),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 240),
-            child: Tooltip(
-              message: label,
-              waitDuration: const Duration(milliseconds: 400),
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: const Color(0xFFFAFAF9),
-                  fontFamily: 'Menlo',
-                  fontSize: 12,
-                  letterSpacing: 0.2,
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _Trunk extends StatelessWidget {
-  const _Trunk({required this.solid});
-
-  final bool solid;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 28,
-      width: 2,
-      child: CustomPaint(
-        painter: _LinePainter(color: const Color(0xFF92400E), dashed: !solid),
-      ),
-    );
-  }
-}
-
-class _LinePainter extends CustomPainter {
-  _LinePainter({required this.color, required this.dashed});
-
-  final Color color;
-  final bool dashed;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 2
-      ..style = PaintingStyle.stroke;
-    if (!dashed) {
-      canvas.drawLine(
-        Offset(size.width / 2, 0),
-        Offset(size.width / 2, size.height),
-        paint,
-      );
-      return;
-    }
-    const dash = 4.0;
-    const gap = 3.0;
-    var y = 0.0;
-    final x = size.width / 2;
-    while (y < size.height) {
-      canvas.drawLine(
-        Offset(x, y),
-        Offset(x, math.min(y + dash, size.height)),
-        paint,
-      );
-      y += dash + gap;
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _LinePainter oldDelegate) =>
-      oldDelegate.color != color || oldDelegate.dashed != dashed;
-}
-
-class _PrimaryCard extends StatelessWidget {
-  const _PrimaryCard({
-    required this.agent,
-    required this.link,
-    required this.onTap,
-  });
-
-  final AgentInfo agent;
-  final HostLinkRecord? link;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final label = agent.slug.toLowerCase();
-    final transportChip = TransportChip.maybe(
-      transport: agent.transport,
-      compact: true,
-      lastSeen: agent.lastSeen,
-    );
-    return Material(
-      color: Colors.white,
-      elevation: 1,
-      shadowColor: const Color(0x330C0A09),
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          width: 220,
-          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFD6D3D1)),
-          ),
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Row(
-                children: [
-                  AiHostIcon(agent.slug, size: 40),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Flexible(
-                              child: Tooltip(
-                                message: label,
-                                waitDuration: const Duration(milliseconds: 400),
-                                child: Text(
-                                  label,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context).textTheme.titleSmall
-                                      ?.copyWith(
-                                        color: const Color(0xFF292524),
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                ),
-                              ),
-                            ),
-                            if (transportChip != null) ...[
-                              const SizedBox(width: 6),
-                              transportChip,
-                            ],
-                          ],
-                        ),
-                        const SizedBox(height: 2),
-                        HostLinkStatusBadge(link: link),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              Positioned(
-                top: -4,
-                right: -4,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 7,
-                    vertical: 3,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF92400E),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    'PRIMARY',
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: Colors.white,
-                      fontSize: 9,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _BranchRow extends StatelessWidget {
-  const _BranchRow({
-    required this.subs,
-    required this.hostLinks,
-    required this.onSelect,
-    required this.onAdd,
-  });
-
-  final List<AgentInfo> subs;
-  final Map<String, HostLinkRecord> hostLinks;
-  final ValueChanged<AgentInfo> onSelect;
-  final VoidCallback onAdd;
-
-  @override
-  Widget build(BuildContext context) {
-    final children = <Widget>[
-      ...subs.map(
-        (a) => _SubCard(
-          agent: a,
-          link: hostLinkForSlug(a.slug, hostLinks),
-          onTap: () => onSelect(a),
-        ),
-      ),
-      _AddNode(onTap: onAdd),
-    ];
-
-    return Column(
-      children: [
-        SizedBox(
-          height: 18,
-          width: math.max(200.0, children.length * 100.0),
-          child: CustomPaint(painter: _BranchPainter(count: children.length)),
-        ),
-        Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          alignment: WrapAlignment.center,
-          children: children,
-        ),
-      ],
-    );
-  }
-}
-
-class _BranchPainter extends CustomPainter {
-  _BranchPainter({required this.count});
-
-  final int count;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (count <= 0) return;
-    final paint = Paint()
-      ..color = const Color(0xFFA8A29E)
-      ..strokeWidth = 1.5
-      ..style = PaintingStyle.stroke;
-
-    final midY = size.height;
-    final cx = size.width / 2;
-    // Vertical stub from primary
-    _dash(canvas, Offset(cx, 0), Offset(cx, midY * 0.35), paint);
-    if (count == 1) {
-      _dash(canvas, Offset(cx, midY * 0.35), Offset(cx, midY), paint);
-      return;
-    }
-    final left = size.width * 0.15;
-    final right = size.width * 0.85;
-    _dash(canvas, Offset(left, midY * 0.35), Offset(right, midY * 0.35), paint);
-    for (var i = 0; i < count; i++) {
-      final t = count == 1 ? 0.5 : i / (count - 1);
-      final x = left + (right - left) * t;
-      _dash(canvas, Offset(x, midY * 0.35), Offset(x, midY), paint);
-    }
-  }
-
-  void _dash(Canvas canvas, Offset a, Offset b, Paint paint) {
-    final path = Path()
-      ..moveTo(a.dx, a.dy)
-      ..lineTo(b.dx, b.dy);
-    final metrics = path.computeMetrics().first;
-    const dash = 4.0;
-    const gap = 3.0;
-    var dist = 0.0;
-    while (dist < metrics.length) {
-      final next = math.min(dist + dash, metrics.length);
-      canvas.drawPath(metrics.extractPath(dist, next), paint);
-      dist = next + gap;
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _BranchPainter oldDelegate) =>
-      oldDelegate.count != count;
-}
-
-class _SubCard extends StatelessWidget {
-  const _SubCard({
-    required this.agent,
-    required this.link,
-    required this.onTap,
-  });
-
-  final AgentInfo agent;
-  final HostLinkRecord? link;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final label = agent.slug.toLowerCase();
-    final transportChip = TransportChip.maybe(
-      transport: agent.transport,
-      compact: true,
-      lastSeen: agent.lastSeen,
-    );
-    return Material(
-      color: Colors.white,
-      elevation: 1,
-      shadowColor: const Color(0x220C0A09),
-      borderRadius: BorderRadius.circular(10),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
-        child: Container(
-          width: 112,
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: const Color(0xFFE7E5E4)),
-          ),
-          child: Column(
-            children: [
-              AiHostIcon(agent.slug, size: 36),
-              const SizedBox(height: 8),
-              Tooltip(
-                message: label,
-                waitDuration: const Duration(milliseconds: 400),
                 child: Text(
-                  label.isEmpty ? '—' : label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                  hubLabel == 'you' ? 'you' : hubLabel,
                   textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: const Color(0xFF292524),
+                  style: const TextStyle(
+                    color: Color(0xFFFAFAF9),
+                    fontSize: 13,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
-              if (transportChip != null) ...[
-                const SizedBox(height: 4),
-                transportChip,
-              ],
-              const SizedBox(height: 6),
+              const SizedBox(height: 16),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF292524),
+                ),
+              ),
+              const SizedBox(height: 8),
               SizedBox(
-                width: 88,
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: HostLinkStatusBadge(link: link),
+                width: 280,
+                child: Text(
+                  body,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    height: 1.4,
+                    color: Color(0xFF78716C),
+                  ),
                 ),
               ),
             ],
@@ -908,236 +534,263 @@ class _SubCard extends StatelessWidget {
   }
 }
 
-class _AddNode extends StatelessWidget {
-  const _AddNode({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: CustomPaint(
-        painter: _DashedRectPainter(color: const Color(0xFFA8A29E)),
-        child: const SizedBox(
-          width: 72,
-          height: 72,
-          child: Center(child: Icon(Icons.add, color: Color(0xFF78716C))),
-        ),
-      ),
-    );
-  }
-}
-
-class _DashedRectPainter extends CustomPainter {
-  _DashedRectPainter({required this.color});
-
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 1.5
-      ..style = PaintingStyle.stroke;
-    final r = RRect.fromRectAndRadius(
-      Rect.fromLTWH(1, 1, size.width - 2, size.height - 2),
-      const Radius.circular(10),
-    );
-    final path = Path()..addRRect(r);
-    for (final metric in path.computeMetrics()) {
-      const dash = 5.0;
-      const gap = 4.0;
-      var dist = 0.0;
-      while (dist < metric.length) {
-        final next = math.min(dist + dash, metric.length);
-        canvas.drawPath(metric.extractPath(dist, next), paint);
-        dist = next + gap;
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _DashedRectPainter oldDelegate) =>
-      oldDelegate.color != color;
-}
-
-class _EmptyPrimary extends StatelessWidget {
-  const _EmptyPrimary({required this.onAdd});
-
-  final VoidCallback onAdd;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Text(
-          'Add an AI host for your primary agent.',
-          textAlign: TextAlign.center,
-          style: Theme.of(
-            context,
-          ).textTheme.bodySmall?.copyWith(color: const Color(0xFF78716C)),
-        ),
-        const SizedBox(height: 12),
-        _AddNode(onTap: onAdd),
-      ],
-    );
-  }
-}
-
-class _AgentsList extends StatelessWidget {
-  const _AgentsList({
+/// Calm concentric map: you at center, agents on one orbit (Penpot Network — Me).
+class _AgentsGraph extends StatelessWidget {
+  const _AgentsGraph({
     required this.handle,
     required this.primary,
     required this.subs,
-    required this.hostLinks,
+    required this.selectedId,
     required this.onSelect,
     required this.onAdd,
-    required this.onSetDefault,
   });
 
   final String handle;
   final AgentInfo? primary;
   final List<AgentInfo> subs;
-  final Map<String, HostLinkRecord> hostLinks;
+  final String? selectedId;
   final void Function(AgentInfo agent, bool isPrimary) onSelect;
   final VoidCallback onAdd;
-  final ValueChanged<String> onSetDefault;
+
+  List<AgentInfo> get _orbitAgents => [
+        if (primary != null) primary!,
+        ...subs,
+      ];
 
   @override
   Widget build(BuildContext context) {
-    final handleLabel = formatMailAddress(handle);
-    // Keep dual-transport siblings adjacent; primary row stays first.
-    final rest = [...subs]..sort((a, b) {
-      final slugCmp = a.slug.toLowerCase().compareTo(b.slug.toLowerCase());
-      if (slugCmp != 0) return slugCmp;
-      return (a.transport?.wireValue ?? '')
-          .compareTo(b.transport?.wireValue ?? '');
-    });
-    final primarySlug = primary?.slug.toLowerCase();
-    final ordered = <AgentInfo>[
-      if (primary != null) primary!,
-      if (primarySlug != null)
-        ...rest.where((a) => a.slug.toLowerCase() == primarySlug),
-      ...rest.where(
-        (a) => primarySlug == null || a.slug.toLowerCase() != primarySlug,
+    final agents = _orbitAgents;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: ColoredBox(
+        color: const Color(0xFFF5F5F4),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final size = Size(constraints.maxWidth, constraints.maxHeight);
+            final center = Offset(size.width * 0.48, size.height * 0.48);
+            final orbitR = (math.min(size.width, size.height) * 0.28)
+                .clamp(100.0, 160.0);
+            final n = math.max(agents.length, 1);
+            final selectedIndex = selectedId == null
+                ? -1
+                : agents.indexWhere((a) => a.id == selectedId);
+
+            return Stack(
+              clipBehavior: Clip.none,
+              children: [
+                CustomPaint(
+                  size: size,
+                  painter: _ConcentricOrbitPainter(
+                    center: center,
+                    orbitR: orbitR,
+                    agentCount: agents.length,
+                    emphasizeIndex: selectedIndex >= 0
+                        ? selectedIndex
+                        : (primary == null
+                            ? -1
+                            : agents.indexWhere((a) => a.id == primary!.id)),
+                  ),
+                ),
+                Positioned(
+                  left: center.dx - 44,
+                  top: center.dy - 44,
+                  width: 88,
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 88,
+                        height: 88,
+                        alignment: Alignment.center,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF292524),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Text(
+                          'you',
+                          style: TextStyle(
+                            color: Color(0xFFFAFAF9),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        formatMailAddress(handle),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFF78716C),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                for (var i = 0; i < agents.length; i++)
+                  _orbitNode(
+                    agent: agents[i],
+                    index: i,
+                    count: n,
+                    center: center,
+                    orbitR: orbitR,
+                    isPrimary: primary != null && agents[i].id == primary!.id,
+                    selected: agents[i].id == selectedId ||
+                        (selectedId == null &&
+                            primary != null &&
+                            agents[i].id == primary!.id),
+                  ),
+                Positioned(
+                  right: 16,
+                  bottom: 16,
+                  child: TextButton.icon(
+                    onPressed: onAdd,
+                    icon: const Icon(Icons.add, size: 16),
+                    label: const Text('Add'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: const Color(0xFF57534E),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
       ),
-    ];
-
-    final dualSlugs = dualTransportSlugs(
-      ordered.map((a) => (slug: a.slug, transport: a.transport)),
-    ).toSet();
-
-    return ListView(
-      children: [
-        ListTile(
-          leading: const Icon(Icons.person_outline),
-          title: Text(handleLabel),
-          subtitle: const Text('Handle'),
-        ),
-        for (var i = 0; i < ordered.length; i++)
-          _agentListTile(
-            context,
-            agent: ordered[i],
-            isPrimary: primary != null && ordered[i].id == primary!.id,
-            handleLabel: handleLabel,
-            grouped: dualSlugs.contains(ordered[i].slug.toLowerCase()),
-            continueGroup: i > 0 &&
-                ordered[i].slug.toLowerCase() ==
-                    ordered[i - 1].slug.toLowerCase(),
-          ),
-        Padding(
-          padding: const EdgeInsets.only(left: 48, top: 4, right: 8),
-          child: OutlinedButton.icon(
-            onPressed: onAdd,
-            icon: const Icon(Icons.add, size: 16),
-            label: const Text('Add'),
-          ),
-        ),
-      ],
     );
   }
 
-  Widget _agentListTile(
-    BuildContext context, {
+  Widget _orbitNode({
     required AgentInfo agent,
+    required int index,
+    required int count,
+    required Offset center,
+    required double orbitR,
     required bool isPrimary,
-    required String handleLabel,
-    required bool grouped,
-    required bool continueGroup,
+    required bool selected,
   }) {
-    final transportChip = TransportChip.maybe(
-      transport: agent.transport,
-      lastSeen: agent.lastSeen,
-    );
-    final title = Row(
-      children: [
-        Flexible(
-          child: Text(
-            agent.slug.toLowerCase(),
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-        if (transportChip != null) ...[
-          const SizedBox(width: 8),
-          transportChip,
-        ],
-      ],
-    );
-    return DecoratedBox(
-      decoration: grouped
-          ? BoxDecoration(
-              border: Border(
-                left: BorderSide(
-                  color: const Color(0xFFD6D3D1),
-                  width: continueGroup ? 2 : 2,
-                ),
-              ),
-              color: continueGroup
-                  ? const Color(0xFFF5F5F4)
-                  : Colors.transparent,
-            )
-          : const BoxDecoration(),
-      child: ListTile(
-        contentPadding: EdgeInsets.only(
-          left: isPrimary ? 28 : 48,
-          right: 8,
-        ),
-        leading: AiHostIcon(agent.slug, size: 32),
-        title: title,
-        subtitle: Text(
-          isPrimary
-              ? 'Primary · receives $handleLabel & @all'
-              : formatMailAddress('$handle/${agent.slug}'),
-        ),
-        trailing: Row(
+    final ang = -math.pi / 2 + (2 * math.pi * index / count);
+    final ax = center.dx + math.cos(ang) * orbitR;
+    final ay = center.dy + math.sin(ang) * orbitR;
+    final nodeSize = selected ? 36.0 : 28.0;
+    final slug = agent.slug.trim().toLowerCase();
+    return Positioned(
+      left: ax - 40,
+      top: ay - nodeSize / 2,
+      width: 80,
+      child: GestureDetector(
+        onTap: () => onSelect(agent, isPrimary),
+        behavior: HitTestBehavior.opaque,
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            HostLinkStatusBadge(
-              link: hostLinkForSlug(agent.slug, hostLinks),
-              style: HostLinkStatusStyle.settings,
-            ),
-            const SizedBox(width: 8),
-            if (isPrimary)
-              const Text(
-                'PRIMARY',
-                style: TextStyle(
-                  color: Color(0xFF92400E),
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
+            Container(
+              width: nodeSize,
+              height: nodeSize,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFAFAF9),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: selected
+                      ? const Color(0xFF292524)
+                      : const Color(0xFFA8A29E),
+                  width: selected ? 2 : 1,
                 ),
-              )
-            else
-              TextButton(
-                onPressed: () => onSetDefault(agent.id),
-                child: const Text('Set as default'),
+                boxShadow: selected
+                    ? [
+                        BoxShadow(
+                          color: const Color(0xFF166534).withValues(alpha: 0.22),
+                          blurRadius: 14,
+                          spreadRadius: 2,
+                        ),
+                      ]
+                    : null,
               ),
+              alignment: Alignment.center,
+              child: AiHostIcon(
+                slug,
+                size: selected ? 16 : 13,
+                showPlate: false,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              slug,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                color: const Color(0xFF57534E),
+              ),
+            ),
           ],
         ),
-        onTap: () => onSelect(agent, isPrimary),
       ),
     );
+  }
+}
+
+class _ConcentricOrbitPainter extends CustomPainter {
+  _ConcentricOrbitPainter({
+    required this.center,
+    required this.orbitR,
+    required this.agentCount,
+    required this.emphasizeIndex,
+  });
+
+  final Offset center;
+  final double orbitR;
+  final int agentCount;
+  final int emphasizeIndex;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final guide = Paint()
+      ..color = const Color(0xFFE7E5E4)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+    canvas.drawCircle(center, orbitR, guide);
+    canvas.drawCircle(
+      center,
+      orbitR + 70,
+      Paint()
+        ..color = const Color(0x66E7E5E4)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1,
+    );
+
+    if (agentCount == 0) return;
+    final n = agentCount;
+    for (var i = 0; i < n; i++) {
+      final ang = -math.pi / 2 + (2 * math.pi * i / n);
+      final end = Offset(
+        center.dx + math.cos(ang) * orbitR,
+        center.dy + math.sin(ang) * orbitR,
+      );
+      final emphasized = i == emphasizeIndex;
+      final spoke = Paint()
+        ..color = emphasized
+            ? const Color(0xBFA8A29E)
+            : const Color(0x80A8A29E)
+        ..strokeWidth = emphasized ? 1.5 : 1.15
+        ..style = PaintingStyle.stroke;
+      final ux = (end.dx - center.dx) / orbitR;
+      final uy = (end.dy - center.dy) / orbitR;
+      final start = Offset(center.dx + ux * 44, center.dy + uy * 44);
+      final tip = Offset(end.dx - ux * 14, end.dy - uy * 14);
+      canvas.drawLine(start, tip, spoke);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _ConcentricOrbitPainter oldDelegate) {
+    return oldDelegate.center != center ||
+        oldDelegate.orbitR != orbitR ||
+        oldDelegate.agentCount != agentCount ||
+        oldDelegate.emphasizeIndex != emphasizeIndex;
   }
 }
 

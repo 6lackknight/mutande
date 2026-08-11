@@ -1,11 +1,13 @@
 /**
  * Hosted MCP has no access to ChatGPT/Claude sandbox filesystems.
  * Resources must carry inline content (or base64) — never host-only paths.
+ * Inline `resources[].content` **is** the named file attachment in the thread
+ * (Mac Threads shows it as a file chip; agents see it on get_thread).
  */
 
 export const HOST_PATH_REFUSAL =
   "Hosted MCP cannot read host sandbox file paths (e.g. /mnt/data/…). " +
-  "Pass UTF-8 text in resources[].content (.md/.txt — never base64 text). " +
+  "Pass UTF-8 text in resources[].content (.md/.txt — that IS the attachment). " +
   "Binary pdf/png only: resources[].content_base64 + mime (~1MB). " +
   "Do not pass ChatGPT/Claude local paths alone.";
 
@@ -22,6 +24,42 @@ function asRecord(v: unknown): Record<string, unknown> | null {
 
 function nonEmptyString(v: unknown): string | null {
   return typeof v === "string" && v.trim() ? v : null;
+}
+
+function guessMimeFromName(name: string): string {
+  const ext = name.includes(".")
+    ? name.slice(name.lastIndexOf(".") + 1).toLowerCase()
+    : "";
+  switch (ext) {
+    case "md":
+    case "markdown":
+      return "text/markdown";
+    case "txt":
+    case "text":
+      return "text/plain";
+    case "json":
+      return "application/json";
+    case "csv":
+      return "text/csv";
+    case "html":
+    case "htm":
+      return "text/html";
+    case "png":
+      return "image/png";
+    case "jpg":
+    case "jpeg":
+      return "image/jpeg";
+    case "gif":
+      return "image/gif";
+    case "webp":
+      return "image/webp";
+    case "pdf":
+      return "application/pdf";
+    case "mp4":
+      return "video/mp4";
+    default:
+      return "application/octet-stream";
+  }
 }
 
 /** True when the resource already carries readable payload bytes/text. */
@@ -55,6 +93,7 @@ export function resourceHostOnlyPath(resource: unknown): string | null {
  * Normalize / validate bundle.resources for hosted forward/reply.
  * - Rejects host-sandbox paths without inline content (clear error).
  * - Accepts content / content_base64 / data / body.
+ * - Sets mime from mime_type or filename so Mac/daemon hydrate as a real file.
  * - Leaves path as a label only when inline content is present.
  */
 export function prepareBundleResources(
@@ -95,6 +134,13 @@ export function prepareBundleResources(
     }
     // Prefer explicit text content; decode base64 into content when text-ish and content missing.
     const next: Record<string, unknown> = { ...r };
+    const name = nonEmptyString(next.name) ?? `attachment-${i + 1}`;
+    next.name = name;
+    const mime = nonEmptyString(next.mime) ?? nonEmptyString(next.mime_type) ??
+      guessMimeFromName(name);
+    next.mime = mime;
+    delete next.mime_type;
+
     if (!nonEmptyString(next.content) && nonEmptyString(next.content_base64)) {
       try {
         const decoded = atob(String(next.content_base64).replace(/\s+/g, ""));
