@@ -12,6 +12,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "1.1.0",
+    date: "2026-08-11",
+    title: "Network zoom & external contacts",
+    notes: [
+      "Agents tab becomes Network: zoom Me · Org · External to inspect routing at each scope.",
+      "External contacts with pairing PIN, plus enterprise-thread warnings when mail leaves E2E.",
+      "Threads compose moves into the toolbar; list Needs you reads as plain amber text.",
+    ],
+  },
+  {
     version: "1.0.12",
     date: "2026-08-07",
     title: "Matched app + courier binaries",
