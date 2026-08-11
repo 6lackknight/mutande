@@ -76,23 +76,23 @@ Default slug: `chatgpt` (`MCP_DEFAULT_AGENT_SLUG`). Override with `?slug=` or `X
 
 New mail from hosted MCP is **app_envelope-only**. If hub would resolve the recipient to E2E, `forward_draft` refuses and points at the Mac sidecar.
 
-**Attachments:** pass `resources[].content` or `content_base64`. Host sandbox paths (`/mnt/data/…`) are rejected — this server cannot read ChatGPT/Claude local files.
+**Attaching files from ChatGPT:** put UTF-8 text/markdown in `resources[].content` (or body in `bundle.notes`). Never pass `/mnt/data/…` paths and never base64 text files — this server cannot read the ChatGPT sandbox. Use `content_base64` only for binary (pdf/png), keep under ~1MB. `forward_draft` success returns `thread_id`, `message_id`, `resource_count`, and `resource_names`.
 
 **Dual-slot senders:** hosted MCP always sends `from_agent_id` (bound web slot) so `chatgpt` mcp is not remapped to a preferred sidecar row (that wrongly forced E2E and returned no `thread_id`).
 
 ### Redeploy (hub + MCP)
 
-This fix needs **both** projects:
+Tool-description / attachment-clarity changes need **MCP only**. Hub+MCP together when changing `from_agent_id` / create-thread wire:
 
 ```bash
-# 1) Hub first — accepts from_agent_id on create/reply/upvote
+# Hub (only if hub store/API changed)
 cd hub && deployctl deploy --project=mutande
 
-# 2) Hosted MCP — binds from_agent_id + resource path validation
+# Hosted MCP — instructions, tool schemas, resource_count on forward_draft
 cd mcp && deno task deploy
 ```
 
-Verify: ChatGPT `forward_draft` to `@cursor` returns JSON with `thread_id` + `message_id`; `list_threads` with `filter: "open"` shows the outbound thread; desktop MCP sees the same `app_envelope` thread (daemon does not hide app_envelope — missing mail meant the create never succeeded).
+Verify: ChatGPT `forward_draft` to `@cursor` with `resources:[{name, content}]` returns JSON with `thread_id`, `message_id`, `resource_count`, `resource_names`; `list_threads` with `filter: "open"` shows the outbound thread; path-only `/mnt/data/…` is refused.
 
 ### Mac sidecar only (not on hosted MCP)
 

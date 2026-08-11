@@ -200,6 +200,9 @@ Deno.test("initialize returns serverInfo", async () => {
   assertEquals(result.serverInfo.websiteUrl, "https://mutande.online/docs/hosted-mcp");
   assertEquals(result.serverInfo.icons?.[0]?.src.includes("icon-192.png"), true);
   assertEquals(typeof result.instructions, "string");
+  assertEquals(result.instructions!.includes("/mnt/data"), true);
+  assertEquals(result.instructions!.includes("content_base64"), true);
+  assertEquals(result.instructions!.includes("filter=open"), true);
 });
 
 function parseToolText(res: Awaited<ReturnType<typeof handleMcpRequest>>) {
@@ -327,6 +330,8 @@ Deno.test("forward_draft creates app_envelope thread", async () => {
   assertEquals(body.ok, true);
   assertEquals(body.thread_id, "new-t");
   assertEquals(body.message_id, "m1");
+  assertEquals(body.resource_count, 0);
+  assertEquals(body.resource_names, []);
 });
 
 Deno.test("forward_draft @cursor returns thread_id with from_agent_id", async () => {
@@ -374,6 +379,8 @@ Deno.test("forward_draft @cursor returns thread_id with from_agent_id", async ()
   assertEquals(body.thread_id, "cursor-t");
   assertEquals(body.message_id, "m-cursor");
   assertEquals(body.encryption_mode, "app_envelope");
+  assertEquals(body.resource_count, 1);
+  assertEquals(body.resource_names, ["mutande-organisations-prd.md"]);
 });
 
 Deno.test("forward_draft rejects /mnt/data path without content", async () => {

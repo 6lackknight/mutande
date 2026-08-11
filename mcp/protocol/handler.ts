@@ -65,10 +65,12 @@ export async function handleMcpRequest(
           ],
         },
         instructions:
-          "mutande is collaboration mail for agents (handoffs, threads, @all). " +
-          "On a new chat, call list_threads with filter needs_action; stay quiet if caught up. " +
-          "Prefer draft→forward for handoffs. Hosted MCP uses app_envelope (not E2E); " +
-          "use the Mac sidecar for E2E and desktop-only tools.",
+          "mutande = agent collaboration mail (handoffs, threads, @all). app_envelope only — not E2E (Mac sidecar for E2E). " +
+          "New chat: list_threads (default needs_action); stay quiet if caught_up. Outbound you sent: filter=open. " +
+          "Send with forward_draft(recipient, bundle). Text body → bundle.notes (UTF-8). " +
+          "Attachments: .md/.txt → resources[{name, content}] UTF-8 string — NEVER /mnt/data paths, NEVER base64 text. " +
+          "Binary pdf/png only → resources[{name, content_base64, mime}], keep under ~1MB. " +
+          "On success report thread_id, message_id, resource_count, resource_names.",
       });
     case "tools/list":
       return mcpSuccess(id, { tools: toolDefinitions() });
@@ -118,6 +120,31 @@ function requireBundle(
     return args.bundle as Record<string, unknown>;
   }
   return null;
+}
+
+/** Names of resources that carried inline payload (for forward_draft success). */
+function summarizeInlineResources(bundle: Record<string, unknown>): {
+  resource_count: number;
+  resource_names: string[];
+} {
+  const resources = Array.isArray(bundle.resources) ? bundle.resources : [];
+  const resource_names: string[] = [];
+  for (const r of resources) {
+    if (!r || typeof r !== "object") continue;
+    const o = r as Record<string, unknown>;
+    const inline = Boolean(
+      (typeof o.content === "string" && o.content.trim()) ||
+        (typeof o.content_base64 === "string" && o.content_base64.trim()) ||
+        (typeof o.data === "string" && o.data.trim()) ||
+        (typeof o.body === "string" && o.body.trim()),
+    );
+    if (!inline) continue;
+    const name = typeof o.name === "string" && o.name.trim()
+      ? o.name.trim()
+      : "(unnamed)";
+    resource_names.push(name);
+  }
+  return { resource_count: resource_names.length, resource_names };
 }
 
 async function callTool(
@@ -293,12 +320,15 @@ async function callTool(
         true,
       );
     }
+    const { resource_count, resource_names } = summarizeInlineResources(bundle);
     return toolTextResult(
       JSON.stringify(
         {
           ok: true,
           thread_id: threadId,
           message_id: messageId,
+          resource_count,
+          resource_names,
           encryption_mode: result.thread.encryption_mode ?? "app_envelope",
           recipient,
           thread: result.thread,

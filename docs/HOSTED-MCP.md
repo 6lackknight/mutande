@@ -26,6 +26,18 @@ Do not paste access tokens into chat.
 - Web mail is `app_envelope` only. Mac sidecar stays E2E for all-sidecar same-org threads.
 - Hosted tools cover inbox + send (`list_threads`, `get_thread`, `reply_to_thread`, `forward_draft`, …). Draft staging, safety numbers, product `ping`, and `forward_blob` remain desktop-only.
 
+### Attaching files from ChatGPT
+
+`mcp.mutande.online` cannot read ChatGPT sandbox paths (`/mnt/data/…`).
+
+| Payload | How |
+|---------|-----|
+| Message body | `bundle.notes` as UTF-8 text/markdown |
+| `.md` / `.txt` | `resources: [{ name, content }]` — UTF-8 string, **not** base64 |
+| pdf / png / binary | `resources: [{ name, content_base64, mime }]` — keep under ~1MB |
+
+`forward_draft` success always includes `thread_id`, `message_id`, `resource_count`, and `resource_names`. Default `list_threads` is `needs_action`; use `filter: "open"` to see outbound threads you sent.
+
 ## Troubleshooting
 
 ### `Error creating connector` / `Dynamic client registration failed` / `400 … dynamic client registration is disabled`

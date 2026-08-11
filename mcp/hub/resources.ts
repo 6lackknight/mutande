@@ -5,8 +5,9 @@
 
 export const HOST_PATH_REFUSAL =
   "Hosted MCP cannot read host sandbox file paths (e.g. /mnt/data/…). " +
-  "Pass file contents inline: resources[].content (text) or resources[].content_base64 " +
-  "(binary/text). Do not pass ChatGPT/Claude local paths alone.";
+  "Pass UTF-8 text in resources[].content (.md/.txt — never base64 text). " +
+  "Binary pdf/png only: resources[].content_base64 + mime (~1MB). " +
+  "Do not pass ChatGPT/Claude local paths alone.";
 
 /** Absolute paths that only exist inside a host sandbox, not on mcp.mutande.online. */
 const HOST_SANDBOX_PATH =

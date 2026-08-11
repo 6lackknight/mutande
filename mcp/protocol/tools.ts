@@ -12,6 +12,54 @@ const EMPTY_OBJECT = {
   additionalProperties: false,
 } as const;
 
+/** Shared resource item schema for forward/reply bundles. */
+const RESOURCE_ITEM = {
+  type: "object",
+  properties: {
+    name: {
+      type: "string",
+      description: "Filename, e.g. notes.md or diagram.png",
+    },
+    mime: {
+      type: "string",
+      description: "Optional MIME (required for binary).",
+    },
+    content: {
+      type: "string",
+      description:
+        "UTF-8 text for .md/.txt/.json. Prefer this. Never base64 text. Never /mnt/data paths.",
+    },
+    content_base64: {
+      type: "string",
+      description:
+        "Binary only (pdf/png/…). Keep under ~1MB. Do not base64 markdown/text.",
+    },
+    path: {
+      type: "string",
+      description:
+        "Label only — hosted MCP cannot read /mnt/data or host files. Must also pass content or content_base64.",
+    },
+  },
+} as const;
+
+const BUNDLE_PROPERTIES = {
+  subject: { type: "string", description: "Short title." },
+  notes: {
+    type: "string",
+    description: "Main message body as UTF-8 text/markdown. Not a file path.",
+  },
+  context: { type: "string" },
+  questions: { type: "array" },
+  answers: { type: "array" },
+  resources: {
+    type: "array",
+    description:
+      "Attachments with INLINE bytes. Text: {name, content}. Binary: {name, content_base64, mime}. Never path-only /mnt/data.",
+    items: RESOURCE_ITEM,
+  },
+  resource_requests: { type: "array" },
+} as const;
+
 /** Implemented hosted tools (app_envelope + hub metadata). */
 export const IMPLEMENTED_TOOLS = new Set([
   "health",
@@ -45,13 +93,15 @@ export function toolDefinitions(): McpToolDefinition[] {
     {
       name: "list_threads",
       description:
-        "List app_envelope collaboration threads for this web agent (including ones you created). Default filter needs_action (inbox to do). Use filter=open to see outbound threads you started (needs_action hides those — your_status is replied). Returns caught_up=true when empty — stay quiet for needs_action. Read-only.",
+        "List app_envelope threads for this web agent. Default filter=needs_action (inbox to do). Use filter=open to see outbound threads you sent (needs_action hides those — your_status is replied). caught_up=true when empty — stay quiet for needs_action. Read-only.",
       inputSchema: {
         type: "object",
         properties: {
           filter: {
             type: "string",
             enum: ["needs_action", "open", "closed"],
+            description:
+              "needs_action (default) = inbox to do. open = including outbound you started. closed = archived.",
           },
         },
         additionalProperties: false,
@@ -64,20 +114,26 @@ export function toolDefinitions(): McpToolDefinition[] {
       inputSchema: {
         type: "object",
         required: ["thread_id"],
-        properties: { thread_id: { type: "string" } },
+        properties: {
+          thread_id: { type: "string", description: "Thread id from list_threads / forward_draft." },
+        },
         additionalProperties: false,
       },
     },
     {
       name: "reply_to_thread",
       description:
-        "Reply on an app_envelope thread as this web agent. Bundle fields map to hub app_envelope (subject, notes, …).",
+        "Reply on an app_envelope thread. Put body in bundle.notes (UTF-8). Attachments: resources[].content for text; content_base64 only for binary. Never /mnt/data paths.",
       inputSchema: {
         type: "object",
         required: ["thread_id", "bundle"],
         properties: {
           thread_id: { type: "string" },
-          bundle: { type: "object" },
+          bundle: {
+            type: "object",
+            description: "Reply payload: notes/subject + optional resources (inline only).",
+            properties: BUNDLE_PROPERTIES,
+          },
         },
         additionalProperties: false,
       },
@@ -107,7 +163,7 @@ export function toolDefinitions(): McpToolDefinition[] {
     {
       name: "forward_draft",
       description:
-        "Start a new app_envelope collaboration thread (no local draft store — pass content in bundle). Self-collab: @all or @claude/@cursor/@chatgpt (resolves to the peer sidecar/mcp slot). Teammates: alice@org, alice@org/claude, @all@org. Never E2E — refused when the path would require sidecar seal. On success ALWAYS returns JSON with thread_id + message_id (never empty ok). Attachments: pass resources[].content or content_base64 — host paths like /mnt/data/… are rejected (mcp.mutande.online cannot read ChatGPT sandbox files).",
+        "Start an app_envelope thread (not E2E). Pass recipient + bundle — no local draft store. Body: bundle.notes UTF-8. Text files: resources[{name, content}] — never /mnt/data, never base64 text. Binary pdf/png: content_base64+mime (~1MB). Self: @all/@claude/@cursor/@chatgpt. Teammates: alice@org, alice@org/claude, @all@org. Success JSON always includes thread_id, message_id, resource_count, resource_names.",
       inputSchema: {
         type: "object",
         required: ["recipient"],
@@ -124,40 +180,8 @@ export function toolDefinitions(): McpToolDefinition[] {
           bundle: {
             type: "object",
             description:
-              "App envelope content: subject, notes, context, questions, resources (inline content or content_base64 — not host paths), …",
-            properties: {
-              subject: { type: "string" },
-              notes: { type: "string" },
-              context: { type: "string" },
-              questions: { type: "array" },
-              answers: { type: "array" },
-              resources: {
-                type: "array",
-                description:
-                  "Attachments. Each item: { name, content } or { name, content_base64, mime }. Do NOT use ChatGPT /mnt/data paths alone.",
-                items: {
-                  type: "object",
-                  properties: {
-                    name: { type: "string" },
-                    mime: { type: "string" },
-                    content: {
-                      type: "string",
-                      description: "Inline UTF-8 text (preferred for .md/.txt).",
-                    },
-                    content_base64: {
-                      type: "string",
-                      description: "Inline bytes as base64 (binary or text).",
-                    },
-                    path: {
-                      type: "string",
-                      description:
-                        "Optional label only — must also include content/content_base64 on hosted MCP.",
-                    },
-                  },
-                },
-              },
-              resource_requests: { type: "array" },
-            },
+              "App envelope: subject, notes (UTF-8 body), optional resources with inline content — not host paths.",
+            properties: BUNDLE_PROPERTIES,
           },
         },
         additionalProperties: false,
