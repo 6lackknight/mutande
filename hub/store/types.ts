@@ -312,6 +312,7 @@ export interface MessageUpvoteSummary {
 
 export interface ToggleUpvoteInput {
   from_agent?: string;
+  from_agent_id?: string;
 }
 
 export interface ToggleUpvoteResult {
@@ -482,6 +483,11 @@ export interface CreateThreadInput {
   app_envelope?: AppEnvelopePayload;
   /** Sender agent slug; defaults to user's default agent. */
   from_agent?: string;
+  /**
+   * Bound sender agent_id (hosted MCP dual-slot). Wins over `from_agent` slug
+   * so web sessions are not remapped to a preferred sidecar row.
+   */
+  from_agent_id?: string;
 }
 
 export interface ReplyInput {
@@ -491,6 +497,8 @@ export interface ReplyInput {
   app_envelope?: AppEnvelopePayload;
   /** Reply-from agent slug; defaults to user's default agent. */
   from_agent?: string;
+  /** Bound sender agent_id — same semantics as create (`from_agent_id`). */
+  from_agent_id?: string;
   /** Self-handoff: route thread to another of your agent slots. */
   to_agent?: string;
   /** Nested reply target message id in this thread. */

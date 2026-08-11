@@ -295,6 +295,7 @@ Deno.test("forward_draft creates app_envelope thread", async () => {
   hub.createThread = (_token, input) => {
     assertEquals(input.to, "@all");
     assertEquals(input.from_agent, "chatgpt");
+    assertEquals(input.from_agent_id, "agent-web-1");
     assertEquals(input.app_envelope.notes, "hello team");
     return Promise.resolve({
       thread: meta({
@@ -326,6 +327,155 @@ Deno.test("forward_draft creates app_envelope thread", async () => {
   assertEquals(body.ok, true);
   assertEquals(body.thread_id, "new-t");
   assertEquals(body.message_id, "m1");
+});
+
+Deno.test("forward_draft @cursor returns thread_id with from_agent_id", async () => {
+  const hub = new HubClient("http://hub.test");
+  hub.createThread = (_token, input) => {
+    assertEquals(input.to, "@cursor");
+    assertEquals(input.from_agent_id, "agent-web-1");
+    assertEquals(input.from_agent, "chatgpt");
+    return Promise.resolve({
+      thread: meta({
+        id: "cursor-t",
+        audience: "u@acme/cursor",
+        audience_agent_id: "agent-cursor-1",
+        from_agent_id: "agent-web-1",
+        encryption_mode: "app_envelope",
+      }),
+      message_id: "m-cursor",
+    });
+  };
+  const res = await handleMcpRequest(
+    {
+      jsonrpc: "2.0",
+      id: 21,
+      method: "tools/call",
+      params: {
+        name: "forward_draft",
+        arguments: {
+          recipient: "@cursor",
+          bundle: {
+            subject: "orgs prd",
+            notes: "please review",
+            resources: [{
+              name: "mutande-organisations-prd.md",
+              content: "# Organisations\n\nDraft",
+            }],
+          },
+        },
+      },
+    },
+    { session: fakeSession, serverVersion: "0.1.0", hub },
+  );
+  const { isError, body } = parseToolText(res);
+  assertEquals(isError, false);
+  assertEquals(body.ok, true);
+  assertEquals(body.thread_id, "cursor-t");
+  assertEquals(body.message_id, "m-cursor");
+  assertEquals(body.encryption_mode, "app_envelope");
+});
+
+Deno.test("forward_draft rejects /mnt/data path without content", async () => {
+  const hub = new HubClient("http://hub.test");
+  let called = false;
+  hub.createThread = () => {
+    called = true;
+    return Promise.reject(new Error("should not create"));
+  };
+  const res = await handleMcpRequest(
+    {
+      jsonrpc: "2.0",
+      id: 22,
+      method: "tools/call",
+      params: {
+        name: "forward_draft",
+        arguments: {
+          recipient: "@cursor",
+          bundle: {
+            notes: "attached prd",
+            resources: [{
+              name: "mutande-organisations-prd.md",
+              path: "/mnt/data/mutande-organisations-prd.md",
+            }],
+          },
+        },
+      },
+    },
+    { session: fakeSession, serverVersion: "0.1.0", hub },
+  );
+  const result = res!.result as {
+    content: Array<{ text: string }>;
+    isError?: boolean;
+  };
+  assertEquals(result.isError, true);
+  assertEquals(result.content[0].text.includes("/mnt/data"), true);
+  assertEquals(result.content[0].text.toLowerCase().includes("content"), true);
+  assertEquals(called, false);
+});
+
+Deno.test("forward_draft refuses hub empty success without thread_id", async () => {
+  const hub = new HubClient("http://hub.test");
+  hub.createThread = () =>
+    Promise.resolve({
+      thread: meta({ id: "" }),
+      message_id: "",
+    });
+  const res = await handleMcpRequest(
+    {
+      jsonrpc: "2.0",
+      id: 23,
+      method: "tools/call",
+      params: {
+        name: "forward_draft",
+        arguments: {
+          recipient: "@cursor",
+          bundle: { notes: "hi" },
+        },
+      },
+    },
+    { session: fakeSession, serverVersion: "0.1.0", hub },
+  );
+  const result = res!.result as {
+    content: Array<{ text: string }>;
+    isError?: boolean;
+  };
+  assertEquals(result.isError, true);
+  assertEquals(result.content[0].text.includes("thread_id"), true);
+});
+
+Deno.test("list_threads open includes threads this web agent created", async () => {
+  const hub = new HubClient("http://hub.test");
+  hub.listThreads = () =>
+    Promise.resolve({
+      threads: [
+        meta({
+          id: "sent",
+          from_agent_id: "agent-web-1",
+          audience_agent_id: "agent-cursor-1",
+          audience: "u@acme/cursor",
+          your_status: "replied",
+        }),
+        meta({
+          id: "other",
+          from_agent_id: "someone-else",
+          audience_agent_id: "nope",
+        }),
+      ],
+    });
+  const res = await handleMcpRequest(
+    {
+      jsonrpc: "2.0",
+      id: 24,
+      method: "tools/call",
+      params: { name: "list_threads", arguments: { filter: "open" } },
+    },
+    { session: fakeSession, serverVersion: "0.1.0", hub },
+  );
+  const { isError, body } = parseToolText(res);
+  assertEquals(isError, false);
+  assertEquals(body.caught_up, false);
+  assertEquals((body.threads as ThreadMeta[]).map((t) => t.id), ["sent"]);
 });
 
 Deno.test("forward_draft refuses hub E2E wire error", async () => {
@@ -418,10 +568,11 @@ Deno.test("delete_thread success", async () => {
 
 Deno.test("upvote_message success", async () => {
   const hub = new HubClient("http://hub.test");
-  hub.upvoteMessage = (_t, threadId, messageId, fromAgent) => {
+  hub.upvoteMessage = (_t, threadId, messageId, opts) => {
     assertEquals(threadId, "t1");
     assertEquals(messageId, "m1");
-    assertEquals(fromAgent, "chatgpt");
+    assertEquals(opts?.from_agent, "chatgpt");
+    assertEquals(opts?.from_agent_id, "agent-web-1");
     return Promise.resolve({
       upvoted: true,
       upvotes: { count: 1, upvotes: [], your_upvotes: ["agent-web-1"] },

@@ -396,3 +396,34 @@ Deno.test("L2 plaintext-at-rest interim when key unset", async () => {
   assertEquals(sealed.at_rest, "plaintext");
   assertEquals(JSON.parse(sealed.body).notes, "plain");
 });
+
+Deno.test("L2 dual-slot: from_agent slug prefers sidecar; from_agent_id binds mcp", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth } = await setupOrgWithUsers(store);
+    // Sidecar chatgpt already preferred by default; add mcp twin (ChatGPT web connect).
+    await store.connectAgent(aliceAuth, "sidecar", { slug: "chatgpt" });
+    const mcp = await store.connectAgent(aliceAuth, "mcp", { slug: "chatgpt" });
+
+    // Slug-only resolve → sidecar → e2e path → app_envelope wire rejected.
+    await assertRejects(
+      () =>
+        store.createThread(aliceAuth, {
+          to: "@cursor",
+          app_envelope: { version: 1, notes: "from web" },
+          from_agent: "chatgpt",
+        }),
+      HubError,
+    );
+
+    // Bound web agent_id wins — mcp→sidecar is app_envelope.
+    const { thread } = await store.createThread(aliceAuth, {
+      to: "@cursor",
+      app_envelope: { version: 1, subject: "ping", notes: "from web" },
+      from_agent: "chatgpt",
+      from_agent_id: mcp.id,
+    });
+    assertEquals(thread.encryption_mode, "app_envelope");
+    assertEquals(thread.from_agent_id, mcp.id);
+    assertEquals(thread.audience, "alice@acme/cursor");
+  });
+});

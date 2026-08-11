@@ -160,13 +160,19 @@ async function callTool(
       filter,
     );
     // Skill pattern: empty / caught up → quiet payload.
+    // needs_action omits threads you already sent (your_status=replied) —
+    // use filter=open to see outbound app_envelope mail you created.
     if (caught_up) {
       return toolTextResult(
         JSON.stringify({
           threads: [],
           caught_up: true,
           agent_id: ctx.session.agent.id,
-          message: "caught up — no action needed",
+          filter: filter ?? "needs_action",
+          message:
+            filter === "open" || filter === "closed"
+              ? "no matching app_envelope threads"
+              : "caught up — no action needed (use filter=open to see threads you started)",
         }),
       );
     }
@@ -176,6 +182,7 @@ async function callTool(
           threads,
           caught_up: false,
           agent_id: ctx.session.agent.id,
+          filter: filter ?? "needs_action",
         },
         null,
         2,
@@ -243,35 +250,57 @@ async function callTool(
       return toolTextResult("recipient is required", true);
     }
     // Ephemeral draft: require some readable content for a useful handoff.
+    // Path-only resources do not count — hosted MCP cannot read /mnt/data/….
+    const resources = Array.isArray(bundle.resources) ? bundle.resources : [];
+    const hasInlineResource = resources.some((r) => {
+      if (!r || typeof r !== "object") return false;
+      const o = r as Record<string, unknown>;
+      return Boolean(
+        (typeof o.content === "string" && o.content.trim()) ||
+          (typeof o.content_base64 === "string" && o.content_base64.trim()) ||
+          (typeof o.data === "string" && o.data.trim()) ||
+          (typeof o.body === "string" && o.body.trim()),
+      );
+    });
     const hasContent = Boolean(
       (typeof bundle.notes === "string" && bundle.notes.trim()) ||
         (typeof bundle.subject === "string" && bundle.subject.trim()) ||
         (typeof bundle.context === "string" && bundle.context.trim()) ||
         (Array.isArray(bundle.questions) && bundle.questions.length > 0) ||
-        (Array.isArray(bundle.resources) && bundle.resources.length > 0) ||
+        hasInlineResource ||
         (Array.isArray(bundle.resource_requests) &&
           bundle.resource_requests.length > 0),
     );
     if (!hasContent) {
       return toolTextResult(
-        "bundle must include notes, subject, context, questions, and/or resources",
+        "bundle must include notes, subject, context, questions, and/or resources with inline content (not host paths like /mnt/data/…)",
         true,
       );
     }
     const result = await forwardDraftAsWebAgent(
       ctx.hub,
       ctx.session.accessToken,
+      ctx.session.agent.id,
       ctx.session.slug,
       recipient,
       bundle,
     );
+    const threadId = result.thread?.id;
+    const messageId = result.message_id;
+    if (!threadId || !messageId) {
+      return toolTextResult(
+        "forward_draft failed: hub returned no thread_id/message_id",
+        true,
+      );
+    }
     return toolTextResult(
       JSON.stringify(
         {
           ok: true,
-          thread_id: result.thread.id,
-          message_id: result.message_id,
+          thread_id: threadId,
+          message_id: messageId,
           encryption_mode: result.thread.encryption_mode ?? "app_envelope",
+          recipient,
           thread: result.thread,
         },
         null,
@@ -316,6 +345,7 @@ async function callTool(
     const result = await upvoteMessageAsWebAgent(
       ctx.hub,
       ctx.session.accessToken,
+      ctx.session.agent.id,
       ctx.session.slug,
       threadId,
       messageId,

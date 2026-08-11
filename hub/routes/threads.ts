@@ -19,6 +19,7 @@ export function createThreadRoutes(store: HubStore) {
       envelope?: Envelope;
       app_envelope?: AppEnvelopePayload;
       from_agent?: string;
+      from_agent_id?: string;
     }>();
     const result = await store.createThread(c.get("auth"), body);
     return c.json(result, 201);
@@ -52,6 +53,7 @@ export function createThreadRoutes(store: HubStore) {
       envelope?: Envelope;
       app_envelope?: AppEnvelopePayload;
       from_agent?: string;
+      from_agent_id?: string;
       to_agent?: string;
       parent_message_id?: string;
     }>();
@@ -64,6 +66,7 @@ export function createThreadRoutes(store: HubStore) {
       envelope?: Envelope;
       app_envelope?: AppEnvelopePayload;
       from_agent?: string;
+      from_agent_id?: string;
       to_agent?: string;
       parent_message_id?: string;
     }>();
@@ -72,7 +75,8 @@ export function createThreadRoutes(store: HubStore) {
   });
 
   threadRoutes.post("/:id/messages/:messageId/upvote", async (c) => {
-    const body = await c.req.json<{ from_agent?: string }>().catch(() => ({}));
+    const body = await c.req.json<{ from_agent?: string; from_agent_id?: string }>()
+      .catch(() => ({}));
     const result = await store.toggleMessageUpvote(
       c.get("auth"),
       c.req.param("id"),

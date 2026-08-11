@@ -135,6 +135,7 @@ export class HubClient {
       to: string;
       app_envelope: AppEnvelopePayload;
       from_agent?: string;
+      from_agent_id?: string;
     },
   ): Promise<CreateThreadResponse> {
     return this.request<CreateThreadResponse>("/v1/threads", accessToken, {
@@ -149,6 +150,7 @@ export class HubClient {
     input: {
       app_envelope: AppEnvelopePayload;
       from_agent?: string;
+      from_agent_id?: string;
       to_agent?: string;
       parent_message_id?: string;
     },
@@ -215,8 +217,11 @@ export class HubClient {
     accessToken: string,
     threadId: string,
     messageId: string,
-    fromAgent?: string,
+    opts?: { from_agent?: string; from_agent_id?: string },
   ): Promise<ToggleUpvoteResponse> {
+    const body: Record<string, string> = {};
+    if (opts?.from_agent_id) body.from_agent_id = opts.from_agent_id;
+    if (opts?.from_agent) body.from_agent = opts.from_agent;
     return this.request<ToggleUpvoteResponse>(
       `/v1/threads/${encodeURIComponent(threadId)}/messages/${
         encodeURIComponent(messageId)
@@ -224,9 +229,7 @@ export class HubClient {
       accessToken,
       {
         method: "POST",
-        body: JSON.stringify(
-          fromAgent ? { from_agent: fromAgent } : {},
-        ),
+        body: JSON.stringify(body),
       },
     );
   }

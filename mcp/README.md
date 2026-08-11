@@ -76,6 +76,24 @@ Default slug: `chatgpt` (`MCP_DEFAULT_AGENT_SLUG`). Override with `?slug=` or `X
 
 New mail from hosted MCP is **app_envelope-only**. If hub would resolve the recipient to E2E, `forward_draft` refuses and points at the Mac sidecar.
 
+**Attachments:** pass `resources[].content` or `content_base64`. Host sandbox paths (`/mnt/data/…`) are rejected — this server cannot read ChatGPT/Claude local files.
+
+**Dual-slot senders:** hosted MCP always sends `from_agent_id` (bound web slot) so `chatgpt` mcp is not remapped to a preferred sidecar row (that wrongly forced E2E and returned no `thread_id`).
+
+### Redeploy (hub + MCP)
+
+This fix needs **both** projects:
+
+```bash
+# 1) Hub first — accepts from_agent_id on create/reply/upvote
+cd hub && deployctl deploy --project=mutande
+
+# 2) Hosted MCP — binds from_agent_id + resource path validation
+cd mcp && deno task deploy
+```
+
+Verify: ChatGPT `forward_draft` to `@cursor` returns JSON with `thread_id` + `message_id`; `list_threads` with `filter: "open"` shows the outbound thread; desktop MCP sees the same `app_envelope` thread (daemon does not hide app_envelope — missing mail meant the create never succeeded).
+
 ### Mac sidecar only (not on hosted MCP)
 
 - `get_router` / `set_router`

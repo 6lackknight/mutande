@@ -1169,7 +1169,10 @@ export class HubStore {
     if (!org) throw notFound("Org");
 
     const senderParts = parseUserHandle(sender.handle);
-    const fromAgent = await this.resolveAgentForUser(auth.userId, input.from_agent);
+    const fromAgent = await this.resolveSenderAgent(auth.userId, {
+      from_agent_id: input.from_agent_id,
+      from_agent: input.from_agent,
+    });
     const fromDisplay = formatDisplayAddress(senderParts.local, senderParts.orgSlug, fromAgent.slug);
 
     const trimmedTo = input.to.trim();
@@ -1609,7 +1612,10 @@ export class HubStore {
     if (!user?.handle) throw notFound("User");
 
     const userParts = parseUserHandle(user.handle);
-    const fromAgent = await this.resolveAgentForUser(auth.userId, input.from_agent);
+    const fromAgent = await this.resolveSenderAgent(auth.userId, {
+      from_agent_id: input.from_agent_id,
+      from_agent: input.from_agent,
+    });
     const fromDisplay = formatDisplayAddress(userParts.local, userParts.orgSlug, fromAgent.slug);
 
     const voteKey = this.messageUpvoteKey(threadId, messageId, fromAgent.id);
@@ -1721,7 +1727,10 @@ export class HubStore {
     if (!user?.handle) throw notFound("User");
 
     const userParts = parseUserHandle(user.handle);
-    const fromAgent = await this.resolveAgentForUser(auth.userId, input.from_agent);
+    const fromAgent = await this.resolveSenderAgent(auth.userId, {
+      from_agent_id: input.from_agent_id,
+      from_agent: input.from_agent,
+    });
     const fromDisplay = formatDisplayAddress(userParts.local, userParts.orgSlug, fromAgent.slug);
 
     // Enterprise agents may only reply within billed threads (§7.3 / §12).
@@ -2253,6 +2262,25 @@ export class HubStore {
     }
     out.sort((a, b) => a.match_slug.localeCompare(b.match_slug));
     return out;
+  }
+
+  /**
+   * Sender for create/reply/upvote: explicit `from_agent_id` (owned by caller) wins;
+   * otherwise slug / default via [resolveAgentForUser].
+   */
+  private async resolveSenderAgent(
+    userId: string,
+    input: { from_agent_id?: string; from_agent?: string },
+  ): Promise<Agent> {
+    const id = input.from_agent_id?.trim();
+    if (id) {
+      const agent = await this.getAgent(id);
+      if (!agent || agent.user_id !== userId) {
+        throw forbidden("from_agent_id does not belong to caller");
+      }
+      return agent;
+    }
+    return this.resolveAgentForUser(userId, input.from_agent);
   }
 
   /**

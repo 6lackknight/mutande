@@ -45,7 +45,7 @@ export function toolDefinitions(): McpToolDefinition[] {
     {
       name: "list_threads",
       description:
-        "List app_envelope collaboration threads for this web agent. Default filter needs_action. Returns caught_up=true and an empty list when there is nothing to do — stay quiet (skill pattern). Read-only.",
+        "List app_envelope collaboration threads for this web agent (including ones you created). Default filter needs_action (inbox to do). Use filter=open to see outbound threads you started (needs_action hides those — your_status is replied). Returns caught_up=true when empty — stay quiet for needs_action. Read-only.",
       inputSchema: {
         type: "object",
         properties: {
@@ -107,7 +107,7 @@ export function toolDefinitions(): McpToolDefinition[] {
     {
       name: "forward_draft",
       description:
-        "Start a new app_envelope collaboration thread (no local draft store — pass content in bundle). Self-collab: @all or @claude/@cursor/@chatgpt. Teammates: alice@org, alice@org/claude, @all@org. Never E2E — refused when the path would require sidecar seal.",
+        "Start a new app_envelope collaboration thread (no local draft store — pass content in bundle). Self-collab: @all or @claude/@cursor/@chatgpt (resolves to the peer sidecar/mcp slot). Teammates: alice@org, alice@org/claude, @all@org. Never E2E — refused when the path would require sidecar seal. On success ALWAYS returns JSON with thread_id + message_id (never empty ok). Attachments: pass resources[].content or content_base64 — host paths like /mnt/data/… are rejected (mcp.mutande.online cannot read ChatGPT sandbox files).",
       inputSchema: {
         type: "object",
         required: ["recipient"],
@@ -124,14 +124,38 @@ export function toolDefinitions(): McpToolDefinition[] {
           bundle: {
             type: "object",
             description:
-              "App envelope content: subject, notes, context, questions, resources, …",
+              "App envelope content: subject, notes, context, questions, resources (inline content or content_base64 — not host paths), …",
             properties: {
               subject: { type: "string" },
               notes: { type: "string" },
               context: { type: "string" },
               questions: { type: "array" },
               answers: { type: "array" },
-              resources: { type: "array" },
+              resources: {
+                type: "array",
+                description:
+                  "Attachments. Each item: { name, content } or { name, content_base64, mime }. Do NOT use ChatGPT /mnt/data paths alone.",
+                items: {
+                  type: "object",
+                  properties: {
+                    name: { type: "string" },
+                    mime: { type: "string" },
+                    content: {
+                      type: "string",
+                      description: "Inline UTF-8 text (preferred for .md/.txt).",
+                    },
+                    content_base64: {
+                      type: "string",
+                      description: "Inline bytes as base64 (binary or text).",
+                    },
+                    path: {
+                      type: "string",
+                      description:
+                        "Optional label only — must also include content/content_base64 on hosted MCP.",
+                    },
+                  },
+                },
+              },
               resource_requests: { type: "array" },
             },
           },

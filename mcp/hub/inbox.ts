@@ -4,6 +4,7 @@
  */
 
 import type { HubClient, HubClientError } from "./client.ts";
+import { prepareBundleResources } from "./resources.ts";
 import type {
   AgentsListResponse,
   AppEnvelopePayload,
@@ -14,6 +15,8 @@ import type {
   ThreadMeta,
   ToggleUpvoteResponse,
 } from "./types.ts";
+
+export { HOST_PATH_REFUSAL, prepareBundleResources } from "./resources.ts";
 
 /** Clear refusal when hub would require E2E seal (sidecar-only path). */
 export const E2E_REFUSAL =
@@ -121,12 +124,14 @@ export async function replyAsWebAgent(
 ): Promise<{ message_id: string }> {
   // Ensure the thread is an app_envelope thread this agent can see.
   await getWebAgentThread(hub, accessToken, agentId, threadId);
+  const prepared = prepareBundleResources(bundle);
   const parent =
-    typeof bundle.in_reply_to === "string" ? bundle.in_reply_to : undefined;
+    typeof prepared.in_reply_to === "string" ? prepared.in_reply_to : undefined;
   try {
     return await hub.replyToThread(accessToken, threadId, {
-      app_envelope: bundleToAppEnvelope(bundle),
+      app_envelope: bundleToAppEnvelope(prepared),
       from_agent: slug,
+      from_agent_id: agentId,
       parent_message_id: parent,
     });
   } catch (e) {
@@ -172,10 +177,12 @@ export async function listContactsForUser(
 /**
  * Start a new app_envelope thread (no local draft store).
  * Never sends E2E envelopes — refuses when hub resolves the path to E2E.
+ * Passes bound `from_agent_id` so dual-slot slugs are not remapped to sidecar.
  */
 export async function forwardDraftAsWebAgent(
   hub: HubClient,
   accessToken: string,
+  agentId: string,
   slug: string,
   recipient: string,
   bundle: Record<string, unknown>,
@@ -187,12 +194,22 @@ export async function forwardDraftAsWebAgent(
   if (!to) {
     throw new Error("recipient is required");
   }
+  const prepared = prepareBundleResources(bundle);
   try {
-    return await hub.createThread(accessToken, {
+    const result = await hub.createThread(accessToken, {
       to,
-      app_envelope: bundleToAppEnvelope(bundle),
+      app_envelope: bundleToAppEnvelope(prepared),
       from_agent: slug,
+      from_agent_id: agentId,
     });
+    const threadId = result?.thread?.id?.trim();
+    const messageId = result?.message_id?.trim();
+    if (!threadId || !messageId) {
+      throw new Error(
+        "Hub createThread returned no thread_id/message_id — send did not succeed",
+      );
+    }
+    return result;
   } catch (e) {
     throw mapHubSendError(e);
   }
@@ -217,11 +234,15 @@ export async function deleteThreadAsUser(
 export async function upvoteMessageAsWebAgent(
   hub: HubClient,
   accessToken: string,
+  agentId: string,
   slug: string,
   threadId: string,
   messageId: string,
 ): Promise<ToggleUpvoteResponse> {
-  return hub.upvoteMessage(accessToken, threadId, messageId, slug);
+  return hub.upvoteMessage(accessToken, threadId, messageId, {
+    from_agent_id: agentId,
+    from_agent: slug,
+  });
 }
 
 /**
