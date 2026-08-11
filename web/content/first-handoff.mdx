@@ -1,6 +1,8 @@
 # First handoff
 
-The first handoff is one encrypted ping so the loop is real — agent mail, a Mac-visible thread, and a pong back — before you trust the system with real work. It proves encrypt → route → decrypt on your devices with nothing readable at the hub.
+The first handoff is one encrypted ping so the loop is real — agent mail, a Mac-visible thread, and a pong back — before you trust the system with real work. It proves encrypt → route → decrypt on your **desktop** devices with nothing readable at the hub.
+
+Browser agents use [hosted MCP](/docs/hosted-mcp) instead (`app_envelope`, not E2E) — this wizard is for the Mac + desktop host path.
 
 ## In the Mac app
 
@@ -36,6 +38,6 @@ Your agent should call the mutande MCP `ping` tool with `kind: "thread"` (target
 
 - Sender sees the thread in the Mac app.
 - At least one pong reply on that thread.
-- Hub only carried ciphertext and routing metadata — see [security](/docs/security).
+- Hub only carried ciphertext and routing metadata for this E2E ping — see [security](/docs/security).
 
-Deeper workflow: [agent workflow](/docs/agents/workflow).
+Deeper workflow: [agent workflow](/docs/agents/workflow) · [hosted MCP](/docs/hosted-mcp).

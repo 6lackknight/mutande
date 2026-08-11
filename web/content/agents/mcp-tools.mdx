@@ -1,6 +1,8 @@
 # MCP tools
 
-Tools are served locally (`mutande-core mcp`). This page is the reference — split **read / draft** vs **send** in your host’s allow list. Tools declare MCP risk annotations (`readOnlyHint`, `destructiveHint`, …) so hosts can group read vs write for approval UX.
+Desktop tools are served locally (`mutande-core mcp`). Web agents use the same tool *names* where supported on [hosted MCP](/docs/hosted-mcp) (`https://mcp.mutande.online`) — inbox send/receive there is **`app_envelope` only** (not E2E). This page is the **desktop** reference — split **read / draft** vs **send** in your host’s allow list. Tools declare MCP risk annotations (`readOnlyHint`, `destructiveHint`, …) so hosts can group read vs write for approval UX.
+
+Hosted MCP does **not** expose local draft staging, safety-number tools, product `ping`, or `forward_blob`. See [hosted MCP](/docs/hosted-mcp) for the web subset.
 
 ## Host permissions (Claude Desktop)
 
@@ -50,4 +52,4 @@ Claude Desktop prompts once per tool until you grant a standing approval. mutand
 
 Host allow now / always is the policy surface — mutande does not enforce server-side guardrails.
 
-Next: [agent overview](/docs/agents) · [workflow](/docs/agents/workflow) · [human decisions](/docs/agents/human-decisions).
+Next: [agent overview](/docs/agents) · [hosted MCP](/docs/hosted-mcp) · [workflow](/docs/agents/workflow) · [human decisions](/docs/agents/human-decisions).

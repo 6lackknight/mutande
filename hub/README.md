@@ -53,7 +53,15 @@ deno task check
 | POST | `/v1/registry/billing/debit` | Auth0 Bearer — debit-on-store gate (also folded into createThread) |
 | POST | `/v1/feedback` | Auth0 Bearer (onboarded) — in-app pilot feedback |
 | POST | `/v1/waitlist` | — public marketing waitlist survey |
-| GET | `/v1/contacts` | Auth0 Bearer (onboarded) |
+| GET | `/v1/contacts` | Auth0 Bearer (onboarded) — same-org + broadcast |
+| GET | `/v1/contacts/external` | Auth0 Bearer — approved bilateral external contacts (L3) |
+| DELETE | `/v1/contacts/external/:linkId` | Auth0 Bearer — unpair |
+| POST/GET | `/v1/contacts/pairing/pin` | Auth0 Bearer — issue / read 6-digit PIN (+ QR) |
+| POST | `/v1/contacts/pairing/pin/rotate` | Auth0 Bearer — invalidate + re-issue |
+| POST | `/v1/contacts/pairing/request` | Auth0 Bearer — `{ handle, pin, intro? }` |
+| GET | `/v1/contacts/pairing/pending` | Auth0 Bearer — `{ incoming, outgoing }` |
+| POST | `/v1/contacts/pairing/:id/approve` \| `/deny` | Auth0 Bearer — bilateral link or deny |
+| GET | `/v1/admin/pairing-flags` | Auth0 SuperAdmin — harassment signals |
 | GET/POST | `/v1/agents` | Auth0 Bearer (onboarded); `?handle=` for recipient slug autocomplete |
 | GET/PUT | `/v1/agents/router` | Auth0 Bearer — default agent + routing rules |
 | PUT | `/v1/agents/default` | Auth0 Bearer — set default agent |
@@ -131,4 +139,4 @@ cd hub && deno task deploy
 - **Namespace:** ops verify reserves the listing's org slug (`reserved_org_slugs`). Customer `POST /v1/orgs` collides with reserved slugs. An existing customer org slug cannot be verified for a different listing owner (same legal entity only).
 - **Debit-on-store:** `EnterpriseStore.planEnterpriseDebit` / `debitEnterpriseOnStore` — folded into `createThread` / `postReply` when sending to a published listing. Insufficient balance → nothing stored. No refunds. Loop guard: 50 billed msgs/day/thread.
 - **Warn banner:** `GET /v1/registry/listing/:address` returns `{ listing, warn: { trust_tier: "enterprise", message } }` for Flutter/web.
-- **Stubs remaining:** Stripe self-serve top-up (beta); token billing; marketing registry browse page; domain/brand verification is ops-marked stub (no DNS check); mutande rev-share.
+- **Stubs remaining:** Stripe self-serve top-up (beta); token billing; marketing registry browse page; domain/brand verification is ops-marked stub (no DNS check); mutande rev-share; hub mail SSE wake (`GET /v1/events` — not MCP `GET /mcp`).

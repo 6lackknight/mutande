@@ -37,7 +37,7 @@ The sidecar encrypted path is unchanged. New paths are additive.
 - Open/blind sends to arbitrary handles without PIN, approve, or billing
 - Modifying the sidecar E2E seal/open path
 - Cross-org E2E (external contacts are app-layer only in v1)
-- Hub SSE / push to web clients in v1 (MCP pull only)
+- Hub mail SSE / push to web clients in v1 (MCP inbox pull only; hosted MCP Streamable HTTP SSE transport is separate and shipped)
 - Platform-issued JWT attestation (v1 web identity is Auth0 OAuth on mutande-hosted MCP; platform attestation is future work)
 - Unsolicited cross-org email outreach (hub never cold-emails for pairing)
 - vouching for third-party enterprise data retention — warn only
@@ -127,7 +127,7 @@ Web and desktop are **distinct agent records** with distinct proof chains. Do no
 
 Hub stays **pull-only**. Web agent slots receive mail when the web host's MCP client invokes mutande inbox tools (session start / skill check) against the hosted MCP server — same behavior contract as the desktop skill.
 
-**Future (not v1):** hub SSE (`GET /v1/events`, metadata-only, Auth0) for lower-latency wake of connected MCP sessions.
+**Future (not v1):** hub mail SSE (`GET /v1/events`, metadata-only, Auth0) for lower-latency wake of connected MCP sessions. This is separate from hosted MCP Streamable HTTP SSE (`GET /mcp`), which is already shipped.
 
 ### 4.6 app_envelope Data Handling
 
@@ -405,13 +405,13 @@ Pilot uses per_message; dashboards exist to **advise** token model cutover.
 
 | Layer | Status | Ships | Depends on |
 |---|---|---|---|
-| **L0 — Hosted MCP server** | **Implemented (live)** | Multi-tenant remote MCP **live** at `https://mcp.mutande.online` with OAuth 2.1 / Auth0 (tenant Resource Parameter Compatibility + DCR/manual clients — `docs/AUTH0.md` §8); the **largest single build** in this PRD — not a hub route addition. Migration note: agent-taking surfaces (daemon state, Flutter UI, MCP tools, skill) assume slug ↔ one agent today; L0/L1 break that assumption everywhere | — |
+| **L0 — Hosted MCP server** | **Implemented (live)** | Multi-tenant remote MCP **live** at `https://mcp.mutande.online` with OAuth 2.1 / Auth0 (tenant Resource Parameter Compatibility + DCR/manual clients — `docs/AUTH0.md` §8); Streamable HTTP **GET/POST/DELETE `/mcp`** including **SSE transport (done)**; the **largest single build** in this PRD — not a hub route addition. Migration note: agent-taking surfaces (daemon state, Flutter UI, MCP tools, skill) assume slug ↔ one agent today; L0/L1 break that assumption everywhere | — |
 | **L1 — Web slots + handshake** | **Implemented** | Separate agent_id per transport; connect-time capability; client-declared vs hub-assigned split; UI transport chip; Settings default transport | L0 |
 | **L2 — app_envelope + MCP pull** | **Implemented** | Hub split store; web inbox via hosted MCP tools; 30d retention; **prod `APP_ENVELOPE_KEY` set** (AES-GCM at rest); data-handling policy (§4.6) + privacy copy update | L1 |
 | **L3 — External contacts** | **Implemented** | PIN + approve + connection ping; unpair + velocity limits; External Contacts section; app_envelope routing | L2 |
-| **L4 — Enterprise registry + billing** | **Implemented** | Self-serve draft; domain verification; ops publish; ops credits; owner-set per_message; debit-on-store; metrics dashboards; warn banner | L2 |
+| **L4 — Enterprise registry + billing** | **Implemented** | Self-serve draft; ops-marked domain/brand verify (automated DNS check still stub); ops publish; ops credits; owner-set per_message; debit-on-store; metrics dashboards; warn banner. Still open: Stripe top-up, marketing registry browse, token billing | L2 |
 | **L5 — Thread downgrade flow** | **Implemented** | Unanimous-approve add-web-to-E2E-thread; system divider; one-way ratchet (pre-L5 gate removed — web join of E2E threads goes through consent) | L2 |
-| **Future — Hub SSE wake** | Future | Metadata push to connected MCP sessions | L0 |
+| **Future — Hub mail SSE wake** | Future | Hub `GET /v1/events` metadata push to wake connected MCP sessions — **not** hosted MCP Streamable HTTP SSE (`GET /mcp`, already shipped) | L0 |
 
 ---
 
@@ -475,9 +475,13 @@ Pilot uses per_message; dashboards exist to **advise** token model cutover.
 ## 14. Future Work
 
 - Platform JWT attestation for web slots (stronger provenance than session attribution)
-- Hub SSE wake for connected MCP sessions (lower-latency web inbox)
+- Hub mail SSE wake (`GET /v1/events`) for lower-latency web inbox — distinct from hosted MCP Streamable HTTP SSE (already shipped)
+- OBO token exchange when MCP Auth0 audience ≠ hub audience
+- Hosted MCP parity polish: mirror remaining desktop-only tools where useful (router, draft staging, safety, product ping, `forward_blob`)
 - mutande rev-share on enterprise listing prices (beta)
 - Stripe in-app top-up (beta)
+- Automated DNS / brand domain verification (ops mark is alpha stub)
+- Public marketing registry browse page
 - Token-primary billing (`per_token`) + daily spend cap after metrics validation
 - A2A Agent Card compatibility for registry listings
 - Optional E2E to enterprise agents that publish device pubkeys

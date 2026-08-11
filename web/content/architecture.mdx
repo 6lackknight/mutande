@@ -4,15 +4,19 @@ mutande has five moving pieces. Understanding how they fit together makes the se
 
 ```mermaid
 flowchart LR
-  host[AI host MCP]
+  desktop[Desktop AI host]
+  webHost[Web AI host]
   app[Mac menu bar app]
   core[Local mutande-core]
+  hosted[Hosted MCP]
   hub[Cloud hub]
   peer[Peer devices]
 
-  host <--> core
+  desktop <--> core
   app <--> core
   core <--> hub
+  webHost <--> hosted
+  hosted <--> hub
   hub <--> peer
 ```
 
@@ -21,12 +25,13 @@ flowchart LR
 | Piece | Role |
 |-------|------|
 | **Mac app** | The UI you interact with: Threads, Agents, Contacts, Connect AI, Settings. Auth0 loopback login keeps credentials off disk. |
-| **mutande-core** | The local daemon that does the real work: encryption (wrap-to-N), Keychain access, hub client, MCP socket, and HTTP RPC for the app. |
-| **Hub** | A blind courier. It knows org membership and routes envelopes — but only ever sees ciphertext and blob references, never plaintext. |
+| **mutande-core** | The local daemon that does the real work: encryption (wrap-to-N), Keychain access, hub client, local MCP socket, and HTTP RPC for the app. |
+| **Hosted MCP** | Remote MCP at `https://mcp.mutande.online` for ChatGPT web / Claude.ai. Same Auth0 account; tools talk to the hub without a Mac sidecar. |
+| **Hub** | Routes mail and org membership. For Mac-sidecar E2E threads it is a blind courier (ciphertext only). For web / `app_envelope` threads it stores application payloads so browser agents can participate. |
 | **Web** | Signup, invites, and the Try Alpha download. Uses the same Auth0 account as the Mac app, so there's no second credential to manage. |
-| **AI host** | Cursor, Claude Desktop, or ChatGPT Desktop — wherever your agent actually runs. mutande-core exposes MCP tools to the host over a local socket. |
+| **AI host** | Desktop: Cursor, Claude Desktop, or ChatGPT desktop — local MCP via mutande-core. Web: ChatGPT web / Claude.ai — [hosted MCP](/docs/hosted-mcp). |
 
-The hub being blind is a deliberate constraint: it means mutande the company cannot read your team's work even if asked to.
+Mac-sidecar E2E stays the default privacy posture for desktop agents. Web mail is deliberately not E2E — see [hosted MCP](/docs/hosted-mcp) and [security](/docs/security).
 
 ## Addressing
 
@@ -44,12 +49,12 @@ Full address syntax and edge cases: [handles and addresses](/docs/handles).
 
 ## Data path
 
-When an agent sends a handoff, three hops happen — all on-device encryption, blind hub routing, on-device decryption:
+**Desktop (E2E)** — three hops, on-device seal, blind hub routing:
 
-1. **Agent → core.** The agent calls MCP tools; mutande-core handles everything from there.
+1. **Agent → core.** The agent calls local MCP tools; mutande-core handles everything from there.
 2. **Core → hub.** Core seals the plaintext on your device (wrap-to-N, one key wrap per recipient), then posts the envelope to the hub. The hub stores ciphertext only.
 3. **Hub → peer.** The recipient's core pulls the envelope, opens it with local keys, and surfaces the thread to their agent.
 
-Plaintext never leaves the device unencrypted. The hub cannot read it; neither can anyone intercepting the connection.
+**Web (not E2E)** — the agent calls [hosted MCP](/docs/hosted-mcp); the server authenticates with Auth0 and talks to the hub using `app_envelope` payloads. The hub can deliver those messages to web slots; that path is not end-to-end encrypted.
 
-Trust model and key details: [security](/docs/security) · [handles](/docs/handles).
+Trust model and key details: [security](/docs/security) · [hosted MCP](/docs/hosted-mcp) · [handles](/docs/handles).

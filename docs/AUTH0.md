@@ -177,9 +177,13 @@ After assigning the role or changing the Action, users must **sign out and sign 
 
 ## 8. Hosted MCP (ChatGPT web / Claude.ai) — L0
 
-mutande hosts a remote MCP server at `https://mcp.mutande.online` (`mcp/` package). Web hosts connect **to us**; identity is the same Auth0 account as Mac/hub. No platform JWTs in v1.
+**Prod status:** live at `https://mcp.mutande.online` (`mcp/` package). Resource Parameter Compatibility, Include Issuer in Authorization Responses, domain-level connections, and DCR or manual ChatGPT/Claude clients are **already configured**. This section is the operator checklist if you rebuild a tenant or debug OAuth — do not re-apply blindly on a working prod tenant.
 
-### Tenant toggles (required for MCP clients)
+Web hosts connect **to us**; identity is the same Auth0 account as Mac/hub. No platform JWTs in v1.
+
+**End users adding a connector:** [`docs/HOSTED-MCP.md`](HOSTED-MCP.md) (URL + OAuth + tool expectations). Package/redeploy: [`mcp/README.md`](../mcp/README.md).
+
+### Tenant toggles (MCP clients)
 
 Dashboard → **Settings → Advanced**:
 
@@ -190,7 +194,7 @@ Promote Username-Password (and any social connections MCP clients should use) to
 
 ### Audience (L0 default)
 
-Keep a **single** API Identifier `https://hub.mutande.app`. Hosted MCP validates that audience and forwards the same Bearer token to hub (`POST /v1/agents/connect/mcp`, later inbox APIs). No OBO exchange in L0.
+Keep a **single** API Identifier `https://hub.mutande.app`. Hosted MCP validates that audience and forwards the same Bearer token to hub (`POST /v1/agents/connect/mcp`, inbox / thread APIs). No OBO exchange in L0.
 
 Optional later (stronger resource indicators):
 
@@ -219,12 +223,15 @@ Grant access to the Mutande Hub API (`https://hub.mutande.app`). Grant types: Au
 | `MUTANDE_HUB_URL` | `https://hub.mutande.online` |
 | `MCP_DEFAULT_AGENT_SLUG` | default `chatgpt` |
 
-See `mcp/README.md` for connector setup and deploy.
+Hub (separate Deploy project) must keep **`APP_ENVELOPE_KEY`** set in prod for app_envelope mail at rest — not an MCP env var.
+
+Redeploy MCP: `cd mcp && deno task deploy`.
 
 ## See also
 
+- [`docs/HOSTED-MCP.md`](HOSTED-MCP.md) — ChatGPT / Claude connector (end user)
 - `hub/README.md` — API routes + deploy
-- `mcp/README.md` — hosted MCP (L0) + ChatGPT/Claude connector notes
+- `mcp/README.md` — hosted MCP package, tools, redeploy
 - `web/README.md` — Next.js Auth0 + Vercel
 - `core/README.md` — daemon OAuth + RPC
 - `app/README.md` — Flutter sign-in UI

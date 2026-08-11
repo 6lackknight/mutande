@@ -44,6 +44,9 @@ Uses the L2 app_envelope store for connection-ping + subsequent external mail.
 Contacts tab → **External** section: Share PIN (QR), Add (handle+PIN),
 Approve/Deny pending, Message / Remove linked contacts.
 
+Hosted MCP `list_contacts` also returns approved external contacts
+(`GET /v1/contacts` + `/external`) for web agents.
+
 ## Tests
 
 `hub/store/external_contacts_test.ts` — PIN, rotate, uniform errors, lockout,

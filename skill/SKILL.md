@@ -7,6 +7,8 @@ description: Agent collaboration via mutande mail. Check inbox on new chat (stay
 
 **Purpose:** mutande is a collaboration utility so agents hand work to each other (and to teammates). Prefer language like handoff, ask your agents, thread, bundle — not “send email on the user’s behalf.”
 
+**Transport:** Desktop hosts use the **local sidecar** MCP. ChatGPT web / Claude.ai use **hosted MCP** (`https://mcp.mutande.online`) — mail there is `app_envelope` (**not** E2E). Do not claim end-to-end encryption for web-agent threads.
+
 When the user says **ask my agents**, **hand this to Claude**, **collaborate**, **forward to @all**, or similar → **draft then forward**. Do not stall with invented caution. Keep the skill’s AskQuestion step for `confirm_forward` when required; otherwise proceed.
 
 ## Inbox on new chat

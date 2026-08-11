@@ -1,0 +1,393 @@
+# mutande — Hub Storage on Prisma Postgres
+## Product Requirements Document
+
+
+## 1. Background
+
+The mutande hub (`hub/`) is a blind courier API on Deno Deploy: Hono + **Deno KV** (+ R2 for blobs). All persistence today flows through a single `HubStore` abstraction (~5.3k LOC across four store modules). Routes never touch KV directly.
+
+Deno KV has served alpha well: fast edge reads, simple key-value access, and in-memory tests via `Deno.openKv(":memory:")`. As the product surface grows — especially **enterprise registry + billing**, **external contact pairing rate limits**, and **ops metrics** — KV's limitations become structural:
+
+- **No relational queries.** ~15 of ~40 KV prefixes exist only to simulate secondary indexes (`org_slugs`, `user_pubkeys`, `registry_listing_addresses`, `pair_requests_by_target`, etc.). Every new lookup path adds hand-maintained index rows and atomic multi-key writes.
+- **Money logic on hand-rolled atomics.** Debit-on-store, ledger credits, invite burn, and pairing accept/unpair rely on ~25 `kv.atomic()` flows. Postgres transactions + constraints are the right tool for "check balance → debit → store → fail closed."
+- **Ops visibility.** Registry review queues, billing ledger history, pairing abuse flags, and enterprise delivery metrics are awkward prefix scans today. Postgres enables indexed queries without shipping new KV index prefixes.
+- **Migration cost rises with data.** Alpha data is disposable today. Once real orgs, ledgers, and listings exist in prod, a backend swap becomes a dual-write migration with downtime risk.
+
+This PRD replaces Deno KV with **Prisma Postgres** — provisioned via Deno Deploy's **Provision Prisma Postgres** integration — using **Prisma ORM** with a Deno-native generated client. The `HubStore` public API stays unchanged; routes and clients are unaffected.
+
+**Scope:** hub storage only. R2 blobs, Auth0, E2E blind-courier semantics, and the hosted MCP server (`mcp/`) are unchanged. MCP has no KV usage.
+
+---
+
+## 2. Goals
+
+- Replace Deno KV with Prisma Postgres as the hub's sole durable store
+- Keep the **`HubStore` interface** stable so all 18 route files and route-level tests require no API changes
+- Normalize today's ~40 KV prefix families into a relational schema with proper unique indexes and foreign keys
+- Re-express ~25 atomic flows as **`prisma.$transaction`** with database constraints where appropriate (ledger balance ≥ 0, unique handles, reserved org slugs)
+- Preserve all product semantics from `directory.prd`: split E2E / `app_envelope` stores, 30-day app retention, debit-on-store billing, pairing rate limits, thread downgrade ratchet
+- Improve testability of money and pairing paths via real transactions against a local Postgres instance
+- Provision via Deno Deploy dashboard; `DATABASE_URL` injected into the `mutande` Deploy project
+
+---
+
+## 3. Non-Goals
+
+- **Data migration from prod KV.** Fresh-start cutover — alpha data is disposable (locked decision).
+- Dual-write or read-fallback transition period between KV and Postgres
+- Changing hub HTTP API shapes, Auth0 contract, or client behavior
+- Moving blob bytes off R2 (Postgres stores blob **metadata** and quota counters only)
+- ORM or storage changes in `mcp/` (stateless proxy to hub)
+- Moving off Deno Deploy as the hub runtime
+- Replacing `APP_ENVELOPE_KEY` AES-GCM at-rest encryption for `app_envelope` payloads
+- Re-opening any `directory.prd` product rules (encryption modes, pairing, billing model)
+
+---
+
+## 4. Architecture
+
+### 4.1 Layering (unchanged externally)
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  Routes (Hono) — auth, threads, agents, registry, …       │
+├──────────────────────────────────────────────────────────┤
+│  HubStore (+ EnterpriseStore, pairing, downgrade helpers) │
+│  Same public methods; Postgres-backed implementation      │
+├──────────────────────────────────────────────────────────┤
+│  Prisma Client (runtime = "deno") + @prisma/adapter-pg  │
+├──────────────────────────────────────────────────────────┤
+│  Prisma Postgres (provisioned on Deno Deploy)             │
+└──────────────────────────────────────────────────────────┘
+         R2 (blob bytes) — unchanged, sidecar path
+```
+
+### 4.2 What stays the same
+
+| Concern | Behavior |
+|---|---|
+| E2E threads | Ciphertext envelopes stored as opaque bytes/JSON — hub remains blind |
+| `app_envelope` | Hub-readable payloads; AES-GCM at rest via `APP_ENVELOPE_KEY` |
+| Retention | 30 days for `app_envelope` content |
+| Billing | Debit-on-store; insufficient balance → nothing stored; no refunds |
+| Pairing | PIN + approve; uniform errors; rate limits per `directory.prd` §13 |
+| Blobs | R2 presigned PUT/GET; per-org 500MB quota tracked in Postgres |
+
+### 4.3 What changes (internal only)
+
+| Today (KV) | After (Postgres) |
+|---|---|
+| `Deno.openKv()` in `main.ts` | `PrismaClient` singleton via `@prisma/adapter-pg` + `DATABASE_URL` |
+| Prefix keys + secondary index rows | Tables + `UNIQUE` / `INDEX` constraints |
+| `kv.atomic()` (~25 flows) | `prisma.$transaction()` |
+| `expireIn` on `app_envelopes` keys | `expires_at` column + scheduled purge + query-time filter |
+| `kv.list(prefix)` scans | Indexed `WHERE` / `ORDER BY` queries |
+| `Deno.openKv(":memory:")` in tests | Local Postgres + truncate-between-tests helper |
+| `--unstable-kv` in `deno.json` tasks | Removed; add `prisma generate` to dev/check/test |
+
+### 4.4 Database provisioning
+
+1. Deno Deploy dashboard → **Databases** → **Provision Prisma Postgres**
+2. Assign to the `mutande` hub application → `DATABASE_URL` env var auto-injected
+3. Instance starts **unclaimed** (Deno-managed limits); **Claim Instance** into a Prisma account when limits require upgrade
+4. Local dev: `prisma dev` local Postgres or docker-compose; connection string in `hub/.env`
+
+Connection format (production):
+
+```text
+postgresql://<user>:<password>@db.prisma.io:5432/<database>-production
+```
+
+Use the **standard** `postgresql://` connection string (not `prisma+postgres://` Accelerate) unless Accelerate is explicitly adopted later.
+
+---
+
+## 5. Schema Mapping
+
+Prisma models replace KV prefix families. Types in `hub/store/types.ts` remain the TypeScript domain layer; Prisma schema is the persistence layer.
+
+### 5.1 Core identity & onboarding
+
+| KV prefix(es) | Prisma model | Notes |
+|---|---|---|
+| `users`, `auth0_subs`, `handles` | `User` | `auth0_sub` and `handle` as `@unique`; collapse three prefixes into one row |
+| `orgs`, `org_slugs` | `Org` | `slug @unique` |
+| `org_members` | `OrgMember` | `@@unique([org_id, user_id])` |
+| `invites`, `org_invites` | `Invite` | `code @unique`; `used_by` nullable; burn-on-join in transaction |
+| `devices`, `user_devices`, `user_pubkeys` | `Device` | `pubkey` indexed; `@@unique([user_id, pubkey])` for dedupe |
+
+### 5.2 Agents & routing
+
+| KV prefix(es) | Prisma model | Notes |
+|---|---|---|
+| `agents`, `user_agent_slugs` | `Agent` | `@@unique([user_id, slug, transport])` — dual sidecar/web rows |
+| `user_default_agent` | `User.default_agent_id` FK | |
+| `user_router` | `UserRouter` | JSON rules column or normalized rule rows |
+| `user_agent_aliases` | `AgentAlias` | `@@unique([user_id, slug])` |
+| `user_agent_transport_prefs` | `UserTransportPref` | preferred transport per display slug |
+
+### 5.3 Threads & messages
+
+| KV prefix(es) | Prisma model | Notes |
+|---|---|---|
+| `threads` | `Thread` | `encryption_mode`, `downgrade_point` JSON, participant refs |
+| `inbox` | `InboxEntry` | `@@unique([user_id, thread_id])` |
+| `messages` | `Message` | E2E: opaque `envelope` JSON/bytes; never hub-readable |
+| `app_envelopes` | `AppEnvelope` | `ciphertext` bytes + `expires_at`; AES-GCM before write |
+| `message_upvotes` | `MessageUpvote` | `@@unique([thread_id, message_id, agent_id])` |
+| `drafts` | `Draft` | per-user |
+
+### 5.4 Blobs & quota
+
+| KV prefix(es) | Prisma model | Notes |
+|---|---|---|
+| `blobs` | `BlobMeta` | id, org_id, size, sha256, uploader; bytes stay in R2 |
+| `org_blob_quota` | `OrgBlobQuota` | `org_id @unique`, `used_bytes` |
+
+### 5.5 Enterprise registry & billing
+
+| KV prefix(es) | Prisma model | Notes |
+|---|---|---|
+| `registry_listings`, `registry_listing_addresses`, `org_registry_listings` | `RegistryListing` | `address @unique`; status enum; FK to org + agent |
+| `reserved_org_slugs` | `ReservedOrgSlug` | `slug @unique` |
+| `billing_ledgers` | `BillingLedger` | `org_id @unique`, `balance_cents` with `CHECK (balance_cents >= 0)` |
+| `billing_ledger_entries` | `BillingLedgerEntry` | append-only audit trail |
+| `enterprise_loop_guard` | `EnterpriseLoopGuard` | per-thread daily billed count |
+| `enterprise_metrics` | `EnterpriseDeliveryMetric` | no-PII metrics rows |
+| `enterprise_threads` | `EnterpriseThread` | links thread → listing for billing context |
+
+### 5.6 External contacts & pairing
+
+| KV prefix(es) | Prisma model | Notes |
+|---|---|---|
+| `pairing_pins` | `PairingPin` | `user_id @unique`; `expires_at`, `pin_hash` |
+| `pair_requests`, `pair_requests_by_*` | `PairRequest` | indexed on `target_user_id`, `requester_user_id` |
+| `external_contacts`, `external_contact_pair`, `external_contacts_by_user` | `ExternalContactLink` | canonical pair key; indexed by user |
+| `pair_blocks` | `PairBlock` | `@@unique([blocker_user_id, blocked_user_id])` |
+| `pair_failures`, `pair_submissions_*`, `pair_denies` | Rate-limit counter tables | keyed on (actor, target, day) |
+| `pairing_ops_flags` | `PairingOpsFlag` | ops review queue |
+| `external_link_msgs` | `ExternalLinkMsgCounter` | 200 msgs/day/link velocity |
+
+### 5.7 Thread downgrade (L5)
+
+| KV prefix(es) | Prisma model | Notes |
+|---|---|---|
+| `downgrade_proposals`, `thread_downgrade_proposals`, `user_downgrade_proposals` | `DowngradeProposal`, `DowngradeApproval` | unanimous-approve state machine |
+
+### 5.8 Pilot / marketing (low volume)
+
+| KV prefix(es) | Prisma model | Notes |
+|---|---|---|
+| `feedback` | `Feedback` | indexed by `created_at` |
+| `waitlist` | `WaitlistEntry` | indexed by `created_at` |
+
+### 5.9 JSON columns vs normalized tables
+
+Prefer normalized tables for anything queried, constrained, or joined (users, agents, threads, ledger, registry). Use Prisma `Json` columns only for stable blobs that are read/written whole: `Agent.capabilities`, `Thread.downgrade_point`, `Envelope` wire shape (E2E ciphertext stays opaque).
+
+---
+
+## 6. Transaction & Consistency Semantics
+
+Every flow that today uses `kv.atomic()` must become a Postgres transaction. Critical paths:
+
+| Flow | Requirement |
+|---|---|
+| **Onboard create org** | Insert org + slug uniqueness + user membership + default handle — single transaction |
+| **Onboard join invite** | Burn invite (`used_by` set) + add member + reject if already used — single transaction |
+| **Device register** | Dedupe pubkey + insert device — unique constraint + transaction |
+| **Create thread (enterprise)** | Check balance → debit ledger → insert message/app_envelope → increment loop guard — **one transaction; any failure rolls back all** |
+| **Post reply (enterprise)** | Same as create thread for billed paths |
+| **Ops credit top-up** | Append ledger entry + update balance atomically |
+| **Registry publish** | Verify reserved slug + update listing status + ensure address uniqueness |
+| **Pairing accept** | Create bilateral external link + delete pending request + connection ping thread — single transaction |
+| **Pairing unpair** | Remove link bilaterally + close shared threads |
+| **Thread downgrade approve** | Check unanimous approvals → flip `encryption_mode` → set `downgrade_point` → system divider message |
+| **Agent rename / slug collision** | Unique `(user_id, slug, transport)` enforced by DB |
+
+Use `SELECT … FOR UPDATE` on ledger rows during debit to prevent concurrent overdraw under load.
+
+---
+
+## 7. Retention & TTL
+
+KV today uses `expireIn` **only** on `app_envelopes` (30 days). Postgres has no built-in row TTL.
+
+### 7.1 `app_envelope` retention (30 days — unchanged policy)
+
+1. Set `expires_at = now() + 30 days` on every insert/update
+2. **Query-time filter:** all reads exclude `expires_at < now()`
+3. **Scheduled purge:** Deno Deploy cron job (daily) deletes expired `AppEnvelope` rows and orphaned references
+4. Thread delete continues to purge app payloads for all participants immediately (same as today)
+
+Pairing PIN expiry (7 days) and rate-limit day windows remain **application-level** (`expires_at` / date-bucket counters), not DB TTL — same semantics as KV.
+
+---
+
+## 8. Testing Strategy
+
+| Today | After |
+|---|---|
+| `Deno.openKv(":memory:")` per test file | Shared local Postgres; `prisma migrate deploy` before suite |
+| Hermetic in-process KV | Truncate-all-tables helper in test `beforeEach` / `afterEach` |
+| `createStoreWithTestAuth(kv)` | `createStoreWithTestAuth(prisma)` — inject test client |
+| ~1.8k LOC store tests | Same test cases; rewrite setup/teardown only where assertions depend on KV key shape |
+
+**Local Postgres options (pick one, document in `hub/README.md`):**
+
+- `npx prisma dev` (Prisma local Postgres)
+- `docker compose up postgres` with a checked-in compose file
+
+Route tests continue to inject `HubStore`; they must not import Prisma directly.
+
+CI: run store + route tests against a Postgres service container before deploy.
+
+---
+
+## 9. Environment & Deploy
+
+### 9.1 New env vars
+
+| Variable | Required | Description |
+|---|---|---|
+| `DATABASE_URL` | prod + local | Prisma Postgres connection string |
+
+### 9.2 Removed / deprecated
+
+| Item | Action |
+|---|---|
+| `--unstable-kv` | Remove from `deno.json` dev/check/test tasks |
+| `Deno.openKv()` | Remove from `main.ts`; accept optional `PrismaClient` inject for tests |
+| Deno Deploy KV binding | Detach after cutover (no reads/writes post-P5) |
+
+### 9.3 Unchanged env vars
+
+`AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, `R2_*`, `APP_ENVELOPE_KEY`, Sentry DSN — no changes.
+
+### 9.4 Deploy flow
+
+1. Provision Prisma Postgres in Deno Deploy; assign to `mutande` project
+2. `prisma migrate deploy` against production (CI step or one-time manual before first Postgres-backed deploy)
+3. `deno task deploy` (unchanged `deployctl --project=mutande main.ts`)
+4. Verify `/health` + smoke: onboard, thread create, enterprise debit, pairing round-trip
+
+### 9.5 Prisma project layout (in `hub/`)
+
+```
+hub/
+  prisma/
+    schema.prisma      # generator runtime = "deno"
+    migrations/
+  generated/prisma/    # gitignored; prisma generate output
+  store/
+    prisma.ts          # singleton client + adapter
+    store.ts           # Postgres-backed HubStore
+```
+
+`deno.json` imports: `@prisma/adapter-pg`, generated client path. Add tasks: `db:generate`, `db:migrate`, `db:push` (dev only).
+
+---
+
+## 10. Delivery Phasing
+
+| Layer | Ships | Depends on |
+|---|---|---|
+| **P0 — Provision + scaffold** | Deno Deploy Prisma Postgres provisioned; `schema.prisma` + generate + `prisma.ts` client; `DATABASE_URL` in `.env.example`; local Postgres dev doc | — |
+| **P1 — Core store** | Users, orgs, devices, agents, threads, messages, inbox, drafts, blobs/quota — routes pass existing tests | P0 |
+| **P2 — app_envelope + retention** | `AppEnvelope` table; AES-GCM unchanged; `expires_at` + purge cron; drop KV `expireIn` | P1 |
+| **P3 — Enterprise + billing** | Registry, ledger, debit-on-store transactions, loop guard, metrics — money paths on real DB constraints | P1 |
+| **P4 — External + downgrade** | Pairing, rate limits, external links, downgrade proposals — all remaining KV prefixes | P1 |
+| **P5 — Cutover** | Deploy Postgres-backed hub; detach Deno KV; remove `--unstable-kv`; alpha users re-onboard (fresh start) | P1–P4 |
+
+P1–P4 can proceed in parallel once P0 lands; P5 waits for full store parity.
+
+---
+
+## 11. Cutover Plan (fresh start)
+
+Alpha prod data is **not migrated**.
+
+1. Announce brief hub maintenance window (or accept empty slate — alpha cohort only)
+2. Deploy P5 build with empty Postgres
+3. Detach Deno KV from Deploy project
+4. Users re-onboard (create/join org, re-register devices, reconnect MCP web slots)
+5. Ops re-seed any registry drafts / credits manually via `/admin/ops` if needed
+
+No dual-read, no backfill script, no KV export.
+
+---
+
+## 12. Risks & Mitigations
+
+| Risk | Mitigation |
+|---|---|
+| Concurrent ledger overdraw | `SELECT FOR UPDATE` + `CHECK (balance_cents >= 0)` + transaction |
+| Missed `app_envelope` purge | Query-time `expires_at` filter as belt; cron as suspenders |
+| Test flakiness across shared Postgres | Truncate helper; parallel test files use separate schemas or serial store suite |
+| Prisma unclaimed instance limits | Monitor dashboard; claim into Prisma account before beta load |
+| Cutover downtime | Alpha-only; fresh start acceptable; communicate re-onboard |
+| Regression in HubStore API | Route tests unchanged; store tests ported 1:1 |
+
+---
+
+## 13. Success Criteria
+
+- All existing `deno task test` cases pass against Postgres (store + routes)
+- Zero `Deno.openKv` / `--unstable-kv` references in `hub/`
+- Enterprise debit-on-store passes concurrent debit stress test (no negative balance)
+- `app_envelope` rows older than 30 days are neither returned nor counted
+- Ops can query ledger history and registry listings via SQL without new hub routes
+- Prod hub serves traffic from Postgres with `DATABASE_URL` only (KV detached)
+
+---
+
+## 14. Don'ts
+
+- Don't migrate alpha KV data — fresh start only
+- Don't dual-write KV and Postgres post-cutover
+- Don't change hub HTTP API shapes or Auth0 contract for this work
+- Don't store E2E plaintext in Postgres — ciphertext/opaque JSON only
+- Don't drop `APP_ENVELOPE_KEY` AES-GCM — Postgres encryption at rest is additive, not a replacement for app-layer crypto
+- Don't put blob bytes in Postgres — R2 only
+- Don't add Prisma to `mcp/` — it remains a stateless hub client
+- Don't weaken debit-on-store: insufficient balance must mean **nothing stored**
+- Don't expose `DATABASE_URL` or raw SQL in any hub route
+- Don't change `directory.prd` product rules as part of this storage swap
+
+---
+
+## 15. Locked Parameters
+
+| Parameter | Value |
+|---|---|
+| Database | **Prisma Postgres** via Deno Deploy provision |
+| ORM | **Prisma ORM** — `runtime = "deno"` generator, `@prisma/adapter-pg` |
+| Data cutover | **Fresh start** — no KV migration |
+| `HubStore` API | **Unchanged** — routes untouched |
+| `app_envelope` retention | **30 days** (unchanged) |
+| Blob storage | **R2** (unchanged) |
+| E2E posture | **Blind courier** — opaque ciphertext in `Message.envelope` |
+| Local test DB | Postgres (not in-memory KV) |
+| Connection string | Standard `postgresql://` (not Accelerate unless adopted later) |
+
+---
+
+## 16. Future Work (out of scope)
+
+- KV → Postgres backfill tooling (if ever needed for a future prod with real data)
+- Prisma Accelerate connection pooling at edge
+- Read replicas for ops/analytics
+- Stripe webhook idempotency tables (beta billing — natural fit once on Postgres)
+- Automated DNS/domain verification for registry (ops stub today)
+- Hub SSE wake (`directory.prd` Future row) — independent of storage backend
+
+---
+
+## 17. Relationship to Other Docs
+
+| Doc | Relationship |
+|---|---|
+| [`directory.prd`](directory.prd) | Product rules (encryption, pairing, billing, registry) — **unchanged**; this PRD replaces only the storage engine |
+| [`docs/DIRECTORY-IMPLEMENTATION.md`](docs/DIRECTORY-IMPLEMENTATION.md) | L0–L5 feature checklist — still authoritative for product ship status |
+| [`hub/README.md`](hub/README.md) | Update env table + local dev when P0 lands |
+| [`docs/AUTH0.md`](docs/AUTH0.md) | No changes |

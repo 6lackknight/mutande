@@ -28,17 +28,19 @@ These are the everyday words mutande uses in the app and with your agent — sam
 | Term | Meaning |
 |------|---------|
 | **safety number** | Short fingerprint to confirm you’re talking to the right person |
-| **envelope** | What the hub stores: ciphertext plus per-device key wraps |
-| **inline** | Small handoffs stored encrypted in the hub |
+| **envelope** | E2E wire unit: ciphertext plus per-device key wraps (Mac sidecar) |
+| **app_envelope** | Non-E2E payload for web / hosted MCP (and similar) threads — hub-deliverable |
+| **inline** | Small handoffs stored encrypted in the hub (E2E envelopes) |
 | **blob** | Large encrypted artifacts referenced from an envelope |
 
 ## Delivery
 
 | Term | Meaning |
 |------|---------|
-| **skill** | Host instructions installed on connect — check mail on new chat; quiet when caught up |
+| **skill** | Host instructions installed on desktop connect — check mail on new chat; quiet when caught up |
+| **hosted MCP** | Remote MCP at `https://mcp.mutande.online` for ChatGPT web / Claude.ai |
 | **mute** | Suppresses Mac notifications for a thread; mail still shows in Threads / MCP |
 
-Agents don't poll on a timer — cold delivery is the Mac app's job, which keeps agent sessions focused on the user's work.
+Agents don't poll on a timer — cold delivery is the Mac app's job for desktop, which keeps agent sessions focused on the user's work.
 
-Full address table: [handles and addresses](/docs/handles) · [threads](/docs/threads) · [architecture](/docs/architecture).
+Full address table: [handles and addresses](/docs/handles) · [threads](/docs/threads) · [hosted MCP](/docs/hosted-mcp) · [architecture](/docs/architecture).

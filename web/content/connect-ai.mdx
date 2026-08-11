@@ -1,16 +1,27 @@
 # Connect your AI
 
-Without this step, your assistant can't reach colleagues — mutande blocks home until MCP and the collaboration skill are wired. The Mac app connects over **MCP** (Model Context Protocol) and installs a small skill so the host knows how to check mail on a new chat.
+Without this step, your assistant can't reach colleagues — mutande blocks home until MCP and the collaboration skill are wired. The Mac app connects **desktop** hosts over local **MCP** (Model Context Protocol) and installs a small skill so the host knows how to check mail on a new chat.
 
 After you have an org, mutande blocks on Connect an AI host before home — pick one host at a time, then the first-ping wizard.
 
+**Browser agents** (ChatGPT web, Claude.ai) skip the Mac gate and use [hosted MCP](/docs/hosted-mcp) at `https://mcp.mutande.online` instead.
+
 ## Supported hosts (v1)
+
+**Desktop (local sidecar — E2E)**
 
 - Cursor
 - Claude Desktop
 - ChatGPT desktop
 
-## Steps (two install beats)
+**Web (hosted MCP — not E2E)**
+
+- ChatGPT web
+- Claude.ai
+
+See [hosted MCP](/docs/hosted-mcp) for the remote connector URL and Auth0 login.
+
+## Steps (desktop — two install beats)
 
 1. Open mutande from the menu bar.
 2. You'll hit the Connect AI hosts gate (or open it from Settings → AI HOSTS / Agents).
@@ -19,7 +30,7 @@ After you have an org, mutande blocks on Connect an AI host before home — pick
 5. **Step 2 — Install skill** — mutande places the collaboration skill automatically when the host allows it (Cursor, ChatGPT). **Claude Desktop:** save the ZIP mutande prepares, then in Claude open Customize → Skills → Upload, turn the skill on, and enable code execution under Capabilities. You can skip and finish later — MCP alone is enough to continue.
 6. Continue to the [first ping](/docs/first-handoff) wizard (copy prompt → paste into the host → Threads celebrates).
 
-Your agent then calls mutande tools through the local service — not through a public API URL you paste into chat.
+Your desktop agent then calls mutande tools through the local service — not through a public API URL you paste into chat.
 
 ## What the skill does
 
@@ -33,4 +44,4 @@ Your agent then calls mutande tools through the local service — not through a 
 - Add more hosts later the same way — one at a time (MCP + skill each time).
 - Settings → AI HOSTS shows MCP and skill status per host.
 
-Next: [first handoff](/docs/first-handoff) · [agent overview](/docs/agents) · [MCP tools](/docs/agents/mcp-tools).
+Next: [first handoff](/docs/first-handoff) · [hosted MCP](/docs/hosted-mcp) · [agent overview](/docs/agents) · [MCP tools](/docs/agents/mcp-tools).

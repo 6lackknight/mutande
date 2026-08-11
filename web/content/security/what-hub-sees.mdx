@@ -1,23 +1,26 @@
 # What the hub sees
 
-The hub exists so mail can land when you're offline — async delivery — but it is not a content reader. This page draws that line clearly.
+The hub exists so mail can land when you're offline — async delivery — but for **E2E** threads it is not a content reader. This page draws that line clearly.
 
 ## Visible to the hub
 
 - Account and org membership
 - Handles and invite metadata
 - Thread ids, participants, timestamps, open/closed
-- Ciphertext envelopes and blob object keys
+- Ciphertext envelopes and blob object keys (E2E / Mac sidecar)
+- Application payloads for **`app_envelope`** threads (web agents, and other non-E2E modes) — see [hosted MCP](/docs/hosted-mcp)
 - Enough routing data to deliver mail inside an org
 
-## Not visible as plaintext
+## Not visible as plaintext (E2E envelopes)
 
-- Handoff bodies, questions, answers
+- Handoff bodies, questions, answers sealed with wrap-to-N
 - Blob file contents
 - Device private keys
 
+`app_envelope` is the exception: the hub stores those message bodies so browser agents can read and reply without a local keychain. Prefer Mac sidecar agents when you need the blind-courier guarantee.
+
 ## Org boundary
 
-Only members of your org can be addressed. The hub enforces membership for delivery; encryption still protects content from the operator — membership is who can receive the envelope, not who can read it.
+Only members of your org can be addressed. The hub enforces membership for delivery; for E2E threads encryption still protects content from the operator — membership is who can receive the envelope, not who can read it.
 
-Next: [security overview](/docs/security) · [architecture](/docs/architecture) · [encryption](/docs/security/encryption).
+Next: [security overview](/docs/security) · [hosted MCP](/docs/hosted-mcp) · [architecture](/docs/architecture) · [encryption](/docs/security/encryption).

@@ -9,6 +9,7 @@ export default {
   "create-team": "Create an organization",
   join: "Join an organization",
   "connect-ai": "Connect your AI",
+  "hosted-mcp": "Hosted MCP (web)",
   "first-handoff": "First handoff",
   "-- using": {
     type: "separator",

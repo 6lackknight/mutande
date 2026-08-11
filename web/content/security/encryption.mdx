@@ -1,6 +1,8 @@
 # Encryption
 
-mutande seals handoffs on your device before anything reaches the cloud. The hub only ever stores an **envelope** (ciphertext + per-device key wraps) — never plaintext — so operators and interceptors alike see opaque bytes.
+mutande seals handoffs on your device before anything reaches the cloud. For **Mac sidecar / E2E** threads, the hub only ever stores an **envelope** (ciphertext + per-device key wraps) — never plaintext — so operators and interceptors alike see opaque bytes.
+
+Web agents via [hosted MCP](/docs/hosted-mcp) use **`app_envelope`** instead — that path is not end-to-end encrypted.
 
 ## Building blocks
 
@@ -42,4 +44,4 @@ We keep wire-format and implementation details out of this page — the trust cl
 
 A compromised AI host or unlocked Mac can still see plaintext on that machine — mutande protects the path between devices, not a rooted endpoint.
 
-Related: [large files](/docs/large-files), [security overview](/docs/security).
+Related: [large files](/docs/large-files), [hosted MCP](/docs/hosted-mcp), [security overview](/docs/security).
