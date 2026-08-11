@@ -8,6 +8,7 @@ import {
   type ListInvitesResponse,
   type ListWaitlistResponse,
   type MeResponse,
+  type UpdateProfileInput,
 } from "@/lib/types";
 
 const DEFAULT_HUB = "https://hub.mutande.online";
@@ -89,6 +90,15 @@ export async function getMe(): Promise<MeResponse> {
         ? !raw.needs_onboarding
         : Boolean(raw.user?.handle);
   return { ...raw, onboarded };
+}
+
+export async function updateProfile(
+  input: UpdateProfileInput,
+): Promise<MeResponse> {
+  return hubFetch<MeResponse>("/v1/me/profile", {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
 }
 
 export async function createOrg(input: CreateOrgInput): Promise<MeResponse> {

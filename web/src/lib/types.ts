@@ -11,6 +11,15 @@ export interface HubUser {
   roles?: UserRole[];
   role?: UserRole;
   created_at: string;
+  display_name?: string;
+  /** Small avatar — base64 image data URL (client-resized) or https URL. */
+  avatar_url?: string;
+}
+
+/** Omit a field to leave it unchanged; empty string clears. */
+export interface UpdateProfileInput {
+  display_name?: string;
+  avatar_url?: string;
 }
 
 export interface HubOrg {

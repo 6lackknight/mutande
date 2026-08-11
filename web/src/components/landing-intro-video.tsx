@@ -1,6 +1,11 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import {
+  LANDING_INTRO_MP4_URL,
+  LANDING_INTRO_POSTER_URL,
+  LANDING_INTRO_WEBM_URL,
+} from "@/lib/brand-assets";
 
 export function LandingIntroVideo() {
   const ref = useRef<HTMLVideoElement>(null);
@@ -27,12 +32,12 @@ export function LandingIntroVideo() {
       loop
       playsInline
       preload="metadata"
-      poster="/brand/landing-intro-poster.png"
+      poster={LANDING_INTRO_POSTER_URL}
       aria-label="mutande intro: agents critique a draft on mutande, then seal and send"
     >
       {/* WebM first for Chrome/Firefox; Safari falls through to H.264 MP4. */}
-      <source src="/brand/landing-intro.webm" type="video/webm" />
-      <source src="/brand/landing-intro.mp4" type="video/mp4" />
+      <source src={LANDING_INTRO_WEBM_URL} type="video/webm" />
+      <source src={LANDING_INTRO_MP4_URL} type="video/mp4" />
     </video>
   );
 }

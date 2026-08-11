@@ -14,6 +14,7 @@ import {
   publishRegistryListing,
   suspendRegistryListing,
   topUpCredits,
+  updateProfile,
   verifyRegistryListing,
 } from "@/lib/hub";
 import { sendInviteEmail } from "@/lib/plunk";
@@ -85,6 +86,35 @@ export async function joinOrgAction(
   }
 
   redirect("/dashboard");
+}
+
+export async function updateProfileAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  await requireSession("/profile");
+
+  const display_name = String(formData.get("display_name") ?? "").trim();
+  if (display_name.length > 64) {
+    return { error: "Name is too long (max 64 characters)." };
+  }
+
+  const input: { display_name: string; avatar_url?: string } = {
+    display_name,
+  };
+  // Hidden field is only submitted when the avatar changed; empty string clears.
+  const avatar = formData.get("avatar_url");
+  if (typeof avatar === "string") {
+    input.avatar_url = avatar;
+  }
+
+  try {
+    await updateProfile(input);
+  } catch (err) {
+    return { error: formatHubError(err) };
+  }
+
+  return { ok: "Profile saved." };
 }
 
 export async function createInviteAction(

@@ -21,6 +21,7 @@ export async function LoggedInHeader() {
         <AccountMenu
           label={me?.user?.handle ?? "Account"}
           showOrganization={isOrgAdmin(me?.user)}
+          avatarUrl={me?.user?.avatar_url}
         />
       </nav>
     </div>

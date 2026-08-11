@@ -47,6 +47,7 @@ export async function LandingNav() {
         <AccountMenu
           label={me?.user?.handle ?? "Account"}
           showOrganization={isOrgAdmin(me?.user)}
+          avatarUrl={me?.user?.avatar_url}
         />
       ) : (
         <>

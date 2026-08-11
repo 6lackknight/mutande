@@ -6,9 +6,11 @@ import { useEffect, useRef, useState } from "react";
 export function AccountMenu({
   label,
   showOrganization,
+  avatarUrl,
 }: {
   label: string;
   showOrganization?: boolean;
+  avatarUrl?: string;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -39,8 +41,16 @@ export function AccountMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="flex max-w-[14rem] items-center gap-1 rounded-md px-3 py-2 text-sm font-medium text-stone-900 transition hover:bg-stone-200/40"
+        className="flex max-w-[14rem] items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium text-stone-900 transition hover:bg-stone-200/40"
       >
+        {avatarUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element -- tiny data-URL avatar
+          <img
+            src={avatarUrl}
+            alt=""
+            className="h-5 w-5 shrink-0 rounded-full object-cover ring-1 ring-stone-900/10"
+          />
+        ) : null}
         <span className="truncate">{label}</span>
         <svg
           width="12"
@@ -65,7 +75,7 @@ export function AccountMenu({
           role="menu"
           className="absolute right-0 top-full z-30 mt-1.5 w-44 overflow-hidden rounded-lg border border-stone-300/60 bg-white/95 py-1 shadow-[0_12px_32px_-16px_rgba(28,25,23,0.35)] backdrop-blur-sm"
         >
-          <a role="menuitem" href="/dashboard" className={itemClass}>
+          <a role="menuitem" href="/profile" className={itemClass}>
             Profile
           </a>
           {showOrganization ? (

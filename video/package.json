@@ -32,7 +32,8 @@
     "optimize:mp4": "ffmpeg -y -i out/landing-intro.mp4 -an -vf 'scale=in_range=full:out_range=limited,format=yuv420p' -c:v libx264 -profile:v main -pix_fmt yuv420p -color_range tv -colorspace bt709 -color_primaries bt709 -color_trc bt709 -r 30 -crf 22 -movflags +faststart ../web/public/brand/landing-intro.mp4",
     "optimize:webm": "ffmpeg -y -i out/landing-intro.mp4 -an -vf 'scale=in_range=full:out_range=limited,format=yuv420p' -c:v libvpx-vp9 -b:v 0 -crf 32 -r 30 -row-mt 1 ../web/public/brand/landing-intro.webm",
     "poster": "remotion still LandingIntro out/landing-intro-poster.png --frame=1580",
-    "ship": "npm run render && npm run optimize && npm run poster && cp out/landing-intro-poster.png ../web/public/brand/"
+    "ship": "npm run render && npm run optimize && npm run poster && cp out/landing-intro-poster.png ../web/public/brand/ && npm run upload:r2",
+    "upload:r2": "../scripts/upload-brand-r2.sh"
   },
   "sideEffects": [
     "*.css"

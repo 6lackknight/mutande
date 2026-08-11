@@ -65,6 +65,46 @@ Deno.test("create org with admin", async () => {
   });
 });
 
+Deno.test("update profile display name and avatar", async () => {
+  await withTestStore(async ({ store }) => {
+    const claims = { sub: "auth0|pat", email: "pat@co.test" };
+    await store.createOrgWithAdmin(claims, { slug: "patco", name: "PatCo" });
+
+    const avatar = `data:image/jpeg;base64,${btoa("tiny")}`;
+    let me = await store.updateProfile(claims, {
+      display_name: "  Pat Jones  ",
+      avatar_url: avatar,
+    });
+    assertEquals(me.user?.display_name, "Pat Jones");
+    assertEquals(me.user?.avatar_url, avatar);
+
+    // Omitted fields stay unchanged; empty clears.
+    me = await store.updateProfile(claims, { avatar_url: "" });
+    assertEquals(me.user?.display_name, "Pat Jones");
+    assertEquals(me.user?.avatar_url, undefined);
+
+    await assertRejects(
+      () => store.updateProfile(claims, { display_name: "x".repeat(65) }),
+      HubError,
+      "display_name too long",
+    );
+    await assertRejects(
+      () => store.updateProfile(claims, { avatar_url: "javascript:alert(1)" }),
+      HubError,
+      "avatar_url must be",
+    );
+    await assertRejects(
+      () =>
+        store.updateProfile(
+          { sub: "auth0|stranger" },
+          { display_name: "Ghost" },
+        ),
+      HubError,
+      "Onboarding required",
+    );
+  });
+});
+
 Deno.test("join org default handle", async () => {
   await withTestStore(async ({ store }) => {
     const { user: admin } = await store.createOrgWithAdmin({ sub: "auth0|admin", email: "admin@co.test" }, { slug: "co", name: "Co" });

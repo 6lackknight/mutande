@@ -61,6 +61,16 @@ Set Vercel `NEXT_PUBLIC_DOWNLOADS_BASE` to that origin (no trailing slash).
 Keep `web/public/downloads/*` gitignored for local smoke only. Hub `R2_*`
 keys must allow write to `mutande-releases` (blobs-only tokens get AccessDenied).
 
+Landing intro video/poster share the same bucket under `brand/`:
+
+```bash
+./scripts/upload-brand-r2.sh
+# or after a Remotion cut: cd video && npm run ship
+```
+
+→ `https://downloads.mutande.online/brand/landing-intro.mp4` (also `.webm` + poster).
+Web defaults to that CDN; set `NEXT_PUBLIC_BRAND_ASSETS_LOCAL=1` for offline `/brand/*`.
+
 ## Release (Windows unsigned installer)
 
 ```text
