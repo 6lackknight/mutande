@@ -1,12 +1,18 @@
 /** Thin HTTP client for hub APIs used by the hosted MCP service. */
 
 import type {
+  AgentsListResponse,
   AppEnvelopePayload,
+  CloseThreadResponse,
+  Contact,
   CreateThreadResponse,
+  DeleteThreadResponse,
+  HubAgentRow,
   ReplyResponse,
   ThreadDetail,
   ThreadFilter,
   ThreadMeta,
+  ToggleUpvoteResponse,
 } from "./types.ts";
 
 export interface HubMeResponse {
@@ -18,15 +24,7 @@ export interface HubMeResponse {
   org?: { id: string; slug: string };
 }
 
-export interface HubAgent {
-  id: string;
-  user_id: string;
-  slug: string;
-  created_at: string;
-  transport?: string;
-  mcp_endpoint?: string | null;
-  [key: string]: unknown;
-}
+export type HubAgent = HubAgentRow;
 
 export class HubClientError extends Error {
   constructor(
@@ -161,6 +159,74 @@ export class HubClient {
       {
         method: "POST",
         body: JSON.stringify(input),
+      },
+    );
+  }
+
+  /** Bound Auth0 user agents (dual sidecar/mcp slots when present). */
+  listAgents(
+    accessToken: string,
+    handle?: string,
+  ): Promise<AgentsListResponse> {
+    const q = handle
+      ? `?handle=${encodeURIComponent(handle.trim())}`
+      : "";
+    return this.request<AgentsListResponse>(`/v1/agents${q}`, accessToken);
+  }
+
+  /** Same-org contacts + @all@org broadcast (desktop list_contacts). */
+  listContacts(accessToken: string): Promise<{ contacts: Contact[] }> {
+    return this.request<{ contacts: Contact[] }>("/v1/contacts", accessToken);
+  }
+
+  /** Approved cross-org external contacts (L3). */
+  listExternalContacts(
+    accessToken: string,
+  ): Promise<{ contacts: Contact[] }> {
+    return this.request<{ contacts: Contact[] }>(
+      "/v1/contacts/external",
+      accessToken,
+    );
+  }
+
+  closeThread(
+    accessToken: string,
+    threadId: string,
+  ): Promise<CloseThreadResponse> {
+    return this.request<CloseThreadResponse>(
+      `/v1/threads/${encodeURIComponent(threadId)}/close`,
+      accessToken,
+      { method: "POST", body: "{}" },
+    );
+  }
+
+  deleteThread(
+    accessToken: string,
+    threadId: string,
+  ): Promise<DeleteThreadResponse> {
+    return this.request<DeleteThreadResponse>(
+      `/v1/threads/${encodeURIComponent(threadId)}`,
+      accessToken,
+      { method: "DELETE" },
+    );
+  }
+
+  upvoteMessage(
+    accessToken: string,
+    threadId: string,
+    messageId: string,
+    fromAgent?: string,
+  ): Promise<ToggleUpvoteResponse> {
+    return this.request<ToggleUpvoteResponse>(
+      `/v1/threads/${encodeURIComponent(threadId)}/messages/${
+        encodeURIComponent(messageId)
+      }/upvote`,
+      accessToken,
+      {
+        method: "POST",
+        body: JSON.stringify(
+          fromAgent ? { from_agent: fromAgent } : {},
+        ),
       },
     );
   }

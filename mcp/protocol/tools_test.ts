@@ -2,7 +2,7 @@ import { assertEquals } from "jsr:@std/assert@1";
 import { toolDefinitions, IMPLEMENTED_TOOLS } from "./tools.ts";
 import { handleMcpRequest } from "./handler.ts";
 import type { McpSession } from "../session/bind.ts";
-import { HubClient } from "../hub/client.ts";
+import { HubClient, HubClientError } from "../hub/client.ts";
 import {
   filterThreadsForWebAgent,
   threadForWebAgent,
@@ -52,6 +52,18 @@ Deno.test("tool list marks inbox tools implemented", () => {
   assertEquals(IMPLEMENTED_TOOLS.has("list_threads"), true);
   assertEquals(IMPLEMENTED_TOOLS.has("get_thread"), true);
   assertEquals(IMPLEMENTED_TOOLS.has("reply_to_thread"), true);
+  for (const t of [
+    "list_agents",
+    "list_contacts",
+    "forward_draft",
+    "close_thread",
+    "delete_thread",
+    "upvote_message",
+    "mark_processed",
+  ]) {
+    assertEquals(names.includes(t), true);
+    assertEquals(IMPLEMENTED_TOOLS.has(t), true);
+  }
 });
 
 Deno.test("health tool returns bound session", async () => {
@@ -174,4 +186,294 @@ Deno.test("initialize returns serverInfo", async () => {
   );
   const result = res!.result as { serverInfo: { name: string } };
   assertEquals(result.serverInfo.name, "mutande-mcp");
+});
+
+function parseToolText(res: Awaited<ReturnType<typeof handleMcpRequest>>) {
+  const result = res!.result as {
+    content: Array<{ text: string }>;
+    isError?: boolean;
+  };
+  return {
+    isError: result.isError ?? false,
+    body: JSON.parse(result.content[0].text) as Record<string, unknown>,
+    text: result.content[0].text,
+  };
+}
+
+Deno.test("list_agents returns dual transport slots", async () => {
+  const hub = new HubClient("http://hub.test");
+  hub.listAgents = () =>
+    Promise.resolve({
+      agents: [
+        {
+          id: "a1",
+          user_id: "uid",
+          slug: "chatgpt",
+          created_at: "2026-01-01T00:00:00.000Z",
+          transport: "mcp",
+        },
+        {
+          id: "a2",
+          user_id: "uid",
+          slug: "chatgpt",
+          created_at: "2026-01-01T00:00:00.000Z",
+          transport: "sidecar",
+        },
+      ],
+      default_agent_id: "a2",
+    });
+  const res = await handleMcpRequest(
+    {
+      jsonrpc: "2.0",
+      id: 10,
+      method: "tools/call",
+      params: { name: "list_agents", arguments: {} },
+    },
+    { session: fakeSession, serverVersion: "0.1.0", hub },
+  );
+  const { isError, body } = parseToolText(res);
+  assertEquals(isError, false);
+  assertEquals((body.agents as unknown[]).length, 2);
+  assertEquals(
+    (body.agents as Array<{ transport: string }>).map((a) => a.transport).sort(),
+    ["mcp", "sidecar"],
+  );
+});
+
+Deno.test("list_contacts merges org and external", async () => {
+  const hub = new HubClient("http://hub.test");
+  hub.listContacts = () =>
+    Promise.resolve({
+      contacts: [
+        { handle: "@all@acme", pubkey: null, devices: [], kind: "broadcast" },
+        { handle: "bob@acme", pubkey: "pk", devices: [], kind: "org" },
+      ],
+    });
+  hub.listExternalContacts = () =>
+    Promise.resolve({
+      contacts: [
+        {
+          handle: "eve@other",
+          pubkey: null,
+          devices: [],
+          kind: "external",
+          external_link_id: "link1",
+        },
+      ],
+    });
+  const res = await handleMcpRequest(
+    {
+      jsonrpc: "2.0",
+      id: 11,
+      method: "tools/call",
+      params: { name: "list_contacts", arguments: {} },
+    },
+    { session: fakeSession, serverVersion: "0.1.0", hub },
+  );
+  const { isError, body } = parseToolText(res);
+  assertEquals(isError, false);
+  assertEquals((body.contacts as unknown[]).length, 2);
+  assertEquals((body.external_contacts as Array<{ handle: string }>)[0].handle, "eve@other");
+});
+
+Deno.test("forward_draft creates app_envelope thread", async () => {
+  const hub = new HubClient("http://hub.test");
+  hub.createThread = (_token, input) => {
+    assertEquals(input.to, "@all");
+    assertEquals(input.from_agent, "chatgpt");
+    assertEquals(input.app_envelope.notes, "hello team");
+    return Promise.resolve({
+      thread: meta({
+        id: "new-t",
+        audience: "@all",
+        kind: "broadcast",
+        from_agent_id: "agent-web-1",
+      }),
+      message_id: "m1",
+    });
+  };
+  const res = await handleMcpRequest(
+    {
+      jsonrpc: "2.0",
+      id: 12,
+      method: "tools/call",
+      params: {
+        name: "forward_draft",
+        arguments: {
+          recipient: "@all",
+          bundle: { notes: "hello team", subject: "Hi" },
+        },
+      },
+    },
+    { session: fakeSession, serverVersion: "0.1.0", hub },
+  );
+  const { isError, body } = parseToolText(res);
+  assertEquals(isError, false);
+  assertEquals(body.ok, true);
+  assertEquals(body.thread_id, "new-t");
+  assertEquals(body.message_id, "m1");
+});
+
+Deno.test("forward_draft refuses hub E2E wire error", async () => {
+  const hub = new HubClient("http://hub.test");
+  hub.createThread = () =>
+    Promise.reject(
+      new HubClientError(
+        "E2E threads require envelope (not app_envelope)",
+        400,
+      ),
+    );
+  const res = await handleMcpRequest(
+    {
+      jsonrpc: "2.0",
+      id: 13,
+      method: "tools/call",
+      params: {
+        name: "forward_draft",
+        arguments: {
+          recipient: "bob@acme/claude",
+          bundle: { notes: "secret" },
+        },
+      },
+    },
+    { session: fakeSession, serverVersion: "0.1.0", hub },
+  );
+  const result = res!.result as { content: Array<{ text: string }>; isError?: boolean };
+  assertEquals(result.isError, true);
+  assertEquals(result.content[0].text.includes("sidecar"), true);
+  assertEquals(result.content[0].text.includes("app_envelope"), true);
+});
+
+Deno.test("forward_draft refuses empty bundle", async () => {
+  const hub = new HubClient("http://hub.test");
+  const res = await handleMcpRequest(
+    {
+      jsonrpc: "2.0",
+      id: 14,
+      method: "tools/call",
+      params: {
+        name: "forward_draft",
+        arguments: { recipient: "@all", bundle: {} },
+      },
+    },
+    { session: fakeSession, serverVersion: "0.1.0", hub },
+  );
+  const result = res!.result as { content: Array<{ text: string }>; isError?: boolean };
+  assertEquals(result.isError, true);
+  assertEquals(result.content[0].text.includes("bundle must include"), true);
+});
+
+Deno.test("close_thread success", async () => {
+  const hub = new HubClient("http://hub.test");
+  hub.closeThread = () =>
+    Promise.resolve({
+      thread: meta({ id: "t-close", status: "closed" }),
+    });
+  const res = await handleMcpRequest(
+    {
+      jsonrpc: "2.0",
+      id: 15,
+      method: "tools/call",
+      params: { name: "close_thread", arguments: { thread_id: "t-close" } },
+    },
+    { session: fakeSession, serverVersion: "0.1.0", hub },
+  );
+  const { isError, body } = parseToolText(res);
+  assertEquals(isError, false);
+  assertEquals(body.ok, true);
+  assertEquals((body.thread as { status: string }).status, "closed");
+});
+
+Deno.test("delete_thread success", async () => {
+  const hub = new HubClient("http://hub.test");
+  hub.deleteThread = () => Promise.resolve({ ok: true as const });
+  const res = await handleMcpRequest(
+    {
+      jsonrpc: "2.0",
+      id: 16,
+      method: "tools/call",
+      params: { name: "delete_thread", arguments: { thread_id: "t-del" } },
+    },
+    { session: fakeSession, serverVersion: "0.1.0", hub },
+  );
+  const { isError, body } = parseToolText(res);
+  assertEquals(isError, false);
+  assertEquals(body.ok, true);
+  assertEquals(body.thread_id, "t-del");
+});
+
+Deno.test("upvote_message success", async () => {
+  const hub = new HubClient("http://hub.test");
+  hub.upvoteMessage = (_t, threadId, messageId, fromAgent) => {
+    assertEquals(threadId, "t1");
+    assertEquals(messageId, "m1");
+    assertEquals(fromAgent, "chatgpt");
+    return Promise.resolve({
+      upvoted: true,
+      upvotes: { count: 1, upvotes: [], your_upvotes: ["agent-web-1"] },
+    });
+  };
+  const res = await handleMcpRequest(
+    {
+      jsonrpc: "2.0",
+      id: 17,
+      method: "tools/call",
+      params: {
+        name: "upvote_message",
+        arguments: { thread_id: "t1", message_id: "m1" },
+      },
+    },
+    { session: fakeSession, serverVersion: "0.1.0", hub },
+  );
+  const { isError, body } = parseToolText(res);
+  assertEquals(isError, false);
+  assertEquals(body.upvoted, true);
+});
+
+Deno.test("mark_processed returns N/A payload", async () => {
+  const hub = new HubClient("http://hub.test");
+  const res = await handleMcpRequest(
+    {
+      jsonrpc: "2.0",
+      id: 18,
+      method: "tools/call",
+      params: { name: "mark_processed", arguments: { thread_id: "t1" } },
+    },
+    { session: fakeSession, serverVersion: "0.1.0", hub },
+  );
+  const { isError, body } = parseToolText(res);
+  assertEquals(isError, false);
+  assertEquals(body.na, true);
+  assertEquals(body.ok, true);
+});
+
+Deno.test("close_thread requires thread_id", async () => {
+  const hub = new HubClient("http://hub.test");
+  const res = await handleMcpRequest(
+    {
+      jsonrpc: "2.0",
+      id: 19,
+      method: "tools/call",
+      params: { name: "close_thread", arguments: {} },
+    },
+    { session: fakeSession, serverVersion: "0.1.0", hub },
+  );
+  const result = res!.result as { content: Array<{ text: string }>; isError?: boolean };
+  assertEquals(result.isError, true);
+});
+
+Deno.test("unknown desktop-only tool refused", async () => {
+  const hub = new HubClient("http://hub.test");
+  const res = await handleMcpRequest(
+    {
+      jsonrpc: "2.0",
+      id: 20,
+      method: "tools/call",
+      params: { name: "get_safety_number", arguments: {} },
+    },
+    { session: fakeSession, serverVersion: "0.1.0", hub },
+  );
+  const result = res!.result as { content: Array<{ text: string }>; isError?: boolean };
+  assertEquals(result.isError, true);
+  assertEquals(result.content[0].text.includes("unknown tool"), true);
 });

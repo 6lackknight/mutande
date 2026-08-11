@@ -6,9 +6,9 @@ Status for `directory.prd` layers **L0–L5** (web agents, app_envelope, externa
 
 | Layer | What’s in tree |
 |---|---|
-| **L0** | Hosted MCP at `mcp/` (`mcp.mutande.online`): Auth0 OAuth, session bind via `POST /v1/agents/connect/mcp` |
+| **L0** | Hosted MCP **live** at [`https://mcp.mutande.online`](https://mcp.mutande.online) (`mcp/`); Auth0 OAuth (Resource Parameter Compatibility + DCR/manual ChatGPT/Claude clients — `docs/AUTH0.md` §8); session bind via `POST /v1/agents/connect/mcp`; Streamable HTTP **GET/POST/DELETE `/mcp`** (SSE + JSON-RPC + `Mcp-Session-Id`) |
 | **L1** | Dual agent rows (`transport: sidecar \| mcp`); connect handshake; `GET/PUT /v1/agents/transport-defaults`; Flutter transport chip + Settings prefs; daemon/hub clients |
-| **L2** | Hub `app_envelope` store (XOR with E2E `envelope`); `encryption_mode` on threads; MCP inbox tools (`list_threads` / `get_thread` / reply); daemon non-E2E send/open; 30-day KV retention |
+| **L2** | Hub `app_envelope` store (XOR with E2E `envelope`); `encryption_mode` on threads; MCP inbox tools (`list_threads` / `get_thread` / reply); daemon non-E2E send/open; 30-day KV retention; **prod `APP_ENVELOPE_KEY` set** (AES-GCM at rest) |
 | **L3** | External contacts PIN pairing + approve/deny/unpair; Contacts UI + `docs/EXTERNAL-CONTACTS.md`; cross-org → `app_envelope` |
 | **L4** | `/v1/registry` drafts + public list; ops verify/publish/suspend; debit-on-store in `createThread` / `postReply`; ops Enterprise metrics tab; enterprise warn banner |
 | **L5** | Unanimous sidecar downgrade proposals; one-way ratchet + system divider; Flutter consent banner; hub routes under `/v1/threads/.../downgrade-proposals` |
@@ -28,18 +28,21 @@ Status for `directory.prd` layers **L0–L5** (web agents, app_envelope, externa
 | **Stripe self-serve top-up** | Beta (ops credits only in alpha) |
 | **DNS / brand domain verify** | Ops marks verified; no automated DNS check yet |
 | **Marketing registry browse** | Hub APIs exist; public marketing browse page not shipped |
-| **Hub SSE wake** | MCP pull only; Future row in PRD §10 |
+| **Hub SSE wake** | MCP pull only; Future row in PRD §10 (`GET /v1/events` — not hosted MCP GET `/mcp`) |
 | **Token billing (`per_token`)** | Metrics collected to advise cutover; `per_message` only for now |
-| **Hosted MCP extras** | Full Streamable HTTP SSE GET `/mcp`; OBO when MCP audience ≠ hub; some desktop-only tools not mirrored on hosted MCP |
-| **`APP_ENVELOPE_KEY`** | Prod should set base64-32 AES key; unset → plaintext-at-rest interim (local/dev) |
+| **Hosted MCP extras** | OBO when MCP audience ≠ hub; some desktop-only tools not mirrored on hosted MCP. **Streamable HTTP SSE GET `/mcp` is done** (see `mcp/README.md`) |
 
 Future PRD items (platform JWT attestation, A2A, etc.) remain out of scope.
 
-## Auth0 deploy notes
+## Auth0 / hosted MCP (prod)
 
-Hosted MCP Auth0 setup (tenant toggles, audience, client registration, Deno Deploy env): **`docs/AUTH0.md` §8**.
+Done in production:
 
-Also: `mcp/README.md`, `hub/README.md` (L4 notes), `hub/.env.example` (`APP_ENVELOPE_KEY`).
+1. Auth0 for hosted MCP (Resource Parameter Compatibility, DCR or manual ChatGPT/Claude clients) — **`docs/AUTH0.md` §8**
+2. Deploy `mcp/` → **`https://mcp.mutande.online`** (live)
+3. Prod **`APP_ENVELOPE_KEY`** set (AES-GCM at rest)
+
+Reference: `mcp/README.md`, `hub/README.md`, `hub/.env.example` (`APP_ENVELOPE_KEY` required in prod; unset OK for local/dev).
 
 ## Quick verify
 

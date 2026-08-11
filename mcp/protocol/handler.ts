@@ -1,8 +1,15 @@
 import type { HubClient, HubClientError } from "../hub/client.ts";
 import {
+  closeThreadAsUser,
+  deleteThreadAsUser,
+  forwardDraftAsWebAgent,
   getWebAgentThread,
+  listAgentsForUser,
+  listContactsForUser,
   listWebAgentThreads,
+  markProcessedHosted,
   replyAsWebAgent,
+  upvoteMessageAsWebAgent,
 } from "../hub/inbox.ts";
 import type { ThreadFilter } from "../hub/types.ts";
 import type { McpSession } from "../session/bind.ts";
@@ -78,6 +85,20 @@ export async function handleMcpRequest(
   }
 }
 
+function requireString(args: Record<string, unknown>, key: string): string {
+  const v = args[key];
+  return typeof v === "string" ? v.trim() : "";
+}
+
+function requireBundle(
+  args: Record<string, unknown>,
+): Record<string, unknown> | null {
+  if (args.bundle && typeof args.bundle === "object" && !Array.isArray(args.bundle)) {
+    return args.bundle as Record<string, unknown>;
+  }
+  return null;
+}
+
 async function callTool(
   name: string,
   args: Record<string, unknown>,
@@ -142,7 +163,7 @@ async function callTool(
   }
 
   if (name === "get_thread") {
-    const threadId = typeof args.thread_id === "string" ? args.thread_id.trim() : "";
+    const threadId = requireString(args, "thread_id");
     if (!threadId) {
       return toolTextResult("thread_id is required", true);
     }
@@ -156,11 +177,8 @@ async function callTool(
   }
 
   if (name === "reply_to_thread") {
-    const threadId = typeof args.thread_id === "string" ? args.thread_id.trim() : "";
-    const bundle =
-      args.bundle && typeof args.bundle === "object" && !Array.isArray(args.bundle)
-        ? (args.bundle as Record<string, unknown>)
-        : null;
+    const threadId = requireString(args, "thread_id");
+    const bundle = requireBundle(args);
     if (!threadId) {
       return toolTextResult("thread_id is required", true);
     }
@@ -176,6 +194,122 @@ async function callTool(
       bundle,
     );
     return toolTextResult(JSON.stringify({ ok: true, ...result }, null, 2));
+  }
+
+  if (name === "list_agents") {
+    const handle = requireString(args, "handle") || undefined;
+    const result = await listAgentsForUser(
+      ctx.hub,
+      ctx.session.accessToken,
+      handle,
+    );
+    return toolTextResult(JSON.stringify(result, null, 2));
+  }
+
+  if (name === "list_contacts") {
+    const result = await listContactsForUser(
+      ctx.hub,
+      ctx.session.accessToken,
+    );
+    return toolTextResult(JSON.stringify(result, null, 2));
+  }
+
+  if (name === "forward_draft") {
+    const recipient =
+      requireString(args, "recipient") || requireString(args, "to");
+    const bundle = requireBundle(args) ?? {};
+    if (!recipient) {
+      return toolTextResult("recipient is required", true);
+    }
+    // Ephemeral draft: require some readable content for a useful handoff.
+    const hasContent = Boolean(
+      (typeof bundle.notes === "string" && bundle.notes.trim()) ||
+        (typeof bundle.subject === "string" && bundle.subject.trim()) ||
+        (typeof bundle.context === "string" && bundle.context.trim()) ||
+        (Array.isArray(bundle.questions) && bundle.questions.length > 0) ||
+        (Array.isArray(bundle.resources) && bundle.resources.length > 0) ||
+        (Array.isArray(bundle.resource_requests) &&
+          bundle.resource_requests.length > 0),
+    );
+    if (!hasContent) {
+      return toolTextResult(
+        "bundle must include notes, subject, context, questions, and/or resources",
+        true,
+      );
+    }
+    const result = await forwardDraftAsWebAgent(
+      ctx.hub,
+      ctx.session.accessToken,
+      ctx.session.slug,
+      recipient,
+      bundle,
+    );
+    return toolTextResult(
+      JSON.stringify(
+        {
+          ok: true,
+          thread_id: result.thread.id,
+          message_id: result.message_id,
+          encryption_mode: result.thread.encryption_mode ?? "app_envelope",
+          thread: result.thread,
+        },
+        null,
+        2,
+      ),
+    );
+  }
+
+  if (name === "close_thread") {
+    const threadId = requireString(args, "thread_id");
+    if (!threadId) {
+      return toolTextResult("thread_id is required", true);
+    }
+    const result = await closeThreadAsUser(
+      ctx.hub,
+      ctx.session.accessToken,
+      threadId,
+    );
+    return toolTextResult(
+      JSON.stringify({ ok: true, thread: result.thread }, null, 2),
+    );
+  }
+
+  if (name === "delete_thread") {
+    const threadId = requireString(args, "thread_id");
+    if (!threadId) {
+      return toolTextResult("thread_id is required", true);
+    }
+    await deleteThreadAsUser(ctx.hub, ctx.session.accessToken, threadId);
+    return toolTextResult(JSON.stringify({ ok: true, thread_id: threadId }));
+  }
+
+  if (name === "upvote_message") {
+    const threadId = requireString(args, "thread_id");
+    const messageId = requireString(args, "message_id");
+    if (!threadId) {
+      return toolTextResult("thread_id is required", true);
+    }
+    if (!messageId) {
+      return toolTextResult("message_id is required", true);
+    }
+    const result = await upvoteMessageAsWebAgent(
+      ctx.hub,
+      ctx.session.accessToken,
+      ctx.session.slug,
+      threadId,
+      messageId,
+    );
+    return toolTextResult(JSON.stringify({ ok: true, ...result }, null, 2));
+  }
+
+  if (name === "mark_processed") {
+    const threadId = requireString(args, "thread_id");
+    if (!threadId) {
+      return toolTextResult("thread_id is required", true);
+    }
+    return toolTextResult(
+      JSON.stringify(markProcessedHosted(threadId), null, 2),
+    );
   }
 
   if (!IMPLEMENTED_TOOLS.has(name)) {

@@ -133,7 +133,7 @@ Hub stays **pull-only**. Web agent slots receive mail when the web host's MCP cl
 
 `app_envelope` introduces hub-readable message content for the first time. This changes mutande's posture and must be treated deliberately:
 
-- **Encryption at rest:** app_envelope payloads are encrypted at rest with a hub-held key (Deno KV / storage-layer). This protects against storage compromise, **not** against the hub operator — say so plainly.
+- **Encryption at rest:** app_envelope payloads are encrypted at rest with a hub-held key (`APP_ENVELOPE_KEY`, AES-GCM; **set in prod**). This protects against storage compromise, **not** against the hub operator — say so plainly.
 - **Ops access:** no routine ops read access to payloads; access requires incident process and is logged. (Formalize before L2 ships.)
 - **Deletion:** thread delete removes app_envelope payloads for all participants' copies; 30-day retention is a hard upper bound regardless.
 - **Legal/abuse posture:** a readable store creates content-moderation and disclosure surface the blind courier never had. Accept this scope for non-E2E routes; keep the E2E store untouched by any moderation tooling.
@@ -405,9 +405,9 @@ Pilot uses per_message; dashboards exist to **advise** token model cutover.
 
 | Layer | Status | Ships | Depends on |
 |---|---|---|---|
-| **L0 — Hosted MCP server** | **Implemented** | Multi-tenant remote MCP at `mcp.mutande.online` with OAuth 2.1 / Auth0; the **largest single build** in this PRD — not a hub route addition. Migration note: agent-taking surfaces (daemon state, Flutter UI, MCP tools, skill) assume slug ↔ one agent today; L0/L1 break that assumption everywhere | — |
+| **L0 — Hosted MCP server** | **Implemented (live)** | Multi-tenant remote MCP **live** at `https://mcp.mutande.online` with OAuth 2.1 / Auth0 (tenant Resource Parameter Compatibility + DCR/manual clients — `docs/AUTH0.md` §8); the **largest single build** in this PRD — not a hub route addition. Migration note: agent-taking surfaces (daemon state, Flutter UI, MCP tools, skill) assume slug ↔ one agent today; L0/L1 break that assumption everywhere | — |
 | **L1 — Web slots + handshake** | **Implemented** | Separate agent_id per transport; connect-time capability; client-declared vs hub-assigned split; UI transport chip; Settings default transport | L0 |
-| **L2 — app_envelope + MCP pull** | **Implemented** | Hub split store; web inbox via hosted MCP tools; 30d retention; data-handling policy (§4.6) + privacy copy update | L1 |
+| **L2 — app_envelope + MCP pull** | **Implemented** | Hub split store; web inbox via hosted MCP tools; 30d retention; **prod `APP_ENVELOPE_KEY` set** (AES-GCM at rest); data-handling policy (§4.6) + privacy copy update | L1 |
 | **L3 — External contacts** | **Implemented** | PIN + approve + connection ping; unpair + velocity limits; External Contacts section; app_envelope routing | L2 |
 | **L4 — Enterprise registry + billing** | **Implemented** | Self-serve draft; domain verification; ops publish; ops credits; owner-set per_message; debit-on-store; metrics dashboards; warn banner | L2 |
 | **L5 — Thread downgrade flow** | **Implemented** | Unanimous-approve add-web-to-E2E-thread; system divider; one-way ratchet (pre-L5 gate removed — web join of E2E threads goes through consent) | L2 |

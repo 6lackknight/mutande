@@ -93,7 +93,7 @@ Every thread has `encryption_mode`: `e2e` (blind courier envelopes) or `app_enve
 
 **L5 downgrade:** adding a web agent to an existing E2E thread requires unanimous sidecar-participant approval (`POST /v1/threads/:id/downgrade-proposals`, then `…/approve` or `…/deny`). On approve the mode flips to `app_envelope` for future messages only, `downgrade_point` is set, and a system divider records the end of E2E. Pre-downgrade history stays sealed for the web joiner. Ratchet is one-way — never re-upgrade.
 
-`app_envelope` bodies live under a separate KV prefix (`app_envelopes/…`) with `expireIn` = 30 days. When `APP_ENVELOPE_KEY` is set (base64 32-byte AES key), payloads are AES-GCM encrypted at rest (hub-held key — not E2E). Thread delete purges app payloads for all participants.
+`app_envelope` bodies live under a separate KV prefix (`app_envelopes/…`) with `expireIn` = 30 days. **`APP_ENVELOPE_KEY` is required in prod** (set): base64 32-byte AES key → AES-GCM at rest (hub-held key — not E2E). Unset is local/dev only (plaintext at rest). Thread delete purges app payloads for all participants.
 
 ## Env
 
@@ -106,7 +106,7 @@ Every thread has `encryption_mode`: `e2e` (blind courier envelopes) or `app_enve
 | `R2_SECRET_ACCESS_KEY` | for real blobs | R2 API token secret |
 | `R2_BUCKET` | for real blobs | Bucket name |
 | `R2_PUBLIC_BASE` | optional | Mock URL base when R2 is unset (default `https://blobs.mutande.app`) |
-| `APP_ENVELOPE_KEY` | prod L2 | Base64 32-byte AES-256 key for app_envelope at-rest encryption; unset → plaintext interim |
+| `APP_ENVELOPE_KEY` | prod (required; set) | Base64 32-byte AES-256 key for app_envelope at-rest encryption; unset OK for local/dev only |
 | `MUTANDE_SENTRY_DSN` / `SENTRY_DSN` | optional | GlitchTip DSN (hub project). Default is built-in; empty disables |
 | `SENTRY_SMOKE` | optional | `1` / `true` — capture a smoke message and exit (needs network) |
 

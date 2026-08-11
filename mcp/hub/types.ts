@@ -67,3 +67,56 @@ export interface CreateThreadResponse {
 export interface ReplyResponse {
   message_id: string;
 }
+
+export type AgentTransport = "sidecar" | "mcp";
+
+export interface HubAgentRow {
+  id: string;
+  user_id: string;
+  slug: string;
+  created_at: string;
+  transport?: AgentTransport | string;
+  mcp_endpoint?: string | null;
+  [key: string]: unknown;
+}
+
+export interface Contact {
+  handle: string;
+  pubkey: string | null;
+  devices: Array<{ pubkey: string; platform: string }>;
+  kind?: "org" | "external" | "broadcast";
+  external_link_id?: string;
+  linked_at?: string;
+  thread_id?: string;
+}
+
+export interface MessageUpvote {
+  agent_id: string;
+  from_handle: string;
+  created_at: string;
+}
+
+export interface MessageUpvoteSummary {
+  count: number;
+  upvotes: MessageUpvote[];
+  your_upvotes?: string[];
+}
+
+export interface ToggleUpvoteResponse {
+  upvoted: boolean;
+  upvotes: MessageUpvoteSummary;
+}
+
+export interface CloseThreadResponse {
+  thread: ThreadMeta;
+}
+
+export interface DeleteThreadResponse {
+  ok: true;
+}
+
+export interface AgentsListResponse {
+  agents: HubAgentRow[];
+  default_agent_id: string | null;
+  transport_defaults?: Record<string, AgentTransport>;
+}

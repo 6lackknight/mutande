@@ -1,7 +1,11 @@
 import { assertEquals } from "jsr:@std/assert@1";
 import {
   bundleToAppEnvelope,
+  E2E_REFUSAL,
   filterThreadsForWebAgent,
+  isE2eWireError,
+  markProcessedHosted,
+  mapHubSendError,
   presentThreadForWeb,
   threadForWebAgent,
 } from "./inbox.ts";
@@ -66,4 +70,20 @@ Deno.test("filter empty when no matches", () => {
   ];
   assertEquals(filterThreadsForWebAgent(threads, "web").length, 0);
   assertEquals(threadForWebAgent(threads[0], "web"), false);
+});
+
+Deno.test("isE2eWireError detects hub E2E refusals", () => {
+  assertEquals(
+    isE2eWireError(new Error("E2E threads require envelope (not app_envelope)")),
+    true,
+  );
+  assertEquals(isE2eWireError(new Error("something else")), false);
+  assertEquals(mapHubSendError(new Error("E2E threads require envelope")).message, E2E_REFUSAL);
+});
+
+Deno.test("markProcessedHosted documents N/A", () => {
+  const r = markProcessedHosted("t1");
+  assertEquals(r.ok, true);
+  assertEquals(r.na, true);
+  assertEquals(r.thread_id, "t1");
 });

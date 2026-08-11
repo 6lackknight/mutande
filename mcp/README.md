@@ -23,7 +23,11 @@ Shared Auth0 audience (`https://hub.mutande.app`) means L0 can call hub with the
 |--------|------|------|
 | GET | `/health` | — |
 | GET | `/.well-known/oauth-protected-resource` | — (RFC 9728) |
-| POST | `/mcp` | `Authorization: Bearer <Auth0 access token>` |
+| GET | `/mcp` | Bearer — opens Streamable HTTP SSE (`text/event-stream`) |
+| POST | `/mcp` | Bearer — JSON-RPC (`application/json` responses) |
+| DELETE | `/mcp` | Bearer + `Mcp-Session-Id` — end transport session |
+
+Streamable HTTP (MCP 2025-03-26): clients use the same `/mcp` URL for POST messages and optional GET SSE. `initialize` responses include `Mcp-Session-Id`; clients should send that header on later requests. Unauthenticated GET/POST/DELETE never open a stream or return session state.
 
 On each authenticated `/mcp` call the server:
 
@@ -39,11 +43,19 @@ Default slug: `chatgpt` (`MCP_DEFAULT_AGENT_SLUG`). Override with `?slug=` or `X
 | Tool | Status |
 |------|--------|
 | `health` | Implemented — returns bound Auth0 sub, handle, `agent_id` |
-| `ping` | Implemented — empty OK |
+| `ping` | Implemented — empty OK (MCP protocol ping; not product E2E ping) |
 | `list_threads` | L2 — hub inbox filtered to bound web `agent_id` + `encryption_mode: app_envelope`; `caught_up` when empty |
 | `get_thread` | L2 — `GET /v1/threads/:id/app-messages?agent_id=` |
 | `reply_to_thread` | L2 — posts `app_envelope` (never E2E seal) |
-| `list_agents`, `list_contacts`, `forward_draft` | Stub |
+| `list_agents` | Implemented — `GET /v1/agents` (dual sidecar/mcp slots + `transport`) |
+| `list_contacts` | Implemented — org contacts + approved external (`/v1/contacts` + `/external`) |
+| `forward_draft` | Implemented — `POST /v1/threads` with `app_envelope` only (ephemeral bundle in args); refuses E2E paths |
+| `close_thread` | Implemented — `POST /v1/threads/:id/close` |
+| `delete_thread` | Implemented — `DELETE /v1/threads/:id` |
+| `upvote_message` | Implemented — `POST /v1/threads/:id/messages/:messageId/upvote` |
+| `mark_processed` | N/A — local sidecar bookkeeping only; returns explanatory `na: true` |
+
+New mail from hosted MCP is **app_envelope-only**. If hub would resolve the recipient to an E2E path, `forward_draft` returns a clear refusal and suggests the Mac sidecar.
 
 ## Local dev
 
@@ -66,20 +78,20 @@ cd mcp && deno task test && deno task check
 
 ## Deploy
 
-1. Create Deno Deploy project **`mutande-mcp`** (or rename `deploy` task).
-2. Custom domain: `mcp.mutande.online`.
-3. Env: copy from `.env.example` (`AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, `MUTANDE_HUB_URL`, `MCP_PUBLIC_URL`).
-4. Hub: set `MCP_ENDPOINT=https://mcp.mutande.online` if not using the built-in default.
-5. `cd mcp && deno task deploy`
+**Live:** `https://mcp.mutande.online` (Deno Deploy project `mutande-mcp`). Redeploy:
 
-## Auth0 app / tenant config needed
+1. Env: keep `.env.example` names set on Deploy (`AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, `MUTANDE_HUB_URL`, `MCP_PUBLIC_URL`).
+2. Hub: `MCP_ENDPOINT=https://mcp.mutande.online` if not using the built-in default.
+3. `cd mcp && deno task deploy`
 
-Documented in [`docs/AUTH0.md`](../docs/AUTH0.md) §8. Summary:
+## Auth0 app / tenant config
+
+**Done in prod** (Resource Parameter Compatibility, domain-level connections, DCR or manual ChatGPT/Claude clients). Reference: [`docs/AUTH0.md`](../docs/AUTH0.md) §8. Summary:
 
 1. **Reuse** API audience `https://hub.mutande.app` (L0 default) so MCP→hub calls work with one token.
-2. Tenant **Advanced**: enable **Resource Parameter Compatibility Profile** and **Include Issuer in Authorization Responses** (MCP client discovery).
+2. Tenant **Advanced**: **Resource Parameter Compatibility Profile** and **Include Issuer in Authorization Responses** (MCP client discovery).
 3. Promote DB / social connections to **domain-level** so third-party MCP clients (ChatGPT, Claude) can use them.
-4. Enable **Dynamic Client Registration** *or* manually register ChatGPT / Claude redirect URIs (see Auth0 “Register your MCP Client Application”).
+4. **Dynamic Client Registration** *or* manually register ChatGPT / Claude redirect URIs (see Auth0 “Register your MCP Client Application”).
 5. Optional later: separate Auth0 API identifier `https://mcp.mutande.online` + OBO to hub (`AUTH0_MCP_AUDIENCE`).
 
 ## ChatGPT / Claude.ai connector setup
@@ -102,10 +114,47 @@ npx @modelcontextprotocol/inspector
 # Auth: paste an Auth0 access token with audience https://hub.mutande.app
 ```
 
-## Still stubbed / deferred
+curl smoke (replace `$TOKEN`):
 
-- Full Streamable HTTP SSE (GET `/mcp`) and hub SSE wake
+```bash
+# Unauthorized GET must not open a stream
+curl -sI -H 'Accept: text/event-stream' http://127.0.0.1:3849/mcp | head -1
+# → HTTP/1.1 401
+
+# SSE stream opens (Ctrl-C to stop; watch `: connected` / `: keepalive`)
+curl -N -H "Authorization: Bearer $TOKEN" -H 'Accept: text/event-stream' \
+  http://127.0.0.1:3849/mcp
+
+# Initialize → capture Mcp-Session-Id, then tools/call
+curl -sD - -o /tmp/mcp-init.json \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"curl","version":"0"}}}' \
+  http://127.0.0.1:3849/mcp
+```
+
+## Streamable HTTP / SSE notes
+
+- **Done:** GET `/mcp` SSE, POST JSON-RPC, DELETE session, `Mcp-Session-Id` on initialize.
+- POST keeps **JSON** responses (allowed by the transport; clients must also Accept `text/event-stream`).
+- GET streams stay open with SSE comment keepalives; server→client JSON-RPC on that stream is reserved for future notifications (no hub mail push here).
+- Sessions are **in-memory per Deno isolate** — after a cold start, unknown `Mcp-Session-Id` → HTTP 404 and the client must re-`initialize` (per spec).
+- **Not this package:** hub `GET /v1/events` mail SSE wake (still deferred).
+
+## Desktop-only / still deferred
+
+Still **Mac sidecar MCP only** (not on hosted MCP):
+
+- `get_router` / `set_router`
+- `get_draft` / `draft_add_question` / `draft_add_resource` (local draft store)
+- `get_safety_number` / `contact_safety_number` / `verify_contact`
+- Product `ping` (health/thread E2E ping)
+- `forward_blob` (E2E seal + R2)
+
+Other deferred:
+
+- Hub SSE wake (`GET /v1/events`) for lower-latency inbox
 - OBO token exchange when MCP audience ≠ hub audience
-- `list_agents` / `list_contacts` / `forward_draft` on hosted MCP (hub L3/L4 APIs exist; hosted MCP inbox tools cover app_envelope pull/reply)
 
 Local `core` stdio MCP path is **not** modified by this package (except daemon L2 send/open for app_envelope). See `docs/DIRECTORY-IMPLEMENTATION.md` for L0–L5 status.
