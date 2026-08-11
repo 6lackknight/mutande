@@ -5,6 +5,8 @@ import {
   extractAuth0Roles,
   isPlatformOpsAdmin,
   rolesFromJwt,
+  SESSION_AUTH0_ROLES_KEY,
+  SESSION_OPS_ADMIN_KEY,
 } from "@/lib/platform-admin";
 import { isOpsAdmin, type MeResponse } from "@/lib/types";
 
@@ -28,6 +30,13 @@ export async function loadMeOrNull(): Promise<{
   }
 }
 
+function opsFromSessionUser(user: Record<string, unknown>): boolean {
+  if (user[SESSION_OPS_ADMIN_KEY] === true) return true;
+  const saved = user[SESSION_AUTH0_ROLES_KEY];
+  if (Array.isArray(saved) && isPlatformOpsAdmin(saved as string[])) return true;
+  return isPlatformOpsAdmin(extractAuth0Roles(user));
+}
+
 /**
  * SuperAdmin for nav chrome: hub `/me`, access-token roles, ID token, or
  * persisted session.user roles (Auth0 v4 strips custom claims unless saved).
@@ -36,25 +45,26 @@ export async function sessionShowsOps(me?: MeResponse | null): Promise<boolean> 
   if (isOpsAdmin(me)) return true;
 
   try {
-    const { token } = await auth0.getAccessToken();
-    if (isPlatformOpsAdmin(rolesFromJwt(token))) return true;
-  } catch {
-    // No token / refresh failed — fall through to session tokens/claims.
-  }
-
-  try {
     const session = await auth0.getSession();
+    const user = session?.user;
+    if (user && typeof user === "object" && opsFromSessionUser(user as Record<string, unknown>)) {
+      return true;
+    }
+    if (session?.tokenSet?.accessToken) {
+      if (isPlatformOpsAdmin(rolesFromJwt(session.tokenSet.accessToken))) return true;
+    }
     if (session?.tokenSet?.idToken) {
       if (isPlatformOpsAdmin(rolesFromJwt(session.tokenSet.idToken))) return true;
     }
-    const user = session?.user;
-    if (user && typeof user === "object") {
-      if (isPlatformOpsAdmin(extractAuth0Roles(user as Record<string, unknown>))) {
-        return true;
-      }
-    }
   } catch {
     // ignore
+  }
+
+  try {
+    const { token } = await auth0.getAccessToken();
+    if (isPlatformOpsAdmin(rolesFromJwt(token))) return true;
+  } catch {
+    // No token / refresh failed.
   }
 
   return false;

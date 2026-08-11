@@ -9,6 +9,10 @@ export const AUTH0_ROLES_CLAIM_KEYS = [
   "roles",
 ] as const;
 
+/** Cookie-safe session.user keys (Auth0 v4 strips URL-shaped claim names). */
+export const SESSION_AUTH0_ROLES_KEY = "mutande_auth0_roles";
+export const SESSION_OPS_ADMIN_KEY = "mutande_is_ops_admin";
+
 export function platformAdminRoles(): string[] {
   const raw = process.env.MUTANDE_PLATFORM_ADMIN_ROLES?.trim();
   if (!raw) return [...DEFAULT_PLATFORM_ADMIN_ROLES];

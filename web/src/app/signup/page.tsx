@@ -1,4 +1,5 @@
-import { BrandMark, ChoiceCard, Alert, PageTitle, Shell } from "@/components/ui";
+import { LoggedInHeader } from "@/components/logged-in-header";
+import { ChoiceCard, Alert, PageTitle, Shell } from "@/components/ui";
 import {
   defaultHandleFromEmail,
   loadMeOrNull,
@@ -28,15 +29,7 @@ export default async function SignupPage({
 
   return (
     <Shell>
-      <div className="mb-10 flex items-center justify-between gap-4">
-        <BrandMark />
-        <a
-          href="/auth/logout"
-          className="text-sm text-muted hover:text-stone-800"
-        >
-          Sign out
-        </a>
-      </div>
+      <LoggedInHeader />
       <PageTitle
         title="How are you joining?"
         subtitle={`Signed in as ${email ?? session.user.name ?? "you"}. Create a team or redeem an invite. Your handle will look like ${previewHandle}.`}

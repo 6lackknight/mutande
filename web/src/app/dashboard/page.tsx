@@ -1,4 +1,5 @@
-import { BrandMark, ButtonLink, PageTitle, Shell } from "@/components/ui";
+import { LoggedInHeader } from "@/components/logged-in-header";
+import { ButtonLink, PageTitle, Shell } from "@/components/ui";
 import { requireOnboarded, sessionShowsOps } from "@/lib/session";
 import { isOrgAdmin } from "@/lib/types";
 
@@ -12,15 +13,7 @@ export default async function DashboardPage() {
 
   return (
     <Shell wide>
-      <div className="mb-10 flex items-center justify-between gap-4">
-        <BrandMark />
-        <a
-          href="/auth/logout"
-          className="text-sm text-muted hover:text-stone-800"
-        >
-          Sign out
-        </a>
-      </div>
+      <LoggedInHeader />
 
       <PageTitle
         title="You’re set"
