@@ -52,6 +52,15 @@ pub struct ThreadMeta {
     pub your_status: Option<YourStatus>,
     pub created_at: String,
     pub updated_at: String,
+    /// Thread encryption mode (§4.2). Legacy rows omit → treat as `e2e`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub encryption_mode: Option<String>,
+    /// Set after L5 unanimous downgrade — pre-point E2E history stays sealed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub downgrade_point: Option<ThreadDowngradePoint>,
+    /// Set when thread is billed enterprise mail (§7.2) — drives Flutter warn banner.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enterprise_listing_id: Option<String>,
     /// Daemon-filled after local open — author of the latest message (not hub plaintext).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_from: Option<String>,
@@ -69,7 +78,16 @@ pub struct ThreadMessage {
     pub thread_id: String,
     pub from_user_id: String,
     pub from_handle: String,
-    pub envelope: Envelope,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_agent_id: Option<String>,
+    /// E2E blind envelope — present only for `encryption_mode: e2e`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub envelope: Option<Envelope>,
+    /// Hub-readable app_envelope — present only for non-E2E threads.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app_envelope: Option<AppEnvelopePayload>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_store: Option<String>,
     pub created_at: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sender_only: Option<bool>,
@@ -77,6 +95,30 @@ pub struct ThreadMessage {
     pub parent_message_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub upvotes: Option<MessageUpvoteSummary>,
+}
+
+/// Hub-readable application-layer payload (directory.prd §4.2.1).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AppEnvelopePayload {
+    pub version: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subject: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ping_kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub questions: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub answers: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resources: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resource_requests: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub in_reply_to: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -114,6 +156,14 @@ pub struct Contact {
     pub pubkey: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub devices: Vec<ContactDevice>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_link_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub linked_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thread_id: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -121,6 +171,69 @@ pub struct ContactDevice {
     pub pubkey: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub platform: Option<String>,
+}
+
+/// Alice's pairing PIN + QR URI (`mutande://pair?…`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PairingPin {
+    pub pin: String,
+    pub handle: String,
+    pub expires_at: String,
+    pub qr_uri: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PairingPinGetResponse {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pin: Option<PairingPin>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PairRequest {
+    pub id: String,
+    pub requester_user_id: String,
+    pub requester_handle: String,
+    pub target_user_id: String,
+    pub target_handle: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intro: Option<String>,
+    pub status: String,
+    pub created_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_at: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct SubmitPairRequest {
+    pub handle: String,
+    pub pin: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub intro: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PairRequestResponse {
+    pub request: PairRequest,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PendingPairRequests {
+    pub incoming: Vec<PairRequest>,
+    pub outgoing: Vec<PairRequest>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ApprovePairResponse {
+    pub contact: Contact,
+    pub thread: ThreadMeta,
+    pub request: PairRequest,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UnpairResponse {
+    pub ok: bool,
+    #[serde(default)]
+    pub closed_thread_ids: Vec<String>,
 }
 
 /// Onboarded hub user (Auth0-backed).
@@ -226,6 +339,31 @@ pub struct AgentListResponse {
     pub default_agent_id: Option<String>,
 }
 
+/// Hub warn-banner payload for public enterprise listings (§7.2).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EnterpriseWarnBanner {
+    pub trust_tier: String,
+    pub message: String,
+}
+
+/// Published registry listing + warn payload (`GET /v1/registry/listing/:idOrAddress`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RegistryListingPublic {
+    pub listing: RegistryListing,
+    pub warn: EnterpriseWarnBanner,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RegistryListing {
+    pub id: String,
+    pub address: String,
+    pub agent_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trust_tier: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+}
+
 /// Preferred transport per display slug (`GET`/`PUT /v1/agents/transport-defaults`).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct AgentTransportPrefs {
@@ -242,6 +380,11 @@ pub struct SetTransportDefaultRequest {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentsForHandleResponse {
     pub agents: Vec<Agent>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_agent_id: Option<String>,
+    /// slug → preferred transport (`sidecar` | `mcp`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transport_defaults: Option<std::collections::BTreeMap<String, String>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -341,9 +484,58 @@ pub struct ThreadListResponse {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ThreadDowngradePoint {
+    pub message_id: String,
+    #[serde(default)]
+    pub approvers: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ThreadDowngradeProposal {
+    pub id: String,
+    pub thread_id: String,
+    pub proposed_agent_id: String,
+    pub proposed_slug: String,
+    pub proposer_user_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proposer_agent_id: Option<String>,
+    pub status: String,
+    #[serde(default)]
+    pub required_approvers: Vec<String>,
+    #[serde(default)]
+    pub approvals: Vec<String>,
+    #[serde(default)]
+    pub denials: Vec<String>,
+    pub created_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub divider_message_id: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProposeDowngradeResponse {
+    pub proposal: ThreadDowngradeProposal,
+    pub prompt: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ApproveDowngradeResponse {
+    pub proposal: ThreadDowngradeProposal,
+    pub thread: ThreadMeta,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PendingDowngradeProposals {
+    pub proposals: Vec<ThreadDowngradeProposal>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ThreadDetail {
     pub thread: ThreadMeta,
     pub messages: Vec<ThreadMessage>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_downgrade: Option<ThreadDowngradeProposal>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -388,14 +580,20 @@ pub struct SubmitFeedbackResponse {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct CreateThreadRequest<'a> {
     pub to: &'a str,
-    pub envelope: &'a Envelope,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub envelope: Option<&'a Envelope>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub app_envelope: Option<&'a AppEnvelopePayload>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub from_agent: Option<&'a str>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct ReplyRequest<'a> {
-    pub envelope: &'a Envelope,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub envelope: Option<&'a Envelope>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub app_envelope: Option<&'a AppEnvelopePayload>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub from_agent: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]

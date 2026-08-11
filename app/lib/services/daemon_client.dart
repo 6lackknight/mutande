@@ -219,6 +219,129 @@ class DaemonClient {
         .toList();
   }
 
+  /// Cross-org external contacts (approved links).
+  Future<List<ContactView>> listExternalContacts() async {
+    final result = await _callWithTimeout(
+      'list_external_contacts',
+      null,
+      requestTimeout,
+    );
+    final map = result as Map<String, dynamic>? ?? {};
+    final raw = map['contacts'] as List<dynamic>? ?? const [];
+    return raw
+        .map((e) => ContactView.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<PairingPinView> issuePairingPin() async {
+    final result = await _call('issue_pairing_pin', null);
+    return PairingPinView.fromJson(result as Map<String, dynamic>? ?? {});
+  }
+
+  Future<PairingPinView?> getPairingPin() async {
+    final result = await _call('get_pairing_pin', null);
+    final map = result as Map<String, dynamic>? ?? {};
+    final pin = map['pin'];
+    if (pin is Map<String, dynamic>) {
+      return PairingPinView.fromJson(pin);
+    }
+    return null;
+  }
+
+  Future<PairingPinView> rotatePairingPin() async {
+    final result = await _call('rotate_pairing_pin', null);
+    return PairingPinView.fromJson(result as Map<String, dynamic>? ?? {});
+  }
+
+  Future<PairRequestView> submitPairRequest({
+    required String handle,
+    required String pin,
+    String? intro,
+  }) async {
+    final params = <String, dynamic>{'handle': handle, 'pin': pin};
+    if (intro != null && intro.trim().isNotEmpty) {
+      params['intro'] = intro.trim();
+    }
+    final result = await _call('submit_pair_request', params);
+    final map = result as Map<String, dynamic>? ?? {};
+    return PairRequestView.fromJson(
+      map['request'] as Map<String, dynamic>? ?? {},
+    );
+  }
+
+  Future<PendingPairRequestsView> listPendingPairRequests() async {
+    final result = await _call('list_pending_pair_requests', null);
+    return PendingPairRequestsView.fromJson(
+      result as Map<String, dynamic>? ?? {},
+    );
+  }
+
+  Future<void> approvePairRequest(String requestId) async {
+    await _call('approve_pair_request', {'request_id': requestId});
+  }
+
+  Future<void> denyPairRequest(String requestId) async {
+    await _call('deny_pair_request', {'request_id': requestId});
+  }
+
+  Future<void> unpairExternalContact(String linkId) async {
+    await _call('unpair_external_contact', {'link_id': linkId});
+  }
+
+  /// L5: propose adding a web agent to an E2E thread (unanimous sidecar approve).
+  Future<ThreadDowngradeProposalView> proposeThreadDowngrade({
+    required String threadId,
+    required String agentSlug,
+    String? fromAgent,
+  }) async {
+    final params = <String, dynamic>{
+      'thread_id': threadId,
+      'agent_slug': agentSlug,
+    };
+    if (fromAgent != null && fromAgent.trim().isNotEmpty) {
+      params['from_agent'] = fromAgent.trim();
+    }
+    final result = await _call('propose_thread_downgrade', params);
+    final map = result as Map<String, dynamic>? ?? {};
+    return ThreadDowngradeProposalView.fromJson(
+      map['proposal'] as Map<String, dynamic>? ?? {},
+      prompt: map['prompt'] as String?,
+    );
+  }
+
+  Future<List<ThreadDowngradeProposalView>> listPendingThreadDowngrades() async {
+    final result = await _call('list_pending_thread_downgrades', null);
+    final map = result as Map<String, dynamic>? ?? {};
+    final raw = map['proposals'] as List<dynamic>? ?? const [];
+    return raw
+        .map(
+          (e) => ThreadDowngradeProposalView.fromJson(
+            e as Map<String, dynamic>? ?? {},
+          ),
+        )
+        .toList();
+  }
+
+  Future<void> approveThreadDowngrade({
+    required String threadId,
+    required String proposalId,
+  }) async {
+    await _call('approve_thread_downgrade', {
+      'thread_id': threadId,
+      'proposal_id': proposalId,
+    });
+  }
+
+  Future<void> denyThreadDowngrade({
+    required String threadId,
+    required String proposalId,
+  }) async {
+    await _call('deny_thread_downgrade', {
+      'thread_id': threadId,
+      'proposal_id': proposalId,
+    });
+  }
+
   /// Pilot / product feedback → hub `POST /v1/feedback`.
   Future<void> submitFeedback({
     required String message,
@@ -270,6 +393,7 @@ class DaemonClient {
     final map = result as Map<String, dynamic>? ?? {};
     final thread = map['thread'] as Map<String, dynamic>? ?? {};
     final messagesRaw = map['messages'] as List<dynamic>? ?? const [];
+    final pendingRaw = map['pending_downgrade'] as Map<String, dynamic>?;
     return ThreadDetailResult(
       id: thread['id'] as String? ?? threadId,
       kind: thread['kind'] as String? ?? '',
@@ -277,6 +401,10 @@ class DaemonClient {
       from: thread['from'] as String? ?? '',
       audience: thread['audience'] as String? ?? '',
       yourStatus: thread['your_status'] as String?,
+      enterpriseListingId: thread['enterprise_listing_id'] as String?,
+      pendingDowngrade: pendingRaw == null
+          ? null
+          : ThreadDowngradeProposalView.fromJson(pendingRaw),
       messages: messagesRaw.map((e) {
         final m = e as Map<String, dynamic>;
         final bundle = m['bundle'] as Map<String, dynamic>?;
@@ -386,6 +514,24 @@ class DaemonClient {
           .toList(),
       defaultAgentId: map['default_agent_id'] as String?,
     );
+  }
+
+  /// Public enterprise listing + warn banner (§7.2).
+  ///
+  /// Returns null when the address is not a published listing (404 / error).
+  Future<RegistryListingWarn?> getRegistryListing(String idOrAddress) async {
+    final trimmed = idOrAddress.trim();
+    if (trimmed.isEmpty) return null;
+    try {
+      final result = await _call('get_registry_listing', {
+        'id_or_address': trimmed,
+      });
+      return RegistryListingWarn.fromJson(
+        result as Map<String, dynamic>? ?? const {},
+      );
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> setDefaultAgent(String agentId) async {
@@ -920,7 +1066,9 @@ class AgentInfo {
       transport: AgentTransport.tryParse(map['transport'] as String?),
       trustTier: TrustTier.tryParse(map['trust_tier'] as String?),
       lastSeen: _parseDateTime(
-        map['last_seen'] ?? map['capability_refreshed_at'],
+        map['last_seen'] ??
+            map['capabilities_updated_at'] ??
+            map['capability_refreshed_at'],
       ),
     );
   }
@@ -1016,7 +1164,15 @@ String? _agentBadgeFromThread(Map<String, dynamic> m) {
 }
 
 class ContactView {
-  const ContactView({required this.handle, this.pubkey, this.devices = const []});
+  const ContactView({
+    required this.handle,
+    this.pubkey,
+    this.devices = const [],
+    this.kind,
+    this.externalLinkId,
+    this.linkedAt,
+    this.threadId,
+  });
 
   factory ContactView.fromJson(Map<String, dynamic> map) {
     final devicesRaw = map['devices'] as List<dynamic>? ?? const [];
@@ -1026,14 +1182,100 @@ class ContactView {
       devices: devicesRaw
           .map((e) => ContactDeviceView.fromJson(e as Map<String, dynamic>))
           .toList(),
+      kind: map['kind'] as String?,
+      externalLinkId: map['external_link_id'] as String?,
+      linkedAt: map['linked_at'] as String?,
+      threadId: map['thread_id'] as String?,
     );
   }
 
   final String handle;
   final String? pubkey;
   final List<ContactDeviceView> devices;
+  final String? kind;
+  final String? externalLinkId;
+  final String? linkedAt;
+  final String? threadId;
 
-  bool get isBroadcast => handle.startsWith('@all@');
+  bool get isBroadcast =>
+      handle.startsWith('@all@') || kind == 'broadcast';
+  bool get isExternal => kind == 'external';
+}
+
+class PairingPinView {
+  const PairingPinView({
+    required this.pin,
+    required this.handle,
+    required this.expiresAt,
+    required this.qrUri,
+  });
+
+  factory PairingPinView.fromJson(Map<String, dynamic> map) {
+    return PairingPinView(
+      pin: map['pin'] as String? ?? '',
+      handle: map['handle'] as String? ?? '',
+      expiresAt: map['expires_at'] as String? ?? '',
+      qrUri: map['qr_uri'] as String? ?? '',
+    );
+  }
+
+  final String pin;
+  final String handle;
+  final String expiresAt;
+  final String qrUri;
+}
+
+class PairRequestView {
+  const PairRequestView({
+    required this.id,
+    required this.requesterHandle,
+    required this.targetHandle,
+    required this.status,
+    required this.createdAt,
+    this.intro,
+  });
+
+  factory PairRequestView.fromJson(Map<String, dynamic> map) {
+    return PairRequestView(
+      id: map['id'] as String? ?? '',
+      requesterHandle: map['requester_handle'] as String? ?? '',
+      targetHandle: map['target_handle'] as String? ?? '',
+      status: map['status'] as String? ?? '',
+      createdAt: map['created_at'] as String? ?? '',
+      intro: map['intro'] as String?,
+    );
+  }
+
+  final String id;
+  final String requesterHandle;
+  final String targetHandle;
+  final String status;
+  final String createdAt;
+  final String? intro;
+}
+
+class PendingPairRequestsView {
+  const PendingPairRequestsView({
+    this.incoming = const [],
+    this.outgoing = const [],
+  });
+
+  factory PendingPairRequestsView.fromJson(Map<String, dynamic> map) {
+    List<PairRequestView> parse(String key) {
+      final raw = map[key] as List<dynamic>? ?? const [];
+      return raw
+          .map((e) => PairRequestView.fromJson(e as Map<String, dynamic>))
+          .toList();
+    }
+
+    return PendingPairRequestsView(
+      incoming: parse('incoming'),
+      outgoing: parse('outgoing'),
+    );
+  }
+
+  final List<PairRequestView> incoming;
+  final List<PairRequestView> outgoing;
 }
 
 class ContactDeviceView {
@@ -1050,6 +1292,41 @@ class ContactDeviceView {
   final String? platform;
 }
 
+class ThreadDowngradeProposalView {
+  const ThreadDowngradeProposalView({
+    required this.id,
+    required this.threadId,
+    required this.proposedSlug,
+    required this.status,
+    this.prompt,
+  });
+
+  factory ThreadDowngradeProposalView.fromJson(
+    Map<String, dynamic> map, {
+    String? prompt,
+  }) {
+    final slug = map['proposed_slug'] as String? ?? '';
+    return ThreadDowngradeProposalView(
+      id: map['id'] as String? ?? '',
+      threadId: map['thread_id'] as String? ?? '',
+      proposedSlug: slug,
+      status: map['status'] as String? ?? 'pending',
+      prompt: prompt ??
+          (slug.isEmpty
+              ? null
+              : 'Adding @$slug (web) ends E2E for this thread'),
+    );
+  }
+
+  final String id;
+  final String threadId;
+  final String proposedSlug;
+  final String status;
+  final String? prompt;
+
+  bool get isPending => status == 'pending';
+}
+
 class ThreadDetailResult {
   const ThreadDetailResult({
     required this.id,
@@ -1058,6 +1335,8 @@ class ThreadDetailResult {
     required this.from,
     this.audience = '',
     this.yourStatus,
+    this.enterpriseListingId,
+    this.pendingDowngrade,
     required this.messages,
   });
 
@@ -1067,7 +1346,48 @@ class ThreadDetailResult {
   final String from;
   final String audience;
   final String? yourStatus;
+
+  /// Hub billing flag — when set, show enterprise warn banner (§7.2).
+  final String? enterpriseListingId;
+
+  /// L5 pending unanimous downgrade consent (§6.5).
+  final ThreadDowngradeProposalView? pendingDowngrade;
+
   final List<ThreadMessageView> messages;
+
+  bool get isEnterpriseThread =>
+      shouldShowEnterpriseWarnBanner(enterpriseListingId: enterpriseListingId);
+}
+
+/// Hub `GET /v1/registry/listing/:idOrAddress` warn payload for compose.
+class RegistryListingWarn {
+  const RegistryListingWarn({
+    required this.listingId,
+    required this.address,
+    required this.trustTier,
+    required this.message,
+  });
+
+  factory RegistryListingWarn.fromJson(Map<String, dynamic> map) {
+    final listing = map['listing'] as Map<String, dynamic>? ?? const {};
+    final warn = map['warn'] as Map<String, dynamic>? ?? const {};
+    return RegistryListingWarn(
+      listingId: listing['id'] as String? ?? '',
+      address: listing['address'] as String? ?? '',
+      trustTier: TrustTier.tryParse(
+            warn['trust_tier'] as String? ?? listing['trust_tier'] as String?,
+          ) ??
+          TrustTier.enterprise,
+      message: warn['message'] as String? ?? kEnterpriseWarnBannerMessage,
+    );
+  }
+
+  final String listingId;
+  final String address;
+  final TrustTier trustTier;
+  final String message;
+
+  bool get showBanner => trustTier == TrustTier.enterprise;
 }
 
 class BundleResourceView {

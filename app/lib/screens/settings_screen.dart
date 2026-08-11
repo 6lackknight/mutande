@@ -600,6 +600,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             _section(
               context,
+              label: 'EXTERNAL CONTACTS',
+              child: Container(
+                width: double.infinity,
+                padding: _kCardPad,
+                decoration: _settingsCardDecoration(),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Pair external contact',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                        color: _kStone800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Share a 6-digit PIN from Contacts → External, or add someone else’s handle + PIN. Cross-org mail uses app envelope (not E2E).',
+                      style: TextStyle(fontSize: 12, color: _kStone500, height: 1.35),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            _section(
+              context,
               label: 'ACCOUNT',
               child: _AccountCard(
                 handle: widget.handle,

@@ -4,7 +4,7 @@
   "exports": "./main.ts",
   "tasks": {
     "dev": "deno run --allow-net --allow-env --allow-read --unstable-kv --watch main.ts",
-    "check": "deno check --unstable-kv main.ts store/store_test.ts store/r2_test.ts store/auth0_test.ts store/sentry_test.ts routes/auth_test.ts",
+    "check": "deno check --unstable-kv main.ts store/store_test.ts store/app_envelope_test.ts store/thread_downgrade_test.ts store/external_contacts_test.ts store/r2_test.ts store/auth0_test.ts store/sentry_test.ts routes/auth_test.ts routes/registry_test.ts",
     "test": "deno test --allow-env --allow-read --allow-net --unstable-kv store/ routes/",
     "smoke:sentry": "SENTRY_SMOKE=1 deno run --allow-net --allow-env --allow-read main.ts",
     "deploy": "deployctl deploy --project=mutande main.ts"

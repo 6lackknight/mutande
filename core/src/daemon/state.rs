@@ -145,6 +145,8 @@ pub struct OpenedThreadMessage {
 pub struct OpenedThreadDetail {
     pub thread: ThreadMeta,
     pub messages: Vec<OpenedThreadMessage>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_downgrade: Option<crate::hub_client::ThreadDowngradeProposal>,
 }
 
 /// Result of `forward_draft` / `forward_blob` / `ping`.
@@ -774,6 +776,15 @@ impl DaemonState {
 
     pub async fn list_agents_for_handle(&self, handle: &str) -> Result<Vec<Agent>> {
         let hub = self.hub_client().context("hub not configured")?;
+        Ok(hub.list_agents_for_handle(handle).await?.agents)
+    }
+
+    /// Full handle agent roster + transport defaults (for encryption-mode resolve).
+    pub async fn list_agents_for_handle_detail(
+        &self,
+        handle: &str,
+    ) -> Result<crate::hub_client::AgentsForHandleResponse> {
+        let hub = self.hub_client().context("hub not configured")?;
         hub.list_agents_for_handle(handle).await
     }
 
@@ -1034,6 +1045,139 @@ impl DaemonState {
         Ok(vec![])
     }
 
+    pub async fn list_external_contacts(&self) -> Result<Vec<Contact>> {
+        let hub = self
+            .hub_client()
+            .context("not signed in — call auth_login first")?;
+        hub.list_external_contacts().await
+    }
+
+    /// Public enterprise listing + warn banner for Flutter (§7.2).
+    pub async fn get_registry_listing(
+        &self,
+        id_or_address: &str,
+    ) -> Result<crate::hub_client::RegistryListingPublic> {
+        let hub = self
+            .hub_client()
+            .context("not signed in — call auth_login first")?;
+        hub.get_registry_listing(id_or_address).await
+    }
+
+    pub async fn issue_pairing_pin(&self) -> Result<crate::hub_client::PairingPin> {
+        let hub = self
+            .hub_client()
+            .context("not signed in — call auth_login first")?;
+        hub.issue_pairing_pin().await
+    }
+
+    pub async fn get_pairing_pin(&self) -> Result<Option<crate::hub_client::PairingPin>> {
+        let hub = self
+            .hub_client()
+            .context("not signed in — call auth_login first")?;
+        hub.get_pairing_pin().await
+    }
+
+    pub async fn rotate_pairing_pin(&self) -> Result<crate::hub_client::PairingPin> {
+        let hub = self
+            .hub_client()
+            .context("not signed in — call auth_login first")?;
+        hub.rotate_pairing_pin().await
+    }
+
+    pub async fn submit_pair_request(
+        &self,
+        handle: &str,
+        pin: &str,
+        intro: Option<&str>,
+    ) -> Result<crate::hub_client::PairRequest> {
+        let hub = self
+            .hub_client()
+            .context("not signed in — call auth_login first")?;
+        hub.submit_pair_request(handle, pin, intro).await
+    }
+
+    pub async fn list_pending_pair_requests(
+        &self,
+    ) -> Result<crate::hub_client::PendingPairRequests> {
+        let hub = self
+            .hub_client()
+            .context("not signed in — call auth_login first")?;
+        hub.list_pending_pair_requests().await
+    }
+
+    pub async fn approve_pair_request(
+        &self,
+        request_id: &str,
+    ) -> Result<crate::hub_client::ApprovePairResponse> {
+        let hub = self
+            .hub_client()
+            .context("not signed in — call auth_login first")?;
+        hub.approve_pair_request(request_id).await
+    }
+
+    pub async fn deny_pair_request(&self, request_id: &str) -> Result<()> {
+        let hub = self
+            .hub_client()
+            .context("not signed in — call auth_login first")?;
+        hub.deny_pair_request(request_id).await
+    }
+
+    pub async fn unpair_external_contact(
+        &self,
+        link_id: &str,
+    ) -> Result<crate::hub_client::UnpairResponse> {
+        let hub = self
+            .hub_client()
+            .context("not signed in — call auth_login first")?;
+        hub.unpair_external_contact(link_id).await
+    }
+
+    pub async fn propose_thread_downgrade(
+        &self,
+        thread_id: &str,
+        agent_slug: &str,
+        from_agent: Option<&str>,
+    ) -> Result<crate::hub_client::ProposeDowngradeResponse> {
+        let hub = self
+            .hub_client()
+            .context("not signed in — call auth_login first")?;
+        hub.propose_thread_downgrade(thread_id, agent_slug, from_agent)
+            .await
+    }
+
+    pub async fn list_pending_thread_downgrades(
+        &self,
+    ) -> Result<crate::hub_client::PendingDowngradeProposals> {
+        let hub = self
+            .hub_client()
+            .context("not signed in — call auth_login first")?;
+        hub.list_pending_thread_downgrades().await
+    }
+
+    pub async fn approve_thread_downgrade(
+        &self,
+        thread_id: &str,
+        proposal_id: &str,
+    ) -> Result<crate::hub_client::ApproveDowngradeResponse> {
+        let hub = self
+            .hub_client()
+            .context("not signed in — call auth_login first")?;
+        let result = hub.approve_thread_downgrade(thread_id, proposal_id).await?;
+        self.notify_inbox_changed();
+        Ok(result)
+    }
+
+    pub async fn deny_thread_downgrade(
+        &self,
+        thread_id: &str,
+        proposal_id: &str,
+    ) -> Result<crate::hub_client::ThreadDowngradeProposal> {
+        let hub = self
+            .hub_client()
+            .context("not signed in — call auth_login first")?;
+        hub.deny_thread_downgrade(thread_id, proposal_id).await
+    }
+
     pub async fn submit_feedback(
         &self,
         message: &str,
@@ -1236,6 +1380,7 @@ impl DaemonState {
         OpenedThreadDetail {
             thread: detail.thread,
             messages,
+            pending_downgrade: detail.pending_downgrade,
         }
     }
 
@@ -1247,17 +1392,95 @@ impl DaemonState {
         OpenedThreadDetail {
             thread: detail.thread,
             messages,
+            pending_downgrade: detail.pending_downgrade,
         }
     }
 
     fn open_thread_message_sync(&self, msg: ThreadMessage) -> OpenedThreadMessage {
-        let plain = self.open_envelope(&msg.envelope);
+        if let Some(app) = msg.app_envelope.clone() {
+            return self.finish_opened_app_message(msg, app);
+        }
+        let Some(ref env) = msg.envelope else {
+            return self.finish_opened_message(
+                msg,
+                Err(anyhow::anyhow!("message has neither envelope nor app_envelope")),
+            );
+        };
+        let plain = self.open_envelope(env);
         self.finish_opened_message(msg, plain)
     }
 
     async fn open_thread_message_async(&self, msg: ThreadMessage) -> OpenedThreadMessage {
-        let plain = self.open_envelope_maybe_blob(&msg.envelope).await;
+        if let Some(app) = msg.app_envelope.clone() {
+            return self.finish_opened_app_message(msg, app);
+        }
+        let Some(ref env) = msg.envelope else {
+            return self.finish_opened_message(
+                msg,
+                Err(anyhow::anyhow!("message has neither envelope nor app_envelope")),
+            );
+        };
+        let plain = self.open_envelope_maybe_blob(env).await;
         self.finish_opened_message(msg, plain)
+    }
+
+    /// Convert hub app_envelope payload into an opened MutandeBundle (no crypto).
+    fn finish_opened_app_message(
+        &self,
+        msg: ThreadMessage,
+        app: crate::hub_client::AppEnvelopePayload,
+    ) -> OpenedThreadMessage {
+        let parent_message_id = msg
+            .parent_message_id
+            .clone()
+            .or(app.in_reply_to.clone());
+        let upvotes = msg.upvotes.clone();
+        let mut bundle = MutandeBundle {
+            subject: app.subject,
+            context: app.context,
+            notes: app.notes,
+            ping_kind: app.ping_kind.and_then(|k| match k.as_str() {
+                "health" => Some(PingKind::Health),
+                "thread" => Some(PingKind::Thread),
+                _ => None,
+            }),
+            in_reply_to: app.in_reply_to,
+            ..Default::default()
+        };
+        if let Some(q) = app.questions {
+            if let Ok(v) = serde_json::from_value(q) {
+                bundle.questions = v;
+            }
+        }
+        if let Some(a) = app.answers {
+            if let Ok(v) = serde_json::from_value(a) {
+                bundle.answers = v;
+            }
+        }
+        if let Some(r) = app.resources {
+            if let Ok(v) = serde_json::from_value(r) {
+                bundle.resources = v;
+            }
+        }
+        if let Some(r) = app.resource_requests {
+            if let Ok(v) = serde_json::from_value(r) {
+                bundle.resource_requests = v;
+            }
+        }
+        self.surface_opened_bundle_resources(&mut bundle);
+        OpenedThreadMessage {
+            id: msg.id,
+            thread_id: msg.thread_id,
+            from_user_id: msg.from_user_id,
+            from_handle: msg.from_handle,
+            created_at: msg.created_at,
+            sender_only: msg.sender_only,
+            parent_message_id,
+            bundle: Some(bundle),
+            envelope: None,
+            open_error: None,
+            upvotes,
+        }
     }
 
     fn blob_cache_dir(&self) -> PathBuf {
@@ -1276,7 +1499,11 @@ impl DaemonState {
         msg: ThreadMessage,
         plain: Result<Vec<u8>>,
     ) -> OpenedThreadMessage {
-        let is_blob = msg.envelope.blob_id.is_some();
+        let is_blob = msg
+            .envelope
+            .as_ref()
+            .and_then(|e| e.blob_id.as_ref())
+            .is_some();
         let parent_message_id = msg.parent_message_id.clone();
         let upvotes = msg.upvotes.clone();
         let meta = |open_error: Option<String>| OpenedThreadMessage {
@@ -1388,6 +1615,8 @@ impl DaemonState {
     /// Create one hub thread per expanded recipient. Bare `@all` expands to a
     /// single `@all` group thread. `thread_ids[i]` matches `recipients[i]`;
     /// callers expose `thread_id` = first id.
+    ///
+    /// Web-slot / app_envelope recipients skip E2E seal (§4.2 / §12).
     pub async fn forward_draft(
         &self,
         recipient: &str,
@@ -1399,19 +1628,16 @@ impl DaemonState {
         }
 
         self.assert_recipient_allowed(recipient, agent_slug).await?;
-        let plain = serde_json::to_vec(&bundle)?;
-        let seal_keys = self.resolve_recipient_pubkeys(recipient).await?;
-        let env = self.seal_inline_or_blob(&plain, &seal_keys).await?;
 
         let result = if let Some(hub) = self.hub_client() {
             let hub_tos = self.expand_hub_recipients(recipient, agent_slug).await?;
             let from_agent = self.from_agent_for_send(agent_slug);
             let mut thread_ids = Vec::with_capacity(hub_tos.len());
             for to in &hub_tos {
-                let resp = hub
-                    .create_thread(to, &env, from_agent.as_deref())
+                let tid = self
+                    .create_hub_thread(&hub, to, &bundle, from_agent.as_deref())
                     .await?;
-                thread_ids.push(resp.thread.id);
+                thread_ids.push(tid);
             }
             if thread_ids.is_empty() {
                 bail!("no hub recipients after expand");
@@ -1421,6 +1647,10 @@ impl DaemonState {
                 thread_ids,
             }
         } else {
+            // Offline/dev: still require seal keys so we don't silently drop crypto.
+            let plain = serde_json::to_vec(&bundle)?;
+            let seal_keys = self.resolve_recipient_pubkeys(recipient).await?;
+            let _env = self.seal_inline_or_blob(&plain, &seal_keys).await?;
             ForwardThreadsResult {
                 recipients: vec![recipient.to_string()],
                 thread_ids: vec![uuid::Uuid::new_v4().to_string()],
@@ -1437,6 +1667,112 @@ impl DaemonState {
 
         self.notify_inbox_changed();
         Ok(result)
+    }
+
+    /// Create a hub thread using E2E seal or app_envelope based on recipient transport.
+    async fn create_hub_thread(
+        &self,
+        hub: &crate::hub_client::HubClient,
+        to: &str,
+        bundle: &MutandeBundle,
+        from_agent: Option<&str>,
+    ) -> Result<String> {
+        if self.recipient_needs_app_envelope(to, from_agent).await? {
+            let payload = bundle_to_app_envelope(bundle)?;
+            let resp = hub
+                .create_thread_app_envelope(to, &payload, from_agent)
+                .await?;
+            Ok(resp.thread.id)
+        } else {
+            let plain = serde_json::to_vec(bundle)?;
+            let seal_keys = self.resolve_recipient_pubkeys(to).await?;
+            let env = self.seal_inline_or_blob(&plain, &seal_keys).await?;
+            let resp = hub.create_thread(to, &env, from_agent).await?;
+            Ok(resp.thread.id)
+        }
+    }
+
+    /// True when a new thread to `to` must use app_envelope (never silently E2E to web).
+    async fn recipient_needs_app_envelope(
+        &self,
+        to: &str,
+        from_agent: Option<&str>,
+    ) -> Result<bool> {
+        // Web sender can only start non-E2E threads (§4.2 rule 2).
+        if self.agent_slug_is_mcp(from_agent).await? {
+            return Ok(true);
+        }
+
+        let trimmed = to.trim();
+        let parsed = parse_display_address(trimmed)?;
+
+        match parsed.kind {
+            AddressKind::MyAgents => {
+                // Hub includes all own agents as participants — any mcp → app_envelope.
+                Ok(self.any_own_agent_is_mcp().await?)
+            }
+            AddressKind::OrgBroadcast => {
+                // Conservative: if we can't scan all members cheaply, prefer checking
+                // via attempting resolve on known contacts' defaults. Without full
+                // org scan, default to E2E (hub will reject if any mcp default exists
+                // when we wrongly seal — rare for broadcast until L2 polish).
+                // Prefer app_envelope when any contact has only-mcp defaults — skip for L2.
+                Ok(false)
+            }
+            AddressKind::SelfAgent => {
+                let slug = parsed
+                    .agent_slug
+                    .as_deref()
+                    .context("self-agent missing slug")?;
+                self.own_slug_is_mcp(slug).await
+            }
+            AddressKind::User => {
+                let bare = strip_agent_suffix(trimmed);
+                // Cross-org external contacts always use app_envelope (§6.2).
+                if let Ok(ext) = self.list_external_contacts().await {
+                    if ext.iter().any(|c| {
+                        c.handle.eq_ignore_ascii_case(bare)
+                            || strip_agent_suffix(&c.handle).eq_ignore_ascii_case(bare)
+                    }) {
+                        return Ok(true);
+                    }
+                }
+                let detail = self.list_agents_for_handle_detail(bare).await?;
+                let slug = parsed.agent_slug.as_deref();
+                Ok(resolved_agent_is_mcp(
+                    &detail.agents,
+                    detail.default_agent_id.as_deref(),
+                    detail.transport_defaults.as_ref(),
+                    slug,
+                ))
+            }
+        }
+    }
+
+    async fn agent_slug_is_mcp(&self, agent_slug: Option<&str>) -> Result<bool> {
+        let Some(slug) = self.effective_agent_slug(agent_slug).await else {
+            return Ok(false);
+        };
+        self.own_slug_is_mcp(&slug).await
+    }
+
+    async fn own_slug_is_mcp(&self, slug: &str) -> Result<bool> {
+        let list = self.list_agents().await?;
+        let prefs = self.get_transport_defaults().await.unwrap_or_default();
+        Ok(resolved_agent_is_mcp(
+            &list.agents,
+            list.default_agent_id.as_deref(),
+            Some(&prefs.defaults),
+            Some(slug),
+        ))
+    }
+
+    async fn any_own_agent_is_mcp(&self) -> Result<bool> {
+        let list = self.list_agents().await?;
+        Ok(list
+            .agents
+            .iter()
+            .any(|a| a.transport.as_deref() == Some("mcp")))
     }
 
     /// Explicit blob send: seal bytes → upload → create thread **or reply** with blob envelope.
@@ -1479,22 +1815,38 @@ impl DaemonState {
         let plain = serde_json::to_vec(&bundle).context("serialize blob bundle")?;
 
         if let Some(tid) = thread_id {
-            // Reply path: seal to thread participants (same as reply_to_thread).
             let hub = self
                 .hub_client()
                 .context("hub not configured — forward_blob requires hub upload")?;
             let detail = self.fetch_and_open_thread(tid).await?;
-            let seal_keys = self.resolve_reply_recipients(&detail).await?;
-            let env = self.seal_and_upload_blob(&plain, &seal_keys).await?;
             let from_agent = self.from_agent_for_send(agent_slug);
-            hub.reply_to_thread(
-                tid,
-                &env,
-                from_agent.as_deref(),
-                None,
-                bundle.in_reply_to.as_deref(),
-            )
-            .await?;
+            let mode = detail
+                .thread
+                .encryption_mode
+                .as_deref()
+                .unwrap_or("e2e");
+            if mode == "app_envelope" {
+                let payload = bundle_to_app_envelope(&bundle)?;
+                hub.reply_to_thread_app_envelope(
+                    tid,
+                    &payload,
+                    from_agent.as_deref(),
+                    None,
+                    bundle.in_reply_to.as_deref(),
+                )
+                .await?;
+            } else {
+                let seal_keys = self.resolve_reply_recipients(&detail).await?;
+                let env = self.seal_and_upload_blob(&plain, &seal_keys).await?;
+                hub.reply_to_thread(
+                    tid,
+                    &env,
+                    from_agent.as_deref(),
+                    None,
+                    bundle.in_reply_to.as_deref(),
+                )
+                .await?;
+            }
             return Ok(ForwardThreadsResult {
                 recipients: vec![detail.thread.from.clone()],
                 thread_ids: vec![tid.to_string()],
@@ -1506,8 +1858,6 @@ impl DaemonState {
             .filter(|s| !s.is_empty())
             .context("missing param: recipient (required unless thread_id is set)")?;
         self.assert_recipient_allowed(recipient, agent_slug).await?;
-        let seal_keys = self.resolve_recipient_pubkeys(recipient).await?;
-        let env = self.seal_and_upload_blob(&plain, &seal_keys).await?;
 
         let hub = self
             .hub_client()
@@ -1516,10 +1866,23 @@ impl DaemonState {
         let from_agent = self.from_agent_for_send(agent_slug);
         let mut thread_ids = Vec::with_capacity(hub_tos.len());
         for to in &hub_tos {
-            let resp = hub
-                .create_thread(to, &env, from_agent.as_deref())
-                .await?;
-            thread_ids.push(resp.thread.id);
+            if self
+                .recipient_needs_app_envelope(to, from_agent.as_deref())
+                .await?
+            {
+                let payload = bundle_to_app_envelope(&bundle)?;
+                let resp = hub
+                    .create_thread_app_envelope(to, &payload, from_agent.as_deref())
+                    .await?;
+                thread_ids.push(resp.thread.id);
+            } else {
+                let seal_keys = self.resolve_recipient_pubkeys(to).await?;
+                let env = self.seal_and_upload_blob(&plain, &seal_keys).await?;
+                let resp = hub
+                    .create_thread(to, &env, from_agent.as_deref())
+                    .await?;
+                thread_ids.push(resp.thread.id);
+            }
         }
         if thread_ids.is_empty() {
             bail!("no hub recipients after expand");
@@ -1579,20 +1942,57 @@ impl DaemonState {
                 bail!("{}", same_agent_handoff_hint(&from_slug, None));
             }
         }
-        let plain = serde_json::to_vec(&bundle)?;
-        let recipients = self.resolve_reply_recipients(detail).await?;
-        let env = self.seal_inline_or_blob(&plain, &recipients).await?;
+
+        let mode = detail
+            .thread
+            .encryption_mode
+            .as_deref()
+            .unwrap_or("e2e");
+        let from_agent = self.from_agent_for_send(agent_slug);
 
         if let Some(hub) = self.hub_client() {
-            let from_agent = self.from_agent_for_send(agent_slug);
-            hub.reply_to_thread(
-                thread_id,
-                &env,
-                from_agent.as_deref(),
-                to_agent,
-                bundle.in_reply_to.as_deref(),
-            )
-            .await?;
+            if mode == "app_envelope" {
+                let payload = bundle_to_app_envelope(&bundle)?;
+                hub.reply_to_thread_app_envelope(
+                    thread_id,
+                    &payload,
+                    from_agent.as_deref(),
+                    to_agent,
+                    bundle.in_reply_to.as_deref(),
+                )
+                .await?;
+            } else {
+                // Adding a web agent to an E2E thread requires unanimous downgrade (§6.5).
+                if let Some(to) = to_agent.map(str::trim).filter(|s| !s.is_empty()) {
+                    let slug = to.strip_prefix('@').unwrap_or(to);
+                    if self.own_slug_is_mcp(slug).await? {
+                        let proposed = hub
+                            .propose_thread_downgrade(
+                                thread_id,
+                                slug,
+                                from_agent.as_deref(),
+                            )
+                            .await?;
+                        self.notify_inbox_changed();
+                        bail!(
+                            "{} — waiting for all sidecar participants to approve (proposal {})",
+                            proposed.prompt,
+                            proposed.proposal.id
+                        );
+                    }
+                }
+                let plain = serde_json::to_vec(&bundle)?;
+                let recipients = self.resolve_reply_recipients(detail).await?;
+                let env = self.seal_inline_or_blob(&plain, &recipients).await?;
+                hub.reply_to_thread(
+                    thread_id,
+                    &env,
+                    from_agent.as_deref(),
+                    to_agent,
+                    bundle.in_reply_to.as_deref(),
+                )
+                .await?;
+            }
         }
         self.notify_inbox_changed();
         Ok(())
@@ -1626,9 +2026,6 @@ impl DaemonState {
         };
 
         self.assert_recipient_allowed(target, agent_slug).await?;
-        let plain = serde_json::to_vec(&bundle)?;
-        let seal_keys = self.resolve_recipient_pubkeys(target).await?;
-        let env = self.seal_inline_or_blob(&plain, &seal_keys).await?;
 
         let hub_tos = match self.expand_hub_recipients(target, agent_slug).await {
             Ok(tos) => tos,
@@ -1652,10 +2049,10 @@ impl DaemonState {
             let from_agent = self.from_agent_for_send(agent_slug);
             let mut thread_ids = Vec::with_capacity(hub_tos.len());
             for to in &hub_tos {
-                let resp = hub
-                    .create_thread(to, &env, from_agent.as_deref())
+                let tid = self
+                    .create_hub_thread(&hub, to, &bundle, from_agent.as_deref())
                     .await?;
-                thread_ids.push(resp.thread.id);
+                thread_ids.push(tid);
             }
             if thread_ids.is_empty() {
                 bail!("ping produced no threads");
@@ -1665,6 +2062,9 @@ impl DaemonState {
                 thread_ids,
             })
         } else {
+            let plain = serde_json::to_vec(&bundle)?;
+            let seal_keys = self.resolve_recipient_pubkeys(target).await?;
+            let _env = self.seal_inline_or_blob(&plain, &seal_keys).await?;
             Ok(ForwardThreadsResult {
                 recipients: vec![target.to_string()],
                 thread_ids: vec![uuid::Uuid::new_v4().to_string()],
@@ -2293,6 +2693,94 @@ fn bundle_is_empty(bundle: &MutandeBundle) -> bool {
         && bundle.ping_kind.is_none()
 }
 
+/// Map a MutandeBundle to hub app_envelope wire payload (never mixed with E2E envelope).
+fn bundle_to_app_envelope(
+    bundle: &MutandeBundle,
+) -> Result<crate::hub_client::AppEnvelopePayload> {
+    let payload = crate::hub_client::AppEnvelopePayload {
+        version: 1,
+        subject: bundle.subject.clone(),
+        context: bundle.context.clone(),
+        notes: bundle.notes.clone(),
+        ping_kind: bundle.ping_kind.as_ref().map(|k| match k {
+            PingKind::Health => "health".into(),
+            PingKind::Thread => "thread".into(),
+        }),
+        questions: if bundle.questions.is_empty() {
+            None
+        } else {
+            Some(serde_json::to_value(&bundle.questions)?)
+        },
+        answers: if bundle.answers.is_empty() {
+            None
+        } else {
+            Some(serde_json::to_value(&bundle.answers)?)
+        },
+        resources: if bundle.resources.is_empty() {
+            None
+        } else {
+            Some(serde_json::to_value(&bundle.resources)?)
+        },
+        resource_requests: if bundle.resource_requests.is_empty() {
+            None
+        } else {
+            Some(serde_json::to_value(&bundle.resource_requests)?)
+        },
+        in_reply_to: bundle.in_reply_to.clone(),
+    };
+    let size = serde_json::to_vec(&payload)?.len();
+    const MAX_APP_ENVELOPE: usize = 60 * 1024;
+    if size > MAX_APP_ENVELOPE {
+        bail!(
+            "app_envelope too large ({size} bytes, max {MAX_APP_ENVELOPE}) — shrink the payload or use E2E blob path for sidecar recipients"
+        );
+    }
+    Ok(payload)
+}
+
+/// Mirror hub `resolveAgentForUser` transport pick for a slug (or default agent).
+fn resolved_agent_is_mcp(
+    agents: &[crate::hub_client::Agent],
+    default_agent_id: Option<&str>,
+    transport_defaults: Option<&std::collections::BTreeMap<String, String>>,
+    slug: Option<&str>,
+) -> bool {
+    let pick = |id: &str| agents.iter().find(|a| a.id == id);
+    let by_slot = |s: &str, transport: &str| {
+        agents
+            .iter()
+            .find(|a| a.slug == s && a.transport.as_deref().unwrap_or("sidecar") == transport)
+    };
+
+    if let Some(raw) = slug.map(str::trim).filter(|s| !s.is_empty()) {
+        let s = raw.strip_prefix('@').unwrap_or(raw).to_ascii_lowercase();
+        let preferred = transport_defaults
+            .and_then(|d| d.get(&s))
+            .map(|t| t.as_str())
+            .unwrap_or("sidecar");
+        if let Some(a) = by_slot(&s, preferred) {
+            return a.transport.as_deref() == Some("mcp");
+        }
+        let fallback = if preferred == "sidecar" { "mcp" } else { "sidecar" };
+        if let Some(a) = by_slot(&s, fallback) {
+            return a.transport.as_deref() == Some("mcp");
+        }
+        // Any row for slug (legacy single-row).
+        return agents
+            .iter()
+            .find(|a| a.slug == s)
+            .and_then(|a| a.transport.as_deref())
+            == Some("mcp");
+    }
+
+    if let Some(id) = default_agent_id {
+        if let Some(a) = pick(id) {
+            return a.transport.as_deref() == Some("mcp");
+        }
+    }
+    false
+}
+
 /// Max bytes to keep in `resource.content` when presenting an opened bundle to agents.
 /// Larger text and all binary artifacts are materialized under `blob_cache/`.
 const RAW_BLOB_INLINE_MAX: usize = 256 * 1024;
@@ -2698,6 +3186,9 @@ mod tests {
                 your_status: None,
                 created_at: "2026-01-01T00:00:00Z".into(),
                 updated_at: "2026-01-01T00:00:00Z".into(),
+                enterprise_listing_id: None,
+                encryption_mode: None,
+                downgrade_point: None,
                 last_from: None,
                 last_subject: None,
                 last_preview: None,
@@ -2707,12 +3198,16 @@ mod tests {
                 thread_id: "t1".into(),
                 from_user_id: "u1".into(),
                 from_handle: "alice@acme".into(),
-                envelope: env,
+                envelope: Some(env),
+                app_envelope: None,
+                content_store: Some("e2e".into()),
+                from_agent_id: None,
                 created_at: "2026-01-01T00:00:00Z".into(),
                 sender_only: None,
                 parent_message_id: None,
                 upvotes: None,
             }],
+        pending_downgrade: None,
         };
 
         let opened = state.open_thread_detail(detail);
@@ -2721,6 +3216,115 @@ mod tests {
         assert!(msg.open_error.is_none());
         assert!(msg.envelope.is_none());
         assert_eq!(msg.bundle.as_ref(), Some(&bundle));
+    }
+
+    #[test]
+    fn get_thread_opens_app_envelope_without_seal() {
+        let state = DaemonState::new_in_memory_for_test().unwrap();
+        let app = crate::hub_client::AppEnvelopePayload {
+            version: 1,
+            subject: Some("via web".into()),
+            context: None,
+            notes: Some("hello web".into()),
+            ping_kind: None,
+            questions: None,
+            answers: None,
+            resources: None,
+            resource_requests: None,
+            in_reply_to: None,
+        };
+        let detail = ThreadDetail {
+            thread: ThreadMeta {
+                id: "t-app".into(),
+                kind: ThreadKind::Direct,
+                status: ThreadStatus::Open,
+                from: "bob@acme/claude".into(),
+                from_user_id: "u2".into(),
+                from_agent_id: None,
+                audience: "alice@acme/chatgpt".into(),
+                audience_agent_id: Some("web-1".into()),
+                audience_wire_path: None,
+                org_id: "o1".into(),
+                participant_count: 2,
+                reply_count: 0,
+                your_status: None,
+                created_at: "2026-01-01T00:00:00Z".into(),
+                updated_at: "2026-01-01T00:00:00Z".into(),
+                encryption_mode: Some("app_envelope".into()),
+                downgrade_point: None,
+                enterprise_listing_id: None,
+                last_from: None,
+                last_subject: None,
+                last_preview: None,
+            },
+            messages: vec![ThreadMessage {
+                id: "m-app".into(),
+                thread_id: "t-app".into(),
+                from_user_id: "u2".into(),
+                from_handle: "bob@acme/claude".into(),
+                from_agent_id: None,
+                envelope: None,
+                app_envelope: Some(app),
+                content_store: Some("app_envelope".into()),
+                created_at: "2026-01-01T00:00:00Z".into(),
+                sender_only: None,
+                parent_message_id: None,
+                upvotes: None,
+            }],
+        
+        pending_downgrade: None,};
+        let opened = state.open_thread_detail(detail);
+        let msg = &opened.messages[0];
+        assert!(msg.open_error.is_none());
+        assert_eq!(msg.bundle.as_ref().unwrap().notes.as_deref(), Some("hello web"));
+        assert_eq!(msg.bundle.as_ref().unwrap().subject.as_deref(), Some("via web"));
+    }
+
+    #[test]
+    fn resolved_agent_is_mcp_respects_transport_defaults() {
+        use crate::hub_client::Agent;
+        let agents = vec![
+            Agent {
+                id: "s1".into(),
+                user_id: "u".into(),
+                slug: "chatgpt".into(),
+                created_at: "".into(),
+                transport: Some("sidecar".into()),
+                visibility: None,
+                trust_tier: None,
+                mcp_endpoint: None,
+                capabilities_updated_at: None,
+            },
+            Agent {
+                id: "m1".into(),
+                user_id: "u".into(),
+                slug: "chatgpt".into(),
+                created_at: "".into(),
+                transport: Some("mcp".into()),
+                visibility: None,
+                trust_tier: None,
+                mcp_endpoint: Some("https://mcp.mutande.online".into()),
+                capabilities_updated_at: None,
+            },
+        ];
+        let mut defaults = std::collections::BTreeMap::new();
+        defaults.insert("chatgpt".into(), "sidecar".into());
+        assert!(!resolved_agent_is_mcp(
+            &agents,
+            Some("s1"),
+            Some(&defaults),
+            Some("chatgpt"),
+        ));
+        defaults.insert("chatgpt".into(), "mcp".into());
+        assert!(resolved_agent_is_mcp(
+            &agents,
+            Some("s1"),
+            Some(&defaults),
+            Some("chatgpt"),
+        ));
+        // Bare default agent id wins when slug omitted.
+        assert!(!resolved_agent_is_mcp(&agents, Some("s1"), Some(&defaults), None));
+        assert!(resolved_agent_is_mcp(&agents, Some("m1"), Some(&defaults), None));
     }
 
     #[test]
@@ -2751,6 +3355,9 @@ mod tests {
                 your_status: None,
                 created_at: "2026-01-01T00:00:00Z".into(),
                 updated_at: "2026-01-01T00:00:00Z".into(),
+                enterprise_listing_id: None,
+                encryption_mode: None,
+                downgrade_point: None,
                 last_from: None,
                 last_subject: None,
                 last_preview: None,
@@ -2760,12 +3367,16 @@ mod tests {
                 thread_id: "t-fail".into(),
                 from_user_id: "u1".into(),
                 from_handle: "alice@acme".into(),
-                envelope: env,
+                envelope: Some(env),
+                app_envelope: None,
+                content_store: Some("e2e".into()),
+                from_agent_id: None,
                 created_at: "2026-01-01T00:00:00Z".into(),
                 sender_only: None,
                 parent_message_id: None,
                 upvotes: None,
             }],
+        pending_downgrade: None,
         };
 
         let opened = state.open_thread_detail(detail);
@@ -2814,6 +3425,9 @@ mod tests {
                 your_status: None,
                 created_at: "2026-01-01T00:00:00Z".into(),
                 updated_at: "2026-01-01T00:00:00Z".into(),
+                enterprise_listing_id: None,
+                encryption_mode: None,
+                downgrade_point: None,
                 last_from: None,
                 last_subject: None,
                 last_preview: None,
@@ -2823,13 +3437,17 @@ mod tests {
                 thread_id: "t-bad".into(),
                 from_user_id: "u1".into(),
                 from_handle: "alice@acme".into(),
-                envelope: env,
+                envelope: Some(env),
+                app_envelope: None,
+                content_store: Some("e2e".into()),
+                from_agent_id: None,
                 created_at: "2026-01-01T00:00:00Z".into(),
                 sender_only: None,
                 parent_message_id: None,
                 upvotes: None,
             }],
-        };
+        
+        pending_downgrade: None,};
         let opened = state.open_thread_detail(detail);
         let msg = &opened.messages[0];
         assert!(msg.bundle.is_none());
@@ -3002,6 +3620,9 @@ mod tests {
                 your_status: None,
                 created_at: "2026-01-01T00:00:00Z".into(),
                 updated_at: "2026-01-01T00:00:00Z".into(),
+                enterprise_listing_id: None,
+                encryption_mode: None,
+                downgrade_point: None,
                 last_from: None,
                 last_subject: None,
                 last_preview: None,
@@ -3011,12 +3632,16 @@ mod tests {
                 thread_id: "t-blob".into(),
                 from_user_id: "u1".into(),
                 from_handle: "alice@acme/cursor".into(),
-                envelope: env,
+                envelope: Some(env),
+                app_envelope: None,
+                content_store: Some("e2e".into()),
+                from_agent_id: None,
                 created_at: "2026-01-01T00:00:00Z".into(),
                 sender_only: None,
                 parent_message_id: None,
                 upvotes: None,
             }],
+        pending_downgrade: None,
         };
         let opened = state.open_thread_detail(detail);
         let msg = &opened.messages[0];
@@ -3401,6 +4026,9 @@ mod tests {
                 your_status: None,
                 created_at: "2026-01-01T00:00:00Z".into(),
                 updated_at: "2026-01-01T00:00:00Z".into(),
+                enterprise_listing_id: None,
+                encryption_mode: None,
+                downgrade_point: None,
                 last_from: None,
                 last_subject: None,
                 last_preview: None,
@@ -3410,12 +4038,16 @@ mod tests {
                 thread_id: "t-mat".into(),
                 from_user_id: "u1".into(),
                 from_handle: "alice@acme/cursor".into(),
-                envelope: env,
+                envelope: Some(env),
+                app_envelope: None,
+                content_store: Some("e2e".into()),
+                from_agent_id: None,
                 created_at: "2026-01-01T00:00:00Z".into(),
                 sender_only: None,
                 parent_message_id: None,
                 upvotes: None,
             }],
+        pending_downgrade: None,
         };
         let opened = state.open_thread_detail(detail);
         let bundle = opened.messages[0].bundle.as_ref().expect("bundle");
@@ -3453,6 +4085,9 @@ mod tests {
                 your_status: None,
                 created_at: "2026-01-01T00:00:00Z".into(),
                 updated_at: "2026-01-01T00:00:00Z".into(),
+                enterprise_listing_id: None,
+                encryption_mode: None,
+                downgrade_point: None,
                 last_from: None,
                 last_subject: None,
                 last_preview: None,
@@ -3462,13 +4097,17 @@ mod tests {
                 thread_id: "t-raw".into(),
                 from_user_id: "u1".into(),
                 from_handle: "alice@acme/cursor".into(),
-                envelope: env,
+                envelope: Some(env),
+                app_envelope: None,
+                content_store: Some("e2e".into()),
+                from_agent_id: None,
                 created_at: "2026-01-01T00:00:00Z".into(),
                 sender_only: None,
                 parent_message_id: None,
                 upvotes: None,
             }],
-        };
+        
+        pending_downgrade: None,};
         let opened = state.open_thread_detail(detail);
         let bundle = opened.messages[0].bundle.as_ref().expect("bundle");
         let path = bundle.resources[0].path.as_deref().expect("path");
@@ -3495,7 +4134,10 @@ mod tests {
             your_status: None,
             created_at: "2026-01-01T00:00:00Z".into(),
             updated_at: "2026-01-01T00:00:00Z".into(),
-            last_from: None,
+            enterprise_listing_id: None,
+                encryption_mode: None,
+                downgrade_point: None,
+                last_from: None,
             last_subject: None,
             last_preview: None,
         };
@@ -3523,7 +4165,10 @@ mod tests {
             your_status: None,
             created_at: "2026-01-01T00:00:00Z".into(),
             updated_at: "2026-01-01T00:00:00Z".into(),
-            last_from: None,
+            enterprise_listing_id: None,
+                encryption_mode: None,
+                downgrade_point: None,
+                last_from: None,
             last_subject: None,
             last_preview: None,
         };
@@ -3554,7 +4199,10 @@ mod tests {
             your_status: Some(YourStatus::Replied),
             created_at: "2026-01-01T00:00:00Z".into(),
             updated_at: "2026-01-01T00:00:00Z".into(),
-            last_from: None,
+            enterprise_listing_id: None,
+                encryption_mode: None,
+                downgrade_point: None,
+                last_from: None,
             last_subject: None,
             last_preview: None,
         };
@@ -3586,7 +4234,10 @@ mod tests {
             your_status: None,
             created_at: "2026-01-01T00:00:00Z".into(),
             updated_at: "2026-01-01T00:00:00Z".into(),
-            last_from: None,
+            enterprise_listing_id: None,
+                encryption_mode: None,
+                downgrade_point: None,
+                last_from: None,
             last_subject: None,
             last_preview: None,
         };
@@ -3627,7 +4278,10 @@ mod tests {
             your_status: None,
             created_at: "2026-01-01T00:00:00Z".into(),
             updated_at: "2026-01-01T00:00:00Z".into(),
-            last_from: None,
+            enterprise_listing_id: None,
+                encryption_mode: None,
+                downgrade_point: None,
+                last_from: None,
             last_subject: None,
             last_preview: None,
         };
@@ -4241,6 +4895,9 @@ mod tests {
                 your_status: Some(YourStatus::Pending),
                 created_at: "2026-01-01T00:00:00Z".into(),
                 updated_at: "2026-01-01T00:00:00Z".into(),
+                enterprise_listing_id: None,
+                encryption_mode: None,
+                downgrade_point: None,
                 last_from: None,
                 last_subject: None,
                 last_preview: None,
@@ -4250,12 +4907,16 @@ mod tests {
                 thread_id: "t-health".into(),
                 from_user_id: "u-solo".into(),
                 from_handle: "solo@tbhco/claude".into(),
-                envelope: env,
+                envelope: Some(env),
+                app_envelope: None,
+                content_store: Some("e2e".into()),
+                from_agent_id: None,
                 created_at: "2026-01-01T00:00:00Z".into(),
                 sender_only: None,
                 parent_message_id: None,
                 upvotes: None,
             }],
+        pending_downgrade: None,
         };
 
         Mock::given(method("GET"))
@@ -4299,7 +4960,10 @@ mod tests {
             your_status: None,
             created_at: "t".into(),
             updated_at: "t".into(),
-            last_from: None,
+            enterprise_listing_id: None,
+                encryption_mode: None,
+                downgrade_point: None,
+                last_from: None,
             last_subject: None,
             last_preview: None,
         };
@@ -4328,7 +4992,8 @@ mod tests {
                 open_error: None,
                 upvotes: None,
             }],
-        };
+        
+        pending_downgrade: None,};
         assert!(!thread_needs_human(&agent_q));
 
         // confirm_forward → Needs you even on agent-addressed thread.
@@ -4355,6 +5020,7 @@ mod tests {
                 open_error: None,
                 upvotes: None,
             }],
+        pending_downgrade: None,
         };
         assert!(thread_needs_human(&confirm));
 
@@ -4384,7 +5050,8 @@ mod tests {
                 open_error: None,
                 upvotes: None,
             }],
-        };
+        
+        pending_downgrade: None,};
         assert!(thread_needs_human(&human_q));
 
         // Answered confirm → not Needs you.
@@ -4432,7 +5099,8 @@ mod tests {
                     upvotes: None,
                 },
             ],
-        };
+        
+        pending_downgrade: None,};
         assert!(!thread_needs_human(&answered));
     }
 

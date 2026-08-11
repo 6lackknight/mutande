@@ -2,9 +2,9 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://mutande.app/schemas/thread-meta/v1",
   "title": "ThreadMeta",
-  "description": "Hub-visible thread metadata (never includes plaintext content).",
+  "description": "Hub-visible thread metadata. E2E threads never include plaintext; app_envelope mode threads carry hub-readable bodies in a separate store.",
   "type": "object",
-  "required": ["id", "kind", "status", "from", "audience", "created_at", "updated_at"],
+  "required": ["id", "kind", "status", "from", "audience", "created_at", "updated_at", "encryption_mode"],
   "properties": {
     "id": { "type": "string", "format": "uuid" },
     "kind": { "type": "string", "enum": ["direct", "broadcast"] },
@@ -16,6 +16,28 @@
     "audience_wire_path": { "type": "string", "description": "org/user/agent wire path" },
     "participant_count": { "type": "integer" },
     "reply_count": { "type": "integer" },
-    "your_status": { "type": "string", "enum": ["pending", "replied"] }
+    "your_status": { "type": "string", "enum": ["pending", "replied"] },
+    "encryption_mode": {
+      "type": "string",
+      "enum": ["e2e", "app_envelope"],
+      "description": "Fixed at creation (§4.2). Legacy rows without this field are treated as e2e."
+    },
+    "downgrade_point": {
+      "type": "object",
+      "description": "Message id + sidecar approver agent_ids where E2E ended after unanimous L5 consent. Pre-point history stays sealed for web joiners.",
+      "required": ["message_id", "approvers"],
+      "properties": {
+        "message_id": { "type": "string", "format": "uuid" },
+        "approvers": {
+          "type": "array",
+          "items": { "type": "string", "format": "uuid" }
+        }
+      }
+    },
+    "enterprise_listing_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Set when thread is billed enterprise mail (§7.2). Clients show the enterprise warn banner when present."
+    }
   }
 }

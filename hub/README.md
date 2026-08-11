@@ -2,7 +2,7 @@
 
 Blind courier API on Deno Deploy: Hono + Deno KV (+ R2 for blobs in production).
 
-Stores ciphertext envelopes, thread metadata, and public keys. Never stores private keys or plaintext.
+Stores ciphertext envelopes, thread metadata, public keys, and (for `app_envelope` threads) hub-readable application payloads with 30-day retention. Never stores private keys. E2E threads remain a blind courier.
 
 Auth is **Auth0-first**: the hub validates Auth0 access tokens via JWKS. Self-serve onboarding is create-team or join-with-invite.
 
@@ -39,6 +39,18 @@ deno task check
 | GET/POST | `/v1/admin/invites` | Auth0 Bearer + hub `org_admin` |
 | GET | `/v1/admin/feedback` | Auth0 Bearer + Auth0 role `SuperAdmin` |
 | GET | `/v1/admin/waitlist` | Auth0 Bearer + Auth0 role `SuperAdmin` |
+| GET | `/v1/admin/registry` | Auth0 SuperAdmin — all registry listings |
+| POST | `/v1/admin/registry/:id/verify` | Auth0 SuperAdmin — domain/brand verify + reserve org slug |
+| POST | `/v1/admin/registry/:id/publish` | Auth0 SuperAdmin — publish (after verify; SLA target 5 business days) |
+| POST | `/v1/admin/registry/:id/suspend` | Auth0 SuperAdmin — immediate suspend (new sends blocked) |
+| POST | `/v1/admin/registry/:id/unpublish` | Auth0 SuperAdmin — back to draft |
+| POST | `/v1/admin/billing/credits` | Auth0 SuperAdmin — `{ org_id, amount_usd, note? }` ops top-up |
+| GET | `/v1/admin/billing/ledger/:orgId` | Auth0 SuperAdmin |
+| GET | `/v1/admin/enterprise/metrics` | Auth0 SuperAdmin — no-PII delivery metrics |
+| GET | `/v1/registry` | — published listings |
+| GET | `/v1/registry/listing/:idOrAddress` | — listing + `trust_tier` warn banner payload |
+| GET/POST | `/v1/registry/mine`, `/drafts`, `/billing` | Auth0 Bearer (onboarded) — submitter drafts + ledger |
+| POST | `/v1/registry/billing/debit` | Auth0 Bearer — debit-on-store gate (also folded into createThread) |
 | POST | `/v1/feedback` | Auth0 Bearer (onboarded) — in-app pilot feedback |
 | POST | `/v1/waitlist` | — public marketing waitlist survey |
 | GET | `/v1/contacts` | Auth0 Bearer (onboarded) |
@@ -50,9 +62,14 @@ deno task check
 | GET/PUT | `/v1/agents/transport-defaults` | Auth0 Bearer — preferred transport per display slug |
 | POST | `/v1/agents/web` | Auth0 Bearer — **compat alias** → same as `/connect/mcp` |
 | PATCH | `/v1/agents/:agentId` | Auth0 Bearer — rename slug (same `agent_id`) |
-| GET/POST | `/v1/threads` | Auth0 Bearer (onboarded) |
-| GET | `/v1/threads/:id` | Auth0 Bearer (onboarded) |
-| POST | `/v1/threads/:id/replies` | Auth0 Bearer (onboarded) |
+| GET/POST | `/v1/threads` | Auth0 Bearer (onboarded); `POST` accepts `envelope` **or** `app_envelope` (never both) |
+| GET | `/v1/threads/:id` | Auth0 Bearer (onboarded); hydrates `app_envelope` when thread mode is non-E2E; may include `pending_downgrade` |
+| GET | `/v1/threads/:id/app-messages` | Auth0 Bearer — web/MCP pull of app_envelope content; optional `?agent_id=`; post-downgrade history sealed |
+| POST | `/v1/threads/:id/replies` | Auth0 Bearer (onboarded); wire unit must match thread `encryption_mode` |
+| GET | `/v1/threads/downgrade-proposals/pending` | Auth0 Bearer — L5 pending downgrade proposals for caller |
+| POST | `/v1/threads/:id/downgrade-proposals` | Auth0 Bearer — propose add web agent (`{ agent_slug }`) |
+| POST | `/v1/threads/:id/downgrade-proposals/:pid/approve` | Auth0 Bearer — sidecar participant approve |
+| POST | `/v1/threads/:id/downgrade-proposals/:pid/deny` | Auth0 Bearer — deny (thread stays E2E) |
 | POST | `/v1/threads/:id/close` | Auth0 Bearer (onboarded) |
 | CRUD | `/v1/drafts` | Auth0 Bearer (onboarded) |
 | POST | `/v1/blobs/upload-url` | Auth0 Bearer (onboarded) |
@@ -70,6 +87,14 @@ deno task check
 
 Inline envelopes limited to ~60KB serialized. Blobs use R2 presigned PUT/GET when configured; otherwise mock `https://blobs.mutande.app/{id}` URLs with the same response shape. Per-org 500MB quota is tracked in KV.
 
+### Thread encryption mode (L2)
+
+Every thread has `encryption_mode`: `e2e` (blind courier envelopes) or `app_envelope` (hub-readable, 30-day retention). Mode is fixed at creation from participants (§4.2): any web (`transport: mcp`), external, or enterprise participant → `app_envelope`; same-org all-sidecar → `e2e`. Never mix `envelope` and `app_envelope` in one request.
+
+**L5 downgrade:** adding a web agent to an existing E2E thread requires unanimous sidecar-participant approval (`POST /v1/threads/:id/downgrade-proposals`, then `…/approve` or `…/deny`). On approve the mode flips to `app_envelope` for future messages only, `downgrade_point` is set, and a system divider records the end of E2E. Pre-downgrade history stays sealed for the web joiner. Ratchet is one-way — never re-upgrade.
+
+`app_envelope` bodies live under a separate KV prefix (`app_envelopes/…`) with `expireIn` = 30 days. When `APP_ENVELOPE_KEY` is set (base64 32-byte AES key), payloads are AES-GCM encrypted at rest (hub-held key — not E2E). Thread delete purges app payloads for all participants.
+
 ## Env
 
 | Variable | Required | Description |
@@ -81,6 +106,7 @@ Inline envelopes limited to ~60KB serialized. Blobs use R2 presigned PUT/GET whe
 | `R2_SECRET_ACCESS_KEY` | for real blobs | R2 API token secret |
 | `R2_BUCKET` | for real blobs | Bucket name |
 | `R2_PUBLIC_BASE` | optional | Mock URL base when R2 is unset (default `https://blobs.mutande.app`) |
+| `APP_ENVELOPE_KEY` | prod L2 | Base64 32-byte AES-256 key for app_envelope at-rest encryption; unset → plaintext interim |
 | `MUTANDE_SENTRY_DSN` / `SENTRY_DSN` | optional | GlitchTip DSN (hub project). Default is built-in; empty disables |
 | `SENTRY_SMOKE` | optional | `1` / `true` — capture a smoke message and exit (needs network) |
 
@@ -99,3 +125,10 @@ cd hub && deno task deploy
 `deployctl` targets project `mutande`. Do not commit secrets.
 
 **Agent registry:** prod must serve `GET/POST /v1/agents`, `/v1/agents/router`, `/v1/agents/default`, and `PATCH /v1/agents/:agentId` for self-collaboration addressing (`@slug`, bare `@all`, renameable slugs). Redeploy the hub after those routes land locally.
+
+### L4 Enterprise registry + billing
+
+- **Namespace:** ops verify reserves the listing's org slug (`reserved_org_slugs`). Customer `POST /v1/orgs` collides with reserved slugs. An existing customer org slug cannot be verified for a different listing owner (same legal entity only).
+- **Debit-on-store:** `EnterpriseStore.planEnterpriseDebit` / `debitEnterpriseOnStore` — folded into `createThread` / `postReply` when sending to a published listing. Insufficient balance → nothing stored. No refunds. Loop guard: 50 billed msgs/day/thread.
+- **Warn banner:** `GET /v1/registry/listing/:address` returns `{ listing, warn: { trust_tier: "enterprise", message } }` for Flutter/web.
+- **Stubs remaining:** Stripe self-serve top-up (beta); token billing; marketing registry browse page; domain/brand verification is ops-marked stub (no DNS check); mutande rev-share.

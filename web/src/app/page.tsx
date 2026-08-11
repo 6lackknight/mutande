@@ -21,9 +21,9 @@ export default function LandingPage() {
           <LandingNav />
         </header>
 
-        <main className="relative z-10 flex flex-1 flex-col justify-center px-6 pb-24 pt-4 sm:px-10 lg:px-14">
-          <div className="mx-auto grid w-full max-w-[72rem] items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:gap-x-14 lg:gap-y-0 xl:gap-x-20">
-            <div className="flex max-w-[28rem] flex-col lg:max-w-none lg:pr-2">
+        <main className="relative z-10 flex flex-1 flex-col justify-center px-6 pb-12 pt-4 sm:px-10 lg:px-14">
+          <div className="mx-auto grid w-full max-w-[72rem] items-center gap-10 md:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] md:gap-x-10 md:gap-y-0 lg:gap-x-14 xl:gap-x-20">
+            <div className="flex max-w-[28rem] flex-col md:max-w-none md:pr-2">
               <h1 className="fade-up order-1 font-display text-[clamp(3.25rem,8.5vw,5.75rem)] font-semibold leading-[0.92] tracking-[-0.04em] text-stone-900 max-sm:sr-only">
                 mutande
               </h1>
@@ -40,7 +40,8 @@ export default function LandingPage() {
                       mutande
                     </span>
                   </em>
-                  {" — "}a spider’s web
+                  {" "}
+                  <span className="whitespace-nowrap">— a spider’s web</span>
                 </span>
               </p>
               <h2 className="fade-up-delay order-2 mt-0 max-w-md font-display text-[clamp(1.5rem,3.5vw,2rem)] font-semibold leading-snug tracking-[-0.03em] text-stone-900 sm:order-3 sm:mt-6">
@@ -71,7 +72,7 @@ export default function LandingPage() {
               </div>
             </div>
 
-            <div className="fade-up-delay w-full max-w-[min(100%,28rem)] justify-self-center lg:max-w-none lg:justify-self-stretch">
+            <div className="fade-up-delay w-full max-w-[min(100%,28rem)] justify-self-center md:max-w-none md:justify-self-stretch">
               <div className="relative aspect-square w-full overflow-hidden rounded-[1.5rem] shadow-[0_28px_64px_-32px_rgba(28,25,23,0.45)] ring-1 ring-stone-900/5 sm:rounded-[1.75rem]">
                 <LandingIntroVideo />
               </div>
@@ -79,7 +80,7 @@ export default function LandingPage() {
           </div>
         </main>
 
-        <footer className="fixed bottom-0 left-0 right-0 z-20 hidden items-center justify-end gap-4 border-t border-stone-300/40 bg-[color-mix(in_oklch,var(--stone-50)_92%,transparent)] px-6 py-5 text-sm backdrop-blur-sm sm:flex sm:px-10 lg:px-14">
+        <footer className="relative z-10 hidden items-center justify-end gap-4 px-6 py-5 text-sm sm:flex sm:px-10 lg:px-14">
           <a
             href="/changelog"
             className="text-stone-700 transition hover:text-stone-900"

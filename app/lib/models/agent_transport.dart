@@ -61,6 +61,20 @@ bool isCapabilityFresh(DateTime? lastSeen, {DateTime? now}) {
       t.difference(lastSeen) <= kCapabilityFreshTtl;
 }
 
+/// Persistent enterprise warn banner copy (§7.2) — matches hub `ENTERPRISE_WARN_BANNER`.
+const String kEnterpriseWarnBannerMessage =
+    'Enterprise agent — not E2E; provider may retain data';
+
+/// Whether to show the §7.2 enterprise warn banner.
+bool shouldShowEnterpriseWarnBanner({
+  TrustTier? trustTier,
+  String? enterpriseListingId,
+}) {
+  if (trustTier == TrustTier.enterprise) return true;
+  final id = enterpriseListingId?.trim();
+  return id != null && id.isNotEmpty;
+}
+
 /// Compose-time non-E2E badge copy (§6.5.1).
 class ComposeTransportWarning {
   const ComposeTransportWarning({
@@ -73,6 +87,8 @@ class ComposeTransportWarning {
   final String label;
   final AgentTransport? transport;
   final TrustTier? trustTier;
+
+  bool get isEnterprise => trustTier == TrustTier.enterprise;
 
   static ComposeTransportWarning? fromSlot({
     AgentTransport? transport,

@@ -3,11 +3,18 @@ import { OpsDashboard } from "@/components/ops-dashboard";
 import { BrandMark, PageTitle, Shell } from "@/components/ui";
 import {
   formatHubError,
+  listEnterpriseMetrics,
   listFeedback,
+  listRegistryAdmin,
   listWaitlistAdmin,
 } from "@/lib/hub";
 import { requireOnboarded, sessionShowsOps } from "@/lib/session";
-import type { Feedback, WaitlistEntry } from "@/lib/types";
+import type {
+  EnterpriseDeliveryMetric,
+  Feedback,
+  RegistryListing,
+  WaitlistEntry,
+} from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Ops" };
@@ -20,11 +27,22 @@ export default async function AdminOpsPage() {
 
   let feedback: Feedback[] = [];
   let waitlist: WaitlistEntry[] = [];
+  let listings: RegistryListing[] = [];
+  let metrics: EnterpriseDeliveryMetric[] = [];
   let listError: string | null = null;
   try {
-    const [fb, wl] = await Promise.all([listFeedback(), listWaitlistAdmin()]);
+    const [fb, wl, reg, met] = await Promise.all([
+      listFeedback(),
+      listWaitlistAdmin(),
+      listRegistryAdmin().catch(() => ({ listings: [] as RegistryListing[] })),
+      listEnterpriseMetrics().catch(() => ({
+        metrics: [] as EnterpriseDeliveryMetric[],
+      })),
+    ]);
     feedback = fb.feedback ?? [];
     waitlist = wl.waitlist ?? [];
+    listings = reg.listings ?? [];
+    metrics = met.metrics ?? [];
   } catch (err) {
     listError = formatHubError(err);
   }
@@ -47,11 +65,13 @@ export default async function AdminOpsPage() {
       </div>
       <PageTitle
         title="Ops"
-        subtitle="Feedback and waitlist — Auth0 SuperAdmin only."
+        subtitle="Feedback, waitlist, and enterprise registry — Auth0 SuperAdmin only."
       />
       <OpsDashboard
         initialFeedback={feedback}
         initialWaitlist={waitlist}
+        initialListings={listings}
+        initialMetrics={metrics}
         loadError={listError}
       />
     </Shell>

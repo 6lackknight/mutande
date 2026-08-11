@@ -8,5 +8,9 @@ export function createMeRoutes(store: HubStore) {
   routes.get("/", auth0Middleware(store), async (c) => {
     return c.json(await store.getMe(c.get("auth0")));
   });
+  routes.patch("/profile", auth0Middleware(store), async (c) => {
+    const input = await c.req.json().catch(() => ({}));
+    return c.json(await store.updateProfile(c.get("auth0"), input));
+  });
   return routes;
 }

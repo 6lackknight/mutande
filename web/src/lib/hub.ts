@@ -143,6 +143,53 @@ export async function listWaitlistAdmin(): Promise<ListWaitlistResponse> {
   return { waitlist: [] };
 }
 
+export async function listRegistryAdmin(): Promise<{
+  listings: import("@/lib/types").RegistryListing[];
+}> {
+  return hubFetch("/v1/admin/registry");
+}
+
+export async function verifyRegistryListing(
+  id: string,
+  orgSlug?: string,
+): Promise<{ listing: import("@/lib/types").RegistryListing }> {
+  return hubFetch(`/v1/admin/registry/${id}/verify`, {
+    method: "POST",
+    body: JSON.stringify(orgSlug ? { org_slug: orgSlug } : {}),
+  });
+}
+
+export async function publishRegistryListing(
+  id: string,
+): Promise<{ listing: import("@/lib/types").RegistryListing }> {
+  return hubFetch(`/v1/admin/registry/${id}/publish`, { method: "POST" });
+}
+
+export async function suspendRegistryListing(
+  id: string,
+): Promise<{ listing: import("@/lib/types").RegistryListing }> {
+  return hubFetch(`/v1/admin/registry/${id}/suspend`, { method: "POST" });
+}
+
+export async function topUpCredits(input: {
+  org_id: string;
+  amount_usd: string;
+  note?: string;
+}): Promise<{
+  ledger: import("@/lib/types").BillingLedger;
+}> {
+  return hubFetch("/v1/admin/billing/credits", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function listEnterpriseMetrics(): Promise<{
+  metrics: import("@/lib/types").EnterpriseDeliveryMetric[];
+}> {
+  return hubFetch("/v1/admin/enterprise/metrics?limit=100");
+}
+
 export function formatHubError(err: unknown): string {
   if (err instanceof HubError) {
     if (err.status === 503) {

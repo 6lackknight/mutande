@@ -13,6 +13,7 @@ import { healthRoutes } from "./routes/health.ts";
 import { createMeRoutes } from "./routes/me.ts";
 import { createOnboardingRoutes } from "./routes/onboarding.ts";
 import { createOrgRoutes } from "./routes/orgs.ts";
+import { createRegistryRoutes } from "./routes/registry.ts";
 import { createThreadRoutes } from "./routes/threads.ts";
 import { assertR2ConfiguredForDeploy } from "./store/r2.ts";
 import {
@@ -42,6 +43,7 @@ export async function createApp(
   app.route("/v1/devices", createDeviceRoutes(store));
   app.route("/v1/agents", createAgentRoutes(store));
   app.route("/v1/admin", createAdminRoutes(store));
+  app.route("/v1/registry", createRegistryRoutes(store));
   app.route("/v1/contacts", createContactRoutes(store));
   app.route("/v1/threads", createThreadRoutes(store));
   app.route("/v1/drafts", createDraftRoutes(store));

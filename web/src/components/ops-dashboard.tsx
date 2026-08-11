@@ -17,9 +17,20 @@ import {
   type ChartConfiguration,
 } from "chart.js";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { refreshOpsAction } from "@/app/actions";
+import {
+  opsPublishListingAction,
+  opsSuspendListingAction,
+  opsTopUpCreditsAction,
+  opsVerifyListingAction,
+  refreshOpsAction,
+} from "@/app/actions";
 import { Alert, Button, Input } from "@/components/ui";
-import type { Feedback, WaitlistEntry } from "@/lib/types";
+import type {
+  EnterpriseDeliveryMetric,
+  Feedback,
+  RegistryListing,
+  WaitlistEntry,
+} from "@/lib/types";
 
 Chart.register(
   CategoryScale,
@@ -47,7 +58,7 @@ const PALETTE = [
   "#d6d3d1",
 ];
 
-type Tab = "overview" | "feedback" | "waitlist";
+type Tab = "overview" | "feedback" | "waitlist" | "enterprise";
 
 type Series = { labels: string[]; data: number[] };
 
@@ -63,12 +74,6 @@ function countLastDays(
 ): number {
   const cut = daysAgoIso(n);
   return items.filter((x) => (x.created_at || "") >= cut).length;
-}
-
-function uniqueEmails(items: WaitlistEntry[]): number {
-  return new Set(
-    items.map((x) => (x.email || "").toLowerCase()).filter(Boolean),
-  ).size;
 }
 
 function tally(values: (string | undefined | null)[]): Series {
@@ -272,19 +277,28 @@ function chartConfig(
 export function OpsDashboard({
   initialFeedback,
   initialWaitlist,
+  initialListings = [],
+  initialMetrics = [],
   loadError,
 }: {
   initialFeedback: Feedback[];
   initialWaitlist: WaitlistEntry[];
+  initialListings?: RegistryListing[];
+  initialMetrics?: EnterpriseDeliveryMetric[];
   loadError?: string | null;
 }) {
   const [feedback, setFeedback] = useState(initialFeedback);
   const [waitlist, setWaitlist] = useState(initialWaitlist);
+  const [listings, setListings] = useState(initialListings);
+  const [metrics, setMetrics] = useState(initialMetrics);
   const [error, setError] = useState(loadError ?? "");
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<Tab>("overview");
   const [filterFeedback, setFilterFeedback] = useState("");
   const [filterWaitlist, setFilterWaitlist] = useState("");
+  const [creditOrgId, setCreditOrgId] = useState("");
+  const [creditAmount, setCreditAmount] = useState("25.00");
+  const [creditNote, setCreditNote] = useState("");
 
   const kpis = useMemo(
     () => [
@@ -292,9 +306,9 @@ export function OpsDashboard({
       { label: "Waitlist", value: waitlist.length },
       { label: "Feedback 7d", value: countLastDays(feedback, 7) },
       { label: "Waitlist 7d", value: countLastDays(waitlist, 7) },
-      { label: "Unique emails", value: uniqueEmails(waitlist) },
+      { label: "Listings", value: listings.length },
     ],
-    [feedback, waitlist],
+    [feedback, waitlist, listings],
   );
 
   const charts = useMemo(() => {
@@ -339,6 +353,59 @@ export function OpsDashboard({
       }
       setFeedback(res.feedback ?? []);
       setWaitlist(res.waitlist ?? []);
+      setListings(res.listings ?? []);
+      setMetrics(res.metrics ?? []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runListingAction(
+    id: string,
+    action: "verify" | "publish" | "suspend",
+  ) {
+    setBusy(true);
+    setError("");
+    try {
+      const fn =
+        action === "verify"
+          ? opsVerifyListingAction
+          : action === "publish"
+            ? opsPublishListingAction
+            : opsSuspendListingAction;
+      const res = await fn(id);
+      if (res.error) {
+        setError(res.error);
+        return;
+      }
+      if (res.listing) {
+        setListings((prev) =>
+          prev.map((l) => (l.id === res.listing!.id ? res.listing! : l)),
+        );
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function topUp() {
+    setBusy(true);
+    setError("");
+    try {
+      const res = await opsTopUpCreditsAction({
+        org_id: creditOrgId.trim(),
+        amount_usd: creditAmount.trim(),
+        note: creditNote.trim() || undefined,
+      });
+      if (res.error) {
+        setError(res.error);
+        return;
+      }
+      setCreditNote("");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -350,6 +417,7 @@ export function OpsDashboard({
     { id: "overview", label: "Overview" },
     { id: "feedback", label: "Feedback" },
     { id: "waitlist", label: "Waitlist" },
+    { id: "enterprise", label: "Enterprise" },
   ];
 
   return (
@@ -576,6 +644,199 @@ export function OpsDashboard({
               </tbody>
             </table>
           </div>
+        </div>
+      ) : null}
+
+      {tab === "enterprise" ? (
+        <div className="space-y-6">
+          <section className="rounded-md border border-stone-300/70 bg-white/60 p-4">
+            <h2 className="mb-3 text-[13px] font-semibold tracking-wide text-muted">
+              Top up org credits
+            </h2>
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="text-sm">
+                <span className="mb-1 block text-muted">Org id</span>
+                <Input
+                  value={creditOrgId}
+                  onChange={(e) => setCreditOrgId(e.target.value)}
+                  placeholder="uuid"
+                  className="w-64"
+                />
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block text-muted">Amount USD</span>
+                <Input
+                  value={creditAmount}
+                  onChange={(e) => setCreditAmount(e.target.value)}
+                  className="w-28"
+                />
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block text-muted">Note</span>
+                <Input
+                  value={creditNote}
+                  onChange={(e) => setCreditNote(e.target.value)}
+                  placeholder="pilot grant"
+                  className="w-48"
+                />
+              </label>
+              <Button
+                type="button"
+                disabled={busy || !creditOrgId.trim()}
+                onClick={topUp}
+              >
+                Credit
+              </Button>
+            </div>
+          </section>
+
+          <section className="space-y-3">
+            <h2 className="text-[13px] font-semibold tracking-wide text-muted">
+              Registry listings · review SLA 5 business days
+            </h2>
+            <div className="overflow-x-auto rounded-md border border-stone-300/70 bg-white/60">
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr className="text-left text-[11px] uppercase tracking-[0.06em] text-muted">
+                    <th className="px-3 py-2.5 font-semibold">Address</th>
+                    <th className="px-3 py-2.5 font-semibold">Status</th>
+                    <th className="px-3 py-2.5 font-semibold">Price</th>
+                    <th className="px-3 py-2.5 font-semibold">Verified</th>
+                    <th className="px-3 py-2.5 font-semibold">Org</th>
+                    <th className="px-3 py-2.5 font-semibold">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {listings.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={6}
+                        className="px-3 py-8 text-center text-muted"
+                      >
+                        No registry listings
+                      </td>
+                    </tr>
+                  ) : (
+                    listings.map((l) => (
+                      <tr
+                        key={l.id}
+                        className="border-t border-stone-200/80 align-top"
+                      >
+                        <td className="px-3 py-2.5 font-mono text-[13px]">
+                          {l.address}
+                        </td>
+                        <td className="px-3 py-2.5">{l.status}</td>
+                        <td className="px-3 py-2.5">
+                          ${l.billing.price_usd}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          {l.domain_verified
+                            ? l.reserved_org_slug || "yes"
+                            : "—"}
+                        </td>
+                        <td className="px-3 py-2.5 font-mono text-[12px]">
+                          {l.org_id.slice(0, 8)}…
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <div className="flex flex-wrap gap-2">
+                            {!l.domain_verified ? (
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                disabled={busy}
+                                onClick={() => runListingAction(l.id, "verify")}
+                              >
+                                Verify
+                              </Button>
+                            ) : null}
+                            {l.status === "draft" && l.domain_verified ? (
+                              <Button
+                                type="button"
+                                disabled={busy}
+                                onClick={() =>
+                                  runListingAction(l.id, "publish")
+                                }
+                              >
+                                Publish
+                              </Button>
+                            ) : null}
+                            {l.status === "published" ? (
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                disabled={busy}
+                                onClick={() =>
+                                  runListingAction(l.id, "suspend")
+                                }
+                              >
+                                Suspend
+                              </Button>
+                            ) : null}
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section className="space-y-3">
+            <h2 className="text-[13px] font-semibold tracking-wide text-muted">
+              Delivery metrics (no PII) · {metrics.length} recent
+            </h2>
+            <div className="overflow-x-auto rounded-md border border-stone-300/70 bg-white/60">
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr className="text-left text-[11px] uppercase tracking-[0.06em] text-muted">
+                    <th className="px-3 py-2.5 font-semibold">When</th>
+                    <th className="px-3 py-2.5 font-semibold">Listing</th>
+                    <th className="px-3 py-2.5 font-semibold">Sender org</th>
+                    <th className="px-3 py-2.5 font-semibold">Bytes</th>
+                    <th className="px-3 py-2.5 font-semibold">Est. tokens</th>
+                    <th className="px-3 py-2.5 font-semibold">Blobs</th>
+                    <th className="px-3 py-2.5 font-semibold">Latency</th>
+                    <th className="px-3 py-2.5 font-semibold">Price¢</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {metrics.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={8}
+                        className="px-3 py-8 text-center text-muted"
+                      >
+                        No enterprise deliveries yet
+                      </td>
+                    </tr>
+                  ) : (
+                    metrics.map((m) => (
+                      <tr
+                        key={m.id}
+                        className="border-t border-stone-200/80 align-top"
+                      >
+                        <td className="px-3 py-2.5 whitespace-nowrap">
+                          {fmtWhen(m.created_at)}
+                        </td>
+                        <td className="px-3 py-2.5 font-mono text-[12px]">
+                          {m.listing_id.slice(0, 8)}…
+                        </td>
+                        <td className="px-3 py-2.5 font-mono text-[12px]">
+                          {m.sender_org_id.slice(0, 8)}…
+                        </td>
+                        <td className="px-3 py-2.5">{m.payload_bytes}</td>
+                        <td className="px-3 py-2.5">{m.estimated_tokens}</td>
+                        <td className="px-3 py-2.5">{m.blob_count}</td>
+                        <td className="px-3 py-2.5">{m.latency_ms}ms</td>
+                        <td className="px-3 py-2.5">{m.price_cents}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
         </div>
       ) : null}
     </div>

@@ -105,6 +105,47 @@ export interface ListWaitlistResponse {
   waitlist: WaitlistEntry[];
 }
 
+/** L4 registry listing (hub-assigned trust_tier always enterprise). */
+export interface RegistryListing {
+  id: string;
+  address: string;
+  agent_id: string;
+  org_id: string;
+  submitter_user_id: string;
+  status: "draft" | "published" | "suspended";
+  trust_tier: "enterprise";
+  visibility: "public" | "private";
+  billing: {
+    methods: ["per_message"];
+    price_usd: string;
+    currency: "USD";
+  };
+  domain_verified: boolean;
+  reserved_org_slug: string | null;
+  created_at: string;
+  updated_at: string;
+  published_at?: string;
+  suspended_at?: string;
+}
+
+export interface BillingLedger {
+  org_id: string;
+  balance_cents: number;
+  updated_at: string;
+}
+
+export interface EnterpriseDeliveryMetric {
+  id: string;
+  created_at: string;
+  listing_id: string;
+  sender_org_id: string;
+  payload_bytes: number;
+  estimated_tokens: number;
+  blob_count: number;
+  latency_ms: number;
+  price_cents: number;
+}
+
 export class HubError extends Error {
   readonly status: number;
   readonly body: unknown;

@@ -10,6 +10,36 @@ ComposeTransportWarning? resolveComposeTransportWarning({
   required List<AgentInfo> agents,
   TransportPrefs prefs = const TransportPrefs(),
 }) {
+  // Prefer exact agent_id / address match with enterprise trust_tier.
+  final exact = _matchByAddressOrSlug(recipient, agents, prefs);
+  if (exact != null) {
+    return ComposeTransportWarning.fromSlot(
+      transport: exact.transport,
+      trustTier: exact.trustTier,
+    );
+  }
+  return null;
+}
+
+/// Bare enterprise registry address candidate (`assistant@openai`).
+///
+/// Excludes self shorthand (`@claude`), broadcasts (`@all`, `@all@org`),
+/// and agent-scoped handles (`bob@acme/claude`) — those resolve via agents.
+String? registryAddressCandidate(String recipient) {
+  final trimmed = recipient.trim().toLowerCase();
+  if (trimmed.isEmpty) return null;
+  if (trimmed.startsWith('@')) return null;
+  if (trimmed.contains('/')) return null;
+  final at = trimmed.indexOf('@');
+  if (at <= 0 || at >= trimmed.length - 1) return null;
+  return trimmed;
+}
+
+AgentInfo? _matchByAddressOrSlug(
+  String recipient,
+  List<AgentInfo> agents,
+  TransportPrefs prefs,
+) {
   final slug = _extractAgentSlug(recipient);
   if (slug == null) return null;
 
@@ -18,21 +48,13 @@ ComposeTransportWarning? resolveComposeTransportWarning({
       .toList(growable: false);
   if (matches.isEmpty) return null;
 
-  AgentInfo? chosen;
-  if (matches.length == 1) {
-    chosen = matches.first;
-  } else {
-    final preferred = prefs.defaultFor(slug) ?? AgentTransport.sidecar;
-    chosen = matches.cast<AgentInfo?>().firstWhere(
-          (a) => a!.transport == preferred,
-          orElse: () => matches.first,
-        );
-  }
+  if (matches.length == 1) return matches.first;
 
-  return ComposeTransportWarning.fromSlot(
-    transport: chosen?.transport,
-    trustTier: chosen?.trustTier,
-  );
+  final preferred = prefs.defaultFor(slug) ?? AgentTransport.sidecar;
+  return matches.cast<AgentInfo?>().firstWhere(
+        (a) => a!.transport == preferred,
+        orElse: () => matches.first,
+      );
 }
 
 String? _extractAgentSlug(String recipient) {

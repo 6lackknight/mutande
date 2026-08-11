@@ -4,8 +4,8 @@
   "exports": "./main.ts",
   "tasks": {
     "dev": "deno run --allow-net --allow-env --allow-read --watch main.ts",
-    "check": "deno check main.ts auth/oauth_test.ts protocol/tools_test.ts",
-    "test": "deno test --allow-env --allow-read --allow-net auth/ protocol/",
+    "check": "deno check main.ts auth/oauth_test.ts protocol/tools_test.ts hub/inbox_test.ts",
+    "test": "deno test --allow-env --allow-read --allow-net auth/ protocol/ hub/",
     "deploy": "deployctl deploy --project=mutande-mcp main.ts"
   },
   "imports": {

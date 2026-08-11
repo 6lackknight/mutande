@@ -1,4 +1,4 @@
-/** Tool surface for hosted MCP — mirrors desktop inbox tools; most are stubs until L2. */
+/** Tool surface for hosted MCP — mirrors desktop inbox tools. */
 
 export interface McpToolDefinition {
   name: string;
@@ -12,8 +12,14 @@ const EMPTY_OBJECT = {
   additionalProperties: false,
 } as const;
 
-/** Implemented in L0. */
-export const IMPLEMENTED_TOOLS = new Set(["health", "ping"]);
+/** L0 + L2 inbox tools. */
+export const IMPLEMENTED_TOOLS = new Set([
+  "health",
+  "ping",
+  "list_threads",
+  "get_thread",
+  "reply_to_thread",
+]);
 
 export function toolDefinitions(): McpToolDefinition[] {
   return [
@@ -26,14 +32,13 @@ export function toolDefinitions(): McpToolDefinition[] {
     {
       name: "ping",
       description:
-        "MCP protocol ping (empty result). For a product thread ping, use the desktop sidecar until L2 wires hub app_envelope tools.",
+        "MCP protocol ping (empty result). Product thread pings use the desktop sidecar or reply_to_thread on app_envelope mail.",
       inputSchema: { ...EMPTY_OBJECT },
     },
-    // --- Stubs: same names as local MCP; return not-implemented until L2 ---
     {
       name: "list_threads",
       description:
-        "List collaboration threads. STUB on hosted MCP until L2 (app_envelope pull).",
+        "List app_envelope collaboration threads for this web agent. Default filter needs_action. Returns caught_up=true and an empty list when there is nothing to do — stay quiet (skill pattern). Read-only.",
       inputSchema: {
         type: "object",
         properties: {
@@ -48,7 +53,7 @@ export function toolDefinitions(): McpToolDefinition[] {
     {
       name: "get_thread",
       description:
-        "Get a thread. STUB on hosted MCP until L2 (app_envelope pull).",
+        "Get an app_envelope thread with hydrated message content for this web agent. Read-only.",
       inputSchema: {
         type: "object",
         required: ["thread_id"],
@@ -59,7 +64,7 @@ export function toolDefinitions(): McpToolDefinition[] {
     {
       name: "reply_to_thread",
       description:
-        "Reply to a thread. STUB on hosted MCP until L2 (app_envelope).",
+        "Reply on an app_envelope thread as this web agent. Bundle fields map to hub app_envelope (subject, notes, …).",
       inputSchema: {
         type: "object",
         required: ["thread_id", "bundle"],
@@ -72,7 +77,7 @@ export function toolDefinitions(): McpToolDefinition[] {
     },
     {
       name: "list_agents",
-      description: "List your agent slugs. STUB on hosted MCP until L1/L2 wiring.",
+      description: "List your agent slugs. STUB on hosted MCP until later wiring.",
       inputSchema: {
         type: "object",
         properties: { handle: { type: "string" } },
@@ -81,12 +86,13 @@ export function toolDefinitions(): McpToolDefinition[] {
     },
     {
       name: "list_contacts",
-      description: "List org contacts. STUB on hosted MCP until L2.",
+      description: "List org contacts. STUB on hosted MCP until later wiring.",
       inputSchema: { ...EMPTY_OBJECT },
     },
     {
       name: "forward_draft",
-      description: "Send a draft. STUB on hosted MCP until L2.",
+      description:
+        "Send a draft. STUB on hosted MCP — web agents reply via reply_to_thread; new threads from desktop sidecar.",
       inputSchema: {
         type: "object",
         properties: {

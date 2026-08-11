@@ -67,22 +67,19 @@ class TransportPrefsStore {
     TransportPrefs? memory,
     DaemonClient? daemon,
   })  : _memory = memory,
-        _daemon = daemon;
+        daemon = daemon;
 
   factory TransportPrefsStore.memory([TransportPrefs? prefs]) =>
       TransportPrefsStore(memory: prefs ?? const TransportPrefs());
 
   final File? file;
   TransportPrefs? _memory;
-  DaemonClient? _daemon;
+
+  /// Courier used for hub sync; null keeps prefs local-only.
+  DaemonClient? daemon;
   TransportPrefs _cached = const TransportPrefs();
 
   TransportPrefs get current => _memory ?? _cached;
-
-  /// Attach/replace the courier client used for hub sync (may be null offline).
-  set daemon(DaemonClient? client) => _daemon = client;
-
-  DaemonClient? get daemon => _daemon;
 
   File _resolveFile() {
     final override = file;
@@ -137,10 +134,10 @@ class TransportPrefsStore {
   /// cache. On hub/courier failure, returns the last local prefs unchanged.
   Future<TransportPrefs> syncFromHub() async {
     final local = await _loadLocal();
-    final daemon = _daemon;
-    if (daemon == null) return local;
+    final client = daemon;
+    if (client == null) return local;
     try {
-      final remote = TransportPrefs.fromJson(await daemon.getTransportDefaults());
+      final remote = TransportPrefs.fromJson(await client.getTransportDefaults());
       await _saveLocal(remote);
       return remote;
     } catch (e, st) {
@@ -160,11 +157,11 @@ class TransportPrefsStore {
   Future<TransportPrefs> setDefault(String slug, AgentTransport transport) async {
     final next = (await _loadLocal()).withDefault(slug, transport);
     await _saveLocal(next);
-    final daemon = _daemon;
-    if (daemon != null) {
+    final client = daemon;
+    if (client != null) {
       try {
         final remote = TransportPrefs.fromJson(
-          await daemon.setTransportDefault(
+          await client.setTransportDefault(
             slug: slug,
             transport: transport,
           ),

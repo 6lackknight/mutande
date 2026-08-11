@@ -1,4 +1,4 @@
-# mutande hosted MCP (L0)
+# mutande hosted MCP (L0 + L2 inbox)
 
 Multi-tenant **remote** MCP server at `https://mcp.mutande.online`.
 
@@ -34,13 +34,16 @@ On each authenticated `/mcp` call the server:
 
 Default slug: `chatgpt` (`MCP_DEFAULT_AGENT_SLUG`). Override with `?slug=` or `X-Mutande-Agent-Slug`.
 
-## Tools (L0)
+## Tools (L0 + L2)
 
 | Tool | Status |
 |------|--------|
 | `health` | Implemented — returns bound Auth0 sub, handle, `agent_id` |
 | `ping` | Implemented — empty OK |
-| `list_threads`, `get_thread`, `reply_to_thread`, … | Stub — clear “not implemented” until L2 `app_envelope` pull |
+| `list_threads` | L2 — hub inbox filtered to bound web `agent_id` + `encryption_mode: app_envelope`; `caught_up` when empty |
+| `get_thread` | L2 — `GET /v1/threads/:id/app-messages?agent_id=` |
+| `reply_to_thread` | L2 — posts `app_envelope` (never E2E seal) |
+| `list_agents`, `list_contacts`, `forward_draft` | Stub |
 
 ## Local dev
 
@@ -88,7 +91,7 @@ Documented in [`docs/AUTH0.md`](../docs/AUTH0.md) §8. Summary:
    ```
 3. Complete the OAuth browser login (Auth0 Universal Login on `auth.mutande.online`).
 4. After connect, call tool **`health`** — should show your handle and a web `agent_id`.
-5. Inbox tools remain stubbed until L2; use the Mac sidecar for real E2E mail today.
+5. Call **`list_threads`** — empty/`caught_up` when quiet; otherwise open with **`get_thread`** / **`reply_to_thread`**.
 
 Local Inspector:
 
@@ -103,8 +106,6 @@ npx @modelcontextprotocol/inspector
 
 - Full Streamable HTTP SSE (GET `/mcp`) and hub SSE wake
 - OBO token exchange when MCP audience ≠ hub audience
-- Inbox tools (`list_threads`, …) — L2
-- Capability handshake UI / transport chips — L1
-- `app_envelope` delivery, external contacts, billing — L3/L4
+- `list_agents` / `list_contacts` / `forward_draft` on hosted MCP (hub L3/L4 APIs exist; hosted MCP inbox tools cover app_envelope pull/reply)
 
-Local `core` stdio MCP path is **not** modified by this package.
+Local `core` stdio MCP path is **not** modified by this package (except daemon L2 send/open for app_envelope). See `docs/DIRECTORY-IMPLEMENTATION.md` for L0–L5 status.

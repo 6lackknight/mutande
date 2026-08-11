@@ -20,6 +20,8 @@ import '../widgets/pane_quiet_state.dart';
 import '../widgets/thinking_orb.dart';
 import '../widgets/thread_message_tree.dart';
 import '../widgets/thread_status_badge.dart';
+import '../widgets/downgrade_consent_banner.dart';
+import '../widgets/enterprise_warn_banner.dart';
 import '../widgets/transport_chip.dart';
 
 /// Inbox poll when WebSocket is down — push is primary (see PRD-INBOX-EVENTS).
@@ -944,9 +946,11 @@ class _ComposePanelState extends State<_ComposePanel> {
   String? _error;
   bool _seededRecipient = false;
   ComposeTransportWarning? _transportWarning;
+  bool _enterpriseWarn = false;
   List<AgentInfo> _agents = const [];
   TransportPrefs _transportPrefs = const TransportPrefs();
   Timer? _resolveDebounce;
+  int _resolveGeneration = 0;
 
   @override
   void initState() {
@@ -980,26 +984,54 @@ class _ComposePanelState extends State<_ComposePanel> {
       _transportPrefs = prefs;
       _agents = agents;
     });
-    _resolveWarning(_recipientController?.text ?? widget.initialRecipient);
+    unawaited(
+      _resolveWarning(_recipientController?.text ?? widget.initialRecipient),
+    );
   }
 
   void _onRecipientChanged(String text) {
     _resolveDebounce?.cancel();
     _resolveDebounce = Timer(const Duration(milliseconds: 180), () {
       if (!mounted) return;
-      _resolveWarning(text);
+      unawaited(_resolveWarning(text));
     });
   }
 
-  void _resolveWarning(String? text) {
-    final warning = resolveComposeTransportWarning(
-      recipient: text?.trim() ?? '',
+  Future<void> _resolveWarning(String? text) async {
+    final recipient = text?.trim() ?? '';
+    final gen = ++_resolveGeneration;
+    var warning = resolveComposeTransportWarning(
+      recipient: recipient,
       agents: _agents,
       prefs: _transportPrefs,
     );
-    if (!mounted) return;
-    if (warning?.label == _transportWarning?.label) return;
-    setState(() => _transportWarning = warning);
+
+    // Registry enterprise address — not in org agent list (§7.2).
+    var enterpriseWarn = warning?.isEnterprise ?? false;
+    if (!enterpriseWarn) {
+      final candidate = registryAddressCandidate(recipient);
+      if (candidate != null) {
+        final listing = await widget.daemon.getRegistryListing(candidate);
+        if (!mounted || gen != _resolveGeneration) return;
+        if (listing != null && listing.showBanner) {
+          enterpriseWarn = true;
+          warning ??= ComposeTransportWarning.fromSlot(
+            transport: AgentTransport.mcp,
+            trustTier: TrustTier.enterprise,
+          );
+        }
+      }
+    }
+
+    if (!mounted || gen != _resolveGeneration) return;
+    if (warning?.label == _transportWarning?.label &&
+        enterpriseWarn == _enterpriseWarn) {
+      return;
+    }
+    setState(() {
+      _transportWarning = warning;
+      _enterpriseWarn = enterpriseWarn;
+    });
   }
 
   Future<List<String>> _recipientOptions(String input) async {
@@ -1111,7 +1143,7 @@ class _ComposePanelState extends State<_ComposePanel> {
             optionsBuilder: (text) async => _recipientOptions(text.text),
             onSelected: (value) {
               _recipientController?.text = value;
-              _resolveWarning(value);
+              unawaited(_resolveWarning(value));
             },
             fieldViewBuilder: (context, controller, focusNode, onSubmit) {
               _recipientController = controller;
@@ -1139,6 +1171,10 @@ class _ComposePanelState extends State<_ComposePanel> {
               alignment: Alignment.centerLeft,
               child: ComposeNonE2eChip(warning: _transportWarning!),
             ),
+          ],
+          if (_enterpriseWarn) ...[
+            const SizedBox(height: 8),
+            const EnterpriseWarnBanner(),
           ],
           const SizedBox(height: 8),
           TextField(
@@ -1225,6 +1261,7 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
   String? _replyToMessageId;
   String? _replyToHandle;
   String? _upvotingMessageId;
+  bool _downgradeBusy = false;
   int? _hotDivider;
 
   ResizableDivider _splitDivider(int id) {
@@ -1260,6 +1297,8 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
           from: _detail!.from,
           audience: _detail!.audience,
           yourStatus: _detail!.yourStatus,
+          enterpriseListingId: _detail!.enterpriseListingId,
+          pendingDowngrade: _detail!.pendingDowngrade,
           messages: _detail!.messages
               .map((m) => m.id == message.id ? m.copyWithUpvotes(summary) : m)
               .toList(),
@@ -1273,6 +1312,53 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
       );
     } finally {
       if (mounted) setState(() => _upvotingMessageId = null);
+    }
+  }
+
+  Future<void> _approveDowngrade(ThreadDowngradeProposalView proposal) async {
+    final ok = await confirmThreadAction(
+      context,
+      title: 'End E2E for this thread?',
+      body: proposal.prompt ??
+          'Adding @${proposal.proposedSlug} (web) ends E2E for this thread',
+      confirmLabel: 'Approve',
+    );
+    if (ok != true || !mounted) return;
+    setState(() => _downgradeBusy = true);
+    try {
+      await widget.daemon.approveThreadDowngrade(
+        threadId: widget.threadId,
+        proposalId: proposal.id,
+      );
+      if (!mounted) return;
+      await _load(silent: true);
+      widget.onListChanged?.call();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyDaemonError(e, what: 'Approve'))),
+      );
+    } finally {
+      if (mounted) setState(() => _downgradeBusy = false);
+    }
+  }
+
+  Future<void> _denyDowngrade(ThreadDowngradeProposalView proposal) async {
+    setState(() => _downgradeBusy = true);
+    try {
+      await widget.daemon.denyThreadDowngrade(
+        threadId: widget.threadId,
+        proposalId: proposal.id,
+      );
+      if (!mounted) return;
+      await _load(silent: true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyDaemonError(e, what: 'Deny'))),
+      );
+    } finally {
+      if (mounted) setState(() => _downgradeBusy = false);
     }
   }
 
@@ -1521,6 +1607,21 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
                     return op != null && _upvotingMessageId == op.id;
                   }(),
                 ),
+                if (_detail!.isEnterpriseThread) ...[
+                  const SizedBox(height: 10),
+                  const EnterpriseWarnBanner(),
+                ],
+                if (_detail!.pendingDowngrade?.isPending == true) ...[
+                  const SizedBox(height: 10),
+                  DowngradeConsentBanner(
+                    prompt: _detail!.pendingDowngrade!.prompt ??
+                        'Adding @${_detail!.pendingDowngrade!.proposedSlug} (web) ends E2E for this thread',
+                    busy: _downgradeBusy,
+                    onApprove: () =>
+                        _approveDowngrade(_detail!.pendingDowngrade!),
+                    onDeny: () => _denyDowngrade(_detail!.pendingDowngrade!),
+                  ),
+                ],
                 if (_error != null) ...[
                   const SizedBox(height: 12),
                   PaneInlineError(message: _error!, onRetry: () => _load()),

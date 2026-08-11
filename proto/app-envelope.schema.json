@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mutande.app/schemas/app-envelope/v1",
+  "title": "AppEnvelope",
+  "description": "Hub-readable application-layer mail payload for non-E2E threads (directory.prd §4.2.1 / §4.6). Never mixed with E2E envelope wraps in one wire unit. 30-day retention hard upper bound.",
+  "type": "object",
+  "required": ["version"],
+  "additionalProperties": true,
+  "properties": {
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 255,
+      "description": "App-envelope format version (currently 1)."
+    },
+    "subject": { "type": "string" },
+    "context": { "type": "string" },
+    "notes": { "type": "string" },
+    "ping_kind": {
+      "type": "string",
+      "enum": ["health", "thread"]
+    },
+    "questions": { "type": "array" },
+    "answers": { "type": "array" },
+    "resources": { "type": "array" },
+    "resource_requests": { "type": "array" },
+    "in_reply_to": {
+      "type": "string",
+      "format": "uuid"
+    }
+  }
+}

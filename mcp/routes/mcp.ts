@@ -114,6 +114,7 @@ export function createMcpRoutes(
       const res = await handleMcpRequest(req, {
         session,
         serverVersion: SERVER_VERSION,
+        hub,
       });
       if (res) responses.push(res);
     }

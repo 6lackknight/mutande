@@ -1,7 +1,9 @@
+import { AccountMenu } from "@/components/account-menu";
 import { TrackLink } from "@/components/track-link";
 import { AnalyticsEvent } from "@/lib/analytics-events";
 import { auth0 } from "@/lib/auth0";
 import { loadMeOrNull, sessionShowsOps } from "@/lib/session";
+import { isOrgAdmin } from "@/lib/types";
 
 const navLinkClass =
   "rounded-md px-3 py-2 text-sm text-stone-700 transition hover:bg-stone-200/40";
@@ -15,14 +17,6 @@ export async function LandingNav() {
         <a href="/docs" className={navLinkClass}>
           Docs
         </a>
-        <TrackLink
-          href="/download"
-          event={AnalyticsEvent.DownloadNavClick}
-          props={{ surface: "landing_nav" }}
-          className={navLinkClass}
-        >
-          Try Alpha
-        </TrackLink>
         <TrackLink
           href="/login"
           event={AnalyticsEvent.SignInClick}
@@ -38,39 +32,35 @@ export async function LandingNav() {
   const { me } = await loadMeOrNull();
   const onboarded = Boolean(me?.onboarded);
   const showOps = await sessionShowsOps(me);
-  const accountHref = onboarded ? "/dashboard" : "/signup";
-  const accountLabel = onboarded
-    ? (me?.user?.handle ?? "Dashboard")
-    : "Continue setup";
 
   return (
     <nav className="flex items-center gap-1 sm:gap-2">
       <a href="/docs" className={navLinkClass}>
         Docs
       </a>
-      <TrackLink
-        href="/download"
-        event={AnalyticsEvent.DownloadNavClick}
-        props={{ surface: "landing_nav" }}
-        className={navLinkClass}
-      >
-        Try Alpha
-      </TrackLink>
       {showOps ? (
         <a href="/admin/ops" className={navLinkClass}>
           Ops
         </a>
       ) : null}
-      <a
-        href={accountHref}
-        className={`${navLinkClass} max-w-[12rem] truncate font-medium text-stone-900`}
-        title={accountLabel}
-      >
-        {accountLabel}
-      </a>
-      <a href="/auth/logout" className={navLinkClass}>
-        Sign out
-      </a>
+      {onboarded ? (
+        <AccountMenu
+          label={me?.user?.handle ?? "Account"}
+          showOrganization={isOrgAdmin(me?.user)}
+        />
+      ) : (
+        <>
+          <a
+            href="/signup"
+            className={`${navLinkClass} font-medium text-stone-900`}
+          >
+            Continue setup
+          </a>
+          <a href="/auth/logout" className={navLinkClass}>
+            Sign out
+          </a>
+        </>
+      )}
     </nav>
   );
 }

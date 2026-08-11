@@ -281,12 +281,9 @@ impl HubClient {
         self.put_json("/v1/agents/transport-defaults", &body).await
     }
 
-    pub async fn list_agents_for_handle(&self, handle: &str) -> Result<Vec<Agent>> {
+    pub async fn list_agents_for_handle(&self, handle: &str) -> Result<AgentsForHandleResponse> {
         let encoded = handle.replace('@', "%40").replace('/', "%2F");
-        let resp: AgentsForHandleResponse = self
-            .get_json(&format!("/v1/agents?handle={encoded}"))
-            .await?;
-        Ok(resp.agents)
+        self.get_json(&format!("/v1/agents?handle={encoded}")).await
     }
 
     pub async fn set_default_agent(&self, agent_id: &str) -> Result<Agent> {
@@ -328,6 +325,165 @@ impl HubClient {
         Ok(resp.contacts)
     }
 
+    pub async fn list_external_contacts(&self) -> Result<Vec<Contact>> {
+        let resp: ContactsResponse = self.get_json("/v1/contacts/external").await?;
+        Ok(resp.contacts)
+    }
+
+    /// Public enterprise listing + warn banner (§7.2).
+    pub async fn get_registry_listing(
+        &self,
+        id_or_address: &str,
+    ) -> Result<RegistryListingPublic> {
+        let encoded = encode_path_segment(id_or_address.trim());
+        self.get_json(&format!("/v1/registry/listing/{encoded}"))
+            .await
+    }
+
+    pub async fn issue_pairing_pin(&self) -> Result<PairingPin> {
+        self.post_json("/v1/contacts/pairing/pin", &serde_json::json!({}), true)
+            .await
+    }
+
+    pub async fn get_pairing_pin(&self) -> Result<Option<PairingPin>> {
+        let resp: PairingPinGetResponse = self.get_json("/v1/contacts/pairing/pin").await?;
+        Ok(resp.pin)
+    }
+
+    pub async fn rotate_pairing_pin(&self) -> Result<PairingPin> {
+        self.post_json(
+            "/v1/contacts/pairing/pin/rotate",
+            &serde_json::json!({}),
+            true,
+        )
+        .await
+    }
+
+    pub async fn submit_pair_request(
+        &self,
+        handle: &str,
+        pin: &str,
+        intro: Option<&str>,
+    ) -> Result<PairRequest> {
+        let body = SubmitPairRequest {
+            handle: handle.to_string(),
+            pin: pin.to_string(),
+            intro: intro.map(str::to_string),
+        };
+        let resp: PairRequestResponse = self
+            .post_json("/v1/contacts/pairing/request", &body, true)
+            .await?;
+        Ok(resp.request)
+    }
+
+    pub async fn list_pending_pair_requests(&self) -> Result<PendingPairRequests> {
+        self.get_json("/v1/contacts/pairing/pending").await
+    }
+
+    pub async fn approve_pair_request(&self, request_id: &str) -> Result<ApprovePairResponse> {
+        self.post_json(
+            &format!("/v1/contacts/pairing/{request_id}/approve"),
+            &serde_json::json!({}),
+            true,
+        )
+        .await
+    }
+
+    pub async fn deny_pair_request(&self, request_id: &str) -> Result<()> {
+        let _: serde_json::Value = self
+            .post_json(
+                &format!("/v1/contacts/pairing/{request_id}/deny"),
+                &serde_json::json!({}),
+                true,
+            )
+            .await?;
+        Ok(())
+    }
+
+    pub async fn propose_thread_downgrade(
+        &self,
+        thread_id: &str,
+        agent_slug: &str,
+        from_agent: Option<&str>,
+    ) -> Result<ProposeDowngradeResponse> {
+        let mut body = serde_json::json!({ "agent_slug": agent_slug });
+        if let Some(fa) = from_agent.map(str::trim).filter(|s| !s.is_empty()) {
+            body["from_agent"] = serde_json::json!(fa);
+        }
+        self.post_json(
+            &format!("/v1/threads/{thread_id}/downgrade-proposals"),
+            &body,
+            true,
+        )
+        .await
+    }
+
+    pub async fn list_pending_thread_downgrades(&self) -> Result<PendingDowngradeProposals> {
+        self.get_json("/v1/threads/downgrade-proposals/pending")
+            .await
+    }
+
+    pub async fn approve_thread_downgrade(
+        &self,
+        thread_id: &str,
+        proposal_id: &str,
+    ) -> Result<ApproveDowngradeResponse> {
+        self.post_json(
+            &format!("/v1/threads/{thread_id}/downgrade-proposals/{proposal_id}/approve"),
+            &serde_json::json!({}),
+            true,
+        )
+        .await
+    }
+
+    pub async fn deny_thread_downgrade(
+        &self,
+        thread_id: &str,
+        proposal_id: &str,
+    ) -> Result<ThreadDowngradeProposal> {
+        let resp: serde_json::Value = self
+            .post_json(
+                &format!("/v1/threads/{thread_id}/downgrade-proposals/{proposal_id}/deny"),
+                &serde_json::json!({}),
+                true,
+            )
+            .await?;
+        serde_json::from_value(resp.get("proposal").cloned().unwrap_or(resp))
+            .context("parse deny downgrade response")
+    }
+
+    pub async fn unpair_external_contact(&self, link_id: &str) -> Result<UnpairResponse> {
+        let path = format!("/v1/contacts/external/{link_id}");
+        let mut attempted_refresh = false;
+        loop {
+            let token = self.access_token();
+            let resp = self
+                .client
+                .delete(self.url(&path))
+                .bearer_auth(&token)
+                .send()
+                .await
+                .with_context(|| format!("DELETE {path}"))?;
+            if resp.status().is_success() {
+                return resp
+                    .json()
+                    .await
+                    .with_context(|| format!("decode DELETE {path}"));
+            }
+            if resp.status() == StatusCode::UNAUTHORIZED
+                && !attempted_refresh
+                && self.try_refresh_after_unauthorized().await
+            {
+                attempted_refresh = true;
+                continue;
+            }
+            return Err(hub_error(
+                resp.status(),
+                resp.text().await.unwrap_or_default(),
+            ));
+        }
+    }
+
     pub async fn submit_feedback(
         &self,
         message: &str,
@@ -364,7 +520,24 @@ impl HubClient {
     ) -> Result<CreateThreadResponse> {
         let body = CreateThreadRequest {
             to,
-            envelope,
+            envelope: Some(envelope),
+            app_envelope: None,
+            from_agent,
+        };
+        self.post_json("/v1/threads", &body, true).await
+    }
+
+    /// Non-E2E create — posts hub-readable `app_envelope` (web / external / enterprise).
+    pub async fn create_thread_app_envelope(
+        &self,
+        to: &str,
+        app_envelope: &AppEnvelopePayload,
+        from_agent: Option<&str>,
+    ) -> Result<CreateThreadResponse> {
+        let body = CreateThreadRequest {
+            to,
+            envelope: None,
+            app_envelope: Some(app_envelope),
             from_agent,
         };
         self.post_json("/v1/threads", &body, true).await
@@ -383,7 +556,33 @@ impl HubClient {
         parent_message_id: Option<&str>,
     ) -> Result<()> {
         let body = ReplyRequest {
-            envelope,
+            envelope: Some(envelope),
+            app_envelope: None,
+            from_agent,
+            to_agent,
+            parent_message_id,
+        };
+        let _: serde_json::Value = self
+            .post_json(
+                &format!("/v1/threads/{thread_id}/replies"),
+                &body,
+                true,
+            )
+            .await?;
+        Ok(())
+    }
+
+    pub async fn reply_to_thread_app_envelope(
+        &self,
+        thread_id: &str,
+        app_envelope: &AppEnvelopePayload,
+        from_agent: Option<&str>,
+        to_agent: Option<&str>,
+        parent_message_id: Option<&str>,
+    ) -> Result<()> {
+        let body = ReplyRequest {
+            envelope: None,
+            app_envelope: Some(app_envelope),
             from_agent,
             to_agent,
             parent_message_id,
@@ -746,6 +945,23 @@ impl HubClient {
     }
 }
 
+/// Percent-encode a single URL path segment (enterprise addresses contain `@`).
+fn encode_path_segment(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() * 3);
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char);
+            }
+            _ => {
+                out.push('%');
+                out.push_str(&format!("{b:02X}"));
+            }
+        }
+    }
+    out
+}
+
 fn hub_error(status: StatusCode, body: String) -> anyhow::Error {
     if body.is_empty() {
         anyhow::anyhow!("hub error {status}")
@@ -855,7 +1071,8 @@ mod tests {
         let env = sample_envelope();
         let req = CreateThreadRequest {
             to: "bob@acme",
-            envelope: &env,
+            envelope: Some(&env),
+            app_envelope: None,
             from_agent: None,
         };
         let json = serde_json::to_value(&req).unwrap();
@@ -869,7 +1086,8 @@ mod tests {
     fn reply_request_wraps_envelope_object() {
         let env = sample_envelope();
         let req = ReplyRequest {
-            envelope: &env,
+            envelope: Some(&env),
+            app_envelope: None,
             from_agent: None,
             to_agent: None,
             parent_message_id: None,
@@ -1190,12 +1408,16 @@ mod tests {
                 thread_id: thread_id.into(),
                 from_user_id: "u1".into(),
                 from_handle: "alice@acme".into(),
-                envelope: posted,
+                from_agent_id: None,
+                envelope: Some(posted),
+                app_envelope: None,
+                content_store: Some("e2e".into()),
                 created_at: "2026-01-01T00:00:00Z".into(),
                 sender_only: None,
                 parent_message_id: None,
-            upvotes: None,
+                upvotes: None,
             }],
+        pending_downgrade: None,
         };
 
         Mock::given(method("GET"))
@@ -1207,7 +1429,14 @@ mod tests {
 
         let fetched = client.get_thread(thread_id).await.unwrap();
         assert_eq!(fetched.messages.len(), 1);
-        let opened = open(&fetched.messages[0].envelope, &secret).unwrap();
+        let opened = open(
+            fetched.messages[0]
+                .envelope
+                .as_ref()
+                .expect("e2e envelope"),
+            &secret,
+        )
+        .unwrap();
         assert_eq!(opened, plaintext);
     }
 

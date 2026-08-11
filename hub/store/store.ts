@@ -10,6 +10,41 @@ import {
 } from "./errors.ts";
 import { isPlatformOpsAdmin } from "./platform_admin.ts";
 import { randomToken } from "./jwt.ts";
+import {
+  appEnvelopeKey,
+  appEnvelopesPrefix,
+  assertExclusiveWireUnit,
+  buildAppEnvelopeRecord,
+  isEnterpriseAgentStub,
+  normalizeEncryptionMode,
+  openAppEnvelope,
+  resolveThreadEncryptionMode,
+  APP_ENVELOPE_RETENTION_MS,
+} from "./app_envelope.ts";
+import {
+  approvePairRequest,
+  assertExternalLinkVelocity,
+  denyPairRequest,
+  getPairingPin,
+  hasApprovedExternalContact,
+  issuePairingPin,
+  listExternalContacts,
+  listPairingOpsFlags,
+  listPendingPairRequests,
+  rotatePairingPin,
+  submitPairRequest,
+  unpairExternalContact,
+  type PairingKvCtx,
+} from "./external_contacts_api.ts";
+import {
+  approveThreadDowngrade,
+  denyThreadDowngrade,
+  getPendingThreadDowngrade,
+  listPendingThreadDowngrades,
+  messageVisibleAfterDowngrade,
+  proposeThreadDowngrade,
+  type DowngradeKvCtx,
+} from "./thread_downgrade.ts";
 import type {
   Auth0Claims,
   AuthContext,
@@ -30,6 +65,7 @@ import type {
   Org,
   RegisterDeviceInput,
   ReplyInput,
+  FetchAppMessagesInput,
   ToggleUpvoteInput,
   ToggleUpvoteResult,
   MessageUpvote,
@@ -38,6 +74,7 @@ import type {
   AgentCapabilities,
   AgentTransport,
   AgentTransportPrefs,
+  AppEnvelopePayload,
   ConnectAgentInput,
   SetDefaultAgentInput,
   SetTransportDefaultInput,
@@ -49,8 +86,16 @@ import type {
   ThreadFilter,
   ThreadMessage,
   ThreadMeta,
+  ThreadDowngradeProposal,
+  ProposeThreadDowngradeInput,
+  UpdateProfileInput,
   User,
   UserRole,
+  PairRequest,
+  PairingPinResponse,
+  PairingOpsFlag,
+  SubmitPairRequestInput,
+  ExternalContactLink,
 } from "./types.ts";
 import { createBlobUrls } from "./r2.ts";
 import {
@@ -72,6 +117,8 @@ import {
   parseUserHandle,
   stripAgentSuffix,
 } from "./address.ts";
+import { EnterpriseStore } from "./enterprise.ts";
+import type { RegistryListing } from "./types.ts";
 
 function clipRequired(value: string, field: string, max: number): string {
   const trimmed = value?.trim() ?? "";
@@ -136,6 +183,30 @@ function primaryRole(user: User): UserRole {
 
 function isOnboarded(user: User | null | undefined): boolean {
   return Boolean(user?.org_id && user?.handle);
+}
+
+const MAX_DISPLAY_NAME_LENGTH = 64;
+/** Data-URL avatars are client-resized; keep well under Deno KV's 64KiB value limit. */
+const MAX_AVATAR_URL_LENGTH = 48_000;
+
+function assertValidAvatarUrl(value: string): void {
+  if (value.length > MAX_AVATAR_URL_LENGTH) {
+    throw new HubError(
+      `avatar_url too large (max ${MAX_AVATAR_URL_LENGTH} chars)`,
+      "invalid_argument",
+      400,
+    );
+  }
+  const isDataImage = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/
+    .test(value);
+  const isHttps = value.startsWith("https://");
+  if (!isDataImage && !isHttps) {
+    throw new HubError(
+      "avatar_url must be an https URL or a png/jpeg/webp data URL",
+      "invalid_argument",
+      400,
+    );
+  }
 }
 
 function authContextFromUser(
@@ -254,11 +325,14 @@ function emptyTransportPrefs(): AgentTransportPrefs {
 }
 
 export class HubStore {
+  readonly enterprise: EnterpriseStore;
+
   constructor(
     private readonly kv: Deno.Kv,
     private readonly verifier: TokenVerifier,
-  ) {}
-
+  ) {
+    this.enterprise = new EnterpriseStore(kv);
+  }
   private userKey(id: string) { return ["users", id]; }
   private auth0SubKey(sub: string) { return ["auth0_subs", sub]; }
   private handleKey(handle: string) { return ["handles", handle]; }
@@ -281,6 +355,12 @@ export class HubStore {
   private inboxPrefix(userId: string) { return ["inbox", userId]; }
   private messageKey(threadId: string, messageId: string) { return ["messages", threadId, messageId]; }
   private messagesPrefix(threadId: string) { return ["messages", threadId]; }
+  private appEnvelopeKey(threadId: string, messageId: string) {
+    return appEnvelopeKey(threadId, messageId);
+  }
+  private appEnvelopesPrefix(threadId: string) {
+    return appEnvelopesPrefix(threadId);
+  }
   private messageUpvoteKey(threadId: string, messageId: string, agentId: string) {
     return ["message_upvotes", threadId, messageId, agentId];
   }
@@ -323,6 +403,153 @@ export class HubStore {
     if (size > MAX_ENVELOPE_BYTES) throw envelopeTooLarge(size);
   }
 
+  /** Shared KV/user helpers for L3 pairing module. */
+  private pairingCtx(): PairingKvCtx {
+    return {
+      kv: this.kv,
+      getUser: (id) => this.getUser(id),
+      getUserByHandle: (h) => this.getUserByHandle(h),
+      listDevicesForUser: async (userId) => {
+        const user = await this.getUser(userId);
+        if (!user || !isOnboarded(user)) return [];
+        const { devices } = await this.listDevices(authContextFromUser(user));
+        return devices.map((d) => ({ pubkey: d.pubkey, platform: d.platform }));
+      },
+      inboxKey: (u, t) => this.inboxKey(u, t),
+      threadKey: (id) => this.threadKey(id),
+      messageKey: (t, m) => this.messageKey(t, m),
+    };
+  }
+
+  async issuePairingPin(auth: AuthContext): Promise<PairingPinResponse> {
+    return issuePairingPin(this.pairingCtx(), auth);
+  }
+
+  async getPairingPin(auth: AuthContext): Promise<PairingPinResponse | null> {
+    return getPairingPin(this.pairingCtx(), auth);
+  }
+
+  async rotatePairingPin(auth: AuthContext): Promise<PairingPinResponse> {
+    return rotatePairingPin(this.pairingCtx(), auth);
+  }
+
+  async submitPairRequest(
+    auth: AuthContext,
+    input: SubmitPairRequestInput,
+  ): Promise<{ request: PairRequest }> {
+    return submitPairRequest(this.pairingCtx(), auth, input);
+  }
+
+  async listPendingPairRequests(
+    auth: AuthContext,
+  ): Promise<{ incoming: PairRequest[]; outgoing: PairRequest[] }> {
+    return listPendingPairRequests(this.pairingCtx(), auth);
+  }
+
+  async approvePairRequest(
+    auth: AuthContext,
+    requestId: string,
+  ): Promise<{ contact: Contact; thread: ThreadMeta; request: PairRequest }> {
+    return approvePairRequest(this.pairingCtx(), auth, requestId);
+  }
+
+  async denyPairRequest(
+    auth: AuthContext,
+    requestId: string,
+  ): Promise<{ ok: true }> {
+    return denyPairRequest(this.pairingCtx(), auth, requestId);
+  }
+
+  async listExternalContacts(
+    auth: AuthContext,
+  ): Promise<{ contacts: Contact[] }> {
+    return listExternalContacts(this.pairingCtx(), auth);
+  }
+
+  async unpairExternalContact(
+    auth: AuthContext,
+    linkId: string,
+  ): Promise<{ ok: true; closed_thread_ids: string[] }> {
+    return unpairExternalContact(this.pairingCtx(), auth, linkId);
+  }
+
+  async listPairingOpsFlags(
+    auth: AuthContext,
+  ): Promise<{ flags: PairingOpsFlag[] }> {
+    if (!isPlatformOpsAdmin(auth.auth0Roles)) {
+      throw forbidden("Ops admin required");
+    }
+    return listPairingOpsFlags(this.pairingCtx());
+  }
+
+  /** Shared helpers for L5 thread downgrade consent. */
+  private downgradeCtx(): DowngradeKvCtx {
+    return {
+      kv: this.kv,
+      getUser: (id) => this.getUser(id),
+      getUserByHandle: (h) => this.getUserByHandle(h),
+      getAgent: (id) => this.getAgent(id),
+      listAgentsForUser: async (userId) => {
+        const user = await this.getUser(userId);
+        if (!user || !isOnboarded(user)) return [];
+        const { agents } = await this.listAgents(authContextFromUser(user));
+        return agents;
+      },
+      resolveAgentForUser: (userId, slug) => this.resolveAgentForUser(userId, slug),
+      lookupMcpAgent: async (userId, slug) => {
+        const id = await this.lookupAgentSlotId(userId, slug, "mcp");
+        if (!id) return null;
+        return this.getAgent(id);
+      },
+      getInboxEntry: (u, t) => this.getInboxEntry(u, t),
+      normalizeThread: (t) => this.normalizeThread(t),
+      threadVisibleToOrg: (auth, t) => this.threadVisibleToOrg(auth, t),
+      threadKey: (id) => this.threadKey(id),
+      messageKey: (t, m) => this.messageKey(t, m),
+      messagesPrefix: (t) => this.messagesPrefix(t),
+      inboxKey: (u, t) => this.inboxKey(u, t),
+      appEnvelopeKey: (t, m) => this.appEnvelopeKey(t, m),
+    };
+  }
+
+  async proposeThreadDowngrade(
+    auth: AuthContext,
+    threadId: string,
+    input: ProposeThreadDowngradeInput,
+  ): Promise<{ proposal: ThreadDowngradeProposal; prompt: string }> {
+    return proposeThreadDowngrade(this.downgradeCtx(), auth, threadId, input);
+  }
+
+  async approveThreadDowngrade(
+    auth: AuthContext,
+    threadId: string,
+    proposalId: string,
+  ): Promise<{ proposal: ThreadDowngradeProposal; thread: ThreadMeta }> {
+    return approveThreadDowngrade(this.downgradeCtx(), auth, threadId, proposalId);
+  }
+
+  async denyThreadDowngrade(
+    auth: AuthContext,
+    threadId: string,
+    proposalId: string,
+  ): Promise<{ proposal: ThreadDowngradeProposal }> {
+    return denyThreadDowngrade(this.downgradeCtx(), auth, threadId, proposalId);
+  }
+
+  async listPendingThreadDowngrades(
+    auth: AuthContext,
+  ): Promise<{ proposals: ThreadDowngradeProposal[] }> {
+    return listPendingThreadDowngrades(this.downgradeCtx(), auth);
+  }
+
+  /** @deprecated Prefer threadVisibleToOrg — kept for call-site clarity. */
+  private threadAccessible(
+    auth: AuthContext,
+    thread: ThreadMeta,
+  ): boolean {
+    return this.threadVisibleToOrg(auth, thread);
+  }
+
   async verifyAuth0Token(token: string): Promise<Auth0Claims> {
     return await this.verifier.verifyAccessToken(token);
   }
@@ -354,6 +581,41 @@ export class HubStore {
     };
   }
 
+  /** Small profile management (web): display name + avatar. */
+  async updateProfile(
+    claims: Auth0Claims,
+    input: UpdateProfileInput,
+  ): Promise<MeResponse> {
+    const user = await this.getUserByAuth0Sub(claims.sub);
+    if (!user) throw forbidden("Onboarding required");
+
+    if (input.display_name !== undefined) {
+      const name = (input.display_name ?? "").trim();
+      if (name.length > MAX_DISPLAY_NAME_LENGTH) {
+        throw new HubError(
+          `display_name too long (max ${MAX_DISPLAY_NAME_LENGTH})`,
+          "invalid_argument",
+          400,
+        );
+      }
+      if (name) user.display_name = name;
+      else delete user.display_name;
+    }
+
+    if (input.avatar_url !== undefined) {
+      const avatar = (input.avatar_url ?? "").trim();
+      if (avatar) {
+        assertValidAvatarUrl(avatar);
+        user.avatar_url = avatar;
+      } else {
+        delete user.avatar_url;
+      }
+    }
+
+    await this.kv.set(this.userKey(user.id), user);
+    return this.getMe(claims);
+  }
+
   async verifyAuth0Claims(token: string): Promise<Auth0Claims> {
     return this.verifyAuth0Token(token);
   }
@@ -373,6 +635,7 @@ export class HubStore {
   ): Promise<{ org: Org; user: User }> {
     const slug = input.slug.trim().toLowerCase();
     assertValidSlug(slug);
+    await this.enterprise.assertOrgSlugAvailable(slug);
     const name = (input.name?.trim() || slug);
 
     if (await this.getUserByAuth0Sub(claims.sub)) {
@@ -661,13 +924,24 @@ export class HubStore {
   async listAgentsForHandle(
     auth: AuthContext,
     handle: string,
-  ): Promise<{ agents: Agent[] }> {
+  ): Promise<{
+    agents: Agent[];
+    default_agent_id: string | null;
+    /** Per-slug preferred transport — needed so clients can mirror hub bare-slug resolve. */
+    transport_defaults: Record<string, AgentTransport>;
+  }> {
     const bare = stripAgentSuffix(handle.trim());
     await this.assertSameOrgHandle(auth.orgId, bare);
     const user = await this.getUserByHandle(bare);
     if (!user) throw notFound("User");
-    const { agents } = await this.listAgents(authContextFromUser(user));
-    return { agents };
+    const ctx = authContextFromUser(user);
+    const { agents, default_agent_id } = await this.listAgents(ctx);
+    const prefs = await this.loadTransportPrefs(user.id);
+    return {
+      agents,
+      default_agent_id,
+      transport_defaults: prefs.defaults,
+    };
   }
 
   async getTransportPrefs(auth: AuthContext): Promise<AgentTransportPrefs> {
@@ -858,6 +1132,7 @@ export class HubStore {
       handle: broadcastHandle(org.slug),
       pubkey: null,
       devices: [],
+      kind: "broadcast",
     }];
     const iter = this.kv.list<string>({ prefix: this.membersPrefix(auth.orgId) });
     for await (const entry of iter) {
@@ -871,6 +1146,7 @@ export class HubStore {
         handle: user.handle!,
         pubkey: mapped[0]?.pubkey ?? user.pubkey ?? null,
         devices: mapped,
+        kind: "org",
       });
     }
     contacts.sort((a, b) => a.handle.localeCompare(b.handle));
@@ -881,7 +1157,11 @@ export class HubStore {
     thread: ThreadMeta;
     message_id: string;
   }> {
-    this.assertEnvelopeSize(input.envelope);
+    const wireKind = assertExclusiveWireUnit(input);
+    if (wireKind === "e2e") {
+      this.assertEnvelopeSize(input.envelope!);
+    }
+
     const sender = await this.getUser(auth.userId);
     if (!sender?.handle) throw notFound("User");
 
@@ -901,6 +1181,16 @@ export class HubStore {
     let audienceAgentId: string | undefined;
     let audienceWirePath: string | undefined;
     let isBroadcast = false;
+    let audienceAgent: Agent | null = null;
+    let extraParticipants: Agent[] = [];
+    let hasExternalContact = false;
+    let activeExternalLinkId: string | undefined;
+    let enterpriseListing: RegistryListing | null = null;
+
+    // Enterprise listing agents cannot start new outbound threads (§7.3 / §12).
+    await this.enterprise.assertEnterpriseAgentSend(fromAgent.id, {
+      is_new_thread: true,
+    });
 
     if (isOrgBroadcast) {
       // Exclude sender when other members exist; sole-member orgs deliver @all@org to self
@@ -911,9 +1201,17 @@ export class HubStore {
       }
       audience = broadcastHandle(org.slug);
       isBroadcast = true;
+      // Mode from each member's default agent (§4.2 rule 6 — single broadcast thread today).
+      for (const rid of recipientIds) {
+        try {
+          const a = await this.resolveAgentForUser(rid);
+          extraParticipants.push(a);
+        } catch {
+          // Member with no agents — ignore for mode.
+        }
+      }
     } else if (isMyAgents) {
       // Bare @all → one shared my-agents group thread (inbox for this user).
-      // Crypto still seals once to the user's own device pubkeys.
       const { agents } = await this.listAgents(auth);
       if (agents.length === 0) {
         throw new HubError("No agents registered", "unknown_agent", 400);
@@ -921,6 +1219,7 @@ export class HubStore {
       recipientIds = [auth.userId];
       audience = myAgentsHandle();
       isBroadcast = true;
+      extraParticipants = agents;
     } else {
       const parsedTo = parseDisplayAddress(trimmedTo);
 
@@ -930,6 +1229,7 @@ export class HubStore {
         audience = formatDisplayAddress(senderParts.local, senderParts.orgSlug, toAgent.slug);
         audienceAgentId = toAgent.id;
         audienceWirePath = formatWirePath(senderParts.orgSlug, senderParts.local, toAgent.slug);
+        audienceAgent = toAgent;
         if (fromAgent.id === toAgent.id) {
           throw new HubError(
             `Cannot hand off to the same agent (${fromAgent.slug}). Send to a different agent address, e.g. @claude`,
@@ -939,33 +1239,113 @@ export class HubStore {
         recipientIds = [auth.userId];
       } else if (parsedTo.kind === "user") {
         const bareTo = formatDisplayAddress(parsedTo.local, parsedTo.orgSlug);
-        await this.assertSameOrgHandle(auth.orgId, bareTo);
-        const recipient = await this.getUserByHandle(bareTo);
-        if (!recipient) throw notFound("Recipient");
-
-        const toAgent = await this.resolveAgentForUser(recipient.id, parsedTo.agentSlug);
-        audience = formatDisplayAddress(parsedTo.local, parsedTo.orgSlug, toAgent.slug);
-        audienceAgentId = toAgent.id;
-        audienceWirePath = formatWirePath(parsedTo.orgSlug, parsedTo.local, toAgent.slug);
-
-        if (recipient.id === auth.userId) {
-          // Self-handoff: bare → default agent; /agent → that slot. Reject same-agent noops.
-          if (fromAgent.id === toAgent.id) {
-            throw new HubError(
-              `Cannot hand off to the same agent (${fromAgent.slug}). Send to a different agent address, e.g. ${senderParts.local}@${senderParts.orgSlug}/claude or @claude`,
-              "invalid_recipient",
-            );
-          }
+        // L4: public enterprise address — billing gate, no contact/same-org required.
+        if (!parsedTo.agentSlug) {
+          enterpriseListing = await this.enterprise.resolvePublishedEnterprise(
+            bareTo,
+          );
         }
-        recipientIds = [recipient.id];
+        if (enterpriseListing) {
+          const entAgent = await this.getAgent(enterpriseListing.agent_id);
+          if (!entAgent) throw notFound("Enterprise agent");
+          audience = enterpriseListing.address;
+          audienceAgentId = entAgent.id;
+          audienceAgent = entAgent;
+          recipientIds = [enterpriseListing.submitter_user_id];
+        } else {
+          const sameOrg = parsedTo.orgSlug === org.slug;
+          let externalLink: ExternalContactLink | null = null;
+          if (!sameOrg) {
+            externalLink = await hasApprovedExternalContact(
+              this.pairingCtx(),
+              auth.userId,
+              bareTo,
+            );
+            if (!externalLink) {
+              throw forbidden(
+                "Cross-org mail requires an approved external contact",
+              );
+            }
+            hasExternalContact = true;
+            await assertExternalLinkVelocity(
+              this.pairingCtx(),
+              externalLink.id,
+            );
+            activeExternalLinkId = externalLink.id;
+          } else {
+            await this.assertSameOrgHandle(auth.orgId, bareTo);
+          }
+          const recipient = await this.getUserByHandle(bareTo);
+          if (!recipient) throw notFound("Recipient");
+
+          const toAgent = await this.resolveAgentForUser(recipient.id, parsedTo.agentSlug);
+          audience = formatDisplayAddress(parsedTo.local, parsedTo.orgSlug, toAgent.slug);
+          audienceAgentId = toAgent.id;
+          audienceWirePath = formatWirePath(parsedTo.orgSlug, parsedTo.local, toAgent.slug);
+          audienceAgent = toAgent;
+
+          if (recipient.id === auth.userId) {
+            // Self-handoff: bare → default agent; /agent → that slot. Reject same-agent noops.
+            if (fromAgent.id === toAgent.id) {
+              throw new HubError(
+                `Cannot hand off to the same agent (${fromAgent.slug}). Send to a different agent address, e.g. ${senderParts.local}@${senderParts.orgSlug}/claude or @claude`,
+                "invalid_recipient",
+              );
+            }
+          }
+          recipientIds = [recipient.id];
+        }
       } else {
         throw new HubError("Invalid recipient address", "invalid_handle");
       }
     }
 
+    const encryptionMode = resolveThreadEncryptionMode({
+      sender: fromAgent,
+      audience: audienceAgent,
+      extraParticipants,
+      hasExternalContact,
+      hasEnterpriseAgent: Boolean(enterpriseListing) ||
+        isEnterpriseAgentStub(audienceAgent) ||
+        extraParticipants.some((a) => isEnterpriseAgentStub(a)),
+    });
+    // Wire unit must match resolved mode — never mix stores (§4.2.1).
+    if (encryptionMode === "e2e" && wireKind !== "e2e") {
+      throw new HubError(
+        "E2E threads require envelope (not app_envelope)",
+        "invalid_argument",
+        400,
+      );
+    }
+    if (encryptionMode === "app_envelope" && wireKind !== "app_envelope") {
+      throw new HubError(
+        "app_envelope threads require app_envelope payload (not E2E envelope)",
+        "invalid_argument",
+        400,
+      );
+    }
+    // Web slots can only start non-E2E threads (§4.2 rule 2) — enforced via mode + wire check.
+
     const threadId = crypto.randomUUID();
     const messageId = crypto.randomUUID();
     const ts = nowIso();
+
+    const payloadBytes = encryptionMode === "app_envelope"
+      ? new TextEncoder().encode(JSON.stringify(input.app_envelope)).byteLength
+      : 0;
+
+    // L4 debit-on-store: plan before commit so insufficient balance stores nothing.
+    let enterpriseDebit: Awaited<
+      ReturnType<EnterpriseStore["planEnterpriseDebit"]>
+    > | null = null;
+    if (enterpriseListing) {
+      enterpriseDebit = await this.enterprise.planEnterpriseDebit(auth, {
+        listing_id: enterpriseListing.id,
+        thread_id: threadId,
+        payload_bytes: payloadBytes,
+        blob_count: 0,
+      });
+    }
 
     const thread: ThreadMeta = {
       id: threadId,
@@ -980,6 +1360,19 @@ export class HubStore {
       org_id: auth.orgId,
       participant_count: isBroadcast ? recipientIds.length + 1 : 2,
       reply_count: 0,
+      encryption_mode: encryptionMode,
+      ...(enterpriseListing
+        ? { enterprise_listing_id: enterpriseListing.id }
+        : {}),
+      ...(activeExternalLinkId
+        ? {
+          external_link_id: activeExternalLinkId,
+          participant_user_ids: [
+            sender.id,
+            ...recipientIds.filter((id) => id !== sender.id),
+          ],
+        }
+        : {}),
       created_at: ts,
       updated_at: ts,
     };
@@ -989,39 +1382,71 @@ export class HubStore {
       thread_id: threadId,
       from_user_id: sender.id,
       from_handle: fromDisplay,
-      envelope: input.envelope,
+      from_agent_id: fromAgent.id,
+      content_store: encryptionMode,
       created_at: ts,
+      ...(encryptionMode === "e2e" ? { envelope: input.envelope! } : {}),
     };
 
-    const tx = this.kv.atomic();
-    tx.set(this.threadKey(threadId), thread);
-    tx.set(this.messageKey(threadId, messageId), message);
+    for (let attempt = 0; attempt < 8; attempt++) {
+      if (attempt > 0 && enterpriseListing) {
+        enterpriseDebit = await this.enterprise.planEnterpriseDebit(auth, {
+          listing_id: enterpriseListing.id,
+          thread_id: threadId,
+          payload_bytes: payloadBytes,
+          blob_count: 0,
+        });
+      }
 
-    // Self-collab (own agent / bare @all / sole-member @all@org): recipientIds
-    // includes the sender. One inbox key per user — keep Waiting (replied) and
-    // role=recipient so own agents can still reply. Do not clobber to pending.
-    const selfDelivery = recipientIds.includes(sender.id);
-    tx.set(this.inboxKey(sender.id, threadId), {
-      thread_id: threadId,
-      your_status: "replied",
-      role: selfDelivery ? "recipient" : "sender",
-      updated_at: ts,
-    } satisfies InboxEntry);
+      const tx = this.kv.atomic();
+      tx.set(this.threadKey(threadId), thread);
+      tx.set(this.messageKey(threadId, messageId), message);
 
-    for (const rid of recipientIds) {
-      if (rid === sender.id) continue;
-      tx.set(this.inboxKey(rid, threadId), {
+      if (encryptionMode === "app_envelope") {
+        const record = await buildAppEnvelopeRecord({
+          threadId,
+          messageId,
+          fromUserId: sender.id,
+          fromAgentId: fromAgent.id,
+          createdAt: ts,
+          payload: this.normalizeAppPayload(input.app_envelope!),
+        });
+        tx.set(this.appEnvelopeKey(threadId, messageId), record, {
+          expireIn: APP_ENVELOPE_RETENTION_MS,
+        });
+      }
+
+      if (enterpriseDebit) {
+        enterpriseDebit.apply(tx);
+      }
+
+      // Self-collab (own agent / bare @all / sole-member @all@org): recipientIds
+      // includes the sender. One inbox key per user — keep Waiting (replied) and
+      // role=recipient so own agents can still reply. Do not clobber to pending.
+      const selfDelivery = recipientIds.includes(sender.id);
+      tx.set(this.inboxKey(sender.id, threadId), {
         thread_id: threadId,
-        your_status: "pending",
-        role: "recipient",
+        your_status: "replied",
+        role: selfDelivery ? "recipient" : "sender",
         updated_at: ts,
       } satisfies InboxEntry);
+
+      for (const rid of recipientIds) {
+        if (rid === sender.id) continue;
+        tx.set(this.inboxKey(rid, threadId), {
+          thread_id: threadId,
+          your_status: "pending",
+          role: "recipient",
+          updated_at: ts,
+        } satisfies InboxEntry);
+      }
+
+      const res = await tx.commit();
+      if (res.ok) {
+        return { thread, message_id: messageId };
+      }
     }
-
-    const res = await tx.commit();
-    if (!res.ok) throw new HubError("Failed to create thread", "internal", 500);
-
-    return { thread, message_id: messageId };
+    throw new HubError("Failed to create thread", "internal", 500);
   }
 
   async listThreads(
@@ -1034,8 +1459,8 @@ export class HubStore {
     for await (const entry of iter) {
       const inbox = entry.value;
       const threadRes = await this.kv.get<ThreadMeta>(this.threadKey(inbox.thread_id));
-      const thread = threadRes.value;
-      if (!thread || thread.org_id !== auth.orgId) continue;
+      const thread = threadRes.value ? this.normalizeThread(threadRes.value) : null;
+      if (!thread || !this.threadVisibleToOrg(auth, thread)) continue;
 
       const enriched: ThreadMeta = {
         ...thread,
@@ -1062,20 +1487,24 @@ export class HubStore {
   async getThread(
     auth: AuthContext,
     threadId: string,
-  ): Promise<{ thread: ThreadMeta; messages: ThreadMessage[] }> {
+  ): Promise<{
+    thread: ThreadMeta;
+    messages: ThreadMessage[];
+    pending_downgrade?: ThreadDowngradeProposal;
+  }> {
     const inbox = await this.getInboxEntry(auth.userId, threadId);
     if (!inbox) throw forbidden("Not a thread participant");
 
     const threadRes = await this.kv.get<ThreadMeta>(this.threadKey(threadId));
-    const thread = threadRes.value;
-    if (!thread || thread.org_id !== auth.orgId) throw notFound("Thread");
+    const thread = threadRes.value ? this.normalizeThread(threadRes.value) : null;
+    if (!thread || !this.threadVisibleToOrg(auth, thread)) throw notFound("Thread");
 
     const messages: ThreadMessage[] = [];
     const iter = this.kv.list<ThreadMessage>({ prefix: this.messagesPrefix(threadId) });
     for await (const entry of iter) {
       const msg = entry.value;
       if (this.canViewMessage(auth, thread, inbox, msg)) {
-        messages.push(msg);
+        messages.push(await this.hydrateMessage(thread, msg));
       }
     }
     messages.sort((a, b) => a.created_at.localeCompare(b.created_at));
@@ -1087,12 +1516,72 @@ export class HubStore {
       })),
     );
 
+    const pending = await getPendingThreadDowngrade(
+      this.downgradeCtx(),
+      auth,
+      threadId,
+    );
+
     return {
       thread: {
         ...thread,
         your_status: this.effectiveYourStatus(auth, thread, inbox),
       },
       messages: enriched,
+      ...(pending ? { pending_downgrade: pending } : {}),
+    };
+  }
+
+  /**
+   * Web/MCP pull — returns app_envelope content for an authorized participant.
+   * Rejects E2E threads (blind courier; use getThread for envelopes).
+   * Optional `agent_id` must belong to the caller (attribution for hosted MCP).
+   */
+  async fetchAppMessages(
+    auth: AuthContext,
+    threadId: string,
+    input: FetchAppMessagesInput = {},
+  ): Promise<{ thread: ThreadMeta; messages: ThreadMessage[] }> {
+    if (input.agent_id?.trim()) {
+      const agent = await this.getAgent(input.agent_id.trim());
+      if (!agent || agent.user_id !== auth.userId) {
+        throw forbidden("agent_id does not belong to caller");
+      }
+    }
+
+    const inbox = await this.getInboxEntry(auth.userId, threadId);
+    if (!inbox) throw forbidden("Not a thread participant");
+
+    const threadRes = await this.kv.get<ThreadMeta>(this.threadKey(threadId));
+    const thread = threadRes.value ? this.normalizeThread(threadRes.value) : null;
+    if (!thread || !this.threadVisibleToOrg(auth, thread)) throw notFound("Thread");
+
+    if (thread.encryption_mode !== "app_envelope") {
+      throw new HubError(
+        "Thread is E2E — app_envelope fetch not available",
+        "invalid_argument",
+        400,
+      );
+    }
+
+    const messages: ThreadMessage[] = [];
+    const iter = this.kv.list<ThreadMessage>({ prefix: this.messagesPrefix(threadId) });
+    for await (const entry of iter) {
+      const msg = entry.value;
+      if (!this.canViewMessage(auth, thread, inbox, msg)) continue;
+      // Pre-downgrade E2E history stays sealed for web joiners (§4.2 rule 4).
+      if (!messageVisibleAfterDowngrade(thread, msg)) continue;
+      const hydrated = await this.hydrateMessage(thread, msg, { requireApp: true });
+      messages.push(hydrated);
+    }
+    messages.sort((a, b) => a.created_at.localeCompare(b.created_at));
+
+    return {
+      thread: {
+        ...thread,
+        your_status: this.effectiveYourStatus(auth, thread, inbox),
+      },
+      messages,
     };
   }
 
@@ -1106,8 +1595,8 @@ export class HubStore {
     if (!inbox) throw forbidden("Not a thread participant");
 
     const threadRes = await this.kv.get<ThreadMeta>(this.threadKey(threadId));
-    const thread = threadRes.value;
-    if (!thread || thread.org_id !== auth.orgId) throw notFound("Thread");
+    const thread = threadRes.value ? this.normalizeThread(threadRes.value) : null;
+    if (!thread || !this.threadVisibleToOrg(auth, thread)) throw notFound("Thread");
 
     const msgRes = await this.kv.get<ThreadMessage>(this.messageKey(threadId, messageId));
     const msg = msgRes.value;
@@ -1193,22 +1682,38 @@ export class HubStore {
     threadId: string,
     input: ReplyInput,
   ): Promise<{ message_id: string }> {
-    this.assertEnvelopeSize(input.envelope);
+    const wireKind = assertExclusiveWireUnit(input);
+    if (wireKind === "e2e") {
+      this.assertEnvelopeSize(input.envelope!);
+    }
+
     const inbox = await this.getInboxEntry(auth.userId, threadId);
     if (!inbox) throw forbidden("Not a thread participant");
 
     const threadRes = await this.kv.get<ThreadMeta>(this.threadKey(threadId));
-    const thread = threadRes.value;
-    if (!thread || thread.org_id !== auth.orgId) throw notFound("Thread");
+    const thread = threadRes.value ? this.normalizeThread(threadRes.value) : null;
+    if (!thread || !this.threadVisibleToOrg(auth, thread)) throw notFound("Thread");
     if (thread.status === "closed") {
       throw new HubError("Thread is closed", "thread_closed", 409);
     }
 
-    if (inbox.role === "sender" && !input.to_agent?.trim()) {
+    if (
+      inbox.role === "sender" &&
+      !input.to_agent?.trim() &&
+      !thread.enterprise_listing_id &&
+      !thread.external_link_id
+    ) {
       throw new HubError(
         "Sender cannot reply on own thread; start a new thread instead",
         "invalid_reply",
         400,
+      );
+    }
+
+    if (thread.external_link_id) {
+      await assertExternalLinkVelocity(
+        this.pairingCtx(),
+        thread.external_link_id,
       );
     }
 
@@ -1218,6 +1723,37 @@ export class HubStore {
     const userParts = parseUserHandle(user.handle);
     const fromAgent = await this.resolveAgentForUser(auth.userId, input.from_agent);
     const fromDisplay = formatDisplayAddress(userParts.local, userParts.orgSlug, fromAgent.slug);
+
+    // Enterprise agents may only reply within billed threads (§7.3 / §12).
+    await this.enterprise.assertEnterpriseAgentSend(fromAgent.id, {
+      thread_id: threadId,
+      is_new_thread: false,
+    });
+
+    // Web slots cannot join E2E threads until unanimous downgrade (§6.5 / §7.3).
+    if (thread.encryption_mode === "e2e" && fromAgent.transport === "mcp") {
+      throw new HubError(
+        "Web agents cannot join E2E threads until downgrade is approved",
+        "downgrade_required",
+        403,
+      );
+    }
+
+    // Wire unit must match thread mode — never mix (§4.2.1).
+    if (thread.encryption_mode === "e2e" && wireKind !== "e2e") {
+      throw new HubError(
+        "E2E threads require envelope (not app_envelope)",
+        "invalid_argument",
+        400,
+      );
+    }
+    if (thread.encryption_mode === "app_envelope" && wireKind !== "app_envelope") {
+      throw new HubError(
+        "app_envelope threads require app_envelope payload (not E2E envelope)",
+        "invalid_argument",
+        400,
+      );
+    }
 
     const messageId = crypto.randomUUID();
     const ts = nowIso();
@@ -1251,6 +1787,14 @@ export class HubStore {
           400,
         );
       }
+      // Adding a web agent to an E2E thread requires downgrade consent (§6.5).
+      if (thread.encryption_mode === "e2e" && toAgent.transport === "mcp") {
+        throw new HubError(
+          `Cannot add @${toAgent.slug} (web) to an E2E thread — propose a downgrade first (POST …/downgrade-proposals)`,
+          "downgrade_required",
+          403,
+        );
+      }
       updatedThread = {
         ...updatedThread,
         audience: formatDisplayAddress(userParts.local, userParts.orgSlug, toAgent.slug),
@@ -1264,37 +1808,83 @@ export class HubStore {
       thread_id: threadId,
       from_user_id: user.id,
       from_handle: fromDisplay,
-      envelope: input.envelope,
+      from_agent_id: fromAgent.id,
+      content_store: thread.encryption_mode,
       created_at: ts,
       // Org @all@org announcements hide peer replies; bare @all group threads share them.
       sender_only: thread.kind === "broadcast" && isBroadcastHandle(thread.audience),
       ...(parentId ? { parent_message_id: parentId } : {}),
+      ...(thread.encryption_mode === "e2e" ? { envelope: input.envelope! } : {}),
     };
 
-    const tx = this.kv.atomic();
-    tx.set(this.messageKey(threadId, messageId), message);
-    tx.set(this.threadKey(threadId), updatedThread);
-    tx.set(this.inboxKey(auth.userId, threadId), {
-      ...inbox,
-      your_status: "replied",
-      updated_at: ts,
-    });
-    // Self-collab shares one inbox key — do not re-read+write the same key
-    // (that clobbers replied back to a stale pending).
-    if (thread.from_user_id !== auth.userId) {
-      const senderInbox = await this.getInboxEntry(thread.from_user_id, threadId);
-      if (senderInbox) {
-        tx.set(this.inboxKey(thread.from_user_id, threadId), {
-          ...senderInbox,
-          your_status: "pending",
-          updated_at: ts,
+    const payloadBytes = thread.encryption_mode === "app_envelope"
+      ? new TextEncoder().encode(JSON.stringify(input.app_envelope)).byteLength
+      : 0;
+
+    // Debit customer→enterprise follow-ups on store (enterprise replies are free).
+    const enterpriseAgent = thread.enterprise_listing_id
+      ? await this.enterprise.findListingByAgentId(fromAgent.id)
+      : null;
+    const shouldDebitEnterprise = Boolean(
+      thread.enterprise_listing_id &&
+        (!enterpriseAgent ||
+          enterpriseAgent.id !== thread.enterprise_listing_id),
+    );
+
+    for (let attempt = 0; attempt < 8; attempt++) {
+      let debitPlan: Awaited<
+        ReturnType<EnterpriseStore["planEnterpriseDebit"]>
+      > | null = null;
+      if (shouldDebitEnterprise && thread.enterprise_listing_id) {
+        debitPlan = await this.enterprise.planEnterpriseDebit(auth, {
+          listing_id: thread.enterprise_listing_id,
+          thread_id: threadId,
+          payload_bytes: payloadBytes,
+          blob_count: 0,
         });
       }
-    }
-    const res = await tx.commit();
-    if (!res.ok) throw new HubError("Failed to post reply", "internal", 500);
 
-    return { message_id: messageId };
+      const tx = this.kv.atomic();
+      tx.set(this.messageKey(threadId, messageId), message);
+      tx.set(this.threadKey(threadId), updatedThread);
+
+      if (thread.encryption_mode === "app_envelope") {
+        const record = await buildAppEnvelopeRecord({
+          threadId,
+          messageId,
+          fromUserId: user.id,
+          fromAgentId: fromAgent.id,
+          createdAt: ts,
+          payload: this.normalizeAppPayload(input.app_envelope!),
+        });
+        tx.set(this.appEnvelopeKey(threadId, messageId), record, {
+          expireIn: APP_ENVELOPE_RETENTION_MS,
+        });
+      }
+
+      if (debitPlan) debitPlan.apply(tx);
+
+      tx.set(this.inboxKey(auth.userId, threadId), {
+        ...inbox,
+        your_status: "replied",
+        updated_at: ts,
+      });
+      // Self-collab shares one inbox key — do not re-read+write the same key
+      // (that clobbers replied back to a stale pending).
+      if (thread.from_user_id !== auth.userId) {
+        const senderInbox = await this.getInboxEntry(thread.from_user_id, threadId);
+        if (senderInbox) {
+          tx.set(this.inboxKey(thread.from_user_id, threadId), {
+            ...senderInbox,
+            your_status: "pending",
+            updated_at: ts,
+          });
+        }
+      }
+      const res = await tx.commit();
+      if (res.ok) return { message_id: messageId };
+    }
+    throw new HubError("Failed to post reply", "internal", 500);
   }
 
   async closeThread(auth: AuthContext, threadId: string): Promise<{ thread: ThreadMeta }> {
@@ -1302,8 +1892,8 @@ export class HubStore {
     if (!inbox) throw forbidden("Not a thread participant");
 
     const threadRes = await this.kv.get<ThreadMeta>(this.threadKey(threadId));
-    const thread = threadRes.value;
-    if (!thread || thread.org_id !== auth.orgId) throw notFound("Thread");
+    const thread = threadRes.value ? this.normalizeThread(threadRes.value) : null;
+    if (!thread || !this.threadVisibleToOrg(auth, thread)) throw notFound("Thread");
     if (thread.status === "closed") {
       return {
         thread: {
@@ -1329,9 +1919,10 @@ export class HubStore {
 
   /**
    * Remove thread from the caller's inbox.
-   * Sender also purges messages + thread and clears every org member's inbox
-   * for this thread. If the thread body is already gone, still drops the
-   * caller's orphan inbox row (so recipients can dismiss after a sender purge).
+   * Sender also purges messages + thread + app_envelope payloads and clears
+   * every org member's inbox for this thread. If the thread body is already
+   * gone, still drops the caller's orphan inbox row (so recipients can dismiss
+   * after a sender purge).
    */
   async deleteThread(auth: AuthContext, threadId: string): Promise<{ ok: true }> {
     const inbox = await this.getInboxEntry(auth.userId, threadId);
@@ -1345,7 +1936,7 @@ export class HubStore {
       await this.kv.delete(this.inboxKey(auth.userId, threadId));
       return { ok: true };
     }
-    if (thread.org_id !== auth.orgId) throw notFound("Thread");
+    if (!this.threadVisibleToOrg(auth, thread)) throw notFound("Thread");
 
     if (thread.from_user_id === auth.userId) {
       // Collect keys, then delete in atomic batches (inboxes first so a
@@ -1368,6 +1959,11 @@ export class HubStore {
         for await (const upvote of upvoteIter) {
           bodyKeys.push(upvote.key);
         }
+        bodyKeys.push(entry.key);
+      }
+      // §4.6: thread delete removes app_envelope payloads for all participants.
+      const appIter = this.kv.list({ prefix: this.appEnvelopesPrefix(threadId) });
+      for await (const entry of appIter) {
         bodyKeys.push(entry.key);
       }
       bodyKeys.push(this.threadKey(threadId));
@@ -1723,6 +2319,70 @@ export class HubStore {
     }
   }
 
+  /** Legacy rows without encryption_mode → e2e. */
+  private normalizeThread(thread: ThreadMeta): ThreadMeta {
+    return {
+      ...thread,
+      encryption_mode: normalizeEncryptionMode(thread.encryption_mode),
+    };
+  }
+
+  /**
+   * Same-org threads: org_id must match.
+   * Enterprise billed / external-contact threads: inbox participation is enough (cross-org).
+   */
+  private threadVisibleToOrg(auth: AuthContext, thread: ThreadMeta): boolean {
+    if (thread.enterprise_listing_id) return true;
+    if (thread.external_link_id) return true;
+    if (thread.participant_user_ids?.includes(auth.userId)) return true;
+    return thread.org_id === auth.orgId;
+  }
+
+  private normalizeAppPayload(raw: AppEnvelopePayload): AppEnvelopePayload {
+    const version = typeof raw.version === "number" && raw.version >= 1 ? raw.version : 1;
+    return { ...raw, version };
+  }
+
+  /**
+   * Hydrate message body from the correct store. Never attaches both envelope
+   * and app_envelope (§4.2.1).
+   */
+  private async hydrateMessage(
+    thread: ThreadMeta,
+    msg: ThreadMessage,
+    opts?: { requireApp?: boolean },
+  ): Promise<ThreadMessage> {
+    const mode = normalizeEncryptionMode(thread.encryption_mode);
+    // Per-message store wins — downgraded threads keep pre-point E2E history sealed.
+    const store = msg.content_store ??
+      (msg.envelope ? "e2e" : (msg.app_envelope ? "app_envelope" : mode));
+
+    if (store === "app_envelope") {
+      const recordRes = await this.kv.get<
+        import("./app_envelope.ts").AppEnvelopeRecord
+      >(this.appEnvelopeKey(thread.id, msg.id));
+      if (!recordRes.value) {
+        if (opts?.requireApp) {
+          throw notFound("App envelope");
+        }
+        // Expired (30d) or purged — return metadata only.
+        const { envelope: _drop, app_envelope: _a, ...rest } = msg;
+        return { ...rest, content_store: "app_envelope" };
+      }
+      const payload = await openAppEnvelope(recordRes.value);
+      const { envelope: _drop, ...rest } = msg;
+      return {
+        ...rest,
+        content_store: "app_envelope",
+        app_envelope: payload,
+      };
+    }
+
+    // E2E — strip any accidental app_envelope field.
+    const { app_envelope: _a, ...rest } = msg;
+    return { ...rest, content_store: "e2e" };
+  }
+
   private canViewMessage(
     auth: AuthContext,
     thread: ThreadMeta,
@@ -1884,6 +2544,7 @@ export class HubStore {
   async createOrg(slug: string, name?: string): Promise<Org> {
     const normalized = slug.trim().toLowerCase();
     assertValidSlug(normalized);
+    await this.enterprise.assertOrgSlugAvailable(normalized);
     const existing = await this.kv.get(this.orgSlugKey(normalized));
     if (existing.value) throw conflict(`Org slug '${normalized}' already exists`);
     const org: Org = {

@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { authMiddleware, type HubEnv } from "../middleware/auth.ts";
 import type { HubStore } from "../store/store.ts";
-import type { Envelope, ThreadFilter } from "../store/types.ts";
+import type { AppEnvelopePayload, Envelope, ThreadFilter } from "../store/types.ts";
 
 export function createThreadRoutes(store: HubStore) {
   const threadRoutes = new Hono<HubEnv>();
@@ -16,11 +16,18 @@ export function createThreadRoutes(store: HubStore) {
   threadRoutes.post("/", async (c) => {
     const body = await c.req.json<{
       to: string;
-      envelope: Envelope;
+      envelope?: Envelope;
+      app_envelope?: AppEnvelopePayload;
       from_agent?: string;
     }>();
     const result = await store.createThread(c.get("auth"), body);
     return c.json(result, 201);
+  });
+
+  /** L5: list pending downgrade proposals for the caller (sidecar approver). */
+  threadRoutes.get("/downgrade-proposals/pending", async (c) => {
+    const result = await store.listPendingThreadDowngrades(c.get("auth"));
+    return c.json(result);
   });
 
   threadRoutes.get("/:id", async (c) => {
@@ -28,9 +35,22 @@ export function createThreadRoutes(store: HubStore) {
     return c.json(result);
   });
 
+  /**
+   * Web/MCP pull — app_envelope content only (§4.2.1).
+   * Query `agent_id` optional; must belong to caller when set.
+   */
+  threadRoutes.get("/:id/app-messages", async (c) => {
+    const agentId = c.req.query("agent_id") ?? undefined;
+    const result = await store.fetchAppMessages(c.get("auth"), c.req.param("id"), {
+      agent_id: agentId,
+    });
+    return c.json(result);
+  });
+
   threadRoutes.post("/:id/messages", async (c) => {
     const body = await c.req.json<{
-      envelope: Envelope;
+      envelope?: Envelope;
+      app_envelope?: AppEnvelopePayload;
       from_agent?: string;
       to_agent?: string;
       parent_message_id?: string;
@@ -41,7 +61,8 @@ export function createThreadRoutes(store: HubStore) {
 
   threadRoutes.post("/:id/replies", async (c) => {
     const body = await c.req.json<{
-      envelope: Envelope;
+      envelope?: Envelope;
+      app_envelope?: AppEnvelopePayload;
       from_agent?: string;
       to_agent?: string;
       parent_message_id?: string;
@@ -57,6 +78,35 @@ export function createThreadRoutes(store: HubStore) {
       c.req.param("id"),
       c.req.param("messageId"),
       body,
+    );
+    return c.json(result);
+  });
+
+  /** L5: propose adding a web agent to an E2E thread. */
+  threadRoutes.post("/:id/downgrade-proposals", async (c) => {
+    const body = await c.req.json<{ agent_slug: string; from_agent?: string }>();
+    const result = await store.proposeThreadDowngrade(
+      c.get("auth"),
+      c.req.param("id"),
+      body,
+    );
+    return c.json(result, 201);
+  });
+
+  threadRoutes.post("/:id/downgrade-proposals/:proposalId/approve", async (c) => {
+    const result = await store.approveThreadDowngrade(
+      c.get("auth"),
+      c.req.param("id"),
+      c.req.param("proposalId"),
+    );
+    return c.json(result);
+  });
+
+  threadRoutes.post("/:id/downgrade-proposals/:proposalId/deny", async (c) => {
+    const result = await store.denyThreadDowngrade(
+      c.get("auth"),
+      c.req.param("id"),
+      c.req.param("proposalId"),
     );
     return c.json(result);
   });

@@ -4,6 +4,7 @@ import 'package:app/models/agent_transport.dart';
 import 'package:app/services/daemon_client.dart';
 import 'package:app/services/transport_prefs_store.dart';
 import 'package:app/util/compose_transport.dart';
+import 'package:app/widgets/enterprise_warn_banner.dart';
 import 'package:app/widgets/transport_chip.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -156,6 +157,152 @@ void main() {
         'via external · not E2E',
       );
     });
+
+    test('registryAddressCandidate accepts bare enterprise addresses', () {
+      expect(registryAddressCandidate('assistant@openai'), 'assistant@openai');
+      expect(registryAddressCandidate('@claude'), isNull);
+      expect(registryAddressCandidate('@all@acme'), isNull);
+      expect(registryAddressCandidate('bob@acme/claude'), isNull);
+    });
+  });
+
+  group('shouldShowEnterpriseWarnBanner', () {
+    test('true for enterprise trust_tier or listing id', () {
+      expect(
+        shouldShowEnterpriseWarnBanner(trustTier: TrustTier.enterprise),
+        isTrue,
+      );
+      expect(
+        shouldShowEnterpriseWarnBanner(enterpriseListingId: 'listing-1'),
+        isTrue,
+      );
+    });
+
+    test('false for org trust_tier and empty listing', () {
+      expect(
+        shouldShowEnterpriseWarnBanner(trustTier: TrustTier.org),
+        isFalse,
+      );
+      expect(
+        shouldShowEnterpriseWarnBanner(trustTier: TrustTier.external),
+        isFalse,
+      );
+      expect(shouldShowEnterpriseWarnBanner(enterpriseListingId: ''), isFalse);
+      expect(shouldShowEnterpriseWarnBanner(), isFalse);
+    });
+  });
+
+  group('ThreadDetailResult.isEnterpriseThread', () {
+    test('banner when enterprise_listing_id set; not for org threads', () {
+      const enterprise = ThreadDetailResult(
+        id: 't1',
+        kind: 'direct',
+        status: 'open',
+        from: 'alice@acme/cursor',
+        audience: 'assistant@openai',
+        enterpriseListingId: 'list-1',
+        messages: [],
+      );
+      const org = ThreadDetailResult(
+        id: 't2',
+        kind: 'direct',
+        status: 'open',
+        from: 'alice@acme/cursor',
+        audience: 'bob@acme/claude',
+        messages: [],
+      );
+      expect(enterprise.isEnterpriseThread, isTrue);
+      expect(org.isEnterpriseThread, isFalse);
+    });
+  });
+
+  group('RegistryListingWarn', () {
+    test('parses hub listing + warn payload', () {
+      final w = RegistryListingWarn.fromJson({
+        'listing': {
+          'id': 'L1',
+          'address': 'assistant@openai',
+          'agent_id': 'a1',
+          'trust_tier': 'enterprise',
+        },
+        'warn': {
+          'trust_tier': 'enterprise',
+          'message': kEnterpriseWarnBannerMessage,
+        },
+      });
+      expect(w.showBanner, isTrue);
+      expect(w.message, kEnterpriseWarnBannerMessage);
+      expect(w.trustTier, TrustTier.enterprise);
+    });
+  });
+
+  group('DaemonClient enterprise plumbing', () {
+    test('getThread parses enterprise_listing_id', () async {
+      final daemon = DaemonClient(
+        httpClient: MockClient((request) async {
+          final body = jsonDecode(request.body) as Map<String, dynamic>;
+          expect(body['method'], 'get_thread');
+          return http.Response(
+            jsonEncode({
+              'jsonrpc': '2.0',
+              'id': body['id'],
+              'result': {
+                'thread': {
+                  'id': 't-ent',
+                  'kind': 'direct',
+                  'status': 'open',
+                  'from': 'alice@acme/cursor',
+                  'audience': 'assistant@openai',
+                  'enterprise_listing_id': 'listing-42',
+                },
+                'messages': [],
+              },
+            }),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }),
+        httpToken: 'test-token',
+        requestTimeout: const Duration(milliseconds: 200),
+      );
+      final detail = await daemon.getThread('t-ent');
+      expect(detail.enterpriseListingId, 'listing-42');
+      expect(detail.isEnterpriseThread, isTrue);
+    });
+
+    test('getRegistryListing returns warn for published listing', () async {
+      final daemon = DaemonClient(
+        httpClient: MockClient((request) async {
+          final body = jsonDecode(request.body) as Map<String, dynamic>;
+          expect(body['method'], 'get_registry_listing');
+          return http.Response(
+            jsonEncode({
+              'jsonrpc': '2.0',
+              'id': body['id'],
+              'result': {
+                'listing': {
+                  'id': 'L1',
+                  'address': 'assistant@openai',
+                  'agent_id': 'a1',
+                  'trust_tier': 'enterprise',
+                },
+                'warn': {
+                  'trust_tier': 'enterprise',
+                  'message': kEnterpriseWarnBannerMessage,
+                },
+              },
+            }),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }),
+        httpToken: 'test-token',
+        requestTimeout: const Duration(milliseconds: 200),
+      );
+      final listing = await daemon.getRegistryListing('assistant@openai');
+      expect(listing?.showBanner, isTrue);
+      expect(listing?.message, kEnterpriseWarnBannerMessage);
+    });
   });
 
   group('TransportPrefsStore', () {
@@ -263,6 +410,64 @@ void main() {
         ),
       );
       expect(find.text('via web · not E2E'), findsOneWidget);
+    });
+
+    testWidgets('compose enterprise chip variant', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ComposeNonE2eChip(
+              warning: ComposeTransportWarning.fromSlot(
+                trustTier: TrustTier.enterprise,
+              )!,
+            ),
+          ),
+        ),
+      );
+      expect(find.text('via enterprise · not E2E'), findsOneWidget);
+    });
+  });
+
+  group('EnterpriseWarnBanner', () {
+    testWidgets('shows PRD copy when enterprise; maybe hides for org',
+        (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Column(
+              children: [
+                EnterpriseWarnBanner.maybe(
+                  show: shouldShowEnterpriseWarnBanner(
+                    trustTier: TrustTier.enterprise,
+                  ),
+                )!,
+                EnterpriseWarnBanner.maybe(
+                      show: shouldShowEnterpriseWarnBanner(
+                        trustTier: TrustTier.org,
+                      ),
+                    ) ??
+                    const SizedBox.shrink(),
+              ],
+            ),
+          ),
+        ),
+      );
+      expect(find.text(kEnterpriseWarnBannerMessage), findsOneWidget);
+      expect(find.byType(EnterpriseWarnBanner), findsOneWidget);
+    });
+
+    testWidgets('visible for enterprise_listing_id threads', (tester) async {
+      final show = shouldShowEnterpriseWarnBanner(
+        enterpriseListingId: 'listing-99',
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: EnterpriseWarnBanner.maybe(show: show),
+          ),
+        ),
+      );
+      expect(find.text(kEnterpriseWarnBannerMessage), findsOneWidget);
     });
   });
 }

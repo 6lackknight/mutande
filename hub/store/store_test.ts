@@ -711,11 +711,12 @@ Deno.test("L1 stale capability does not block resolve", async () => {
     // Staleness is UI-only — routing still resolves the slot.
     const { thread } = await store.createThread(bobAuth, {
       to: "alice@acme/webslot",
-      envelope: sampleEnvelope("stale-ok"),
+      app_envelope: { version: 1, notes: "stale-ok" },
       from_agent: "claude",
     });
     assertEquals(thread.audience_agent_id, mcp.id);
     assertEquals(thread.audience, "alice@acme/webslot");
+    assertEquals(thread.encryption_mode, "app_envelope");
   });
 });
 
@@ -731,6 +732,7 @@ Deno.test("L1 transport default prefers configured slot", async () => {
       from_agent: "claude",
     });
     assertEquals(t1.audience_agent_id, sidecar.id);
+    assertEquals(t1.encryption_mode, "e2e");
 
     await store.setTransportDefault(aliceAuth, { slug: "dual", transport: "mcp" });
     const prefs = await store.getTransportPrefs(aliceAuth);
@@ -738,9 +740,10 @@ Deno.test("L1 transport default prefers configured slot", async () => {
 
     const { thread: t2 } = await store.createThread(bobAuth, {
       to: "alice@acme/dual",
-      envelope: sampleEnvelope("pref-mcp"),
+      app_envelope: { version: 1, notes: "pref-mcp" },
       from_agent: "claude",
     });
     assertEquals(t2.audience_agent_id, mcp.id);
+    assertEquals(t2.encryption_mode, "app_envelope");
   });
 });

@@ -7,8 +7,14 @@ import {
   formatHubError,
   getMe,
   joinOrg,
+  listEnterpriseMetrics,
   listFeedback,
+  listRegistryAdmin,
   listWaitlistAdmin,
+  publishRegistryListing,
+  suspendRegistryListing,
+  topUpCredits,
+  verifyRegistryListing,
 } from "@/lib/hub";
 import { sendInviteEmail } from "@/lib/plunk";
 import { joinUrlForCode, requireSession } from "@/lib/session";
@@ -146,12 +152,74 @@ export async function createInviteAction(
 export async function refreshOpsAction(): Promise<{
   feedback?: Feedback[];
   waitlist?: WaitlistEntry[];
+  listings?: import("@/lib/types").RegistryListing[];
+  metrics?: import("@/lib/types").EnterpriseDeliveryMetric[];
   error?: string;
 }> {
   await requireSession("/admin/ops");
   try {
-    const [fb, wl] = await Promise.all([listFeedback(), listWaitlistAdmin()]);
-    return { feedback: fb.feedback, waitlist: wl.waitlist };
+    const [fb, wl, reg, metrics] = await Promise.all([
+      listFeedback(),
+      listWaitlistAdmin(),
+      listRegistryAdmin().catch(() => ({ listings: [] })),
+      listEnterpriseMetrics().catch(() => ({ metrics: [] })),
+    ]);
+    return {
+      feedback: fb.feedback,
+      waitlist: wl.waitlist,
+      listings: reg.listings,
+      metrics: metrics.metrics,
+    };
+  } catch (err) {
+    return { error: formatHubError(err) };
+  }
+}
+
+export async function opsVerifyListingAction(
+  id: string,
+): Promise<{ listing?: import("@/lib/types").RegistryListing; error?: string }> {
+  await requireSession("/admin/ops");
+  try {
+    const { listing } = await verifyRegistryListing(id);
+    return { listing };
+  } catch (err) {
+    return { error: formatHubError(err) };
+  }
+}
+
+export async function opsPublishListingAction(
+  id: string,
+): Promise<{ listing?: import("@/lib/types").RegistryListing; error?: string }> {
+  await requireSession("/admin/ops");
+  try {
+    const { listing } = await publishRegistryListing(id);
+    return { listing };
+  } catch (err) {
+    return { error: formatHubError(err) };
+  }
+}
+
+export async function opsSuspendListingAction(
+  id: string,
+): Promise<{ listing?: import("@/lib/types").RegistryListing; error?: string }> {
+  await requireSession("/admin/ops");
+  try {
+    const { listing } = await suspendRegistryListing(id);
+    return { listing };
+  } catch (err) {
+    return { error: formatHubError(err) };
+  }
+}
+
+export async function opsTopUpCreditsAction(input: {
+  org_id: string;
+  amount_usd: string;
+  note?: string;
+}): Promise<{ balance_cents?: number; error?: string }> {
+  await requireSession("/admin/ops");
+  try {
+    const { ledger } = await topUpCredits(input);
+    return { balance_cents: ledger.balance_cents };
   } catch (err) {
     return { error: formatHubError(err) };
   }

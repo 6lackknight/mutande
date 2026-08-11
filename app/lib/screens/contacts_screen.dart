@@ -2,6 +2,7 @@ import 'dart:io' show Platform, Process;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 import '../config/app_config.dart';
 import '../services/daemon_client.dart';
@@ -9,7 +10,7 @@ import '../util/address_display.dart';
 import '../widgets/pane_quiet_state.dart';
 import '../widgets/thinking_orb.dart';
 
-/// Org address book — hub contacts, broadcast callout, copy handles.
+/// Org address book — hub contacts, broadcast, external pairing.
 class ContactsPanel extends StatefulWidget {
   const ContactsPanel({
     super.key,
@@ -34,6 +35,10 @@ class _ContactsPanelState extends State<ContactsPanel> {
   bool _loading = true;
   String? _error;
   List<ContactView> _contacts = const [];
+  List<ContactView> _external = const [];
+  List<PairRequestView> _incoming = const [];
+  List<PairRequestView> _outgoing = const [];
+  bool _busy = false;
 
   @override
   void initState() {
@@ -57,9 +62,23 @@ class _ContactsPanelState extends State<ContactsPanel> {
     }
     try {
       final contacts = await widget.daemon.listContacts();
+      List<ContactView> external = const [];
+      List<PairRequestView> incoming = const [];
+      List<PairRequestView> outgoing = const [];
+      try {
+        external = await widget.daemon.listExternalContacts();
+        final pending = await widget.daemon.listPendingPairRequests();
+        incoming = pending.incoming;
+        outgoing = pending.outgoing;
+      } catch (_) {
+        // External APIs may be unreachable on older daemons — org contacts still show.
+      }
       if (!mounted) return;
       setState(() {
         _contacts = contacts;
+        _external = external;
+        _incoming = incoming;
+        _outgoing = outgoing;
         _loading = false;
       });
     } catch (e) {
@@ -115,6 +134,138 @@ class _ContactsPanelState extends State<ContactsPanel> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Copied invite link: $url')),
     );
+  }
+
+  Future<void> _showSharePin() async {
+    setState(() => _busy = true);
+    try {
+      var pin = await widget.daemon.getPairingPin();
+      pin ??= await widget.daemon.issuePairingPin();
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => _PairPinDialog(
+          pin: pin!,
+          onRotate: () async {
+            final next = await widget.daemon.rotatePairingPin();
+            if (ctx.mounted) Navigator.of(ctx).pop();
+            if (!mounted) return;
+            await showDialog<void>(
+              context: context,
+              builder: (c2) => _PairPinDialog(pin: next, onRotate: null),
+            );
+          },
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyDaemonError(e, what: 'Pairing PIN'))),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _showRequestPair() async {
+    final result = await showDialog<(String, String, String?)>(
+      context: context,
+      builder: (ctx) => const _RequestPairDialog(),
+    );
+    if (result == null || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await widget.daemon.submitPairRequest(
+        handle: result.$1,
+        pin: result.$2,
+        intro: result.$3,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pairing request sent — waiting for approval')),
+      );
+      await _reload(soft: true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyDaemonError(e, what: 'Pairing'))),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _approve(PairRequestView req) async {
+    setState(() => _busy = true);
+    try {
+      await widget.daemon.approvePairRequest(req.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Connected with ${req.requesterHandle}')),
+      );
+      await _reload(soft: true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyDaemonError(e, what: 'Approve'))),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _deny(PairRequestView req) async {
+    setState(() => _busy = true);
+    try {
+      await widget.daemon.denyPairRequest(req.id);
+      if (!mounted) return;
+      await _reload(soft: true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyDaemonError(e, what: 'Deny'))),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _unpair(ContactView c) async {
+    final linkId = c.externalLinkId;
+    if (linkId == null || linkId.isEmpty) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remove external contact?'),
+        content: Text(
+          'Unpair ${formatMailAddress(c.handle)}? Shared threads close (read-only).',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await widget.daemon.unpairExternalContact(linkId);
+      if (!mounted) return;
+      await _reload(soft: true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyDaemonError(e, what: 'Unpair'))),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   @override
@@ -185,6 +336,85 @@ class _ContactsPanelState extends State<ContactsPanel> {
           _SoloOrgBlock(
             orgSlug: org,
             onInvite: _openInvites,
+          ),
+        ],
+        const SizedBox(height: 28),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'External',
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: const Color(0xFF78716C),
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.2,
+                      ),
+                ),
+              ),
+              TextButton(
+                onPressed: _busy ? null : _showSharePin,
+                child: const Text('Share PIN'),
+              ),
+              TextButton(
+                onPressed: _busy ? null : _showRequestPair,
+                child: const Text('Add'),
+              ),
+            ],
+          ),
+        ),
+        Text(
+          'Cross-org contacts via exact handle + PIN. Mail is not E2E (app envelope).',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: const Color(0xFFA8A29E),
+                height: 1.35,
+              ),
+        ),
+        if (_incoming.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          for (final req in _incoming)
+            _PendingPairRow(
+              title: formatMailAddress(req.requesterHandle),
+              subtitle: req.intro?.trim().isNotEmpty == true
+                  ? req.intro!
+                  : 'Wants to connect',
+              onApprove: _busy ? null : () => _approve(req),
+              onDeny: _busy ? null : () => _deny(req),
+            ),
+        ],
+        if (_outgoing.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          for (final req in _outgoing)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Text(
+                'Pending → ${formatMailAddress(req.targetHandle)}',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: const Color(0xFF78716C),
+                    ),
+              ),
+            ),
+        ],
+        if (_external.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          for (final contact in _external)
+            _ExternalRow(
+              handle: contact.handle,
+              onCopy: () => _copyHandle(contact.handle),
+              onMessage: widget.onStartThread == null
+                  ? null
+                  : () => widget.onStartThread!(contact.handle),
+              onRemove: _busy ? null : () => _unpair(contact),
+            ),
+        ] else if (_incoming.isEmpty && _outgoing.isEmpty) ...[
+          const SizedBox(height: 12),
+          Text(
+            'No external contacts yet. Share your PIN or add someone else’s handle + PIN.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: const Color(0xFFA8A29E),
+                  height: 1.4,
+                ),
           ),
         ],
       ],
@@ -440,6 +670,274 @@ class _SoloOrgBlock extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _ExternalRow extends StatelessWidget {
+  const _ExternalRow({
+    required this.handle,
+    required this.onCopy,
+    this.onMessage,
+    this.onRemove,
+  });
+
+  final String handle;
+  final VoidCallback onCopy;
+  final VoidCallback? onMessage;
+  final VoidCallback? onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: Color(0xFFE7E5E4))),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.link, size: 18, color: Color(0xFF78716C)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  formatMailAddress(handle),
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: const Color(0xFF292524),
+                        fontWeight: FontWeight.w500,
+                      ),
+                ),
+                Text(
+                  'via external · not E2E',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: const Color(0xFFA8A29E),
+                      ),
+                ),
+              ],
+            ),
+          ),
+          if (onMessage != null)
+            TextButton(onPressed: onMessage, child: const Text('Message')),
+          IconButton(
+            onPressed: onCopy,
+            icon: const Icon(Icons.copy, size: 18),
+            color: const Color(0xFF78716C),
+          ),
+          if (onRemove != null)
+            IconButton(
+              onPressed: onRemove,
+              icon: const Icon(Icons.link_off, size: 18),
+              color: const Color(0xFF991B1B),
+              tooltip: 'Remove',
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PendingPairRow extends StatelessWidget {
+  const _PendingPairRow({
+    required this.title,
+    required this.subtitle,
+    this.onApprove,
+    this.onDeny,
+  });
+
+  final String title;
+  final String subtitle;
+  final VoidCallback? onApprove;
+  final VoidCallback? onDeny;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFAFAF9),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE7E5E4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF292524),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            style: const TextStyle(fontSize: 12, color: Color(0xFF78716C)),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              FilledButton(
+                onPressed: onApprove,
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF292524),
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Approve'),
+              ),
+              const SizedBox(width: 8),
+              TextButton(onPressed: onDeny, child: const Text('Deny')),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PairPinDialog extends StatelessWidget {
+  const _PairPinDialog({required this.pin, this.onRotate});
+
+  final PairingPinView pin;
+  final VoidCallback? onRotate;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Pair external contact'),
+      content: SizedBox(
+        width: 320,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Your PIN for ${formatMailAddress(pin.handle)}',
+              style: const TextStyle(fontSize: 13, color: Color(0xFF78716C)),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              pin.pin,
+              style: const TextStyle(
+                fontSize: 36,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 8,
+                color: Color(0xFF1C1917),
+              ),
+            ),
+            const SizedBox(height: 16),
+            QrImageView(
+              data: pin.qrUri,
+              size: 180,
+              backgroundColor: Colors.white,
+            ),
+            const SizedBox(height: 8),
+            SelectableText(
+              pin.qrUri,
+              style: const TextStyle(fontSize: 11, color: Color(0xFFA8A29E)),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Expires ${pin.expiresAt.isEmpty ? "in 7 days" : pin.expiresAt}',
+              style: const TextStyle(fontSize: 11, color: Color(0xFFA8A29E)),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () {
+            Clipboard.setData(ClipboardData(text: pin.qrUri));
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Copied pair URI')),
+            );
+          },
+          child: const Text('Copy URI'),
+        ),
+        if (onRotate != null)
+          TextButton(onPressed: onRotate, child: const Text('Rotate PIN')),
+        FilledButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Done'),
+        ),
+      ],
+    );
+  }
+}
+
+class _RequestPairDialog extends StatefulWidget {
+  const _RequestPairDialog();
+
+  @override
+  State<_RequestPairDialog> createState() => _RequestPairDialogState();
+}
+
+class _RequestPairDialogState extends State<_RequestPairDialog> {
+  final _handle = TextEditingController();
+  final _pin = TextEditingController();
+  final _intro = TextEditingController();
+
+  @override
+  void dispose() {
+    _handle.dispose();
+    _pin.dispose();
+    _intro.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Add external contact'),
+      content: SizedBox(
+        width: 320,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _handle,
+              decoration: const InputDecoration(
+                labelText: 'Exact handle',
+                hintText: 'alice@aliceco',
+              ),
+              autofocus: true,
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _pin,
+              decoration: const InputDecoration(
+                labelText: '6-digit PIN',
+              ),
+              keyboardType: TextInputType.number,
+              maxLength: 6,
+            ),
+            TextField(
+              controller: _intro,
+              decoration: const InputDecoration(
+                labelText: 'Intro (optional)',
+              ),
+              maxLength: 200,
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () {
+            final h = _handle.text.trim();
+            final p = _pin.text.trim();
+            if (h.isEmpty || p.length != 6) return;
+            final intro = _intro.text.trim();
+            Navigator.pop(context, (h, p, intro.isEmpty ? null : intro));
+          },
+          child: const Text('Send request'),
+        ),
+      ],
     );
   }
 }

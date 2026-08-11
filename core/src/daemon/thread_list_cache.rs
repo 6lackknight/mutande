@@ -140,7 +140,10 @@ mod tests {
             your_status: None,
             created_at: "2026-01-01T00:00:00Z".into(),
             updated_at: "2026-01-02T00:00:00Z".into(),
-            last_from: None,
+            encryption_mode: None,
+            downgrade_point: None,
+                enterprise_listing_id: None,
+                last_from: None,
             last_subject: None,
             last_preview: None,
         };

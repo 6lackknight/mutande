@@ -1,5 +1,14 @@
 /** Thin HTTP client for hub APIs used by the hosted MCP service. */
 
+import type {
+  AppEnvelopePayload,
+  CreateThreadResponse,
+  ReplyResponse,
+  ThreadDetail,
+  ThreadFilter,
+  ThreadMeta,
+} from "./types.ts";
+
 export interface HubMeResponse {
   auth0_sub: string;
   email?: string;
@@ -88,5 +97,71 @@ export class HubClient {
       method: "POST",
       body: JSON.stringify(input),
     });
+  }
+
+  /** List inbox threads (user-scoped). Hosted MCP filters to the bound web agent. */
+  listThreads(
+    accessToken: string,
+    filter?: ThreadFilter,
+  ): Promise<{ threads: ThreadMeta[] }> {
+    const q = filter ? `?filter=${encodeURIComponent(filter)}` : "";
+    return this.request<{ threads: ThreadMeta[] }>(`/v1/threads${q}`, accessToken);
+  }
+
+  getThread(accessToken: string, threadId: string): Promise<ThreadDetail> {
+    return this.request<ThreadDetail>(
+      `/v1/threads/${encodeURIComponent(threadId)}`,
+      accessToken,
+    );
+  }
+
+  /**
+   * App-envelope-only fetch for web/MCP pull.
+   * Prefer this over getThread when the agent only handles non-E2E mail.
+   */
+  fetchAppMessages(
+    accessToken: string,
+    threadId: string,
+    agentId?: string,
+  ): Promise<ThreadDetail> {
+    const q = agentId ? `?agent_id=${encodeURIComponent(agentId)}` : "";
+    return this.request<ThreadDetail>(
+      `/v1/threads/${encodeURIComponent(threadId)}/app-messages${q}`,
+      accessToken,
+    );
+  }
+
+  createThread(
+    accessToken: string,
+    input: {
+      to: string;
+      app_envelope: AppEnvelopePayload;
+      from_agent?: string;
+    },
+  ): Promise<CreateThreadResponse> {
+    return this.request<CreateThreadResponse>("/v1/threads", accessToken, {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  }
+
+  replyToThread(
+    accessToken: string,
+    threadId: string,
+    input: {
+      app_envelope: AppEnvelopePayload;
+      from_agent?: string;
+      to_agent?: string;
+      parent_message_id?: string;
+    },
+  ): Promise<ReplyResponse> {
+    return this.request<ReplyResponse>(
+      `/v1/threads/${encodeURIComponent(threadId)}/replies`,
+      accessToken,
+      {
+        method: "POST",
+        body: JSON.stringify(input),
+      },
+    );
   }
 }

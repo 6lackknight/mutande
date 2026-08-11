@@ -137,6 +137,85 @@ async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Resu
             let contacts = state.list_contacts().await?;
             Ok(serde_json::to_value(serde_json::json!({ "contacts": contacts }))?)
         }
+        "list_external_contacts" => {
+            let contacts = state.list_external_contacts().await?;
+            Ok(serde_json::to_value(serde_json::json!({ "contacts": contacts }))?)
+        }
+        "get_registry_listing" => {
+            let id_or_address = param_str(&params, "id_or_address")
+                .or_else(|_| param_str(&params, "address"))?;
+            let result = state.get_registry_listing(&id_or_address).await?;
+            Ok(serde_json::to_value(result)?)
+        }
+        "issue_pairing_pin" => {
+            let pin = state.issue_pairing_pin().await?;
+            Ok(serde_json::to_value(pin)?)
+        }
+        "get_pairing_pin" => {
+            let pin = state.get_pairing_pin().await?;
+            Ok(serde_json::json!({ "pin": pin }))
+        }
+        "rotate_pairing_pin" => {
+            let pin = state.rotate_pairing_pin().await?;
+            Ok(serde_json::to_value(pin)?)
+        }
+        "submit_pair_request" => {
+            let handle = param_str(&params, "handle")?;
+            let pin = param_str(&params, "pin")?;
+            let intro = optional_str(&params, "intro");
+            let request = state
+                .submit_pair_request(&handle, &pin, intro.as_deref())
+                .await?;
+            Ok(serde_json::json!({ "request": request }))
+        }
+        "list_pending_pair_requests" => {
+            let pending = state.list_pending_pair_requests().await?;
+            Ok(serde_json::to_value(pending)?)
+        }
+        "approve_pair_request" => {
+            let request_id = param_str(&params, "request_id")?;
+            let result = state.approve_pair_request(&request_id).await?;
+            Ok(serde_json::to_value(result)?)
+        }
+        "deny_pair_request" => {
+            let request_id = param_str(&params, "request_id")?;
+            state.deny_pair_request(&request_id).await?;
+            Ok(serde_json::json!({ "ok": true }))
+        }
+        "unpair_external_contact" => {
+            let link_id = param_str(&params, "link_id")?;
+            let result = state.unpair_external_contact(&link_id).await?;
+            Ok(serde_json::to_value(result)?)
+        }
+        "propose_thread_downgrade" => {
+            let thread_id = param_str(&params, "thread_id")?;
+            let agent_slug = param_str(&params, "agent_slug")?;
+            let from_agent = optional_str(&params, "from_agent");
+            let result = state
+                .propose_thread_downgrade(&thread_id, &agent_slug, from_agent.as_deref())
+                .await?;
+            Ok(serde_json::to_value(result)?)
+        }
+        "list_pending_thread_downgrades" => {
+            let result = state.list_pending_thread_downgrades().await?;
+            Ok(serde_json::to_value(result)?)
+        }
+        "approve_thread_downgrade" => {
+            let thread_id = param_str(&params, "thread_id")?;
+            let proposal_id = param_str(&params, "proposal_id")?;
+            let result = state
+                .approve_thread_downgrade(&thread_id, &proposal_id)
+                .await?;
+            Ok(serde_json::to_value(result)?)
+        }
+        "deny_thread_downgrade" => {
+            let thread_id = param_str(&params, "thread_id")?;
+            let proposal_id = param_str(&params, "proposal_id")?;
+            let proposal = state
+                .deny_thread_downgrade(&thread_id, &proposal_id)
+                .await?;
+            Ok(serde_json::json!({ "proposal": proposal }))
+        }
         "submit_feedback" => {
             let message = param_str(&params, "message")?;
             let category = optional_str(&params, "category");
