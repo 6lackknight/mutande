@@ -1,4 +1,5 @@
 import { Auth0Client } from "@auth0/nextjs-auth0/server";
+import { AUTH0_ROLES_CLAIM_KEYS, rolesFromJwt } from "@/lib/platform-admin";
 
 /** Custom login host — never the tenant `*.auth0.com` (authorize + JWKS). */
 const AUTH0_DOMAIN = process.env.AUTH0_DOMAIN?.trim() || "auth.mutande.online";
@@ -13,5 +14,19 @@ export const auth0 = new Auth0Client({
   authorizationParameters: {
     audience: process.env.AUTH0_AUDIENCE ?? "https://hub.mutande.app",
     scope: "openid profile email offline_access",
+  },
+  /** v4 drops custom ID claims from session.user — keep SuperAdmin roles for nav. */
+  async beforeSessionSaved(session) {
+    const idToken = session.tokenSet?.idToken;
+    if (!idToken) return session;
+    const roles = rolesFromJwt(idToken);
+    if (!roles.length) return session;
+    return {
+      ...session,
+      user: {
+        ...session.user,
+        [AUTH0_ROLES_CLAIM_KEYS[0]]: roles,
+      },
+    };
   },
 });

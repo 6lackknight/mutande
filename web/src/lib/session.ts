@@ -29,8 +29,8 @@ export async function loadMeOrNull(): Promise<{
 }
 
 /**
- * SuperAdmin for nav chrome: hub `/me`, access-token roles claim, or ID-token
- * custom claims on the session user (Action may set either).
+ * SuperAdmin for nav chrome: hub `/me`, access-token roles, ID token, or
+ * persisted session.user roles (Auth0 v4 strips custom claims unless saved).
  */
 export async function sessionShowsOps(me?: MeResponse | null): Promise<boolean> {
   if (isOpsAdmin(me)) return true;
@@ -39,11 +39,14 @@ export async function sessionShowsOps(me?: MeResponse | null): Promise<boolean> 
     const { token } = await auth0.getAccessToken();
     if (isPlatformOpsAdmin(rolesFromJwt(token))) return true;
   } catch {
-    // No token / refresh failed — fall through to session user claims.
+    // No token / refresh failed — fall through to session tokens/claims.
   }
 
   try {
     const session = await auth0.getSession();
+    if (session?.tokenSet?.idToken) {
+      if (isPlatformOpsAdmin(rolesFromJwt(session.tokenSet.idToken))) return true;
+    }
     const user = session?.user;
     if (user && typeof user === "object") {
       if (isPlatformOpsAdmin(extractAuth0Roles(user as Record<string, unknown>))) {
