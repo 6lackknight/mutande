@@ -36,6 +36,7 @@ Design surface for the Flutter companion **without** running the full app. Sourc
 
 ## Flutter handoff
 
-1. Export PNG/SVG or share Penpot link.
-2. Implement against `MutandeColors`; sync tokens if hex changes.
-3. Network tab: concentric calm + soft selection glow; External zoom shows **orgs**, not handles.
+1. Reference PNGs in `exports/` (also copied under `/screenshots/`).
+2. Network Me = concentric orbit in `app/lib/screens/agents_screen.dart`.
+3. Implement against `MutandeColors`; sync tokens if hex changes.
+4. Soft selection glow on Me; External zoom shows **orgs**, not handles.

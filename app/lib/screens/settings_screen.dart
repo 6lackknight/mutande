@@ -495,7 +495,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Agents & routing',
+                                'Network',
                                 style: TextStyle(
                                   fontWeight: FontWeight.w600,
                                   fontSize: 14,
@@ -507,7 +507,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               const SizedBox(height: 2),
                               Text(
                                 agentsEnabled
-                                    ? 'Open the Agents graph tab'
+                                    ? 'Open the Network tab'
                                     : 'Unavailable in this window',
                                 style: const TextStyle(
                                   fontSize: 12,

@@ -48,6 +48,19 @@ class ThreadStatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // List pane: plain amber text (Penpot Threads), no plate.
+    if (compact && kind == ThreadStatusKind.needsYou) {
+      return Text(
+        kind.label,
+        style: const TextStyle(
+          color: MutandeColors.amber,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          height: 1.15,
+        ),
+      );
+    }
+
     final (fg, bg, border) = switch (kind) {
       ThreadStatusKind.needsYou => (
           MutandeColors.amber,

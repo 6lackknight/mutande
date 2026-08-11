@@ -3,7 +3,6 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../models/agent_transport.dart';
 import '../services/daemon_client.dart';
 import '../services/host_link_store.dart';
 import '../util/address_display.dart';
@@ -141,18 +140,6 @@ class _AgentsPanelState extends State<AgentsPanel> {
         _error = e.toString();
         _loading = false;
       });
-    }
-  }
-
-  Future<void> _setDefault(String agentId) async {
-    try {
-      await widget.daemon.setDefaultAgent(agentId);
-      await _reload();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(friendlyAgentsError(e))));
     }
   }
 
@@ -553,7 +540,7 @@ class _AgentsGraph extends StatelessWidget {
   final VoidCallback onAdd;
 
   List<AgentInfo> get _orbitAgents => [
-        if (primary != null) primary!,
+        ?primary,
         ...subs,
       ];
 
@@ -816,7 +803,7 @@ class _AgentsFooter extends StatelessWidget {
           const SizedBox(height: 10),
           Row(
             children: [
-              Text('•••  $count AGENTS SYNCED', style: style),
+              Text('•••  $count ON NETWORK', style: style),
               const Spacer(),
               Text('v$version', style: style),
             ],
@@ -880,9 +867,6 @@ class _AgentInspectorState extends State<_AgentInspector> {
 
   String get _statusLabel =>
       HostLinkStatusBadge.resolve(widget.link).$1;
-
-  Color get _statusColor =>
-      HostLinkStatusBadge.resolve(widget.link).$2;
 
   Future<void> _onRename() async {
     if (_busy) return;
@@ -1034,27 +1018,35 @@ class _AgentInspectorState extends State<_AgentInspector> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Padding(
-                        // Optical nudge: tree icon sits slightly high vs SF title.
-                        padding: EdgeInsets.only(top: 1),
-                        child: Icon(
-                          Icons.account_tree_outlined,
-                          size: 18,
-                          color: Color(0xFFB45309),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
                       Expanded(
-                        child: Text(
-                          'Agent Inspector',
-                          style: Theme.of(context).textTheme.titleSmall
-                              ?.copyWith(
-                                fontWeight: FontWeight.w700,
-                                color: const Color(0xFF292524),
-                                height: 1.2,
-                              ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              widget.isPrimary ? '$slug · primary' : slug,
+                              style: Theme.of(context).textTheme.titleSmall
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                    color: const Color(0xFF292524),
+                                    height: 1.2,
+                                  ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              _linked
+                                  ? '$_statusLabel · ${_host.toLowerCase()}'
+                                  : _statusLabel,
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: _linked
+                                        ? const Color(0xFF166534)
+                                        : const Color(0xFF78716C),
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                            ),
+                          ],
                         ),
                       ),
                       IconButton(
@@ -1070,9 +1062,8 @@ class _AgentInspectorState extends State<_AgentInspector> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
-                  _InspectorField(label: 'Display address', value: _display),
-                  _InspectorField(label: 'Agent slug', value: slug),
+                  const SizedBox(height: 14),
+                  _InspectorField(label: 'Address', value: _display),
                   if (widget.agent.transport != null)
                     _InspectorField(
                       label: 'Transport',
@@ -1084,40 +1075,15 @@ class _AgentInspectorState extends State<_AgentInspector> {
                         lastSeen: widget.agent.lastSeen,
                       ),
                     ),
-                  _InspectorField(
-                    label: 'Host',
-                    value: _host,
-                    trailing: AiHostIcon(
-                      widget.agent.slug,
-                      size: 22,
-                      showPlate: false,
-                    ),
-                  ),
-                  _InspectorField(
-                    label: 'Status',
-                    value: _statusLabel,
-                    trailing: AnimatedContainer(
-                      duration: motion,
-                      curve: Curves.easeOutCubic,
-                      width: 8,
-                      height: 8,
-                      margin: const EdgeInsets.only(left: 10),
-                      decoration: BoxDecoration(
-                        color: _statusColor,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
+                  const _InspectorField(
+                    label: 'Trust',
+                    value: 'org · E2E',
                   ),
                   if (_linked) ...[
                     if ((widget.link?.path ?? '').trim().isNotEmpty)
                       _InspectorField(
                         label: 'Config path',
                         value: widget.link!.path!,
-                      ),
-                    if ((widget.link?.command ?? '').trim().isNotEmpty)
-                      _InspectorField(
-                        label: 'MCP command',
-                        value: widget.link!.command!,
                       ),
                     Padding(
                       padding: const EdgeInsets.only(bottom: 10),
@@ -1406,7 +1372,6 @@ class _InspectorTextAction extends StatelessWidget {
     final color = destructive
         ? const Color(0xFFB91C1C)
         : const Color(0xFF44403C);
-    final disabled = onPressed == null;
     return Align(
       alignment: Alignment.centerLeft,
       child: TextButton.icon(
