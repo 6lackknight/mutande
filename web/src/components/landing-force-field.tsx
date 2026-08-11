@@ -11,12 +11,18 @@ const ForceField = dynamic(
 
 type FieldTier = "desktop" | "mobile";
 
+/** Network Information API — not in lib.dom for all TS targets. */
+type NetworkConnection = { saveData?: boolean };
+
 function fieldTier(): FieldTier | null {
   if (typeof window === "undefined") return null;
   if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
     return null;
   }
-  if (navigator.connection?.saveData) return null;
+  const connection = (
+    navigator as Navigator & { connection?: NetworkConnection }
+  ).connection;
+  if (connection?.saveData) return null;
   if (window.matchMedia("(max-width: 767px), (pointer: coarse)").matches) {
     return "mobile";
   }
