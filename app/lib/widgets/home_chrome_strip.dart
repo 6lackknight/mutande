@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../theme/mutande_macos_theme.dart';
+import 'home_search_field.dart';
 
-/// Under-toolbar home strip: tabs left, search right (~40% of strip width).
+/// Under-toolbar home strip: tabs left, optional search right.
 class HomeChromeStrip extends StatelessWidget {
   const HomeChromeStrip({
     super.key,
@@ -14,6 +14,7 @@ class HomeChromeStrip extends StatelessWidget {
     required this.onQueryChanged,
     required this.onSearchSubmit,
     required this.onClearSearch,
+    this.showSearch = true,
   });
 
   final int tab;
@@ -23,6 +24,9 @@ class HomeChromeStrip extends StatelessWidget {
   final ValueChanged<String> onQueryChanged;
   final VoidCallback onSearchSubmit;
   final VoidCallback onClearSearch;
+
+  /// When false, search lives in the Threads Compose row instead.
+  final bool showSearch;
 
   @override
   Widget build(BuildContext context) {
@@ -71,89 +75,26 @@ class HomeChromeStrip extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(8, 0, 12, 0),
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final searchWidth = (constraints.maxWidth * 0.4).clamp(180.0, 560.0);
+            final searchWidth =
+                (constraints.maxWidth * 0.4).clamp(180.0, 560.0);
             return Row(
               children: [
                 item('Threads', 0),
                 item('Network', 1),
                 item('Contacts', 2),
                 const Spacer(),
-                SizedBox(
-                  width: searchWidth,
-                  height: 32,
-                  child: ListenableBuilder(
-                    listenable:
-                        Listenable.merge([searchController, searchFocus]),
-                    builder: (context, _) {
-                      final focused = searchFocus.hasFocus;
-                      return DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: MutandeColors.stone100,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: focused
-                                ? MutandeColors.stone800
-                                : MutandeColors.stone200,
-                            width: focused ? 1.5 : 1,
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            const SizedBox(width: 10),
-                            const Icon(
-                              Icons.search,
-                              size: 15,
-                              color: MutandeColors.stone400,
-                            ),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: TextField(
-                                controller: searchController,
-                                focusNode: searchFocus,
-                                onChanged: onQueryChanged,
-                                onSubmitted: (_) => onSearchSubmit(),
-                                cursorColor: MutandeColors.stone800,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.copyWith(
-                                      color: MutandeColors.stone800,
-                                    ),
-                                decoration: const InputDecoration(
-                                  hintText: 'Search threads',
-                                  isDense: true,
-                                  border: InputBorder.none,
-                                  enabledBorder: InputBorder.none,
-                                  focusedBorder: InputBorder.none,
-                                  disabledBorder: InputBorder.none,
-                                  contentPadding:
-                                      EdgeInsets.symmetric(vertical: 7),
-                                ),
-                                inputFormatters: [
-                                  FilteringTextInputFormatter
-                                      .singleLineFormatter,
-                                ],
-                              ),
-                            ),
-                            if (searchController.text.isNotEmpty)
-                              IconButton(
-                                tooltip: 'Clear',
-                                onPressed: onClearSearch,
-                                icon: const Icon(Icons.close, size: 14),
-                                color: MutandeColors.stone400,
-                                visualDensity: VisualDensity.compact,
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(
-                                  minWidth: 28,
-                                  minHeight: 28,
-                                ),
-                              ),
-                          ],
-                        ),
-                      );
-                    },
+                if (showSearch)
+                  SizedBox(
+                    width: searchWidth,
+                    height: 32,
+                    child: HomeSearchField(
+                      controller: searchController,
+                      focusNode: searchFocus,
+                      onChanged: onQueryChanged,
+                      onSubmit: onSearchSubmit,
+                      onClear: onClearSearch,
+                    ),
                   ),
-                ),
               ],
             );
           },

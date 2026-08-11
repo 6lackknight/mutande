@@ -80,7 +80,10 @@ class _SearchScreenState extends State<SearchScreen> {
               t.audience.toLowerCase().contains(q) ||
               t.kind.toLowerCase().contains(q) ||
               t.status.toLowerCase().contains(q) ||
-              (t.agentBadge?.toLowerCase().contains(q) ?? false),
+              (t.agentBadge?.toLowerCase().contains(q) ?? false) ||
+              (t.lastFrom?.toLowerCase().contains(q) ?? false) ||
+              (t.lastSubject?.toLowerCase().contains(q) ?? false) ||
+              (t.lastPreview?.toLowerCase().contains(q) ?? false),
         )
         .toList();
   }

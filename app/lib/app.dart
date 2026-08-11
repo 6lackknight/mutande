@@ -731,13 +731,18 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _onSearchQueryChanged(String value) {
+    final active = value.trim().isNotEmpty;
     setState(() {
-      if (value.trim().isEmpty) {
-        _searchMode = false;
-      } else {
-        _searchMode = true;
-      }
+      _searchMode = active;
     });
+    // Threads list search unmounts when SearchScreen opens — keep focus on the
+    // shared FocusNode after chrome/search surface remounts the field.
+    if (active) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (!_searchFocus.hasFocus) _searchFocus.requestFocus();
+      });
+    }
   }
 
   void _onSearchSubmit() {
@@ -889,6 +894,11 @@ class _HomeScreenState extends State<HomeScreen> {
         onReloadReady: _registerThreadsReload,
         composeRecipient: _composeRecipient,
         notificationPrefs: widget.notificationPrefs,
+        searchController: _searchController,
+        searchFocus: _searchFocus,
+        onSearchQueryChanged: _onSearchQueryChanged,
+        onSearchSubmit: _onSearchSubmit,
+        onClearSearch: _clearSearch,
         onComposeRecipientHandled: () {
           if (_composeRecipient != null) {
             setState(() => _composeRecipient = null);
@@ -941,6 +951,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _chromeStrip() {
+    // On Threads, search sits beside Compose (Penpot). Elsewhere / in search
+    // mode, keep the field in the chrome strip so it stays mounted.
+    final searchInChrome = _searchMode || _tab != 0;
     return HomeChromeStrip(
       tab: _tab,
       onTab: _selectTab,
@@ -949,6 +962,7 @@ class _HomeScreenState extends State<HomeScreen> {
       onQueryChanged: _onSearchQueryChanged,
       onSearchSubmit: _onSearchSubmit,
       onClearSearch: _clearSearch,
+      showSearch: searchInChrome,
     );
   }
 

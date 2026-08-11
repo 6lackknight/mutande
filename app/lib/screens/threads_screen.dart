@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_resizable_container/flutter_resizable_container.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../models/agent_transport.dart';
 import '../services/daemon_client.dart';
@@ -15,6 +16,7 @@ import '../util/address_display.dart';
 import '../util/clock_format.dart';
 import '../util/compose_transport.dart';
 import '../widgets/ai_host_icon.dart';
+import '../widgets/home_search_field.dart';
 import '../widgets/message_attachments.dart';
 import '../widgets/pane_quiet_state.dart';
 import '../widgets/thinking_orb.dart';
@@ -74,6 +76,11 @@ class ThreadsPanel extends StatefulWidget {
     this.onComposeRecipientHandled,
     this.initialThreadId,
     this.onInitialThreadHandled,
+    this.searchController,
+    this.searchFocus,
+    this.onSearchQueryChanged,
+    this.onSearchSubmit,
+    this.onClearSearch,
     NotificationPrefsStore? notificationPrefs,
   }) : notificationPrefs = notificationPrefs ?? NotificationPrefsStore();
 
@@ -94,6 +101,13 @@ class ThreadsPanel extends StatefulWidget {
   /// When set, opens this thread (e.g. after first-run ping).
   final String? initialThreadId;
   final VoidCallback? onInitialThreadHandled;
+
+  /// Home search — Compose + Search row (Penpot Threads).
+  final TextEditingController? searchController;
+  final FocusNode? searchFocus;
+  final ValueChanged<String>? onSearchQueryChanged;
+  final VoidCallback? onSearchSubmit;
+  final VoidCallback? onClearSearch;
 
   final NotificationPrefsStore notificationPrefs;
 
@@ -456,6 +470,11 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
           const SizedBox(height: 8),
           _ThreadsListToolbar(
             onCompose: () => setState(() => _composeOpen = true),
+            searchController: widget.searchController,
+            searchFocus: widget.searchFocus,
+            onSearchQueryChanged: widget.onSearchQueryChanged,
+            onSearchSubmit: widget.onSearchSubmit,
+            onClearSearch: widget.onClearSearch,
           ),
           const SizedBox(height: 8),
           Expanded(child: _buildListPane(context)),
@@ -619,30 +638,58 @@ class _ThreadsToolbar extends StatelessWidget {
 }
 
 class _ThreadsListToolbar extends StatelessWidget {
-  const _ThreadsListToolbar({required this.onCompose});
+  const _ThreadsListToolbar({
+    required this.onCompose,
+    this.searchController,
+    this.searchFocus,
+    this.onSearchQueryChanged,
+    this.onSearchSubmit,
+    this.onClearSearch,
+  });
 
   final VoidCallback onCompose;
+  final TextEditingController? searchController;
+  final FocusNode? searchFocus;
+  final ValueChanged<String>? onSearchQueryChanged;
+  final VoidCallback? onSearchSubmit;
+  final VoidCallback? onClearSearch;
 
   @override
   Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: FilledButton(
-        onPressed: onCompose,
-        style: FilledButton.styleFrom(
-          backgroundColor: const Color(0xFF292524),
-          foregroundColor: const Color(0xFFFAFAF9),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          minimumSize: const Size(88, 32),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
+    final search = searchController != null &&
+        searchFocus != null &&
+        onSearchQueryChanged != null &&
+        onSearchSubmit != null &&
+        onClearSearch != null;
+
+    return Row(
+      children: [
+        if (search)
+          Expanded(
+            child: SizedBox(
+              height: 32,
+              child: HomeSearchField(
+                controller: searchController!,
+                focusNode: searchFocus!,
+                onChanged: onSearchQueryChanged!,
+                onSubmit: onSearchSubmit!,
+                onClear: onClearSearch!,
+              ),
+            ),
+          )
+        else
+          const Spacer(),
+        const SizedBox(width: 8),
+        IconButton(
+          tooltip: 'Compose (C)',
+          onPressed: onCompose,
+          icon: const Icon(LucideIcons.squarePen, size: 18),
+          color: const Color(0xFF292524),
+          visualDensity: VisualDensity.compact,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
         ),
-        child: const Text(
-          'Compose',
-          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-        ),
-      ),
+      ],
     );
   }
 }
