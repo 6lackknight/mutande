@@ -32,13 +32,32 @@ Deno.test("resolveSentryDsn empty env disables reporting", () => {
 });
 
 Deno.test("mcpSentryOptions keeps traces light and no PII", () => {
-  const opts = mcpSentryOptions({
+  const fakeSentry = {
+    requestDataIntegration: () => ({ name: "RequestData" }),
+    denoHttpIntegration: () => ({ name: "DenoHttp" }),
+  };
+  const opts = mcpSentryOptions(fakeSentry, {
     dsn: DEFAULT_SENTRY_DSN,
     env: { get: () => undefined },
   });
   assertEquals(opts.tracesSampleRate, 0.01);
   assertEquals(opts.sendDefaultPii, false);
   assertEquals(typeof opts.beforeSend, "function");
+});
+
+Deno.test("mcpSentryOptions survives broken integrations", () => {
+  const fakeSentry = {
+    requestDataIntegration: () => {
+      throw new Error("boom");
+    },
+    denoHttpIntegration: () => ({ name: "DenoHttp" }),
+  };
+  const opts = mcpSentryOptions(fakeSentry, {
+    dsn: DEFAULT_SENTRY_DSN,
+    env: { get: () => undefined },
+  });
+  assertEquals(Array.isArray(opts.integrations), true);
+  assertEquals((opts.integrations as unknown[]).length, 0);
 });
 
 Deno.test("sentrySmokeEnabled accepts 1/true/yes", () => {

@@ -48,7 +48,8 @@ if (import.meta.main) {
     await runSentrySmoke();
     Deno.exit(0);
   }
-  initMcpSentry();
+  // Best-effort GlitchTip — must never block Deno.serve if SDK/init fails.
+  await initMcpSentry();
   const { app, config } = createApp();
   console.log(
     `[mutande-mcp] listening public=${config.publicUrl} hub=${config.hubUrl} port=${config.port}`,
