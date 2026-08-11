@@ -5,6 +5,12 @@ import { HubClient } from "./hub/client.ts";
 import { createHealthRoutes } from "./routes/health.ts";
 import { createOauthRoutes } from "./routes/oauth.ts";
 import { createMcpRoutes } from "./routes/mcp.ts";
+import {
+  handleMcpError,
+  initMcpSentry,
+  runSentrySmoke,
+  sentrySmokeEnabled,
+} from "./sentry.ts";
 
 export function createApp(options?: {
   config?: ReturnType<typeof loadConfig>;
@@ -17,6 +23,7 @@ export function createApp(options?: {
   const hub = options?.hub ?? new HubClient(config.hubUrl);
 
   const app = new Hono();
+  app.onError((err) => handleMcpError(err));
 
   app.get("/", (c) =>
     c.json({
@@ -37,6 +44,11 @@ export function createApp(options?: {
 }
 
 if (import.meta.main) {
+  if (sentrySmokeEnabled()) {
+    await runSentrySmoke();
+    Deno.exit(0);
+  }
+  initMcpSentry();
   const { app, config } = createApp();
   console.log(
     `[mutande-mcp] listening public=${config.publicUrl} hub=${config.hubUrl} port=${config.port}`,

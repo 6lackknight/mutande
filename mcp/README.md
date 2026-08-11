@@ -112,11 +112,19 @@ npx @modelcontextprotocol/inspector
 # Auth: Auth0 access token, audience https://hub.mutande.app
 ```
 
+## Error reporting (GlitchTip)
+
+Uses `@sentry/deno` → GlitchTip project **26806** (same pattern as hub). Built-in prod DSN; override with `MUTANDE_SENTRY_DSN` / `SENTRY_DSN`, or set empty to disable. `tracesSampleRate` is `0.01`; request bodies/cookies are stripped. Unexpected route failures go through Hono `onError` → GlitchTip (expected 401/403/bind responses are not reported).
+
+```bash
+cd mcp && deno task smoke:sentry   # capture a smoke message, then exit
+```
+
 ## Redeploy
 
 **Live:** `https://mcp.mutande.online` (Deno Deploy project `mutande-mcp`).
 
-1. Confirm Deploy env matches `.env.example` names: `AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, `AUTH0_MCP_AUDIENCE`, `MUTANDE_HUB_URL`, `MCP_PUBLIC_URL` (optional `MCP_DEFAULT_AGENT_SLUG`).
+1. Confirm Deploy env matches `.env.example` names: `AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, `AUTH0_MCP_AUDIENCE`, `MUTANDE_HUB_URL`, `MCP_PUBLIC_URL` (optional `MCP_DEFAULT_AGENT_SLUG`). GlitchTip DSN for mcp project 26806 is built-in; set `SENTRY_DSN=` (empty) to disable, or override with `MUTANDE_SENTRY_DSN` / `SENTRY_DSN`.
 2. Hub: `MCP_ENDPOINT=https://mcp.mutande.online` if not using the built-in default; prod **`APP_ENVELOPE_KEY`** must stay set.
 3. Ship:
    ```bash

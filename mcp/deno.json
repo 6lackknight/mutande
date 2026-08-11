@@ -4,13 +4,15 @@
   "exports": "./main.ts",
   "tasks": {
     "dev": "deno run --allow-net --allow-env --allow-read --watch main.ts",
-    "check": "deno check main.ts auth/oauth_test.ts protocol/tools_test.ts hub/inbox_test.ts routes/mcp_test.ts transport/sessions.ts transport/sse.ts",
-    "test": "deno test --allow-env --allow-read --allow-net auth/ protocol/ hub/ routes/ transport/",
+    "check": "deno check main.ts sentry.ts sentry_test.ts auth/oauth_test.ts protocol/tools_test.ts hub/inbox_test.ts routes/mcp_test.ts transport/sessions.ts transport/sse.ts",
+    "test": "deno test --allow-env --allow-read --allow-net sentry_test.ts auth/ protocol/ hub/ routes/ transport/",
+    "smoke:sentry": "SENTRY_SMOKE=1 deno run --allow-net --allow-env --allow-read main.ts",
     "deploy": "deployctl deploy --project=mutande-mcp main.ts"
   },
   "imports": {
     "hono": "jsr:@hono/hono@^4",
-    "jose": "jsr:@panva/jose@^6"
+    "jose": "jsr:@panva/jose@^6",
+    "@sentry/deno": "npm:@sentry/deno@10.69.0"
   },
   "compilerOptions": {
     "lib": ["deno.window", "deno.unstable"]

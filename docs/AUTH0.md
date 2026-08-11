@@ -160,18 +160,51 @@ Legacy hub JWT is gone; do not restore it.
 3. **Actions → Login / Post Login** — add roles onto the **access token** (Auth0 does not put role names in the token by default):
 
 ```js
+/**
+ * mutande — Post Login: role claims for ops gates.
+ *
+ * Must stay harmless for third-party / DCR clients (ChatGPT + Claude.ai hosted
+ * MCP, client_id `tpc_…`): claims only, never deny, never touch an access token
+ * that is not a JWT for one of our APIs.
+ */
 exports.onExecutePostLogin = async (event, api) => {
-  const namespace = "https://hub.mutande.app";
-  const roles = event.authorization?.roles;
-  if (roles?.length) {
-    // Access token → hub + web API gates. ID token → session.user for web nav.
-    api.accessToken.setCustomClaim(`${namespace}/roles`, roles);
-    api.idToken.setCustomClaim(`${namespace}/roles`, roles);
+  const HUB_AUDIENCE = "https://hub.mutande.app";
+  const MCP_AUDIENCE = "https://mcp.mutande.online";
+  const CLAIM = `${HUB_AUDIENCE}/roles`;
+
+  const roles = event.authorization?.roles ?? [];
+  if (!roles.length) return; // no roles is normal — never deny login here
+
+  // Audience actually resolved for this transaction. `event.resource_server` is
+  // absent when no API audience was requested (opaque /userinfo access token).
+  const audience =
+    event.resource_server?.identifier ??
+    event.request?.query?.audience ??
+    event.request?.query?.resource ??
+    "";
+  const isOurApi = audience === HUB_AUDIENCE || audience === MCP_AUDIENCE;
+  const isThirdParty = String(event.client?.client_id ?? "").startsWith("tpc_");
+
+  try {
+    // Hub/web gate reads the access token; MCP-aud tokens are forwarded to hub,
+    // so both audiences carry the same claim.
+    if (isOurApi) api.accessToken.setCustomClaim(CLAIM, roles);
+    // ID token → session.user for web nav. First-party only.
+    if (!isThirdParty) api.idToken.setCustomClaim(CLAIM, roles);
+  } catch (_) {
+    // A claim failure must never break sign-in for MCP connector flows.
   }
 };
 ```
 
 Enable **RBAC** on the Auth0 API (`https://hub.mutande.app`) so `event.authorization.roles` is populated. Hub/web also accept `https://mutande.app/roles`, `https://mutande.online/roles`, and bare `roles`. Override allowed role names/ids with hub env `MUTANDE_PLATFORM_ADMIN_ROLES` (comma-separated; default `SuperAdmin,rol_jsa0BZq7uzz2K4RG`).
+
+**This Action must not break hosted MCP.** Rules for any future edit:
+
+- Never call `api.access.deny(...)` on missing roles/orgs — DCR clients (`tpc_…`) hit the same Post Login flow and would fail the connector OAuth.
+- Guard `api.accessToken.setCustomClaim` on a real API audience. Post Login cannot change or clear the audience, but writing access-token claims when the token is the opaque `…/userinfo` one is pointless and can surface as an Action error.
+- Keep `https://mcp.mutande.online` in the allowed-audience list so ChatGPT tokens (aud = MCP) still carry roles when hub sees the forwarded Bearer.
+- Actions run **after** audience resolution. `resource` → audience mapping is a tenant setting plus a matching API Identifier — not something an Action can fix. See [`userinfo audience is not allowed`](#troubleshooting-the-userinfo-audience-is-not-allowed-for-third-party-clients).
 
 After assigning the role or changing the Action, users must **sign out and sign in** so a fresh access token includes the claim. Org invites stay gated by hub `org_admin`.
 
@@ -205,6 +238,8 @@ Dashboard → **Settings → Advanced** (tenant settings; same for custom domain
 3. **Dynamic Client Registration (DCR)** — on (required for ChatGPT’s default connector flow; see troubleshooting below)  
 4. **Enable Application Connections** — on (so newly registered third-party apps can use domain connections)  
 5. Optional (Auth0-recommended longer term): **Client ID Metadata Document Registration** — on, then import ChatGPT/Claude CIMD URLs instead of open DCR
+
+Verify 1 and the MCP API from the outside with `./scripts/auth0-mcp-doctor.sh` (no secrets; hits PRM + `/authorize` probes).
 
 Promote Username-Password (and any social / passwordless connections MCP clients should use) to **domain-level** so third-party apps can authenticate (`is_domain_connection: true`). DCR clients (`tpc_…`) **cannot** use per-app connection toggles — only domain-level connections.
 
@@ -343,19 +378,28 @@ scope: "openid email offline_access profile"
 
 No `audience=https://hub.mutande.app` in the query string (ChatGPT only sends `resource`).
 
-**Cause:** Resource Parameter Compatibility maps `resource` → token audience. There is no Auth0 API whose Identifier is exactly `https://mcp.mutande.online`, so Auth0 falls back to the userinfo audience — blocked for third-party / DCR clients.
+**Cause:** Auth0 did not turn `resource` into an audience, so it fell back to the userinfo audience — blocked for third-party / DCR clients. Two independent things must both be true; either one missing produces this exact error:
+
+1. **Resource Parameter Compatibility Profile** is on — a **tenant** setting under **Settings → Advanced**, *not* a per-API setting. Off by default, and easy to miss because the error mentions an API.
+2. An Auth0 API exists whose Identifier is **exactly** `https://mcp.mutande.online` (no trailing slash — `…online/` is a different string and Auth0 answers `Service not found`).
+
+Run `./scripts/auth0-mcp-doctor.sh` to tell the two apart without dashboard access or secrets; it probes `/authorize` with a bogus `resource`, which only fails when the compatibility profile is on.
 
 **Fix (chevrondigital):**
 
-1. Confirm [Tenant Advanced](https://manage.auth0.com/dashboard/us/chevrondigital/tenant/advanced) → **Resource Parameter Compatibility Profile** = **on**.
+1. [Tenant Advanced](https://manage.auth0.com/dashboard/us/chevrondigital/tenant/advanced) → **Resource Parameter Compatibility Profile** = **on** → **Save**.
 2. **Applications → APIs → Create API** — Identifier **`https://mcp.mutande.online`** (exact match to PRM `resource` / `MCP_PUBLIC_URL`).
-3. On that API → **Default Permissions for Third-Party Applications** → **User-Delegated Access** = **Authorized** → **Save**.
+3. On that API → **Default Permissions for Third-Party Applications** → **User-Delegated Access** = **Authorized** → **Save**. Also leave **Allow Offline Access** on — ChatGPT requests `offline_access`.
 4. Deploy env (both projects) and redeploy:
    - MCP (`mutande-mcp`): `AUTH0_MCP_AUDIENCE=https://mcp.mutande.online` (keep `AUTH0_AUDIENCE=https://hub.mutande.app`)
    - Hub (`mutande`): same `AUTH0_MCP_AUDIENCE=https://mcp.mutande.online`
 5. Re-try ChatGPT connector OAuth (same `tpc_…` is fine).
 
 **Do not** rewrite PRM `resource` to the hub Identifier hoping ChatGPT will request hub aud — it won’t. OBO is optional later; dual-aud is the L0 path.
+
+**Not the cause:** `actions.executions` in the failed log entry. Auth0 Actions run after audience resolution and have no API for changing it (`api.accessToken.setCustomClaim` only adds claims), so a Post-Login Action cannot clear or redirect the audience. The executions array appears on normal logins too.
+
+**Not the roles Action.** The Post Login roles Action ([§7](#7-product-owner-ops-superadmin)) cannot cause or fix this: Auth0 resolves the audience and rejects third-party userinfo audiences *before* Actions run, and Post Login has no API to set, change, or clear the audience. The failed log entry shows no Action execution. Verify by temporarily disabling the Action — the same error persists. Still keep the Action third-party-safe (no `api.access.deny`, access-token claims guarded on audience) so it does not add a *second* failure once the MCP API exists.
 
 ### Env (Deno Deploy project `mutande-mcp`)
 
