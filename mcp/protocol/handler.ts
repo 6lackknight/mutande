@@ -67,8 +67,8 @@ export async function handleMcpRequest(
         instructions:
           "mutande = agent collaboration mail (handoffs, threads, @all). app_envelope only — not E2E (Mac sidecar for E2E). " +
           "New chat: list_threads (default needs_action); stay quiet if caught_up. Outbound you sent: filter=open. " +
-          "Send with forward_draft(recipient, bundle). Text body → bundle.notes (UTF-8). " +
-          "Attachments: .md/.txt → resources[{name, content}] UTF-8 string — NEVER /mnt/data paths, NEVER base64 text. " +
+          "Send with forward_draft(recipient, …). You may pass subject/notes/resources at the top level OR inside bundle (same shape as desktop drafts). " +
+          "Text body → notes (UTF-8). Attachments: .md/.txt → resources[{name, content}] UTF-8 string — NEVER /mnt/data paths, NEVER base64 text. " +
           "Binary pdf/png only → resources[{name, content_base64, mime}], keep under ~1MB. " +
           "On success report thread_id, message_id, resource_count, resource_names.",
       });
@@ -120,6 +120,38 @@ function requireBundle(
     return args.bundle as Record<string, unknown>;
   }
   return null;
+}
+
+/** Bundle field keys hosts may pass flat or nested (desktop draft shape). */
+const BUNDLE_FIELD_KEYS = [
+  "subject",
+  "notes",
+  "context",
+  "questions",
+  "answers",
+  "resources",
+  "resource_requests",
+  "in_reply_to",
+  "ping_kind",
+  "version",
+] as const;
+
+/**
+ * Accept flat top-level subject/notes/resources OR nested `bundle: { … }`.
+ * Prefer explicit top-level when both are present; otherwise unwrap bundle.
+ * (Models often copy desktop draft shape; ChatGPT may mix flat + nested.)
+ */
+export function normalizeForwardDraftBundle(
+  args: Record<string, unknown>,
+): Record<string, unknown> {
+  const nested = requireBundle(args);
+  const out: Record<string, unknown> = nested ? { ...nested } : {};
+  for (const key of BUNDLE_FIELD_KEYS) {
+    if (!(key in args) || args[key] === undefined) continue;
+    // Top-level wins when both present.
+    out[key] = args[key];
+  }
+  return out;
 }
 
 /** Names of resources that carried inline payload (for forward_draft success). */
@@ -272,7 +304,7 @@ async function callTool(
   if (name === "forward_draft") {
     const recipient =
       requireString(args, "recipient") || requireString(args, "to");
-    const bundle = requireBundle(args) ?? {};
+    const bundle = normalizeForwardDraftBundle(args);
     if (!recipient) {
       return toolTextResult("recipient is required", true);
     }
@@ -300,7 +332,7 @@ async function callTool(
     );
     if (!hasContent) {
       return toolTextResult(
-        "bundle must include notes, subject, context, questions, and/or resources with inline content (not host paths like /mnt/data/…)",
+        "Pass notes, subject, context, questions, and/or resources with inline content at the top level or inside bundle (not host paths like /mnt/data/…)",
         true,
       );
     }

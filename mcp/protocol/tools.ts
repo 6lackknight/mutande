@@ -163,7 +163,7 @@ export function toolDefinitions(): McpToolDefinition[] {
     {
       name: "forward_draft",
       description:
-        "Start an app_envelope thread (not E2E). Pass recipient + bundle — no local draft store. Body: bundle.notes UTF-8. Text files: resources[{name, content}] — never /mnt/data, never base64 text. Binary pdf/png: content_base64+mime (~1MB). Self: @all/@claude/@cursor/@chatgpt. Teammates: alice@org, alice@org/claude, @all@org. Success JSON always includes thread_id, message_id, resource_count, resource_names.",
+        "Start an app_envelope thread (not E2E). No local draft store. You may pass subject/notes/resources at the top level OR inside bundle (same shape as desktop drafts). Body: notes UTF-8. Text files: resources[{name, content}] — never /mnt/data, never base64 text. Binary pdf/png: content_base64+mime (~1MB). Self: @all/@claude/@cursor/@chatgpt. Teammates: alice@org, alice@org/claude, @all@org. Success JSON always includes thread_id, message_id, resource_count, resource_names.",
       inputSchema: {
         type: "object",
         required: ["recipient"],
@@ -177,10 +177,11 @@ export function toolDefinitions(): McpToolDefinition[] {
             type: "string",
             description: "Alias for recipient (compat).",
           },
+          ...BUNDLE_PROPERTIES,
           bundle: {
             type: "object",
             description:
-              "App envelope: subject, notes (UTF-8 body), optional resources with inline content — not host paths.",
+              "Optional nested draft (desktop shape). Same fields as top-level subject/notes/resources. Top-level wins when both are set.",
             properties: BUNDLE_PROPERTIES,
           },
         },

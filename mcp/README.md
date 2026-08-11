@@ -76,23 +76,23 @@ Default slug: `chatgpt` (`MCP_DEFAULT_AGENT_SLUG`). Override with `?slug=` or `X
 
 New mail from hosted MCP is **app_envelope-only**. If hub would resolve the recipient to E2E, `forward_draft` refuses and points at the Mac sidecar.
 
-**Attaching files from ChatGPT:** put UTF-8 text/markdown in `resources[].content` (or body in `bundle.notes`). Never pass `/mnt/data/…` paths and never base64 text files — this server cannot read the ChatGPT sandbox. Use `content_base64` only for binary (pdf/png), keep under ~1MB. `forward_draft` success returns `thread_id`, `message_id`, `resource_count`, and `resource_names`.
+**Attaching files from ChatGPT:** put UTF-8 text/markdown in `resources[].content` (or body in `notes` / `bundle.notes`). You may pass `subject`/`notes`/`resources` **at the top level or inside `bundle`** (desktop draft shape) — top-level wins when both are set. Never pass `/mnt/data/…` paths and never base64 text files — this server cannot read the ChatGPT sandbox. Use `content_base64` only for binary (pdf/png), keep under ~1MB. `forward_draft` success returns `thread_id`, `message_id`, `resource_count`, and `resource_names`.
 
 **Dual-slot senders:** hosted MCP always sends `from_agent_id` (bound web slot) so `chatgpt` mcp is not remapped to a preferred sidecar row (that wrongly forced E2E and returned no `thread_id`).
 
 ### Redeploy (hub + MCP)
 
-Tool-description / `list_threads` shaping (title, participants, subject peek) need **MCP only**. Hub+MCP together when changing `from_agent_id` / create-thread wire:
+`forward_draft` dual-shape normalize (flat + nested `bundle`) + tool schema/description → **MCP only** (no hub change). Hub+MCP together when changing `from_agent_id` / create-thread wire:
 
 ```bash
 # Hub (only if hub store/API changed)
 cd hub && deployctl deploy --project=mutande
 
-# Hosted MCP — list_threads titles/participants, tool schemas, instructions
+# Hosted MCP — forward_draft normalize, list_threads titles/participants, tool schemas
 cd mcp && deno task deploy
 ```
 
-Verify: ChatGPT `list_threads` (filter `open` or `needs_action`) returns `thread_id`, `title`/`subject`, `from`/`to`, `participants` (e.g. `chatgpt`→`cursor`); `forward_draft` to `@cursor` with `resources:[{name, content}]` returns `thread_id` / `message_id` / `resource_count`; path-only `/mnt/data/…` is refused.
+Verify: ChatGPT `forward_draft` with nested `bundle: { subject, notes, resources:[{name, content}] }` **or** flat top-level `resources` returns `thread_id` / `message_id` / `resource_count` ≥ 1; `get_thread` shows the resource; path-only `/mnt/data/…` is refused.
 
 ### Mac sidecar only (not on hosted MCP)
 

@@ -1,6 +1,6 @@
 import { assertEquals } from "jsr:@std/assert@1";
 import { toolDefinitions, IMPLEMENTED_TOOLS } from "./tools.ts";
-import { handleMcpRequest } from "./handler.ts";
+import { handleMcpRequest, normalizeForwardDraftBundle } from "./handler.ts";
 import type { McpSession } from "../session/bind.ts";
 import { HubClient, HubClientError } from "../hub/client.ts";
 import {
@@ -580,7 +580,202 @@ Deno.test("forward_draft refuses empty bundle", async () => {
   );
   const result = res!.result as { content: Array<{ text: string }>; isError?: boolean };
   assertEquals(result.isError, true);
-  assertEquals(result.content[0].text.includes("bundle must include"), true);
+  assertEquals(result.content[0].text.includes("inline content"), true);
+});
+
+Deno.test("normalizeForwardDraftBundle unwraps nested and prefers top-level", () => {
+  assertEquals(
+    normalizeForwardDraftBundle({
+      recipient: "@cursor",
+      bundle: {
+        subject: "nested-subj",
+        notes: "nested-notes",
+        resources: [{ name: "a.md", content: "# A" }],
+      },
+    }),
+    {
+      subject: "nested-subj",
+      notes: "nested-notes",
+      resources: [{ name: "a.md", content: "# A" }],
+    },
+  );
+  assertEquals(
+    normalizeForwardDraftBundle({
+      recipient: "@cursor",
+      subject: "flat-subj",
+      notes: "flat-notes",
+      resources: [{ name: "b.md", content: "# B" }],
+    }),
+    {
+      subject: "flat-subj",
+      notes: "flat-notes",
+      resources: [{ name: "b.md", content: "# B" }],
+    },
+  );
+  // Top-level wins when both present; missing top-level fields keep nested.
+  assertEquals(
+    normalizeForwardDraftBundle({
+      recipient: "@cursor",
+      notes: "prefer-me",
+      resources: [{ name: "top.md", content: "# Top" }],
+      bundle: {
+        subject: "keep-nested-subject",
+        notes: "ignore-nested-notes",
+        resources: [{ name: "nested.md", content: "# Nested" }],
+      },
+    }),
+    {
+      subject: "keep-nested-subject",
+      notes: "prefer-me",
+      resources: [{ name: "top.md", content: "# Top" }],
+    },
+  );
+});
+
+Deno.test("forward_draft flat top-level resources land in app_envelope", async () => {
+  const hub = new HubClient("http://hub.test");
+  hub.createThread = (_token, input) => {
+    assertEquals(input.to, "@cursor");
+    assertEquals(input.app_envelope.subject, "Review: flat");
+    assertEquals(input.app_envelope.notes, "please review");
+    const resources = input.app_envelope.resources as Array<
+      Record<string, unknown>
+    >;
+    assertEquals(resources.length, 1);
+    assertEquals(resources[0].name, "prd.md");
+    assertEquals(resources[0].content, "# PRD\n\nFlat args");
+    return Promise.resolve({
+      thread: meta({
+        id: "flat-t",
+        audience: "u@acme/cursor",
+        from_agent_id: "agent-web-1",
+        encryption_mode: "app_envelope",
+      }),
+      message_id: "m-flat",
+    });
+  };
+  const res = await handleMcpRequest(
+    {
+      jsonrpc: "2.0",
+      id: 25,
+      method: "tools/call",
+      params: {
+        name: "forward_draft",
+        arguments: {
+          recipient: "@cursor",
+          subject: "Review: flat",
+          notes: "please review",
+          resources: [{ name: "prd.md", content: "# PRD\n\nFlat args" }],
+        },
+      },
+    },
+    { session: fakeSession, serverVersion: "0.1.0", hub },
+  );
+  const { isError, body } = parseToolText(res);
+  assertEquals(isError, false);
+  assertEquals(body.ok, true);
+  assertEquals(body.thread_id, "flat-t");
+  assertEquals(body.message_id, "m-flat");
+  assertEquals(body.resource_count, 1);
+  assertEquals(body.resource_names, ["prd.md"]);
+});
+
+Deno.test("forward_draft nested bundle with content stores resource", async () => {
+  const hub = new HubClient("http://hub.test");
+  hub.createThread = (_token, input) => {
+    assertEquals(input.app_envelope.subject, "Review: Mutande Organizations PRD v0.1");
+    const resources = input.app_envelope.resources as Array<
+      Record<string, unknown>
+    >;
+    assertEquals(resources.length, 1);
+    assertEquals(resources[0].name, "mutande-organisations-prd.md");
+    assertEquals(
+      String(resources[0].content).startsWith("# PRD"),
+      true,
+    );
+    return Promise.resolve({
+      thread: meta({
+        id: "nested-t",
+        audience: "u@acme/cursor",
+        from_agent_id: "agent-web-1",
+        encryption_mode: "app_envelope",
+      }),
+      message_id: "m-nested",
+    });
+  };
+  const res = await handleMcpRequest(
+    {
+      jsonrpc: "2.0",
+      id: 26,
+      method: "tools/call",
+      params: {
+        name: "forward_draft",
+        arguments: {
+          recipient: "@cursor",
+          bundle: {
+            subject: "Review: Mutande Organizations PRD v0.1",
+            notes: "please review the PRD",
+            resources: [{
+              name: "mutande-organisations-prd.md",
+              content: "# PRD ...",
+            }],
+          },
+        },
+      },
+    },
+    { session: fakeSession, serverVersion: "0.1.0", hub },
+  );
+  const { isError, body } = parseToolText(res);
+  assertEquals(isError, false);
+  assertEquals(body.ok, true);
+  assertEquals(body.thread_id, "nested-t");
+  assertEquals(body.resource_count, 1);
+  assertEquals(body.resource_names, ["mutande-organisations-prd.md"]);
+});
+
+Deno.test("forward_draft mixed flat resources + nested notes prefers top-level resources", async () => {
+  const hub = new HubClient("http://hub.test");
+  hub.createThread = (_token, input) => {
+    assertEquals(input.app_envelope.notes, "from bundle");
+    assertEquals(input.app_envelope.subject, "from bundle");
+    const resources = input.app_envelope.resources as Array<
+      Record<string, unknown>
+    >;
+    assertEquals(resources[0].name, "top.md");
+    assertEquals(resources[0].content, "# Top wins");
+    return Promise.resolve({
+      thread: meta({
+        id: "mix-t",
+        audience: "u@acme/cursor",
+        from_agent_id: "agent-web-1",
+      }),
+      message_id: "m-mix",
+    });
+  };
+  const res = await handleMcpRequest(
+    {
+      jsonrpc: "2.0",
+      id: 27,
+      method: "tools/call",
+      params: {
+        name: "forward_draft",
+        arguments: {
+          recipient: "@cursor",
+          resources: [{ name: "top.md", content: "# Top wins" }],
+          bundle: {
+            subject: "from bundle",
+            notes: "from bundle",
+            resources: [{ name: "nested.md", content: "# Nested loses" }],
+          },
+        },
+      },
+    },
+    { session: fakeSession, serverVersion: "0.1.0", hub },
+  );
+  const { isError, body } = parseToolText(res);
+  assertEquals(isError, false);
+  assertEquals(body.resource_count, 1);
+  assertEquals(body.resource_names, ["top.md"]);
 });
 
 Deno.test("close_thread success", async () => {
