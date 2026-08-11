@@ -94,12 +94,14 @@ export function acceptsEventStream(accept: string | undefined): boolean {
 }
 
 /**
- * POST clients MUST list both application/json and text/event-stream.
- * Missing Accept is tolerated for curl / older probes (JSON response path).
+ * POST clients SHOULD list both application/json and text/event-stream.
+ * Missing Accept, wildcard Accept, or json-only are tolerated — ChatGPT
+ * discovery often sends application/json alone; a 406 breaks OAuth callback.
  */
 export function acceptsPostMcp(accept: string | undefined): boolean {
   if (!accept || accept.trim() === "" || accept.includes("*/*")) return true;
   return (
-    accept.includes("application/json") && accept.includes("text/event-stream")
+    accept.includes("application/json") ||
+    accept.includes("text/event-stream")
   );
 }

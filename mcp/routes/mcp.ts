@@ -82,17 +82,31 @@ export function createMcpRoutes(
   const routes = new Hono();
   const sessions = options?.sessions ?? globalSessionStore;
 
-  const unauthorized = () =>
-    new Response(
-      JSON.stringify({ error: "unauthorized", message: "Bearer token required" }),
+  const unauthorized = (
+    kind: "missing" | "invalid" = "missing",
+    message?: string,
+  ) => {
+    const isInvalid = kind === "invalid";
+    const msg = message ??
+      (isInvalid ? "Invalid or expired token" : "Bearer token required");
+    return new Response(
+      JSON.stringify({
+        error: "unauthorized",
+        message: msg,
+        // ChatGPT surfaces this as "Reauthentication required" on 401.
+      }),
       {
         status: 401,
         headers: {
           "Content-Type": "application/json",
-          "WWW-Authenticate": wwwAuthenticateHeader(config),
+          "WWW-Authenticate": wwwAuthenticateHeader(config, {
+            error: isInvalid ? "invalid_token" : undefined,
+            description: msg,
+          }),
         },
       },
     );
+  };
 
   function resolveSlug(c: {
     req: {
@@ -109,12 +123,14 @@ export function createMcpRoutes(
     authorization: string | undefined,
   ): Promise<{ token: string; claims: Auth0Claims } | Response> {
     const token = bearerTokenFromHeader(authorization);
-    if (!token) return unauthorized();
+    if (!token) return unauthorized("missing");
     try {
       const claims = await verifier.verifyAccessToken(token);
       return { token, claims };
     } catch {
-      return unauthorized();
+      // Wrong aud/iss/exp → ChatGPT reports MCP_ACTION_DISCOVERY_FAILED /
+      // "Reauthentication required" after a successful OAuth code exchange.
+      return unauthorized("invalid");
     }
   }
 
@@ -166,7 +182,11 @@ export function createMcpRoutes(
       return await bindWebSession(hub, token, claims, slug);
     } catch (e) {
       if (e instanceof HubClientError && e.status === 401) {
-        return unauthorized();
+        // Hub rejected the same Bearer (usually missing AUTH0_MCP_AUDIENCE on hub).
+        return unauthorized(
+          "invalid",
+          "Hub rejected access token (check AUTH0_MCP_AUDIENCE on hub)",
+        );
       }
       if (e instanceof HubClientError && e.status === 403) {
         return c.json(

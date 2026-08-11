@@ -58,7 +58,10 @@ export async function createTestTokenVerifier(config: {
   audience?: string | string[];
 } = {}): Promise<{
   verifier: TokenVerifier;
-  signToken: (claims: Auth0Claims) => Promise<string>;
+  signToken: (
+    claims: Auth0Claims,
+    opts?: { audience?: string; azp?: string },
+  ) => Promise<string>;
 }> {
   const issuer = config.issuer ?? "https://test.auth0.local/";
   const audience = config.audience ?? "https://hub.mutande.test";
@@ -84,10 +87,15 @@ export async function createTestTokenVerifier(config: {
     },
   };
 
-  const signToken = async (claims: Auth0Claims): Promise<string> => {
+  const signToken = async (
+    claims: Auth0Claims,
+    opts?: { audience?: string; azp?: string },
+  ): Promise<string> => {
     const body: Record<string, unknown> = {};
     if (claims.email) body.email = claims.email;
-    const aud = Array.isArray(audience) ? audience[0] : audience;
+    if (opts?.azp) body.azp = opts.azp;
+    const aud = opts?.audience ??
+      (Array.isArray(audience) ? audience[0] : audience);
     return new jose.SignJWT(body)
       .setProtectedHeader({ alg: "RS256", kid: "test-key" })
       .setSubject(claims.sub)
@@ -114,10 +122,24 @@ export function protectedResourceMetadata(config: McpConfig) {
 }
 
 /** WWW-Authenticate for 401 responses (MCP clients discover PRM from this). */
-export function wwwAuthenticateHeader(config: McpConfig): string {
+export function wwwAuthenticateHeader(
+  config: McpConfig,
+  opts?: { error?: "invalid_token" | "invalid_request"; description?: string },
+): string {
   const metadataUrl =
     `${config.publicUrl}/.well-known/oauth-protected-resource`;
-  return `Bearer realm="mutande", resource_metadata="${metadataUrl}"`;
+  const parts = [
+    `Bearer realm="mutande"`,
+    `resource_metadata="${metadataUrl}"`,
+  ];
+  if (opts?.error) {
+    parts.push(`error="${opts.error}"`);
+  }
+  if (opts?.description) {
+    const desc = opts.description.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    parts.push(`error_description="${desc}"`);
+  }
+  return parts.join(", ");
 }
 
 export function bearerTokenFromHeader(

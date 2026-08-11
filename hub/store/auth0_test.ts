@@ -25,3 +25,33 @@ Deno.test("test token verifier rejects wrong audience", async () => {
   const token = await a.signToken({ sub: "auth0|x" });
   await assertRejects(() => b.verifier.verifyAccessToken(token), HubError);
 });
+
+Deno.test("createAuth0Verifier dual aud accepts MCP resource claim", async () => {
+  // Mirror hub createAuth0Verifier audience list construction + jose verify.
+  const jose = await import("jose");
+  const hubAud = "https://hub.mutande.app";
+  const mcpAud = "https://mcp.mutande.online";
+  const issuer = "https://auth.mutande.online/";
+  const { publicKey, privateKey } = await jose.generateKeyPair("RS256");
+  const jwk = await jose.exportJWK(publicKey);
+  jwk.alg = "RS256";
+  jwk.use = "sig";
+  jwk.kid = "test-key";
+  const jwks = jose.createLocalJWKSet({ keys: [jwk] });
+
+  const token = await new jose.SignJWT({ azp: "tpc_chatgpt" })
+    .setProtectedHeader({ alg: "RS256", kid: "test-key" })
+    .setSubject("auth0|u")
+    .setIssuer(issuer)
+    .setAudience(mcpAud)
+    .setIssuedAt()
+    .setExpirationTime("1h")
+    .sign(privateKey);
+
+  const { payload } = await jose.jwtVerify(token, jwks, {
+    issuer,
+    audience: [hubAud, mcpAud],
+  });
+  assertEquals(payload.sub, "auth0|u");
+  assertEquals(payload.aud, mcpAud);
+});

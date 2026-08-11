@@ -397,6 +397,35 @@ Run `./scripts/auth0-mcp-doctor.sh` to tell the two apart without dashboard acce
 
 **Do not** rewrite PRM `resource` to the hub Identifier hoping ChatGPT will request hub aud — it won’t. OBO is optional later; dual-aud is the L0 path.
 
+### Troubleshooting: `MCP_ACTION_DISCOVERY_FAILED` / 424 / “Reauthentication required”
+
+**Symptom:** Auth0 login + consent succeed, then ChatGPT’s oauth callback returns **424** with:
+
+```json
+{ "error_code": "MCP_ACTION_DISCOVERY_FAILED", "cause": { "status_code": 401, "detail": "Reauthentication required" } }
+```
+
+**Cause:** ChatGPT wraps **our** HTTP 401 from `POST /mcp` (initialize / `tools/list`) — the string `"Reauthentication required"` is **not** emitted by mutande-mcp. Usual reasons:
+
+1. Access token `aud` is `https://mcp.mutande.online` but mcp/hub only accepted hub aud (dual-aud missing). Code now **defaults** `AUTH0_MCP_AUDIENCE` on both; still **redeploy mcp and hub**.
+2. Hub rejects the forwarded Bearer during session bind (`GET /v1/me`) → mcp maps hub 401 → client 401.
+3. Issuer mismatch (`iss` tenant vs custom domain) — mcp now auto-aliases like hub.
+
+**Verify:**
+
+```bash
+./scripts/auth0-mcp-doctor.sh
+# with a real MCP-aud JWT:
+curl -sS -D- https://mcp.mutande.online/mcp -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -H 'Accept: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
+curl -sS https://hub.mutande.online/v1/me -H "Authorization: Bearer $TOKEN"
+```
+
+Expect **200** on both. Then remove + re-add the ChatGPT connector.
+
+**Not the cause:** Actions / roles Action (same as userinfo section above).
+
 **Not the cause:** `actions.executions` in the failed log entry. Auth0 Actions run after audience resolution and have no API for changing it (`api.accessToken.setCustomClaim` only adds claims), so a Post-Login Action cannot clear or redirect the audience. The executions array appears on normal logins too.
 
 **Not the roles Action.** The Post Login roles Action ([§7](#7-product-owner-ops-superadmin)) cannot cause or fix this: Auth0 resolves the audience and rejects third-party userinfo audiences *before* Actions run, and Post Login has no API to set, change, or clear the audience. The failed log entry shows no Action execution. Verify by temporarily disabling the Action — the same error persists. Still keep the Action third-party-safe (no `api.access.deny`, access-token claims guarded on audience) so it does not add a *second* failure once the MCP API exists.
@@ -407,7 +436,7 @@ Run `./scripts/auth0-mcp-doctor.sh` to tell the two apart without dashboard acce
 |----------|--------|
 | `AUTH0_DOMAIN` | `auth.mutande.online` |
 | `AUTH0_AUDIENCE` | `https://hub.mutande.app` |
-| `AUTH0_MCP_AUDIENCE` | `https://mcp.mutande.online` (required for ChatGPT tokens) |
+| `AUTH0_MCP_AUDIENCE` | `https://mcp.mutande.online` (defaults to this when unset; required for ChatGPT tokens) |
 | `MCP_PUBLIC_URL` | `https://mcp.mutande.online` |
 | `MUTANDE_HUB_URL` | `https://hub.mutande.online` |
 | `MCP_DEFAULT_AGENT_SLUG` | default `chatgpt` |

@@ -124,14 +124,29 @@ cd mcp && deno task smoke:sentry   # capture a smoke message, then exit
 
 **Live:** `https://mcp.mutande.online` (Deno Deploy project `mutande-mcp`).
 
-1. Confirm Deploy env matches `.env.example` names: `AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, `AUTH0_MCP_AUDIENCE`, `MUTANDE_HUB_URL`, `MCP_PUBLIC_URL` (optional `MCP_DEFAULT_AGENT_SLUG`). GlitchTip DSN for mcp project 26806 is built-in; set `SENTRY_DSN=` (empty) to disable, or override with `MUTANDE_SENTRY_DSN` / `SENTRY_DSN`.
-2. Hub: `MCP_ENDPOINT=https://mcp.mutande.online` if not using the built-in default; prod **`APP_ENVELOPE_KEY`** must stay set.
+1. Confirm Deploy env matches `.env.example` names: `AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, `AUTH0_MCP_AUDIENCE`, `MUTANDE_HUB_URL`, `MCP_PUBLIC_URL` (optional `MCP_DEFAULT_AGENT_SLUG`). `AUTH0_MCP_AUDIENCE` defaults to `MCP_PUBLIC_URL` when unset; hub defaults to `https://mcp.mutande.online`. GlitchTip DSN for mcp project 26806 is built-in; set `SENTRY_DSN=` (empty) to disable, or override with `MUTANDE_SENTRY_DSN` / `SENTRY_DSN`.
+2. Hub: `MCP_ENDPOINT=https://mcp.mutande.online` if not using the built-in default; prod **`APP_ENVELOPE_KEY`** must stay set. **Redeploy hub too** after dual-aud changes (`cd hub && deno task deploy` or your usual hub ship).
 3. Ship:
    ```bash
    cd mcp && deno task deploy
+   # and hub (same AUTH0_MCP_AUDIENCE default / env)
    ```
-4. Smoke: `curl -s https://mcp.mutande.online/health` then reconnect a host and call `health`.
+4. Smoke: `curl -s https://mcp.mutande.online/health` then reconnect ChatGPT and call `health`.
+5. Optional real-token check (Mac Access Token or Auth0 test token with `aud=https://mcp.mutande.online`):
+   ```bash
+   TOKEN='…' # JWT with aud=https://mcp.mutande.online, iss=https://auth.mutande.online/
+   curl -sS -D- https://mcp.mutande.online/mcp \
+     -H "Authorization: Bearer $TOKEN" \
+     -H 'Content-Type: application/json' \
+     -H 'Accept: application/json' \
+     -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"curl","version":"0"}}}'
+   # expect HTTP 200 + Mcp-Session-Id (not 401)
+   curl -sS https://hub.mutande.online/v1/me -H "Authorization: Bearer $TOKEN"
+   # expect 200 onboarded profile (not 401) — proves hub dual-aud
+   ```
+6. Doctor (no secrets): `./scripts/auth0-mcp-doctor.sh`
 
+**ChatGPT `MCP_ACTION_DISCOVERY_FAILED` / 424 / “Reauthentication required”:** ChatGPT wraps our HTTP 401 after OAuth. Usual cause was rejecting MCP-aud tokens (missing dual-aud on mcp or hub). After redeploy both, remove + re-add the connector.
 ## Auth0 (operator)
 
 MCP only exposes RFC 9728 PRM → Auth0. **DCR lives on the Auth0 tenant** (`POST https://auth.mutande.online/oidc/register`). If ChatGPT shows `dynamic client registration is disabled`, enable DCR in Auth0 — do not redeploy this package. Full steps + troubleshooting: [`docs/AUTH0.md`](../docs/AUTH0.md) §8 · end-user: [`docs/HOSTED-MCP.md`](../docs/HOSTED-MCP.md).

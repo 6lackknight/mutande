@@ -2588,7 +2588,12 @@ export function createStore(
     if (domain === "chevrondigital.auth0.com" && !aliases.includes("auth.mutande.online")) {
       aliases.push("auth.mutande.online");
     }
-    const mcpAudience = Deno.env.get("AUTH0_MCP_AUDIENCE")?.trim() || null;
+    // Default matches hosted MCP PRM resource so ChatGPT tokens (aud=MCP)
+    // validate when MCP forwards the same Bearer (no OBO). Set empty to disable.
+    const mcpAudRaw = Deno.env.get("AUTH0_MCP_AUDIENCE");
+    const mcpAudience = mcpAudRaw === undefined
+      ? "https://mcp.mutande.online"
+      : (mcpAudRaw.trim() || null);
     return new HubStore(
       kv,
       createAuth0Verifier({ domain, audience, mcpAudience, issuerAliases: aliases }),

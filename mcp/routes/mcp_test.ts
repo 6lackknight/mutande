@@ -85,13 +85,14 @@ Deno.test("acceptsEventStream requires text/event-stream", () => {
   assertEquals(acceptsEventStream("*/*"), true);
 });
 
-Deno.test("acceptsPostMcp requires both types when Accept set", () => {
+Deno.test("acceptsPostMcp tolerates json-only Accept", () => {
   assertEquals(acceptsPostMcp(undefined), true);
-  assertEquals(acceptsPostMcp("application/json"), false);
+  assertEquals(acceptsPostMcp("application/json"), true);
   assertEquals(
     acceptsPostMcp("application/json, text/event-stream"),
     true,
   );
+  assertEquals(acceptsPostMcp("text/plain"), false);
 });
 
 Deno.test("GET /mcp without auth returns 401", async () => {
@@ -275,4 +276,122 @@ Deno.test("createApp still mounts POST /mcp", async () => {
   assertEquals(res.status, 200);
   const body = await res.json();
   assertEquals(Array.isArray(body.result.tools), true);
+});
+
+Deno.test(
+  "ChatGPT discovery: initialize + tools/list with MCP-aud token",
+  async () => {
+    const mcpAud = "https://mcp.mutande.online";
+    const config = loadConfig({
+      get(key: string) {
+        const map: Record<string, string> = {
+          MCP_PUBLIC_URL: "https://mcp.mutande.online",
+          AUTH0_DOMAIN: "auth.mutande.online",
+          AUTH0_AUDIENCE: "https://hub.mutande.app",
+          AUTH0_MCP_AUDIENCE: mcpAud,
+          MUTANDE_HUB_URL: "http://hub.test",
+          MCP_DEFAULT_AGENT_SLUG: "chatgpt",
+        };
+        return map[key];
+      },
+    });
+    assertEquals(config.auth0McpAudience, mcpAud);
+
+    const { verifier, signToken } = await createTestTokenVerifier({
+      issuer: "https://auth.mutande.online/",
+      audience: ["https://hub.mutande.app", mcpAud],
+    });
+    const { createMcpRoutes } = await import("./mcp.ts");
+    const { Hono } = await import("hono");
+    const hub = fakeHub();
+    const app = new Hono();
+    app.route("/", createMcpRoutes(config, verifier, hub));
+
+    const token = await signToken(
+      { sub: "auth0|chatgpt", email: "u@acme.co" },
+      { audience: mcpAud, azp: "tpc_chatgpt" },
+    );
+
+    // ChatGPT often sends Accept: application/json only during discovery.
+    const init = await app.request("https://mcp.mutande.online/mcp", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: {
+          protocolVersion: "2025-03-26",
+          capabilities: {},
+          clientInfo: { name: "chatgpt", version: "0" },
+        },
+      }),
+    });
+    assertEquals(init.status, 200);
+    const sessionId = init.headers.get("Mcp-Session-Id");
+    assertExists(sessionId);
+    const initBody = await init.json();
+    assertEquals(initBody.result.serverInfo.name, "mutande-mcp");
+
+    const list = await app.request("https://mcp.mutande.online/mcp", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        "Mcp-Session-Id": sessionId!,
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 2,
+        method: "tools/list",
+        params: {},
+      }),
+    });
+    assertEquals(list.status, 200);
+    const listBody = await list.json();
+    assertEquals(Array.isArray(listBody.result.tools), true);
+    assertEquals(listBody.result.tools.length > 0, true);
+  },
+);
+
+Deno.test("invalid audience returns 401 invalid_token", async () => {
+  const config = testConfig();
+  const { verifier } = await createTestTokenVerifier({
+    issuer: "https://auth.test/",
+    audience: "https://hub.mutande.test",
+  });
+  const wrong = await createTestTokenVerifier({
+    issuer: "https://auth.test/",
+    audience: "https://wrong.audience",
+  });
+  const { createMcpRoutes } = await import("./mcp.ts");
+  const { Hono } = await import("hono");
+  const app = new Hono();
+  app.route("/", createMcpRoutes(config, verifier, fakeHub()));
+  const token = await wrong.signToken({ sub: "auth0|u1" });
+
+  const res = await app.request("https://mcp.test/mcp", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/list",
+      params: {},
+    }),
+  });
+  assertEquals(res.status, 401);
+  const www = res.headers.get("WWW-Authenticate") ?? "";
+  assertStringIncludes(www, 'error="invalid_token"');
+  const body = await res.json();
+  assertEquals(body.error, "unauthorized");
 });
