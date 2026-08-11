@@ -12,6 +12,14 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "1.1.1",
+    date: "2026-08-11",
+    title: "Desktop alpha rebuild",
+    notes: [
+      "Matched app + mutande-core 1.1.1 desktop alpha cut for Mac and Windows.",
+    ],
+  },
+  {
     version: "1.1.0",
     date: "2026-08-11",
     title: "Network zoom & external contacts",
