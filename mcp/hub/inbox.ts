@@ -46,6 +46,164 @@ export function filterThreadsForWebAgent(
   return threads.filter((t) => threadForWebAgent(t, agentId));
 }
 
+/** Concise agent/handle label for list rows (e.g. `cursor`, `chatgpt`, `@all`). */
+export function participantLabel(addr: string): string {
+  const trimmed = addr.trim();
+  if (!trimmed) return "";
+  const lower = trimmed.toLowerCase();
+  if (lower === "@all" || lower.startsWith("@all@")) return lower;
+  if (lower.startsWith("@") && !lower.includes("/")) {
+    return lower.slice(1) || lower;
+  }
+  const slash = trimmed.lastIndexOf("/");
+  if (slash >= 0) {
+    const slug = trimmed.slice(slash + 1).trim().toLowerCase();
+    if (slug && slug !== "default") return slug;
+    return trimmed.slice(0, slash).trim().toLowerCase();
+  }
+  return lower;
+}
+
+function truncatePreview(s: string, maxChars: number): string {
+  const collapsed = s.split(/\s+/).filter(Boolean).join(" ");
+  if (collapsed.length <= maxChars) return collapsed;
+  return `${collapsed.slice(0, Math.max(0, maxChars - 1)).trimEnd()}…`;
+}
+
+function bundleSubject(
+  envelope: { subject?: string } | undefined | null,
+): string | undefined {
+  const s = envelope?.subject?.trim();
+  return s ? s : undefined;
+}
+
+/** Body peek — notes, then question/answer prompts (Mac list preview). */
+function bundleNotesPeek(
+  envelope: {
+    notes?: string;
+    questions?: unknown[];
+    answers?: unknown[];
+    resource_requests?: unknown[];
+  } | undefined | null,
+): string | undefined {
+  if (!envelope) return undefined;
+  const notes = envelope.notes?.trim();
+  if (notes) return notes;
+  for (const q of envelope.questions ?? []) {
+    if (q && typeof q === "object" && "prompt" in q) {
+      const p = String((q as { prompt?: unknown }).prompt ?? "").trim();
+      if (p) return p;
+    }
+  }
+  for (const a of envelope.answers ?? []) {
+    if (a && typeof a === "object" && "answer" in a) {
+      const ans = String((a as { answer?: unknown }).answer ?? "").trim();
+      if (ans) return ans;
+    }
+  }
+  for (const r of envelope.resource_requests ?? []) {
+    if (r && typeof r === "object") {
+      const row = r as { description?: unknown; id?: unknown };
+      const d = String(row.description ?? row.id ?? "").trim();
+      if (d) return `Resource: ${d}`;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Fill last_from / last_subject / last_preview from app_envelope messages
+ * (same precedence as Mac daemon after open).
+ */
+export function applyAppEnvelopeSnippets(
+  thread: ThreadMeta,
+  detail: ThreadDetail,
+): ThreadMeta {
+  const messages = detail.messages;
+  if (messages.length === 0) return thread;
+
+  const latest = messages.reduce((a, b) =>
+    a.created_at >= b.created_at ? a : b
+  );
+  const roots = messages.filter((m) => !m.parent_message_id);
+  const op = roots.length > 0
+    ? roots.reduce((a, b) => (a.created_at <= b.created_at ? a : b))
+    : messages.reduce((a, b) => (a.created_at <= b.created_at ? a : b));
+
+  const subject = bundleSubject(latest.app_envelope) ??
+    bundleSubject(op.app_envelope);
+  const preview = bundleNotesPeek(latest.app_envelope);
+
+  return {
+    ...thread,
+    last_from: latest.from_handle || thread.last_from,
+    last_subject: subject
+      ? truncatePreview(subject, 72)
+      : thread.last_subject,
+    last_preview: preview
+      ? truncatePreview(preview, 96)
+      : thread.last_preview,
+  };
+}
+
+/** Display title — subject, else Mac-style address fallback. */
+export function threadListTitle(thread: ThreadMeta): string {
+  const subject = thread.last_subject?.trim();
+  if (subject) return subject;
+  const audience = thread.audience.trim();
+  if (audience === "@all") return "@all";
+  const fromBare = thread.from.split("/")[0]?.trim() ?? "";
+  const audBare = audience.split("/")[0]?.trim() ?? "";
+  if (
+    fromBare &&
+    audBare &&
+    fromBare.toLowerCase() === audBare.toLowerCase() &&
+    thread.from.trim().toLowerCase() !== audience.toLowerCase()
+  ) {
+    return audience;
+  }
+  return thread.from.trim() || audience || thread.id;
+}
+
+/** Ordered unique participant labels (from → to), concise for models. */
+export function threadParticipants(thread: ThreadMeta): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of [thread.from, thread.audience, thread.last_from]) {
+    if (!raw?.trim()) continue;
+    const label = participantLabel(raw);
+    if (!label || seen.has(label)) continue;
+    seen.add(label);
+    out.push(label);
+  }
+  return out;
+}
+
+/**
+ * Agent-facing list row: keep hub fields, add clear title/participants aliases.
+ */
+export function presentThreadListItem(thread: ThreadMeta): ThreadMeta & {
+  thread_id: string;
+  title: string;
+  subject?: string;
+  to: string;
+  participants: string[];
+  preview?: string;
+} {
+  const title = threadListTitle(thread);
+  const subject = thread.last_subject?.trim() || undefined;
+  const preview = thread.last_preview?.trim() || undefined;
+  return {
+    ...thread,
+    thread_id: thread.id,
+    title,
+    ...(subject ? { subject } : {}),
+    to: thread.audience,
+    participants: threadParticipants(thread),
+    ...(preview ? { preview } : {}),
+  };
+}
+
 /** Strip E2E envelopes from the agent-facing view. */
 export function presentThreadForWeb(detail: ThreadDetail): ThreadDetail {
   return {
@@ -86,17 +244,47 @@ export function mapHubSendError(err: unknown): Error {
   return err instanceof Error ? err : new Error(String(err));
 }
 
+async function enrichListSnippets(
+  hub: HubClient,
+  accessToken: string,
+  agentId: string,
+  thread: ThreadMeta,
+): Promise<ThreadMeta> {
+  if (thread.last_subject?.trim() || thread.last_preview?.trim()) {
+    return thread;
+  }
+  if ((thread.encryption_mode ?? "e2e") !== "app_envelope") {
+    return thread;
+  }
+  try {
+    const detail = await hub.fetchAppMessages(accessToken, thread.id, agentId);
+    return applyAppEnvelopeSnippets(thread, detail);
+  } catch {
+    // Soft-fail: still return address-based title/participants.
+    return thread;
+  }
+}
+
 export async function listWebAgentThreads(
   hub: HubClient,
   accessToken: string,
   agentId: string,
   filter?: ThreadFilter,
-): Promise<{ threads: ThreadMeta[]; caught_up: boolean }> {
+): Promise<{
+  threads: ReturnType<typeof presentThreadListItem>[];
+  caught_up: boolean;
+}> {
   // Default skill check: needs_action. Empty → stay quiet.
   const effective: ThreadFilter | undefined = filter ?? "needs_action";
   const { threads } = await hub.listThreads(accessToken, effective);
   const mine = filterThreadsForWebAgent(threads, agentId);
-  return { threads: mine, caught_up: mine.length === 0 };
+  const withSnippets = await Promise.all(
+    mine.map((t) => enrichListSnippets(hub, accessToken, agentId, t)),
+  );
+  return {
+    threads: withSnippets.map(presentThreadListItem),
+    caught_up: mine.length === 0,
+  };
 }
 
 export async function getWebAgentThread(

@@ -63,7 +63,7 @@ Default slug: `chatgpt` (`MCP_DEFAULT_AGENT_SLUG`). Override with `?slug=` or `X
 |------|--------|
 | `health` | Bound Auth0 sub, handle, `agent_id` |
 | `ping` | MCP protocol ping (empty OK) — **not** product E2E ping |
-| `list_threads` | Hub inbox for bound web `agent_id` + `encryption_mode: app_envelope`; `caught_up` when empty |
+| `list_threads` | Hub inbox for bound web `agent_id` + `encryption_mode: app_envelope`; items include `thread_id`, `title`/`subject`, `from`/`to`, `participants[]`; peeks app_envelope when hub `last_*` empty; `caught_up` when empty |
 | `get_thread` | `GET /v1/threads/:id/app-messages?agent_id=` |
 | `reply_to_thread` | Posts `app_envelope` (never E2E seal) |
 | `list_agents` | `GET /v1/agents` (sidecar/mcp slots + `transport`) |
@@ -82,17 +82,17 @@ New mail from hosted MCP is **app_envelope-only**. If hub would resolve the reci
 
 ### Redeploy (hub + MCP)
 
-Tool-description / attachment-clarity changes need **MCP only**. Hub+MCP together when changing `from_agent_id` / create-thread wire:
+Tool-description / `list_threads` shaping (title, participants, subject peek) need **MCP only**. Hub+MCP together when changing `from_agent_id` / create-thread wire:
 
 ```bash
 # Hub (only if hub store/API changed)
 cd hub && deployctl deploy --project=mutande
 
-# Hosted MCP — instructions, tool schemas, resource_count on forward_draft
+# Hosted MCP — list_threads titles/participants, tool schemas, instructions
 cd mcp && deno task deploy
 ```
 
-Verify: ChatGPT `forward_draft` to `@cursor` with `resources:[{name, content}]` returns JSON with `thread_id`, `message_id`, `resource_count`, `resource_names`; `list_threads` with `filter: "open"` shows the outbound thread; path-only `/mnt/data/…` is refused.
+Verify: ChatGPT `list_threads` (filter `open` or `needs_action`) returns `thread_id`, `title`/`subject`, `from`/`to`, `participants` (e.g. `chatgpt`→`cursor`); `forward_draft` to `@cursor` with `resources:[{name, content}]` returns `thread_id` / `message_id` / `resource_count`; path-only `/mnt/data/…` is refused.
 
 ### Mac sidecar only (not on hosted MCP)
 

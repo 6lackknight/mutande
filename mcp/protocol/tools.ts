@@ -93,7 +93,7 @@ export function toolDefinitions(): McpToolDefinition[] {
     {
       name: "list_threads",
       description:
-        "List app_envelope threads for this web agent. Default filter=needs_action (inbox to do). Use filter=open to see outbound threads you sent (needs_action hides those — your_status is replied). caught_up=true when empty — stay quiet for needs_action. Read-only.",
+        "List app_envelope threads for this web agent. Each item includes thread_id, title/subject (message subject or notes peek; else address fallback), from/to + participants[] (agent slugs e.g. chatgpt→cursor), status, your_status, reply_count, created_at/updated_at, encryption_mode. Default filter=needs_action (inbox to do). Use filter=open for outbound you sent (needs_action hides those — your_status is replied). caught_up=true when empty — stay quiet for needs_action. Read-only.",
       inputSchema: {
         type: "object",
         properties: {

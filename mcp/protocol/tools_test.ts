@@ -159,10 +159,18 @@ Deno.test("list_threads returns matching app_envelope threads", async () => {
   hub.listThreads = () =>
     Promise.resolve({
       threads: [
-        meta({ id: "mine", your_status: "pending" }),
+        meta({
+          id: "mine",
+          your_status: "pending",
+          last_subject: "Review please",
+          from: "u@acme/cursor",
+          audience: "u@acme/chatgpt",
+        }),
         meta({ id: "other", audience_agent_id: "nope" }),
       ],
     });
+  // Avoid soft-fail peek HTTP when last_* already present (and for the filtered-out row).
+  hub.fetchAppMessages = () => Promise.reject(new Error("not used"));
   const res = await handleMcpRequest(
     {
       jsonrpc: "2.0",
@@ -176,6 +184,18 @@ Deno.test("list_threads returns matching app_envelope threads", async () => {
   const body = JSON.parse(result.content[0].text);
   assertEquals(body.caught_up, false);
   assertEquals(body.threads.map((t: ThreadMeta) => t.id), ["mine"]);
+  const row = body.threads[0] as ThreadMeta & {
+    thread_id: string;
+    title: string;
+    subject?: string;
+    participants: string[];
+    to: string;
+  };
+  assertEquals(row.thread_id, "mine");
+  assertEquals(row.subject, "Review please");
+  assertEquals(row.title, "Review please");
+  assertEquals(row.to, "u@acme/chatgpt");
+  assertEquals(row.participants, ["cursor", "chatgpt"]);
 });
 
 Deno.test("initialize returns serverInfo", async () => {
@@ -458,6 +478,7 @@ Deno.test("list_threads open includes threads this web agent created", async () 
       threads: [
         meta({
           id: "sent",
+          from: "u@acme/chatgpt",
           from_agent_id: "agent-web-1",
           audience_agent_id: "agent-cursor-1",
           audience: "u@acme/cursor",
@@ -468,6 +489,24 @@ Deno.test("list_threads open includes threads this web agent created", async () 
           from_agent_id: "someone-else",
           audience_agent_id: "nope",
         }),
+      ],
+    });
+  hub.fetchAppMessages = () =>
+    Promise.resolve({
+      thread: meta({ id: "sent", from_agent_id: "agent-web-1" }),
+      messages: [
+        {
+          id: "m1",
+          thread_id: "sent",
+          from_user_id: "uid",
+          from_handle: "u@acme/chatgpt",
+          created_at: "2026-01-01T00:00:00.000Z",
+          app_envelope: {
+            version: 1,
+            subject: "Handoff",
+            notes: "please take this",
+          },
+        },
       ],
     });
   const res = await handleMcpRequest(
@@ -483,6 +522,16 @@ Deno.test("list_threads open includes threads this web agent created", async () 
   assertEquals(isError, false);
   assertEquals(body.caught_up, false);
   assertEquals((body.threads as ThreadMeta[]).map((t) => t.id), ["sent"]);
+  const sent = (body.threads as Array<ThreadMeta & {
+    participants: string[];
+    title: string;
+    subject?: string;
+    preview?: string;
+  }>)[0];
+  assertEquals(sent.participants, ["chatgpt", "cursor"]);
+  assertEquals(sent.subject, "Handoff");
+  assertEquals(sent.title, "Handoff");
+  assertEquals(sent.preview, "please take this");
 });
 
 Deno.test("forward_draft refuses hub E2E wire error", async () => {
