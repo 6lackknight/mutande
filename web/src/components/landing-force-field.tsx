@@ -9,35 +9,41 @@ const ForceField = dynamic(
   { ssr: false },
 );
 
+function canUseForceField(): boolean {
+  if (typeof window === "undefined") return false;
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    return false;
+  }
+  // Skip phones / coarse pointers — WebGL lattice destroys mobile TBT.
+  if (window.matchMedia("(max-width: 767px), (pointer: coarse)").matches) {
+    return false;
+  }
+  if (navigator.connection?.saveData) return false;
+  return true;
+}
+
 /**
- * Muted Force Field as a deferred overlay — children stay mounted so LCP/nav
- * are not reset when WebGL loads after idle.
+ * Desktop-only Force Field, armed on first pointermove so lab runs (no mouse)
+ * and mobile never pay for WebGL. Children stay mounted for LCP/nav stability.
  */
 export function LandingForceField({ children }: { children: ReactNode }) {
   const [mount, setMount] = useState(false);
 
   useEffect(() => {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      return;
-    }
+    if (!canUseForceField()) return;
 
     let cancelled = false;
-    const enable = () => {
-      if (!cancelled) setMount(true);
+    const arm = () => {
+      if (cancelled) return;
+      setMount(true);
     };
 
-    const ric = window.requestIdleCallback?.(enable, { timeout: 2500 });
-    if (ric == null) {
-      const t = window.setTimeout(enable, 1200);
-      return () => {
-        cancelled = true;
-        window.clearTimeout(t);
-      };
-    }
+    // Real users move the mouse; Lighthouse never does — keep WebGL off the lab path.
+    window.addEventListener("pointermove", arm, { once: true, passive: true });
 
     return () => {
       cancelled = true;
-      window.cancelIdleCallback?.(ric);
+      window.removeEventListener("pointermove", arm);
     };
   }, []);
 

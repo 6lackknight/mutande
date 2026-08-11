@@ -49,7 +49,7 @@ upload_one() {
   base="$(basename "$file")"
   local key="${PREFIX%/}/${base}"
   local ctype="application/octet-stream"
-  local cache="public, max-age=86400, stale-while-revalidate=604800"
+  local cache="public, max-age=31536000, immutable"
   case "$base" in
     *.mp4) ctype="video/mp4" ;;
     *.webm) ctype="video/webm" ;;
