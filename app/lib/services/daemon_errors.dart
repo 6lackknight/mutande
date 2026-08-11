@@ -51,9 +51,9 @@ bool isLocalCourierTransportFailure(String lowerError) {
       );
     case DaemonErrorKind.sessionTimeout:
       return (
-        title: "Couldn't load session",
+        title: 'Courier still starting',
         body:
-            'The local courier is running. Loading your account timed out — '
+            'Mail took too long to load. The courier may still be starting — '
             'try again in a moment.',
       );
     case DaemonErrorKind.courierDown:
@@ -67,5 +67,7 @@ bool isLocalCourierTransportFailure(String lowerError) {
 }
 
 bool isLikelyStartingError(Object error) {
-  return isLocalCourierTransportFailure(error.toString().toLowerCase());
+  final lower = error.toString().toLowerCase();
+  if (isLocalCourierTransportFailure(lower)) return true;
+  return lower.contains('timeout') || lower.contains('timed out');
 }

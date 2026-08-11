@@ -78,21 +78,22 @@ export const LandingIntro: React.FC = () => {
       )
     : 0;
 
-  const hold = interpolate(
+  // Brand hold fades in, then fully out so the last frame matches the opening cream stage
+  const holdIn = interpolate(
     frame,
     [beats.hold.start, beats.hold.start + 40],
     [0, 1],
     { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
   );
-  const sceneFade = 1 - hold * 0.96;
-
-  // Loop seam: soft fade at the very end so restart into identity is clean
-  const loopOut = interpolate(
+  // Reach 0 before the last frames so the loop seam is empty cream (matches frame 0)
+  const holdOut = interpolate(
     frame,
-    [DURATION_NEAR_END, beats.hold.end],
-    [1, 0.92],
+    [beats.hold.end - 48, beats.hold.end - 10],
+    [1, 0],
     { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
   );
+  const hold = holdIn * holdOut;
+  const sceneFade = 1 - hold * 0.96;
 
   return (
     <AbsoluteFill
@@ -104,7 +105,6 @@ export const LandingIntro: React.FC = () => {
         `,
         fontFamily: FONT,
         overflow: "hidden",
-        opacity: loopOut,
       }}
     >
       {/* 1. Identity — Variant C popover (full-bleed stage) */}
@@ -213,5 +213,3 @@ export const LandingIntro: React.FC = () => {
     </AbsoluteFill>
   );
 };
-
-const DURATION_NEAR_END = beats.hold.end - 24;

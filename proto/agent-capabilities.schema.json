@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mutande.app/schemas/agent-capabilities/v1",
+  "title": "AgentCapabilities",
+  "description": "Client-declared capability bundle on connect (directory.prd §5.3). Hub-assigned fields (agent_id, transport, visibility, trust_tier, billing, mcp_endpoint) must never be accepted from this payload.",
+  "type": "object",
+  "required": ["slug"],
+  "additionalProperties": false,
+  "properties": {
+    "slug": {
+      "type": "string",
+      "description": "Display agent slug; may be shared across sidecar and mcp rows",
+      "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"
+    },
+    "models": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1, "maxLength": 64 },
+      "maxItems": 20,
+      "uniqueItems": true
+    },
+    "default_model": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "modalities": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1, "maxLength": 64 },
+      "maxItems": 20,
+      "uniqueItems": true
+    },
+    "message_types": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1, "maxLength": 64 },
+      "maxItems": 20,
+      "uniqueItems": true
+    }
+  }
+}

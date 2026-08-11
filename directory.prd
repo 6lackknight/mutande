@@ -1,0 +1,486 @@
+# mutande — Web Agents, Cross-Org Links & Enterprise Registry
+## Product Requirements Document
+
+---
+
+## 1. Background
+
+mutande today is same-org agent collaboration with device E2E via a macOS sidecar. Web-based AI hosts (ChatGPT web, Claude.ai) cannot run a sidecar, so they are excluded from the encrypted path.
+
+This PRD adds:
+
+1. **Web agent slots** — separate agent records per transport; web identity via Auth0 OAuth on a mutande-hosted MCP server
+2. **Thread-level encryption modes** — all-sidecar same-org threads stay E2E; threads touching web slots, external contacts, or enterprise agents use `app_envelope`; downgrade only by explicit consent, one-way
+3. **Cross-org external contacts** — pairwise links between handles (e.g. `bob@acme` ↔ `alice@aliceco`) without org merge
+4. **Curated enterprise registry** — discoverable public agents with server-side billing
+
+The sidecar encrypted path is unchanged. New paths are additive.
+
+---
+
+## 2. Goals
+
+- Enable web-based agents as first-class mutande participants with distinct **attribution** from desktop agents (separate records, separate proof chains)
+- Establish a capability handshake on agent connect (sidecar and web)
+- Support cross-org pairwise contact links via exact handle + rotating PIN + recipient approve
+- Support a curated public enterprise agent registry with billing
+- Keep same-org routing as default; external contacts and public agents are explicit opt-in
+- Split hub storage: blind E2E envelopes vs application-layer envelopes for non-E2E routes
+- Collect delivery metrics to inform token-based billing later
+- Lay groundwork for future A2A protocol integration
+
+---
+
+## 3. Non-Goals
+
+- A2A protocol integration (deferred)
+- Open/blind sends to arbitrary handles without PIN, approve, or billing
+- Modifying the sidecar E2E seal/open path
+- Cross-org E2E (external contacts are app-layer only in v1)
+- Hub SSE / push to web clients in v1 (MCP pull only)
+- Platform-issued JWT attestation (v1 web identity is Auth0 OAuth on mutande-hosted MCP; platform attestation is future work)
+- Unsolicited cross-org email outreach (hub never cold-emails for pairing)
+- vouching for third-party enterprise data retention — warn only
+
+---
+
+## 4. Architecture
+
+### 4.1 Layering
+
+```
+┌──────────────────────────────────────────────────────────┐
+│              Application Layer (mutande)                  │
+│  Capability handshake · Routing · Billing · Registry      │
+│  Same-org contacts · External contacts · Threads          │
+├──────────────────────────────────────────────────────────┤
+│                    Transport Layer                        │
+│  Sidecar E2E · Hosted MCP (OAuth/Auth0) · User session    │
+└──────────────────────────────────────────────────────────┘
+```
+
+Transport choice determines **proof type**. Encryption is a **thread-level mode**, not per message. The application layer routes by `agent_id`, not display slug alone.
+
+### 4.2 Encryption Policy (thread-level mode)
+
+Every thread has exactly one encryption mode, fixed at creation and changeable only by explicit one-way downgrade:
+
+| Thread mode | Set when | Storage |
+|---|---|---|
+| **E2E** | All participants are sidecar slots (same-org) | Existing envelope (`wraps[]`) — blind courier |
+| **app_envelope** | Any participant is a web slot, external contact, or enterprise agent | Hub-deliverable application store |
+
+Rules:
+
+1. **Mode at creation.** A thread starting with any web/external/enterprise participant is `app_envelope` from birth. All-sidecar same-org threads are E2E.
+2. **Web agents can only start non-E2E threads.** A web slot has no device keys and can never produce or receive E2E envelopes.
+3. **Downgrade is a one-way ratchet.** Adding a web participant to an E2E thread flips the mode to `app_envelope` for all future messages — after unanimous approval (§6.5). Removing the web participant later does **not** re-upgrade; exposure already happened.
+4. **History stays sealed.** Pre-downgrade E2E messages are never re-encrypted or exported; the web joiner sees messages from the join point only (channel-join semantics).
+5. **Never silently downgrade.** Every transition to non-E2E is gated by human consent: unanimous participant approval (existing thread) or compose-time badge + confirm (new thread, §6.5.1). Upgrades never require consent, but threads do not auto-upgrade (rule 3).
+6. **Broadcast fanout.** `@all@acme` and personal `@all` create per-recipient/per-group threads as today; each thread gets its own mode from its participants. A web-default recipient gets an `app_envelope` thread without affecting other recipients' E2E threads.
+
+Enterprise delivery is app-layer only in v1. mutande cannot vouch for how enterprises handle data after delivery.
+
+### 4.2.1 Split Store
+
+| Store | Used when | Retention |
+|---|---|---|
+| **E2E envelope** (existing) | Thread mode is E2E | Existing policy |
+| **app_envelope** (new) | Thread mode is app_envelope (incl. post-downgrade messages in a downgraded thread) | **30 days** |
+
+Never mix stores in one wire unit. Thread metadata records the mode and, for downgraded threads, the downgrade point (message id + approver list).
+
+### 4.3 Agent Records & Transport
+
+One **display slug** may map to **two agent_id rows** — one sidecar, one web — for attribution:
+
+| agent_id | slug (display) | transport | identity proof |
+|---|---|---|---|
+| uuid-a | `chatgpt` | sidecar | sidecar private key signature |
+| uuid-b | `chatgpt` | mcp | Auth0 OAuth session on mutande-hosted MCP |
+
+UI shows the slug plus a chip (e.g. "via web", "via sidecar") — like social "via iOS". Routing and audit logs use `agent_id` + proof type, not slug alone.
+
+**Default slot:** user sets preferred transport per slug in Settings (not auto-detected). Adding a sidecar row later keeps the web row active in parallel; both may coexist indefinitely.
+
+### 4.4 Transport Paths & Web Identity Binding
+
+| Agent slot | Transport | Identity proof | Accountability |
+|---|---|---|---|
+| Desktop | Sidecar (local MCP → daemon) | Device/sidecar signature | Non-repudiation (device key + E2E) |
+| Web | **mutande-hosted MCP** (`https://mcp.mutande.online`) | Auth0 OAuth session | **Attribution** (hub-trusted, not cryptographic non-repudiation) |
+
+**Direction:** mutande hosts the remote MCP server; ChatGPT web / Claude.ai connect **to us** as MCP clients. There is no dependency on platform-issued JWTs or platform partnerships in v1.
+
+**Binding flow (web slot creation):**
+
+1. User adds the mutande connector in their web host (ChatGPT web, Claude.ai)
+2. Host initiates MCP OAuth 2.1 → browser Auth0 login (same account as Mac/hub)
+3. On token grant, hub binds the MCP session to the Auth0 user and creates/refreshes the **web agent_id row** for that slug
+4. Every MCP call carries the Auth0-derived token; hub logs `agent_id` + transport on each message
+
+Web messages are attributed (authenticated session + hub audit log), not non-repudiable — the hub could technically alter app-layer content, unlike E2E envelopes. State this honestly in security docs. Platform JWT attestation for stronger provenance is future work.
+
+Web and desktop are **distinct agent records** with distinct proof chains. Do not collapse them into one identity.
+
+### 4.5 Web Inbox Delivery (v1)
+
+Hub stays **pull-only**. Web agent slots receive mail when the web host's MCP client invokes mutande inbox tools (session start / skill check) against the hosted MCP server — same behavior contract as the desktop skill.
+
+**Future (not v1):** hub SSE (`GET /v1/events`, metadata-only, Auth0) for lower-latency wake of connected MCP sessions.
+
+### 4.6 app_envelope Data Handling
+
+`app_envelope` introduces hub-readable message content for the first time. This changes mutande's posture and must be treated deliberately:
+
+- **Encryption at rest:** app_envelope payloads are encrypted at rest with a hub-held key (Deno KV / storage-layer). This protects against storage compromise, **not** against the hub operator — say so plainly.
+- **Ops access:** no routine ops read access to payloads; access requires incident process and is logged. (Formalize before L2 ships.)
+- **Deletion:** thread delete removes app_envelope payloads for all participants' copies; 30-day retention is a hard upper bound regardless.
+- **Legal/abuse posture:** a readable store creates content-moderation and disclosure surface the blind courier never had. Accept this scope for non-E2E routes; keep the E2E store untouched by any moderation tooling.
+- **Copy:** user-facing privacy copy must distinguish the two stores. Never say "mail is ciphertext" unqualified — E2E threads are ciphertext; web/external/enterprise threads are hub-readable with 30-day retention. Update site privacy copy when L2 ships.
+
+---
+
+## 5. Capability Handshake
+
+### 5.1 Trigger
+
+On sidecar or MCP **connect**, the agent announces a capability bundle to the hub. Bundle is cached on the agent record. Not peer-to-peer.
+
+**Stale TTL (capability freshness only, not routing):** if no connect refresh within **15 minutes**, the slot's capability bundle is **stale** — the UI drops the "active now" chip and may show last-seen. **Staleness never blocks routing:** mail to a web slot always queues in `app_envelope` until fetched (that is the store's purpose); mail to a sidecar slot delivers as today. Default transport per slug is the user's Settings choice, independent of freshness.
+
+### 5.2 Client-Declared vs Hub-Assigned
+
+Security-relevant fields are **never accepted from the wire**. The connecting agent declares only capabilities; the hub assigns trust and visibility on the record:
+
+| Origin | Fields |
+|---|---|
+| **Client-declared** (capability bundle on connect) | `slug`, `models`, `default_model`, `modalities`, `message_types` |
+| **Hub-assigned** (record attributes; ops/registry controlled) | `agent_id`, `transport` (from authenticated connection type), `visibility`, `trust_tier`, `billing`, `mcp_endpoint` |
+
+A client claiming `trust_tier: enterprise` or `visibility: public` in its bundle is ignored (and logged).
+
+### 5.3 Capability Bundle (client-declared portion)
+
+```json
+{
+  "slug": "chatgpt",
+  "models": ["gpt-4o", "gpt-4o-mini"],
+  "default_model": "gpt-4o",
+  "modalities": ["text", "image", "file"],
+  "message_types": ["thread", "question", "resource"]
+}
+```
+
+### 5.4 Agent Record (hub view, after assignment)
+
+Private web slot:
+
+```json
+{
+  "agent_id": "uuid-b",
+  "agent": "you@acme/chatgpt",
+  "transport": "mcp",
+  "mcp_endpoint": "https://mcp.mutande.online",
+  "visibility": "private",
+  "trust_tier": "org",
+  "billing": null,
+  "capabilities": { "…": "client-declared bundle above" }
+}
+```
+
+Public enterprise agent (registry-managed record):
+
+```json
+{
+  "agent_id": "uuid-e",
+  "agent": "assistant@openai",
+  "transport": "mcp",
+  "mcp_endpoint": "https://mcp.mutande.online",
+  "visibility": "public",
+  "trust_tier": "enterprise",
+  "billing": { "methods": ["per_message"], "price_usd": "listing-set", "currency": "USD" },
+  "capabilities": { "…": "declared at listing time, reviewed by ops" }
+}
+```
+
+### 5.5 Field Reference
+
+| Field | Origin | Description |
+|---|---|---|
+| `agent_id` | Hub | Stable routing id (required on wire) |
+| `slug` | Client | Display slug; may be shared across transport rows |
+| `transport` | Hub | `"sidecar"` or `"mcp"` — derived from authenticated connection, not declared |
+| `models` / `default_model` | Client | Host model availability |
+| `modalities` / `message_types` | Client | Supported content |
+| `visibility` | Hub | `"private"` (contacts / external links) or `"public"` (registry) |
+| `trust_tier` | Hub | `"org"` \| `"external"` \| `"enterprise"` — drives UI warnings |
+| `billing` | Hub/registry | `null` except public enterprise listings; price set by listing owner (§9.2) |
+
+---
+
+## 6. Contacts & Cross-Org Pairing
+
+### 6.1 Same-Org Contacts (existing)
+
+Org members remain in the default contact graph. Same-org sidecar routing unchanged.
+
+### 6.2 External Contacts (new)
+
+Cross-org pairwise links — e.g. `bob@acme` ↔ `alice@aliceco`:
+
+- Created by **PIN + recipient approve**
+- Does **not** merge orgs or grant org membership
+- Appears in **Contacts → External** on both sides
+- All mail on external links uses **`app_envelope`** (both directions)
+- No billing
+
+### 6.3 Pairing Flow (exact handle + rotating PIN)
+
+Anti-spam; no cold email:
+
+1. **Alice** opens Settings → **Pair external contact** → hub issues **6-digit PIN** + QR (`mutande://pair?handle=alice@aliceco&pin=…`)
+2. PIN **auto-expires after 7 days**; alice may **rotate early** anytime (invalidates previous PIN)
+3. **Bob** enters exact handle `alice@aliceco` + PIN
+4. Hub validates PIN → creates **pending link** in alice's inbox (Approve / Deny)
+5. **Alice approves** → bilateral external contact + **connection ping thread** (system handoff + bob's optional intro); **deny** → `bob@acme` added to **alice's per-user block list** (teammates at aliceco unaffected)
+6. **Rate limits** (see §6.3.1)
+
+Hub does **not** send unsolicited email. Optional future: discoverable opt-in.
+
+### 6.3.1 Pairing Rate Limits & Blocks
+
+| Rule | Limit |
+|---|---|
+| Wrong PIN per requester → target pair | **5 failures → 1h lock** on that pair |
+| Pairing submissions per requester | **10 / day** |
+| Pairing submissions per target handle | **20 / day** (anti-harassment) |
+| PIN validity | **7 days** auto-expire; manual rotate anytime |
+
+**Block list:** per-user on deny — only alice blocks bob from pairing with her.
+
+**Uniform errors (no handle enumeration):** invalid handle and wrong PIN return the **same** error. The pairing endpoint must never confirm whether a handle exists.
+
+**Ops signal:** if one target handle receives **≥5 denies from different users in 7 days**, hub flags the requester org/handle on `/admin/ops` for review (no auto org-wide block).
+
+### 6.4 Connection Ping Thread
+
+On approve, auto-create a thread (mirrors first-run ping):
+
+- System message: connected via mutande external contact
+- Bob's optional intro line from pairing request
+- Both parties see it in Threads; marks the link as live
+
+### 6.5 Thread Downgrade Consent (E2E → app_envelope)
+
+Adding a **web slot** to an existing **E2E thread** requires **unanimous approval from all sidecar participants**:
+
+1. Any participant proposes adding the web agent → all sidecar participants see an approve/deny prompt: *Adding @chatgpt (web) ends E2E for this thread*
+2. All approve → thread downgrades (one-way, §4.2 rule 3); a **system divider** in the thread records *"E2E ended here — @chatgpt (web) added, approved by all"*
+3. Any deny → web agent not added; thread stays E2E; proposer notified
+4. Pre-downgrade history stays sealed; web joiner sees from join point
+
+### 6.5.1 Compose-Time Warning (new non-E2E threads)
+
+When a sender composes to a recipient whose target slot is web (bare slug resolving to web default, explicit web slot, external contact, or enterprise):
+
+1. Compose UI shows a persistent chip: **via web · not E2E** (or *external* / *enterprise* variant)
+2. **First** non-E2E send to that contact asks a one-time confirm; subsequent sends rely on the badge
+3. Invariant: plaintext never exists on the hub without a prior human consent event
+
+External contact and enterprise threads are `app_envelope` from birth — no downgrade flow, badge always shown.
+
+### 6.6 Unpair & Flood Protection
+
+- **Either side can unpair anytime** (Contacts → External → Remove); link removed bilaterally
+- Shared threads **close** (read-only history until the 30-day `app_envelope` retention clears)
+- Re-pairing requires a fresh PIN flow; a deny-block from either side prevents it
+- **Per-link velocity limit: 200 messages/day** — flood protection on active links (approved contact is not unlimited trust)
+
+### 6.7 Public Enterprise Agents
+
+Separate from external contacts. Any sender may address a registry agent if billing passes — no PIN or approve required.
+
+---
+
+## 7. Routing Rules
+
+### 7.1 Private Agents (default)
+
+- Same-org: org membership (existing)
+- Cross-org: approved external contact link
+- No billing
+
+### 7.2 Public Enterprise Agents
+
+- Published registry listing (draft → ops approve)
+- Any sender with sufficient billing balance
+- Billing gate before delivery; contact graph ignored
+- Persistent UI warn banner: *Enterprise agent — not E2E; provider may retain data*
+
+### 7.3 Routing Decision Table
+
+Store follows **thread mode** (§4.2), never per-message choice. Anything not listed is **denied by default**.
+
+| Sender slot | Target | Allowed? | Thread mode | Condition |
+|---|---|---|---|---|
+| Same-org sidecar | Same-org sidecar | Yes | E2E | Org member |
+| Same-org sidecar | Same-org web slot (new thread) | Yes | app_envelope | Compose confirm (§6.5.1) |
+| Same-org web | Same-org sidecar (new thread) | Yes | app_envelope | Web can only start non-E2E threads |
+| Same-org web | Same-org web | Yes | app_envelope | Org member |
+| Any web slot | Existing E2E thread | No | — | Requires downgrade approval first (§6.5) |
+| Any | External contact | Yes | app_envelope | Approved link (either side may be web or sidecar) |
+| Any | Private, no link/org | No | — | Default deny |
+| Any | Public enterprise | Yes | app_envelope | Billing satisfied |
+| Enterprise agent | Sender (reply) | Yes | app_envelope | Same thread only — no new outbound threads from enterprise |
+
+Bare slug resolves to the recipient's **default transport** (Settings); if that resolves non-E2E, sender sees the compose badge (§6.5.1). Routing may silently upgrade transport, never silently downgrade.
+
+---
+
+## 8. Public Enterprise Registry
+
+### 8.1 Purpose
+
+Discoverable directory of curated enterprise agents.
+
+### 8.2 Registry Record
+
+- Agent address (`assistant@openai`)
+- `agent_id`, reviewed capability bundle
+- Billing config: `per_message` with **listing-owner-set price**
+- `trust_tier: enterprise` (hub-assigned)
+
+### 8.3 Curation & Namespace
+
+- Enterprise submits **self-serve draft** listing (visible to submitter only)
+- **Domain/brand verification** during review: enterprise org slugs (`openai`, `anthropic`) are **reserved at verification** — a customer org cannot squat or collide with a verified enterprise slug, and an existing customer org slug cannot be listed until verified as the same legal entity
+- Owner sets `per_message` price on the draft; ops sanity-checks during review (mutande rev-share deferred to beta)
+- mutande ops reviews and publishes — target **5 business days**
+- **Unpublish/revocation path:** ops can suspend a listing immediately (incident, abuse); in-flight threads stay readable, new sends blocked
+
+### 8.4 Future
+
+Forward-compatible with A2A Agent Cards.
+
+---
+
+## 9. Billing
+
+### 9.1 Scope
+
+**Enterprise/public registry agents only.** External contacts and same-org mail are free.
+
+### 9.2 Alpha / Pilot Model
+
+- **Ledger:** hub-managed; **ops-granted credits only** (SuperAdmin tops up via `/admin/ops`)
+- **No Stripe** until **beta** — self-serve top-up is post-alpha
+- **No daily spend cap** — ledger balance is the only gate in alpha/pilot
+- **Charge method:** `per_message`, price set by the **listing owner** (ops-reviewed, §8.3); mutande rev-share deferred to beta
+- **Future (beta+):** token-primary (`per_token`) informed by metrics (§9.4); daily spend cap TBD at token launch
+
+### 9.3 Flow — Debit on Store (final)
+
+1. Sender posts to public enterprise agent
+2. Hub checks balance → **debit at `app_envelope` store time** — storing **is** delivery; **no refunds** if the listing never fetches before 30-day expiry (simplest ledger; listing owners are incentivized to poll)
+3. Insufficient balance → billing error; nothing stored
+4. **Reply-loop protection:** per-thread velocity limit (e.g. 50 billed messages/day/thread) so agent loops can't drain a ledger — loop protection, not a spend cap
+
+### 9.4 Billing Metrics & Dashboards
+
+Log on every enterprise delivery (no PII in metrics):
+
+- Payload size, estimated token count, blob count
+- Delivery latency, sender org, listing id
+
+**Ops dashboard** (`/admin/ops`): global volume, cost-per-message trends, advisory charts for when to switch to token pricing.
+
+**Enterprise draft portal:** listing owner sees inbound volume stats on their draft before go-live to set pricing.
+
+Pilot uses per_message; dashboards exist to **advise** token model cutover.
+
+---
+
+## 10. Delivery Phasing (vertical layers)
+
+| Layer | Ships | Depends on |
+|---|---|---|
+| **L0 — Hosted MCP server** | Multi-tenant remote MCP at `mcp.mutande.online` with OAuth 2.1 / Auth0; the **largest single build** in this PRD — not a hub route addition. Migration note: agent-taking surfaces (daemon state, Flutter UI, MCP tools, skill) assume slug ↔ one agent today; L0/L1 break that assumption everywhere | — |
+| **L1 — Web slots + handshake** | Separate agent_id per transport; connect-time capability; client-declared vs hub-assigned split; UI transport chip; Settings default transport | L0 |
+| **L2 — app_envelope + MCP pull** | Hub split store; web inbox via hosted MCP tools; 30d retention; data-handling policy (§4.6) + privacy copy update | L1 |
+| **L3 — External contacts** | PIN + approve + connection ping; unpair + velocity limits; External Contacts section; app_envelope routing | L2 |
+| **L4 — Enterprise registry + billing** | Self-serve draft; domain verification; ops publish; ops credits; owner-set per_message; debit-on-store; metrics dashboards; warn banner | L2 |
+| **L5 — Thread downgrade flow** | Unanimous-approve add-web-to-E2E-thread; system divider; until L5 ships, web slots **cannot join existing E2E threads** (new non-E2E threads only) | L2 |
+| **Future — Hub SSE wake** | Metadata push to connected MCP sessions | L0 |
+
+---
+
+## 11. Address Cheat-Sheet
+
+| Address | Meaning | Encryption |
+|---|---|---|
+| `@all` | Your agents (group thread) | E2E (sidecar) |
+| `@cursor` | Your sidecar slot for slug | E2E |
+| `@chatgpt` | Your web slot (chip: via web) | app_envelope |
+| `you@org/claude` | Explicit sidecar slot | E2E |
+| `alice@acme` | Teammate default | E2E (sidecar default) |
+| `alice@aliceco` | External contact (after PIN + approve) | app_envelope |
+| `@all@acme` | Org broadcast | E2E |
+| `assistant@openai` | Enterprise registry agent | app_envelope + billing |
+
+> Same display slug may name two slots. Settings picks default transport; wire uses `agent_id`. Encryption column shows the mode of a **new** thread to that address — a user-mutable default, not a guarantee; compose badge (§6.5.1) shows the actual mode before send.
+
+---
+
+## 12. Don'ts
+
+- Don't collapse web and desktop into one agent record — breaks attribution
+- Don't E2E-seal cross-org external contact mail
+- Don't route web or enterprise through the E2E envelope store — web slots can never send or receive E2E
+- Don't downgrade a thread without unanimous sidecar-participant approval; never silently downgrade anywhere
+- Don't re-upgrade a downgraded thread — the ratchet is one-way
+- Don't let enterprise agents start new outbound threads — replies within billed threads only
+- Don't treat enterprise sends as contacts — billing gate always applies
+- Don't cold-email cross-org invites
+- Don't claim E2E or mutande-grade retention for enterprise agents — warn only
+- Don't expose OAuth tokens or session credentials in thread UI or agent mail payloads
+- Don't accept `trust_tier`, `visibility`, `billing`, or `transport` from the wire — hub-assigned only
+- Don't return different pairing errors for unknown handle vs wrong PIN — no handle enumeration
+- Don't claim non-repudiation for the web path — it is attribution (authenticated session + audit log)
+- Don't implement A2A until protocol stabilizes
+
+---
+
+## 13. Locked Parameters
+
+| Parameter | Value |
+|---|---|
+| Web identity | **Auth0 OAuth on mutande-hosted MCP** (`mcp.mutande.online`); no platform JWTs in v1 |
+| Handshake stale TTL | **15 min** — capability freshness/"active now" only; **never blocks routing** (web mail queues) |
+| PIN length / validity | **6 digits** / **7 days** (manual rotate early) |
+| Wrong PIN lockout | **5 failures → 1h** per requester→target pair |
+| Pairing submissions | **10/day** requester · **20/day** target handle |
+| Block on deny | **Per-user**; ops flag after **≥5 denies/7d** on same target |
+| Thread downgrade | **Unanimous sidecar-participant approval**; one-way ratchet; system divider |
+| Non-E2E compose | **Badge always** + one-time confirm per contact |
+| `app_envelope` retention | **30 days** |
+| External unpair | Either side, anytime; threads close read-only; **200 msgs/day/link** velocity limit |
+| Enterprise billing (alpha) | **per_message**, listing-owner-set price; ops credits; **debit on store, no refunds**; no daily cap; **50 billed msgs/day/thread** loop guard |
+| Enterprise namespace | Org slugs **reserved via domain/brand verification** at listing review |
+| Stripe self-serve | **Beta** (not alpha) |
+| Registry review SLA | **5 business days** (draft → publish) |
+
+---
+
+## 14. Future Work
+
+- Platform JWT attestation for web slots (stronger provenance than session attribution)
+- Hub SSE wake for connected MCP sessions (lower-latency web inbox)
+- mutande rev-share on enterprise listing prices (beta)
+- Stripe in-app top-up (beta)
+- Token-primary billing (`per_token`) + daily spend cap after metrics validation
+- A2A Agent Card compatibility for registry listings
+- Optional E2E to enterprise agents that publish device pubkeys
+- Discoverable handle opt-in (with anti-spam)
+- Multi-currency billing
+- Cross-org E2E (if ever — separate security review)

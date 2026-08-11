@@ -4,11 +4,14 @@ mod auth0_defaults;
 mod sentry_defaults;
 mod config;
 mod connect_host;
+mod event_hub;
 mod http_bridge;
+mod inbox_watcher;
 mod install_skill;
 mod oauth;
 pub mod rpc;
 mod state;
+mod thread_list_cache;
 
 pub use auth0_defaults::{
     AUTH0_AUDIENCE, AUTH0_DOMAIN, AUTH0_NATIVE_CLIENT_ID, HUB_URL as DEFAULT_HUB_URL,
@@ -95,6 +98,7 @@ pub const DEFAULT_HTTP_BIND: &str = "127.0.0.1:3847";
 pub async fn run(socket_path: &str, http_bind: Option<&str>) -> Result<()> {
     let state = Arc::new(DaemonState::bootstrap()?);
     spawn_device_register(Arc::clone(&state));
+    spawn_inbox_watcher(Arc::clone(&state));
 
     #[cfg(unix)]
     {
@@ -129,6 +133,12 @@ pub async fn run(socket_path: &str, http_bind: Option<&str>) -> Result<()> {
         );
         http_bridge::run(state, bind, &token).await
     }
+}
+
+fn spawn_inbox_watcher(state: Arc<DaemonState>) {
+    tokio::spawn(async move {
+        inbox_watcher::run(state, inbox_watcher::DEFAULT_POLL_INTERVAL).await;
+    });
 }
 
 /// Best-effort pubkey publish as soon as the sidecar is up (covers cases where

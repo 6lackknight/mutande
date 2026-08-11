@@ -28,8 +28,10 @@ use crate::hub_client::{
 };
 
 use super::config::{DaemonConfig, config_path, load_config, save_config_at, write_restricted_file};
+use super::event_hub::EventHub;
 use super::oauth::{self, Auth0NativeConfig};
 use super::expand_path;
+use super::thread_list_cache;
 
 /// Product ping kinds — `health` gets daemon auto-pong; `thread` expects agent mail reply.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -394,6 +396,8 @@ pub struct DaemonState {
     last_device_register: Mutex<Option<Instant>>,
     /// Last known bare handle from hub `/me` (same-agent checks when `/me` is down).
     cached_bare_handle: Mutex<Option<String>>,
+    /// UI push bus (WebSocket `inbox_changed`).
+    event_hub: Arc<EventHub>,
 }
 
 impl DaemonState {
@@ -429,6 +433,7 @@ impl DaemonState {
             connected_agent_slug: Mutex::new(None),
             last_device_register: Mutex::new(None),
             cached_bare_handle: Mutex::new(None),
+            event_hub: Arc::new(EventHub::new()),
         };
         // So Connect AI / MCP host configs resolve the bundled sidecar absolute path.
         let _ = state.persist_own_exe_path();
@@ -493,6 +498,7 @@ impl DaemonState {
             connected_agent_slug: Mutex::new(None),
             last_device_register: Mutex::new(None),
             cached_bare_handle: Mutex::new(None),
+            event_hub: Arc::new(EventHub::new()),
         })
     }
 
@@ -530,6 +536,23 @@ impl DaemonState {
 
     fn hub_client(&self) -> Option<HubClient> {
         self.hub.lock().unwrap().clone()
+    }
+
+    pub fn event_hub(&self) -> &EventHub {
+        &self.event_hub
+    }
+
+    /// Hub metadata only (no decrypt/enrichment) — for [inbox_watcher].
+    pub async fn list_threads_meta(&self) -> Result<Vec<ThreadMeta>> {
+        let Some(hub) = self.hub_client() else {
+            bail!("hub not configured");
+        };
+        hub.list_threads(None).await
+    }
+
+    /// Notify UI subscribers that inbox may have changed (local send/reply/close).
+    pub fn notify_inbox_changed(&self) {
+        self.event_hub.publish_inbox_changed();
     }
 
     /// Auth0 login (loopback PKCE or injected access token), then hub `/me`.
@@ -776,6 +799,24 @@ impl DaemonState {
     ) -> Result<crate::hub_client::RouterConfig> {
         let hub = self.hub_client().context("hub not configured")?;
         hub.set_router(default_agent_id, rules).await
+    }
+
+    pub async fn get_transport_defaults(&self) -> Result<crate::hub_client::AgentTransportPrefs> {
+        let hub = self.hub_client().context("hub not configured")?;
+        hub.get_transport_defaults().await
+    }
+
+    pub async fn set_transport_default(
+        &self,
+        slug: &str,
+        transport: &str,
+    ) -> Result<crate::hub_client::AgentTransportPrefs> {
+        let hub = self.hub_client().context("hub not configured")?;
+        let transport = transport.trim().to_lowercase();
+        if transport != "sidecar" && transport != "mcp" {
+            bail!("transport must be sidecar or mcp");
+        }
+        hub.set_transport_default(slug, &transport).await
     }
 
     async fn default_agent_slug(&self) -> Option<String> {
@@ -1051,7 +1092,13 @@ impl DaemonState {
                 // (approval / verify / questions to the bare human handle).
                 // Agent-to-agent waiting is never Needs you.
                 // Also attach last-message author + preview (local open only).
+                let mut enrich_cache = thread_list_cache::ThreadListEnrichmentCache::load_default();
+                let keep_ids: HashSet<String> =
+                    threads.iter().map(|t| t.id.clone()).collect();
                 for t in &mut threads {
+                    if enrich_cache.apply_if_fresh(t) {
+                        continue;
+                    }
                     match self.fetch_and_open_thread(&t.id).await {
                         Ok(detail) => {
                             apply_last_message_snippet(t, &detail);
@@ -1062,6 +1109,7 @@ impl DaemonState {
                                     YourStatus::Replied
                                 });
                             }
+                            enrich_cache.record(t);
                         }
                         Err(_) => {
                             if t.status == ThreadStatus::Open {
@@ -1070,6 +1118,8 @@ impl DaemonState {
                         }
                     }
                 }
+                enrich_cache.prune(&keep_ids);
+                let _ = enrich_cache.save();
                 if matches!(filter, Some(ThreadFilter::NeedsAction)) {
                     threads.retain(|t| {
                         t.status == ThreadStatus::Open
@@ -1385,6 +1435,7 @@ impl DaemonState {
         }
         self.clear_draft();
 
+        self.notify_inbox_changed();
         Ok(result)
     }
 
@@ -1543,6 +1594,7 @@ impl DaemonState {
             )
             .await?;
         }
+        self.notify_inbox_changed();
         Ok(())
     }
 
@@ -1725,6 +1777,7 @@ impl DaemonState {
         if let Some(hub) = self.hub_client() {
             hub.close_thread(thread_id).await?;
         }
+        self.notify_inbox_changed();
         Ok(())
     }
 
@@ -1732,6 +1785,7 @@ impl DaemonState {
         let hub = self.hub_client().context("hub not configured")?;
         hub.delete_thread(thread_id).await?;
         self.processed_threads.lock().unwrap().remove(thread_id);
+        self.notify_inbox_changed();
         Ok(())
     }
 

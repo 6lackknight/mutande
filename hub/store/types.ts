@@ -84,11 +84,68 @@ export interface Invite {
   used_by?: string;
 }
 
+/** Hub-assigned agent transport (never accepted from client capability bundle). */
+export type AgentTransport = "sidecar" | "mcp";
+
+/** Hub-assigned visibility (ops/registry; never from client wire). */
+export type AgentVisibility = "private" | "public";
+
+/** Hub-assigned trust tier (ops/registry; never from client wire). */
+export type AgentTrustTier = "org" | "external" | "enterprise";
+
+/**
+ * Client-declared capability bundle on connect (§5.3).
+ * Security fields (trust_tier / visibility / billing / transport) are hub-assigned only.
+ */
+export interface AgentCapabilities {
+  models?: string[];
+  default_model?: string;
+  modalities?: string[];
+  message_types?: string[];
+}
+
+/** Enterprise billing config — L4 only; always null for L1 private slots. */
+export interface AgentBilling {
+  methods: string[];
+  price_usd: string;
+  currency: string;
+}
+
+/**
+ * Agent slot record. Same display slug may have two rows (sidecar + mcp).
+ * Routing/audit use `id` + `transport`, not slug alone.
+ */
 export interface Agent {
   id: string;
   user_id: string;
   slug: string;
   created_at: string;
+  /** Hub-assigned from authenticated connection type. Legacy rows omit → treat as sidecar. */
+  transport: AgentTransport;
+  /** Hub-assigned; private for org slots. Public reserved for L4 registry. */
+  visibility: AgentVisibility;
+  /** Hub-assigned; org for same-org slots. */
+  trust_tier: AgentTrustTier;
+  /** Hub/registry; null until L4 enterprise listings. */
+  billing: AgentBilling | null;
+  /** Hub-assigned for mcp transport; null for sidecar. Hosted MCP is L0. */
+  mcp_endpoint: string | null;
+  /** Last client-declared capability bundle (cached on connect). */
+  capabilities: AgentCapabilities | null;
+  /** ISO time of last capability refresh; used for 15m "active now" freshness only. */
+  capabilities_updated_at: string | null;
+}
+
+/** 15-minute capability freshness TTL — never blocks routing (§5.1 / §13). */
+export const CAPABILITY_STALE_TTL_MS = 15 * 60 * 1000;
+
+/** Hosted MCP endpoint (L0); assigned on mcp transport rows even before L0 ships. */
+export const MCP_ENDPOINT_DEFAULT = "https://mcp.mutande.online";
+
+/** Per-user preferred transport for bare-slug resolution (Settings). */
+export interface AgentTransportPrefs {
+  /** slug → preferred transport; missing slug defaults to sidecar. */
+  defaults: Record<string, AgentTransport>;
 }
 
 export interface ThreadMeta {
@@ -258,12 +315,41 @@ export interface RegisterAgentInput {
   slug: string;
 }
 
+/**
+ * Capability handshake body (client-declared fields only).
+ * Hub ignores/logs trust_tier, visibility, billing, transport, agent_id if present.
+ */
+export interface ConnectAgentInput {
+  slug: string;
+  models?: string[];
+  default_model?: string;
+  modalities?: string[];
+  message_types?: string[];
+  /** Ignored — hub-assigned. */
+  trust_tier?: unknown;
+  /** Ignored — hub-assigned. */
+  visibility?: unknown;
+  /** Ignored — hub-assigned. */
+  billing?: unknown;
+  /** Ignored — hub-assigned from connection type. */
+  transport?: unknown;
+  /** Ignored — hub-assigned. */
+  agent_id?: unknown;
+  [key: string]: unknown;
+}
+
 export interface SetDefaultAgentInput {
   agent_id: string;
 }
 
 export interface RenameAgentInput {
   slug: string;
+}
+
+/** Settings: preferred transport for a display slug. */
+export interface SetTransportDefaultInput {
+  slug: string;
+  transport: AgentTransport;
 }
 
 /** One row in the per-user agent router (most specific match_slug wins). */

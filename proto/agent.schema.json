@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mutande.app/schemas/agent/v1",
+  "title": "Agent",
+  "description": "Hub agent slot record after assignment (directory.prd §5.4). Same display slug may have two rows (sidecar + mcp).",
+  "type": "object",
+  "required": [
+    "id",
+    "user_id",
+    "slug",
+    "created_at",
+    "transport",
+    "visibility",
+    "trust_tier"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "format": "uuid" },
+    "user_id": { "type": "string", "format": "uuid" },
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"
+    },
+    "created_at": { "type": "string", "format": "date-time" },
+    "transport": {
+      "type": "string",
+      "enum": ["sidecar", "mcp"],
+      "description": "Hub-assigned from authenticated connection type"
+    },
+    "visibility": {
+      "type": "string",
+      "enum": ["private", "public"]
+    },
+    "trust_tier": {
+      "type": "string",
+      "enum": ["org", "external", "enterprise"]
+    },
+    "billing": {
+      "description": "null for private slots; enterprise listing config in L4",
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "required": ["methods", "price_usd", "currency"],
+          "properties": {
+            "methods": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "price_usd": { "type": "string" },
+            "currency": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "mcp_endpoint": {
+      "type": ["string", "null"],
+      "description": "Hub-assigned for mcp transport (hosted MCP is L0)"
+    },
+    "capabilities": {
+      "description": "Client-declared fields cached on connect (slug lives on the agent record)",
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "models": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1, "maxLength": 64 },
+              "maxItems": 20,
+              "uniqueItems": true
+            },
+            "default_model": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "modalities": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1, "maxLength": 64 },
+              "maxItems": 20,
+              "uniqueItems": true
+            },
+            "message_types": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1, "maxLength": 64 },
+              "maxItems": 20,
+              "uniqueItems": true
+            }
+          }
+        }
+      ]
+    },
+    "capabilities_updated_at": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "Last connect refresh; 15m stale TTL for UI active-now only — never blocks routing"
+    }
+  }
+}

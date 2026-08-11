@@ -61,6 +61,26 @@ class CoreSidecar {
 
   /// Sidecar next to / inside the running app (Resources or beside exe).
   /// Ignores `MUTANDE_CORE_PATH` and PATH.
+  /// Semver from `mutande-core --version` (bundled binary when [path] omitted).
+  static Future<String?> readBinaryVersion(String path) async {
+    try {
+      final result = await Process.run(path, const ['--version']);
+      if (result.exitCode != 0) return null;
+      final text = (result.stdout as String).trim();
+      if (text.isEmpty) return null;
+      final parts = text.split(RegExp(r'\s+'));
+      return normalizeVersion(parts.isNotEmpty ? parts.last : text);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<String?> bundledCoreVersion() async {
+    final path = bundledResolvePath();
+    if (path == null) return null;
+    return readBinaryVersion(path);
+  }
+
   static String? bundledResolvePath() {
     try {
       final exe = File(Platform.resolvedExecutable).absolute;

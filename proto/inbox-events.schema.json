@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mutande.app/schemas/inbox-events/v1",
+  "title": "InboxEvents",
+  "description": "Local daemon WebSocket frames for UI inbox freshness (metadata only — never plaintext).",
+  "oneOf": [
+    {
+      "title": "ClientSubscribe",
+      "type": "object",
+      "required": ["op", "channel"],
+      "properties": {
+        "op": { "const": "subscribe" },
+        "channel": { "const": "inbox" }
+      },
+      "additionalProperties": false
+    },
+    {
+      "title": "ClientPing",
+      "type": "object",
+      "required": ["op"],
+      "properties": {
+        "op": { "const": "ping" }
+      },
+      "additionalProperties": false
+    },
+    {
+      "title": "SubscribedAck",
+      "type": "object",
+      "required": ["event", "channel"],
+      "properties": {
+        "event": { "const": "subscribed" },
+        "channel": { "const": "inbox" }
+      },
+      "additionalProperties": false
+    },
+    {
+      "title": "InboxChangedEvent",
+      "type": "object",
+      "required": ["event", "revision", "at"],
+      "properties": {
+        "event": { "const": "inbox_changed" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "at": { "type": "string", "description": "Unix seconds or RFC3339 timestamp" }
+      },
+      "additionalProperties": false
+    },
+    {
+      "title": "Heartbeat",
+      "type": "object",
+      "required": ["event"],
+      "properties": {
+        "event": { "const": "heartbeat" }
+      },
+      "additionalProperties": false
+    },
+    {
+      "title": "Pong",
+      "type": "object",
+      "required": ["event"],
+      "properties": {
+        "event": { "const": "pong" }
+      },
+      "additionalProperties": false
+    }
+  ]
+}

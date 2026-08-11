@@ -6,6 +6,7 @@ import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'app_actions.dart';
+import 'app_actions.dart';
 import 'core_sidecar.dart';
 import 'daemon_client.dart';
 
@@ -45,6 +46,7 @@ class TrayController with TrayListener, WindowListener {
     // Solid black plate + white mark — not a template (templates strip the fill).
     await trayManager.setIcon(iconAsset, isTemplate: false);
     await trayManager.setToolTip('mutande');
+    AppActions.sessionReady.addListener(_onSessionReadyChanged);
     await _refreshMenu();
 
     unawaited(_pollHealth());
@@ -57,12 +59,17 @@ class TrayController with TrayListener, WindowListener {
     _healthTimer?.cancel();
     _healthTimer = null;
     if (_started) {
+      AppActions.sessionReady.removeListener(_onSessionReadyChanged);
       trayManager.removeListener(this);
       windowManager.removeListener(this);
       await trayManager.destroy();
     }
     _daemon.dispose();
     _started = false;
+  }
+
+  void _onSessionReadyChanged() {
+    unawaited(_refreshMenu());
   }
 
   Future<void> _pollHealth() async {
@@ -74,11 +81,12 @@ class TrayController with TrayListener, WindowListener {
   }
 
   Future<void> _refreshMenu() async {
-    final statusLabel = _daemonUp == null
-        ? 'Daemon: …'
-        : _daemonUp!
-            ? 'Daemon: up'
-            : 'Daemon: down';
+    final statusLabel = switch (_daemonUp) {
+      null => 'Daemon: …',
+      false => 'Daemon: down',
+      true when AppActions.sessionReady.value => 'Daemon: up',
+      true => 'Daemon: starting',
+    };
 
     final menu = Menu(
       items: [

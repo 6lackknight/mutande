@@ -202,6 +202,21 @@ pub struct Agent {
     pub user_id: String,
     pub slug: String,
     pub created_at: String,
+    /// Hub-assigned: `sidecar` | `mcp`. Absent on pre-L1 rows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transport: Option<String>,
+    /// Hub-assigned: `private` | `public`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visibility: Option<String>,
+    /// Hub-assigned: `org` | `external` | `enterprise`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trust_tier: Option<String>,
+    /// Hub-assigned for mcp transport; null/absent for sidecar.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mcp_endpoint: Option<String>,
+    /// Last capability handshake; Flutter maps as last_seen / freshness.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capabilities_updated_at: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -209,6 +224,19 @@ pub struct AgentListResponse {
     pub agents: Vec<Agent>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_agent_id: Option<String>,
+}
+
+/// Preferred transport per display slug (`GET`/`PUT /v1/agents/transport-defaults`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct AgentTransportPrefs {
+    #[serde(default)]
+    pub defaults: std::collections::BTreeMap<String, String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct SetTransportDefaultRequest {
+    pub slug: String,
+    pub transport: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

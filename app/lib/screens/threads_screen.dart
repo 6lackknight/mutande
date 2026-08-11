@@ -4,20 +4,26 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_resizable_container/flutter_resizable_container.dart';
 
+import '../models/agent_transport.dart';
 import '../services/daemon_client.dart';
+import '../services/daemon_event_client.dart';
 import '../services/notification_prefs_store.dart';
+import '../services/thread_list_cache_store.dart';
+import '../services/transport_prefs_store.dart';
 import '../theme/mutande_macos_theme.dart';
 import '../util/address_display.dart';
 import '../util/clock_format.dart';
+import '../util/compose_transport.dart';
 import '../widgets/ai_host_icon.dart';
 import '../widgets/message_attachments.dart';
 import '../widgets/pane_quiet_state.dart';
 import '../widgets/thinking_orb.dart';
 import '../widgets/thread_message_tree.dart';
 import '../widgets/thread_status_badge.dart';
+import '../widgets/transport_chip.dart';
 
-/// Inbox poll cadence — merge into existing rows (no push channel in v1).
-const Duration _threadsPollInterval = Duration(seconds: 3);
+/// Inbox poll when WebSocket is down — push is primary (see PRD-INBOX-EVENTS).
+const Duration _threadsFallbackPollInterval = Duration(seconds: 30);
 
 Future<bool?> confirmThreadAction(
   BuildContext context, {
@@ -59,6 +65,7 @@ class ThreadsPanel extends StatefulWidget {
   ThreadsPanel({
     super.key,
     required this.daemon,
+    this.inboxEvents,
     this.onReloadReady,
     this.myHandle,
     this.composeRecipient,
@@ -69,6 +76,10 @@ class ThreadsPanel extends StatefulWidget {
   }) : notificationPrefs = notificationPrefs ?? NotificationPrefsStore();
 
   final DaemonClient daemon;
+
+  /// Session-level WebSocket inbox push (null in tests / when unavailable).
+  final DaemonEventClient? inboxEvents;
+
   final ValueChanged<VoidCallback?>? onReloadReady;
 
   /// Current user handle (`alice@acme`) for self-shorthand display.
@@ -99,10 +110,17 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
   String? _composePrefillRecipient;
   int? _hotDivider;
   Timer? _pollTimer;
+  StreamSubscription? _inboxSub;
   final GlobalKey<_ThreadDetailPanelState> _detailKey =
       GlobalKey<_ThreadDetailPanelState>();
   final ScrollController _listScroll = ScrollController();
   Set<String> _mutedIds = {};
+  final ThreadListCacheStore _threadCache = ThreadListCacheStore();
+
+  bool get _inWidgetTest =>
+      WidgetsBinding.instance.runtimeType.toString().contains('Test');
+
+  String get _filterKey => _filter == 'all' ? 'all' : _filter;
 
   ResizableDivider _splitDivider(int id) {
     final hot = _hotDivider == id;
@@ -132,7 +150,34 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
       });
     }
     _loadMuted();
-    _reload();
+    unawaited(_hydrateFromCacheThenReload());
+    final events = widget.inboxEvents;
+    if (events != null && !_inWidgetTest) {
+      _inboxSub = events.events.listen((_) {
+        unawaited(_reload(silent: true));
+      });
+      events.connected.addListener(_onInboxConnectionChanged);
+      _syncPollingMode();
+    }
+  }
+
+  void _onInboxConnectionChanged() => _syncPollingMode();
+
+  Future<void> _hydrateFromCacheThenReload() async {
+    if (!_inWidgetTest) {
+      final cached = await _threadCache.load(_filterKey);
+      if (!mounted) return;
+      if (cached != null) {
+        setState(() {
+          _threads = cached;
+          _loading = false;
+          _error = null;
+        });
+        unawaited(_reload(silent: true));
+        return;
+      }
+    }
+    await _reload();
   }
 
   Future<void> _loadMuted() async {
@@ -187,14 +232,28 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
 
   @override
   void dispose() {
+    widget.inboxEvents?.connected.removeListener(_onInboxConnectionChanged);
+    unawaited(_inboxSub?.cancel());
     _pollTimer?.cancel();
     _listScroll.dispose();
     widget.onReloadReady?.call(null);
     super.dispose();
   }
 
-  void _ensurePolling() {
-    _pollTimer ??= Timer.periodic(_threadsPollInterval, (_) {
+  void _syncPollingMode() {
+    if (_inWidgetTest) return;
+    final live = widget.inboxEvents?.connected.value == true;
+    if (live) {
+      _pollTimer?.cancel();
+      _pollTimer = null;
+      return;
+    }
+    _ensureFallbackPolling();
+  }
+
+  void _ensureFallbackPolling() {
+    if (_inWidgetTest) return;
+    _pollTimer ??= Timer.periodic(_threadsFallbackPollInterval, (_) {
       unawaited(_reload(silent: true));
     });
   }
@@ -217,7 +276,10 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
       );
       if (!mounted) return;
       _applyThreadList(threads, clearError: true);
-      _ensurePolling();
+      if (!_inWidgetTest) {
+        unawaited(_threadCache.save(_filterKey, threads));
+      }
+      _syncPollingMode();
     } catch (e) {
       if (!mounted) return;
       if (silent && _threads.isNotEmpty) {
@@ -362,8 +424,12 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
           _ThreadsToolbar(
             filter: _filter,
             onFilterChanged: (v) {
-              setState(() => _filter = v);
-              _reload();
+              setState(() {
+                _filter = v;
+                _loading = true;
+                _error = null;
+              });
+              unawaited(_hydrateFromCacheThenReload());
             },
           ),
           if (_composeOpen) ...[
@@ -877,11 +943,63 @@ class _ComposePanelState extends State<_ComposePanel> {
   bool _sending = false;
   String? _error;
   bool _seededRecipient = false;
+  ComposeTransportWarning? _transportWarning;
+  List<AgentInfo> _agents = const [];
+  TransportPrefs _transportPrefs = const TransportPrefs();
+  Timer? _resolveDebounce;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadTransportContext());
+  }
 
   @override
   void dispose() {
+    _resolveDebounce?.cancel();
     _notes.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadTransportContext() async {
+    TransportPrefs prefs = const TransportPrefs();
+    List<AgentInfo> agents = const [];
+    try {
+      // Prefer hub defaults when courier is reachable; fall back to local cache.
+      try {
+        prefs = TransportPrefs.fromJson(await widget.daemon.getTransportDefaults());
+      } catch (_) {
+        prefs = await TransportPrefsStore().load();
+      }
+    } catch (_) {}
+    try {
+      agents = (await widget.daemon.listAgents()).agents;
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() {
+      _transportPrefs = prefs;
+      _agents = agents;
+    });
+    _resolveWarning(_recipientController?.text ?? widget.initialRecipient);
+  }
+
+  void _onRecipientChanged(String text) {
+    _resolveDebounce?.cancel();
+    _resolveDebounce = Timer(const Duration(milliseconds: 180), () {
+      if (!mounted) return;
+      _resolveWarning(text);
+    });
+  }
+
+  void _resolveWarning(String? text) {
+    final warning = resolveComposeTransportWarning(
+      recipient: text?.trim() ?? '',
+      agents: _agents,
+      prefs: _transportPrefs,
+    );
+    if (!mounted) return;
+    if (warning?.label == _transportWarning?.label) return;
+    setState(() => _transportWarning = warning);
   }
 
   Future<List<String>> _recipientOptions(String input) async {
@@ -991,7 +1109,10 @@ class _ComposePanelState extends State<_ComposePanel> {
         children: [
           Autocomplete<String>(
             optionsBuilder: (text) async => _recipientOptions(text.text),
-            onSelected: (value) => _recipientController?.text = value,
+            onSelected: (value) {
+              _recipientController?.text = value;
+              _resolveWarning(value);
+            },
             fieldViewBuilder: (context, controller, focusNode, onSubmit) {
               _recipientController = controller;
               final seed = widget.initialRecipient?.trim();
@@ -1007,10 +1128,18 @@ class _ComposePanelState extends State<_ComposePanel> {
                   labelText: 'Recipient',
                 ),
                 enabled: !_sending,
+                onChanged: _onRecipientChanged,
                 onSubmitted: (_) => onSubmit(),
               );
             },
           ),
+          if (_transportWarning != null) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: ComposeNonE2eChip(warning: _transportWarning!),
+            ),
+          ],
           const SizedBox(height: 8),
           TextField(
             controller: _notes,

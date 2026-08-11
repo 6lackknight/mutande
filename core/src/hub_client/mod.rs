@@ -245,16 +245,40 @@ impl HubClient {
         Ok(resp.devices)
     }
 
+    /// Sidecar capability handshake. Canonical path is `/connect/sidecar`;
+    /// hub `/register` remains a compat alias that maps to the same store helper.
     pub async fn register_agent(&self, slug: &str) -> Result<Agent> {
+        self.connect_sidecar(slug).await
+    }
+
+    pub async fn connect_sidecar(&self, slug: &str) -> Result<Agent> {
         let body = RegisterAgentRequest {
             slug: slug.to_string(),
         };
-        let resp: RegisterAgentResponse = self.post_json("/v1/agents/register", &body, true).await?;
+        let resp: RegisterAgentResponse = self
+            .post_json("/v1/agents/connect/sidecar", &body, true)
+            .await?;
         Ok(resp.agent)
     }
 
     pub async fn list_agents(&self) -> Result<AgentListResponse> {
         self.get_json("/v1/agents").await
+    }
+
+    pub async fn get_transport_defaults(&self) -> Result<AgentTransportPrefs> {
+        self.get_json("/v1/agents/transport-defaults").await
+    }
+
+    pub async fn set_transport_default(
+        &self,
+        slug: &str,
+        transport: &str,
+    ) -> Result<AgentTransportPrefs> {
+        let body = SetTransportDefaultRequest {
+            slug: slug.to_string(),
+            transport: transport.to_string(),
+        };
+        self.put_json("/v1/agents/transport-defaults", &body).await
     }
 
     pub async fn list_agents_for_handle(&self, handle: &str) -> Result<Vec<Agent>> {
@@ -1185,5 +1209,114 @@ mod tests {
         assert_eq!(fetched.messages.len(), 1);
         let opened = open(&fetched.messages[0].envelope, &secret).unwrap();
         assert_eq!(opened, plaintext);
+    }
+
+    #[tokio::test]
+    async fn list_agents_forwards_l1_fields_and_transport_defaults() {
+        use wiremock::matchers::{body_json, method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/agents"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                "agents": [
+                    {
+                        "id": "a-sidecar",
+                        "user_id": "u1",
+                        "slug": "chatgpt",
+                        "created_at": "2026-01-01T00:00:00Z",
+                        "transport": "sidecar",
+                        "visibility": "private",
+                        "trust_tier": "org",
+                        "mcp_endpoint": null,
+                        "capabilities_updated_at": "2026-08-11T12:00:00Z"
+                    },
+                    {
+                        "id": "a-mcp",
+                        "user_id": "u1",
+                        "slug": "chatgpt",
+                        "created_at": "2026-01-02T00:00:00Z",
+                        "transport": "mcp",
+                        "visibility": "private",
+                        "trust_tier": "org",
+                        "mcp_endpoint": "https://mcp.mutande.online",
+                        "capabilities_updated_at": "2026-08-11T12:05:00Z"
+                    }
+                ],
+                "default_agent_id": "a-sidecar"
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/v1/agents/transport-defaults"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                "defaults": { "chatgpt": "mcp" }
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        Mock::given(method("PUT"))
+            .and(path("/v1/agents/transport-defaults"))
+            .and(body_json(serde_json::json!({
+                "slug": "chatgpt",
+                "transport": "sidecar"
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                "defaults": { "chatgpt": "sidecar" }
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/agents/connect/sidecar"))
+            .and(body_json(serde_json::json!({ "slug": "cursor" })))
+            .respond_with(ResponseTemplate::new(201).set_body_json(&serde_json::json!({
+                "agent": {
+                    "id": "a-cursor",
+                    "user_id": "u1",
+                    "slug": "cursor",
+                    "created_at": "2026-08-11T12:00:00Z",
+                    "transport": "sidecar",
+                    "visibility": "private",
+                    "trust_tier": "org",
+                    "mcp_endpoint": null,
+                    "capabilities_updated_at": "2026-08-11T12:00:00Z"
+                }
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let client = HubClient::new(HubConfig::new(server.uri(), "tok")).unwrap();
+        let list = client.list_agents().await.unwrap();
+        assert_eq!(list.agents.len(), 2);
+        assert_eq!(list.agents[0].transport.as_deref(), Some("sidecar"));
+        assert_eq!(list.agents[1].transport.as_deref(), Some("mcp"));
+        assert_eq!(list.agents[1].trust_tier.as_deref(), Some("org"));
+        assert_eq!(
+            list.agents[1].capabilities_updated_at.as_deref(),
+            Some("2026-08-11T12:05:00Z")
+        );
+
+        let prefs = client.get_transport_defaults().await.unwrap();
+        assert_eq!(prefs.defaults.get("chatgpt").map(String::as_str), Some("mcp"));
+
+        let updated = client
+            .set_transport_default("chatgpt", "sidecar")
+            .await
+            .unwrap();
+        assert_eq!(
+            updated.defaults.get("chatgpt").map(String::as_str),
+            Some("sidecar")
+        );
+
+        let agent = client.register_agent("cursor").await.unwrap();
+        assert_eq!(agent.slug, "cursor");
+        assert_eq!(agent.transport.as_deref(), Some("sidecar"));
     }
 }

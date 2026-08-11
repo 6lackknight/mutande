@@ -81,6 +81,14 @@ void main() {
     await sidecar.stop();
   });
 
+  test('readBinaryVersion parses clap --version output', () async {
+    final path = CoreSidecar.bundledResolvePath();
+    if (path == null) return;
+    final version = await CoreSidecar.readBinaryVersion(path);
+    expect(version, isNotNull);
+    expect(version, matches(RegExp(r'^\d+\.\d+\.\d+')));
+  });
+
   test('start replaces healthy daemon when version mismatches', () async {
     var healthCalls = 0;
     var killCalls = 0;

@@ -175,10 +175,57 @@ Enable **RBAC** on the Auth0 API (`https://hub.mutande.app`) so `event.authoriza
 
 After assigning the role or changing the Action, users must **sign out and sign in** so a fresh access token includes the claim. Org invites stay gated by hub `org_admin`.
 
+## 8. Hosted MCP (ChatGPT web / Claude.ai) — L0
+
+mutande hosts a remote MCP server at `https://mcp.mutande.online` (`mcp/` package). Web hosts connect **to us**; identity is the same Auth0 account as Mac/hub. No platform JWTs in v1.
+
+### Tenant toggles (required for MCP clients)
+
+Dashboard → **Settings → Advanced**:
+
+1. **Resource Parameter Compatibility Profile** — on  
+2. **Include Issuer in Authorization Responses** — on  
+
+Promote Username-Password (and any social connections MCP clients should use) to **domain-level** so third-party apps can authenticate (`is_domain_connection: true`).
+
+### Audience (L0 default)
+
+Keep a **single** API Identifier `https://hub.mutande.app`. Hosted MCP validates that audience and forwards the same Bearer token to hub (`POST /v1/agents/connect/mcp`, later inbox APIs). No OBO exchange in L0.
+
+Optional later (stronger resource indicators):
+
+| Field | Value |
+|-------|--------|
+| Extra API Identifier | `https://mcp.mutande.online` |
+| MCP env `AUTH0_MCP_AUDIENCE` | same |
+| Token path | OBO / token exchange MCP → hub audience |
+
+### Client registration
+
+MCP clients (ChatGPT, Claude.ai, MCP Inspector) need an Auth0 application:
+
+- Prefer **Dynamic Client Registration** for third-party hosts, **or**
+- Manually register each host’s redirect URIs (Auth0 docs: *Register your MCP Client Application* / CIMD).
+
+Grant access to the Mutande Hub API (`https://hub.mutande.app`). Grant types: Authorization Code + PKCE, Refresh Token, Offline Access.
+
+### Env (Deno Deploy project `mutande-mcp`)
+
+| Variable | Notes |
+|----------|--------|
+| `AUTH0_DOMAIN` | `auth.mutande.online` |
+| `AUTH0_AUDIENCE` | `https://hub.mutande.app` |
+| `MCP_PUBLIC_URL` | `https://mcp.mutande.online` |
+| `MUTANDE_HUB_URL` | `https://hub.mutande.online` |
+| `MCP_DEFAULT_AGENT_SLUG` | default `chatgpt` |
+
+See `mcp/README.md` for connector setup and deploy.
+
 ## See also
 
 - `hub/README.md` — API routes + deploy
+- `mcp/README.md` — hosted MCP (L0) + ChatGPT/Claude connector notes
 - `web/README.md` — Next.js Auth0 + Vercel
 - `core/README.md` — daemon OAuth + RPC
 - `app/README.md` — Flutter sign-in UI
-- `hub/.env.example`, `web/.env.example`, `core/.env.example`
+- `hub/.env.example`, `mcp/.env.example`, `web/.env.example`, `core/.env.example`

@@ -312,6 +312,16 @@ async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Resu
                 .await?;
             Ok(serde_json::to_value(router)?)
         }
+        "get_transport_defaults" => {
+            let prefs = state.get_transport_defaults().await?;
+            Ok(serde_json::to_value(prefs)?)
+        }
+        "set_transport_default" => {
+            let slug = param_str(&params, "slug")?;
+            let transport = param_str(&params, "transport")?;
+            let prefs = state.set_transport_default(&slug, &transport).await?;
+            Ok(serde_json::to_value(prefs)?)
+        }
         "get_safety_number" | "own_safety_number" => {
             let result = state.own_safety_number()?;
             Ok(serde_json::to_value(result)?)

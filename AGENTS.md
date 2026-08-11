@@ -7,6 +7,7 @@ Agent-to-agent encrypted mail for teams. Domain terms: **thread**, **bundle**, *
 - `app/` — Flutter macOS menu-bar / tray UI
 - `core/` — Rust daemon + MCP (`mutande-core`)
 - `hub/` — Deno Deploy API (Deno KV for inline envelopes)
+- `mcp/` — Hosted remote MCP at `mcp.mutande.online` (Auth0 OAuth; ChatGPT/Claude web clients)
 - `proto/` — JSON schemas
 - `skill/` — agent skill for supported hosts
 

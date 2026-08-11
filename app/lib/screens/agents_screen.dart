@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../models/agent_transport.dart';
 import '../services/daemon_client.dart';
 import '../services/host_link_store.dart';
 import '../util/address_display.dart';
@@ -12,6 +13,7 @@ import '../widgets/connect_host_picker.dart';
 import '../widgets/host_link_status.dart';
 import '../widgets/pane_quiet_state.dart';
 import '../widgets/thinking_orb.dart';
+import '../widgets/transport_chip.dart';
 
 /// Agent slug rules match hub `assertValidAgentSlug` (`[a-z0-9-]{1,32}`).
 String? validateAgentSlug(String slug, {Set<String> taken = const {}}) {
@@ -151,12 +153,22 @@ class _AgentsPanelState extends State<AgentsPanel> {
     }
   }
 
-  Set<String> _takenSlugs({String? except}) {
+  /// Slugs blocked for rename/add. Same display slug may exist twice when
+  /// transports differ (sidecar + web); only same-transport collisions count.
+  Set<String> _takenSlugs({AgentInfo? forAgent}) {
+    final agents = _list?.agents ?? const <AgentInfo>[];
+    if (forAgent == null) {
+      return {for (final a in agents) a.slug.toLowerCase()};
+    }
     final taken = <String>{};
-    for (final a in _list?.agents ?? const <AgentInfo>[]) {
-      final s = a.slug.toLowerCase();
-      if (except != null && s == except.toLowerCase()) continue;
-      taken.add(s);
+    for (final a in agents) {
+      if (a.id == forAgent.id) continue;
+      final sameTransportConflict = forAgent.transport == null ||
+          a.transport == null ||
+          a.transport == forAgent.transport;
+      if (sameTransportConflict) {
+        taken.add(a.slug.toLowerCase());
+      }
     }
     return taken;
   }
@@ -203,7 +215,7 @@ class _AgentsPanelState extends State<AgentsPanel> {
         agent: agent,
         isPrimary: isPrimary,
         link: hostLinkForSlug(agent.slug, _hostLinks),
-        takenSlugs: _takenSlugs(except: agent.slug),
+        takenSlugs: _takenSlugs(forAgent: agent),
         onRename: (slug) => _renameAgent(agent, slug),
         onConnect: () => _connectAgentHost(agent),
         onSetDefault: isPrimary
@@ -460,7 +472,7 @@ class _AgentsGraph extends StatelessWidget {
                 _EmptyPrimary(onAdd: onAdd)
               else ...[
                 _PrimaryCard(
-                  slug: primary!.slug,
+                  agent: primary!,
                   link: hostLinkForSlug(primary!.slug, hostLinks),
                   onTap: () => onSelect(primary!, true),
                 ),
@@ -624,18 +636,23 @@ class _LinePainter extends CustomPainter {
 
 class _PrimaryCard extends StatelessWidget {
   const _PrimaryCard({
-    required this.slug,
+    required this.agent,
     required this.link,
     required this.onTap,
   });
 
-  final String slug;
+  final AgentInfo agent;
   final HostLinkRecord? link;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final label = slug.toLowerCase();
+    final label = agent.slug.toLowerCase();
+    final transportChip = TransportChip.maybe(
+      transport: agent.transport,
+      compact: true,
+      lastSeen: agent.lastSeen,
+    );
     return Material(
       color: Colors.white,
       elevation: 1,
@@ -656,25 +673,35 @@ class _PrimaryCard extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  AiHostIcon(slug, size: 40),
+                  AiHostIcon(agent.slug, size: 40),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Tooltip(
-                          message: label,
-                          waitDuration: const Duration(milliseconds: 400),
-                          child: Text(
-                            label,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.titleSmall
-                                ?.copyWith(
-                                  color: const Color(0xFF292524),
-                                  fontWeight: FontWeight.w700,
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Tooltip(
+                                message: label,
+                                waitDuration: const Duration(milliseconds: 400),
+                                child: Text(
+                                  label,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.titleSmall
+                                      ?.copyWith(
+                                        color: const Color(0xFF292524),
+                                        fontWeight: FontWeight.w700,
+                                      ),
                                 ),
-                          ),
+                              ),
+                            ),
+                            if (transportChip != null) ...[
+                              const SizedBox(width: 6),
+                              transportChip,
+                            ],
+                          ],
                         ),
                         const SizedBox(height: 2),
                         HostLinkStatusBadge(link: link),
@@ -732,7 +759,7 @@ class _BranchRow extends StatelessWidget {
     final children = <Widget>[
       ...subs.map(
         (a) => _SubCard(
-          slug: a.slug,
+          agent: a,
           link: hostLinkForSlug(a.slug, hostLinks),
           onTap: () => onSelect(a),
         ),
@@ -811,18 +838,23 @@ class _BranchPainter extends CustomPainter {
 
 class _SubCard extends StatelessWidget {
   const _SubCard({
-    required this.slug,
+    required this.agent,
     required this.link,
     required this.onTap,
   });
 
-  final String slug;
+  final AgentInfo agent;
   final HostLinkRecord? link;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final label = slug.toLowerCase();
+    final label = agent.slug.toLowerCase();
+    final transportChip = TransportChip.maybe(
+      transport: agent.transport,
+      compact: true,
+      lastSeen: agent.lastSeen,
+    );
     return Material(
       color: Colors.white,
       elevation: 1,
@@ -840,7 +872,7 @@ class _SubCard extends StatelessWidget {
           ),
           child: Column(
             children: [
-              AiHostIcon(slug, size: 36),
+              AiHostIcon(agent.slug, size: 36),
               const SizedBox(height: 8),
               Tooltip(
                 message: label,
@@ -856,6 +888,10 @@ class _SubCard extends StatelessWidget {
                   ),
                 ),
               ),
+              if (transportChip != null) ...[
+                const SizedBox(height: 4),
+                transportChip,
+              ],
               const SizedBox(height: 6),
               SizedBox(
                 width: 88,
@@ -972,6 +1008,27 @@ class _AgentsList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final handleLabel = formatMailAddress(handle);
+    // Keep dual-transport siblings adjacent; primary row stays first.
+    final rest = [...subs]..sort((a, b) {
+      final slugCmp = a.slug.toLowerCase().compareTo(b.slug.toLowerCase());
+      if (slugCmp != 0) return slugCmp;
+      return (a.transport?.wireValue ?? '')
+          .compareTo(b.transport?.wireValue ?? '');
+    });
+    final primarySlug = primary?.slug.toLowerCase();
+    final ordered = <AgentInfo>[
+      if (primary != null) primary!,
+      if (primarySlug != null)
+        ...rest.where((a) => a.slug.toLowerCase() == primarySlug),
+      ...rest.where(
+        (a) => primarySlug == null || a.slug.toLowerCase() != primarySlug,
+      ),
+    ];
+
+    final dualSlugs = dualTransportSlugs(
+      ordered.map((a) => (slug: a.slug, transport: a.transport)),
+    ).toSet();
+
     return ListView(
       children: [
         ListTile(
@@ -979,53 +1036,16 @@ class _AgentsList extends StatelessWidget {
           title: Text(handleLabel),
           subtitle: const Text('Handle'),
         ),
-        if (primary != null)
-          ListTile(
-            contentPadding: const EdgeInsets.only(left: 28, right: 8),
-            leading: AiHostIcon(primary!.slug, size: 32),
-            title: Text(primary!.slug.toLowerCase()),
-            subtitle: Text('Primary · receives $handleLabel & @all'),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                HostLinkStatusBadge(
-                  link: hostLinkForSlug(primary!.slug, hostLinks),
-                  style: HostLinkStatusStyle.settings,
-                ),
-                const SizedBox(width: 8),
-                const Text(
-                  'PRIMARY',
-                  style: TextStyle(
-                    color: Color(0xFF92400E),
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-            onTap: () => onSelect(primary!, true),
-          ),
-        for (final a in subs)
-          ListTile(
-            contentPadding: const EdgeInsets.only(left: 48, right: 8),
-            leading: AiHostIcon(a.slug, size: 32),
-            title: Text(a.slug.toLowerCase()),
-            subtitle: Text(formatMailAddress('$handle/${a.slug}')),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                HostLinkStatusBadge(
-                  link: hostLinkForSlug(a.slug, hostLinks),
-                  style: HostLinkStatusStyle.settings,
-                ),
-                const SizedBox(width: 8),
-                TextButton(
-                  onPressed: () => onSetDefault(a.id),
-                  child: const Text('Set as default'),
-                ),
-              ],
-            ),
-            onTap: () => onSelect(a, false),
+        for (var i = 0; i < ordered.length; i++)
+          _agentListTile(
+            context,
+            agent: ordered[i],
+            isPrimary: primary != null && ordered[i].id == primary!.id,
+            handleLabel: handleLabel,
+            grouped: dualSlugs.contains(ordered[i].slug.toLowerCase()),
+            continueGroup: i > 0 &&
+                ordered[i].slug.toLowerCase() ==
+                    ordered[i - 1].slug.toLowerCase(),
           ),
         Padding(
           padding: const EdgeInsets.only(left: 48, top: 4, right: 8),
@@ -1036,6 +1056,87 @@ class _AgentsList extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _agentListTile(
+    BuildContext context, {
+    required AgentInfo agent,
+    required bool isPrimary,
+    required String handleLabel,
+    required bool grouped,
+    required bool continueGroup,
+  }) {
+    final transportChip = TransportChip.maybe(
+      transport: agent.transport,
+      lastSeen: agent.lastSeen,
+    );
+    final title = Row(
+      children: [
+        Flexible(
+          child: Text(
+            agent.slug.toLowerCase(),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        if (transportChip != null) ...[
+          const SizedBox(width: 8),
+          transportChip,
+        ],
+      ],
+    );
+    return DecoratedBox(
+      decoration: grouped
+          ? BoxDecoration(
+              border: Border(
+                left: BorderSide(
+                  color: const Color(0xFFD6D3D1),
+                  width: continueGroup ? 2 : 2,
+                ),
+              ),
+              color: continueGroup
+                  ? const Color(0xFFF5F5F4)
+                  : Colors.transparent,
+            )
+          : const BoxDecoration(),
+      child: ListTile(
+        contentPadding: EdgeInsets.only(
+          left: isPrimary ? 28 : 48,
+          right: 8,
+        ),
+        leading: AiHostIcon(agent.slug, size: 32),
+        title: title,
+        subtitle: Text(
+          isPrimary
+              ? 'Primary · receives $handleLabel & @all'
+              : formatMailAddress('$handle/${agent.slug}'),
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            HostLinkStatusBadge(
+              link: hostLinkForSlug(agent.slug, hostLinks),
+              style: HostLinkStatusStyle.settings,
+            ),
+            const SizedBox(width: 8),
+            if (isPrimary)
+              const Text(
+                'PRIMARY',
+                style: TextStyle(
+                  color: Color(0xFF92400E),
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                ),
+              )
+            else
+              TextButton(
+                onPressed: () => onSetDefault(agent.id),
+                child: const Text('Set as default'),
+              ),
+          ],
+        ),
+        onTap: () => onSelect(agent, isPrimary),
+      ),
     );
   }
 }
@@ -1319,6 +1420,17 @@ class _AgentInspectorState extends State<_AgentInspector> {
                   const SizedBox(height: 12),
                   _InspectorField(label: 'Display address', value: _display),
                   _InspectorField(label: 'Agent slug', value: slug),
+                  if (widget.agent.transport != null)
+                    _InspectorField(
+                      label: 'Transport',
+                      value: widget.agent.transport!.chipLabel,
+                      trailing: TransportChip(
+                        transport: widget.agent.transport!,
+                        compact: true,
+                        active: widget.agent.capabilityFresh,
+                        lastSeen: widget.agent.lastSeen,
+                      ),
+                    ),
                   _InspectorField(
                     label: 'Host',
                     value: _host,

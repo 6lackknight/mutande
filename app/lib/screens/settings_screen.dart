@@ -1,17 +1,22 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../config/app_config.dart';
+import '../models/agent_transport.dart';
 import '../services/core_sidecar.dart';
 import '../services/daemon_client.dart';
 import '../services/host_link_store.dart';
 import '../services/notification_prefs_store.dart';
+import '../services/transport_prefs_store.dart';
 import '../util/address_display.dart';
 import '../widgets/ai_host_icon.dart';
 import '../widgets/connect_host_flow.dart';
 import '../widgets/connect_host_picker.dart';
 import '../widgets/host_link_status.dart';
 import '../widgets/thinking_orb.dart';
+import '../widgets/transport_chip.dart';
 
 // Compact tray settings — stone surfaces, tight-within / air-between sections.
 const Color _kStone50 = Color(0xFFFAFAF9);
@@ -59,8 +64,11 @@ class SettingsScreen extends StatefulWidget {
     this.onSignedOut,
     HostLinkStore? hostLinkStore,
     NotificationPrefsStore? notificationPrefs,
+    TransportPrefsStore? transportPrefs,
   }) : hostLinkStore = hostLinkStore ?? HostLinkStore(),
-       notificationPrefs = notificationPrefs ?? NotificationPrefsStore();
+       notificationPrefs = notificationPrefs ?? NotificationPrefsStore(),
+       transportPrefs =
+           transportPrefs ?? TransportPrefsStore(daemon: daemon);
 
   final DaemonClient daemon;
   final bool checking;
@@ -80,6 +88,7 @@ class SettingsScreen extends StatefulWidget {
   final ValueChanged<DaemonStatusResult>? onSignedOut;
   final HostLinkStore hostLinkStore;
   final NotificationPrefsStore notificationPrefs;
+  final TransportPrefsStore transportPrefs;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -93,6 +102,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   DateTime? _lastPingAt;
   bool _restartingCourier = false;
   String? _restartError;
+  String? _bundledCoreVersion;
   /// Soft status (Keychain wait) — not an error.
   String? _courierHint;
   SafetyNumberResult? _ours;
@@ -105,6 +115,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// Starts false so the card paints immediately with defaults (orb loaders
   /// never settle in widget tests). Fresh prefs still replace via [_loadNotifPrefs].
   bool _loadingNotif = false;
+  TransportPrefs _transportPrefs = const TransportPrefs();
+  List<AgentInfo> _agents = const [];
+  bool _loadingTransport = false;
 
   @override
   void initState() {
@@ -112,9 +125,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (_health?.connected == true) {
       _lastPingAt = DateTime.now();
     }
+    unawaited(_refreshBundledCoreVersion());
     _loadSafety();
     _loadHostLinks();
     _loadNotifPrefs();
+    _loadTransportPrefs();
+  }
+
+  Future<void> _refreshBundledCoreVersion() async {
+    final version = await CoreSidecar.bundledCoreVersion();
+    if (!mounted) return;
+    setState(() => _bundledCoreVersion = version);
   }
 
   @override
@@ -147,6 +168,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await widget.notificationPrefs.save(prefs);
     if (!mounted) return;
     setState(() => _notifPrefs = prefs);
+  }
+
+  Future<void> _loadTransportPrefs() async {
+    setState(() => _loadingTransport = true);
+    try {
+      // Store already has daemon when constructed via Settings/app; keep attached.
+      widget.transportPrefs.daemon ??= widget.daemon;
+      // Prefer hub when courier is up; local file remains offline fallback.
+      final prefs = _health?.connected == true
+          ? await widget.transportPrefs.syncFromHub()
+          : await widget.transportPrefs.load();
+      List<AgentInfo> agents = const [];
+      try {
+        final list = await widget.daemon.listAgents();
+        agents = list.agents;
+      } catch (_) {
+        // Prefs still useful; dual-slot section stays empty until agents load.
+      }
+      if (!mounted) return;
+      setState(() {
+        _transportPrefs = prefs;
+        _agents = agents;
+        _loadingTransport = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loadingTransport = false);
+    }
+  }
+
+  Future<void> _setDefaultTransport(String slug, AgentTransport transport) async {
+    final prefs = await widget.transportPrefs.setDefault(slug, transport);
+    if (!mounted) return;
+    setState(() => _transportPrefs = prefs);
   }
 
   Future<void> _loadHostLinks() async {
@@ -253,6 +308,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _lastPingAt = DateTime.now();
       if (result.connected) _courierHint = null;
     });
+    await _refreshBundledCoreVersion();
   }
 
   Future<void> _restartCourier() async {
@@ -280,6 +336,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _courierHint = null;
       }
     });
+    await _refreshBundledCoreVersion();
   }
 
   Future<void> _pickAndConnect() async {
@@ -361,6 +418,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  bool get _showDefaultTransportSection {
+    if (_loadingTransport) return false;
+    return dualTransportSlugs(
+      _agents.map((a) => (slug: a.slug, transport: a.transport)),
+    ).isNotEmpty;
+  }
+
   @override
   Widget build(BuildContext context) {
     final connected = _health?.connected == true;
@@ -402,6 +466,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 lastPingAt: _lastPingAt,
                 connected: connected,
                 appVersion: widget.appVersion,
+                bundledCoreVersion: _bundledCoreVersion,
                 restartError: _restartError,
                 courierHint: _courierHint,
                 onCheck: _check,
@@ -511,6 +576,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onChanged: _saveNotif,
               ),
             ),
+            if (_showDefaultTransportSection)
+              _section(
+                context,
+                label: 'DEFAULT TRANSPORT',
+                child: _DefaultTransportCard(
+                  agents: _agents,
+                  prefs: _transportPrefs,
+                  loading: _loadingTransport,
+                  onChanged: _setDefaultTransport,
+                ),
+              ),
             _section(
               context,
               label: 'SECURITY VERIFICATION',
@@ -598,6 +674,7 @@ class _DaemonCard extends StatelessWidget {
     required this.lastPingAt,
     required this.connected,
     required this.appVersion,
+    this.bundledCoreVersion,
     this.restartError,
     this.courierHint,
     required this.onCheck,
@@ -610,6 +687,7 @@ class _DaemonCard extends StatelessWidget {
   final DateTime? lastPingAt;
   final bool connected;
   final String appVersion;
+  final String? bundledCoreVersion;
   final String? restartError;
   final String? courierHint;
   final VoidCallback onCheck;
@@ -622,6 +700,14 @@ class _DaemonCard extends StatelessWidget {
     final app = CoreSidecar.normalizeVersion(appVersion);
     if (app == null) return false;
     return !CoreSidecar.versionsMatch(health?.version, app);
+  }
+
+  /// Bundled Resources binary differs from this app — restart cannot fix.
+  bool get _bundledStale {
+    final bundled = CoreSidecar.normalizeVersion(bundledCoreVersion);
+    final app = CoreSidecar.normalizeVersion(appVersion);
+    if (bundled == null || app == null) return false;
+    return bundled != app;
   }
 
   @override
@@ -638,7 +724,7 @@ class _DaemonCard extends StatelessWidget {
     final ping = lastPingAt == null
         ? 'Last check: —'
         : 'Last check: ${_relativePing(lastPingAt!)}';
-    final showRestart = onRestartCourier != null;
+    final showRestart = onRestartCourier != null && !_bundledStale;
 
     return Container(
       padding: _kCardPad,
@@ -691,6 +777,7 @@ class _DaemonCard extends StatelessWidget {
             _DaemonMismatchBanner(
               appVersion: appVer,
               courierVersion: version,
+              bundledCoreVersion: bundledCoreVersion,
             ),
           ],
           if (courierHint != null && courierHint!.trim().isNotEmpty) ...[
@@ -819,16 +906,29 @@ class _DaemonMismatchBanner extends StatelessWidget {
   const _DaemonMismatchBanner({
     required this.appVersion,
     required this.courierVersion,
+    this.bundledCoreVersion,
   });
 
   final String appVersion;
   final String? courierVersion;
+  final String? bundledCoreVersion;
 
   @override
   Widget build(BuildContext context) {
     final courier = courierVersion == null || courierVersion!.isEmpty
         ? 'unknown'
         : 'v$courierVersion';
+    final bundled = CoreSidecar.normalizeVersion(bundledCoreVersion);
+    final app = CoreSidecar.normalizeVersion(appVersion);
+    final bundledStale =
+        bundled != null && app != null && bundled != app;
+    final message = bundledStale
+        ? 'Sidecar mismatch — app v$appVersion, courier $courier '
+            '(bundled v$bundled). Restart cannot fix this — reinstall mutande '
+            'from mutande.online/download so app and courier versions match.'
+        : 'Sidecar mismatch — app v$appVersion, courier $courier. '
+            'Restart courier to replace a stale external daemon. '
+            'If this persists after restart, reinstall mutande.';
     return Container(
       padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
       decoration: BoxDecoration(
@@ -837,10 +937,7 @@ class _DaemonMismatchBanner extends StatelessWidget {
         border: Border.all(color: const Color(0xFFD6C4A1)),
       ),
       child: Text(
-        'Sidecar mismatch — app v$appVersion, courier $courier. '
-        'Restart courier to replace a stale external daemon. '
-        'If this persists after restart, reinstall mutande — '
-        'the app may ship an outdated courier.',
+        message,
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: _kBronze,
               fontSize: 12,
@@ -1028,6 +1125,145 @@ class _HostTile extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _DefaultTransportCard extends StatelessWidget {
+  const _DefaultTransportCard({
+    required this.agents,
+    required this.prefs,
+    required this.loading,
+    required this.onChanged,
+  });
+
+  final List<AgentInfo> agents;
+  final TransportPrefs prefs;
+  final bool loading;
+  final void Function(String slug, AgentTransport transport) onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final dual = dualTransportSlugs(
+      agents.map((a) => (slug: a.slug, transport: a.transport)),
+    );
+
+    if (loading) {
+      return Container(
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        alignment: Alignment.center,
+        decoration: _settingsCardDecoration(),
+        child: Text(
+          'Loading…',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: _kStone400,
+              ),
+        ),
+      );
+    }
+
+    return Material(
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(_kCardRadius),
+        side: const BorderSide(color: _kStone200),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 4),
+            child: Text(
+              'When an agent has both sidecar and web, bare @slug uses this default.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: _kStone500,
+                    height: 1.35,
+                  ),
+            ),
+          ),
+          for (var i = 0; i < dual.length; i++) ...[
+            if (i > 0)
+              const Divider(height: 1, thickness: 1, color: _kStone100),
+            _DefaultTransportRow(
+              slug: dual[i],
+              value: prefs.defaultFor(dual[i]) ?? AgentTransport.sidecar,
+              onChanged: (t) => onChanged(dual[i], t),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _DefaultTransportRow extends StatelessWidget {
+  const _DefaultTransportRow({
+    required this.slug,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String slug;
+  final AgentTransport value;
+  final ValueChanged<AgentTransport> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+      child: Row(
+        children: [
+          AiHostIcon(slug, size: 28),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  slug,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                    color: _kStone800,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    TransportChip(transport: value, compact: true),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          SegmentedButton<AgentTransport>(
+            segments: const [
+              ButtonSegment(
+                value: AgentTransport.sidecar,
+                label: Text('Sidecar'),
+              ),
+              ButtonSegment(
+                value: AgentTransport.mcp,
+                label: Text('Web'),
+              ),
+            ],
+            selected: {value},
+            onSelectionChanged: (next) {
+              if (next.isEmpty) return;
+              onChanged(next.first);
+            },
+            style: ButtonStyle(
+              visualDensity: VisualDensity.compact,
+              textStyle: WidgetStatePropertyAll(
+                Theme.of(context).textTheme.labelMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

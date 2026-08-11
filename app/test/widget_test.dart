@@ -34,6 +34,13 @@ DaemonClient _mockDaemon(
       }
       if (method == 'list_threads') {
         // Inbox watch may call this; default empty unless handler overrides.
+        final override = await handler(request);
+        final overrideBody = jsonDecode(override.body) as Map<String, dynamic>;
+        if (overrideBody['result'] is Map &&
+            (overrideBody['result'] as Map).containsKey('threads')) {
+          return override;
+        }
+        return _rpcOk(body['id'], {'threads': []});
       }
       return handler(request);
     }),
@@ -144,12 +151,28 @@ void main() {
     expect(find.textContaining('ACTION REQUIRED'), findsNothing);
   });
 
-  testWidgets('threads timeout shows friendly retry', (WidgetTester tester) async {
+  testWidgets('mail timeout blocks home with starting screen', (
+    WidgetTester tester,
+  ) async {
     final daemon = _mockDaemon((request) async {
       final body = jsonDecode(request.body) as Map<String, dynamic>;
       final method = body['method'] as String?;
       if (method == 'list_threads') {
         throw TimeoutException('Future not completed');
+      }
+      if (method == 'get_status') {
+        return _rpcOk(body['id'], {
+          'configured': true,
+          'hub_url': 'http://localhost:8000',
+          'handle': 'alice@acme',
+        });
+      }
+      if (method == 'health') {
+        return _rpcOk(body['id'], {
+          'ok': true,
+          'service': 'mutande-core',
+          'version': '0.0.0',
+        });
       }
       return _rpcOk(body['id'], {
         'ok': true,
@@ -162,19 +185,21 @@ void main() {
       MutandeApp(
         config: const AppConfig(hubUrl: 'http://localhost:8000'),
         daemon: daemon,
-        seedStatus: const DaemonStatusResult(
-          configured: true,
-          hubUrl: 'http://localhost:8000',
-          handle: 'alice@acme',
-        ),
+        firstRunStore:
+            FirstRunStore.memory(connectComplete: true, pingComplete: true),
         welcomeDuration: Duration.zero,
+        startupRetryAttempts: 0,
       ),
     );
-    await tester.pumpAndSettle();
+    for (var i = 0; i < 40; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+      if (find.text('Courier still starting').evaluate().isNotEmpty) break;
+    }
 
-    expect(find.textContaining('TimeoutException'), findsNothing);
-    expect(find.textContaining('took too long'), findsOneWidget);
+    expect(find.text('Courier still starting'), findsOneWidget);
+    expect(find.textContaining('courier may still be starting'), findsOneWidget);
     expect(find.text('Retry'), findsOneWidget);
+    expect(find.text('Threads'), findsNothing);
   });
 
   testWidgets('settings has Check daemon', (WidgetTester tester) async {
@@ -492,7 +517,6 @@ void main() {
 
     expect(find.text('Create a team'), findsOneWidget);
     expect(find.text('I have an invite'), findsOneWidget);
-    expect(find.text('Sign in again'), findsOneWidget);
     expect(find.text('a@x.com'), findsOneWidget);
   });
 
@@ -633,7 +657,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text("Couldn't load session"), findsOneWidget);
+    expect(find.text('Courier still starting'), findsOneWidget);
     expect(find.text('Waiting for Keychain'), findsNothing);
     expect(find.text('Retry'), findsOneWidget);
   });

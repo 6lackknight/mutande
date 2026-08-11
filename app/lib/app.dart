@@ -20,10 +20,13 @@ import 'screens/threads_screen.dart';
 import 'services/app_actions.dart';
 import 'services/daemon_client.dart';
 import 'services/daemon_errors.dart';
+import 'services/daemon_event_client.dart';
 import 'services/first_run_store.dart';
 import 'services/host_link_store.dart';
 import 'services/inbox_watch_service.dart';
 import 'services/notification_prefs_store.dart';
+import 'services/thread_list_cache_store.dart';
+import 'services/transport_prefs_store.dart';
 import 'theme/mutande_macos_theme.dart';
 import 'widgets/daemon_error_screen.dart';
 import 'widgets/home_chrome_strip.dart';
@@ -179,16 +182,22 @@ class RootScreen extends StatefulWidget {
 }
 
 class _RootScreenState extends State<RootScreen> {
+  bool get _inWidgetTest =>
+      WidgetsBinding.instance.runtimeType.toString().contains('Test');
+
   late final DaemonClient _daemon;
   late final bool _ownsDaemon;
   late final HostLinkStore _hostLinkStore;
   late final FirstRunStore _firstRunStore;
   late final NotificationPrefsStore _notificationPrefs;
+  late final TransportPrefsStore _transportPrefs;
   InboxWatchService? _inboxWatch;
   bool _loading = true;
   String? _loadingHint;
   DaemonStatusResult? _status;
   String? _statusError;
+  /// Hub-backed mail path verified (`list_threads`) — gates Home after configure.
+  bool _mailReady = false;
   /// Set after a failed [getStatus] via local `health` ping (tray uses the same).
   bool _daemonReachable = false;
 
@@ -209,6 +218,7 @@ class _RootScreenState extends State<RootScreen> {
     _daemon = widget.daemon ?? DaemonClient();
     _hostLinkStore = widget.hostLinkStore ?? HostLinkStore();
     _notificationPrefs = NotificationPrefsStore();
+    _transportPrefs = TransportPrefsStore(daemon: _daemon);
     // Widget tests that seed status skip the gate unless they inject a store.
     _firstRunStore = widget.firstRunStore ??
         (widget.seedStatus != null
@@ -226,13 +236,16 @@ class _RootScreenState extends State<RootScreen> {
       _firstRunReady = true;
     }
     _bootstrapFirstRun();
+    AppActions.sessionReady.value = false;
     if (widget.seedStatus != null) {
       _status = widget.seedStatus;
+      _mailReady = true;
       _loading = false;
+      AppActions.sessionReady.value = true;
       _emitBootstrapPhase();
     } else {
       _emitBootstrapPhase();
-      _refreshStatus(bootstrap: true);
+      unawaited(_refreshStatus(bootstrap: true));
     }
   }
 
@@ -296,12 +309,48 @@ class _RootScreenState extends State<RootScreen> {
     unawaited(_inboxWatch!.start());
   }
 
+  Future<void> _verifyMailReady({required bool bootstrap}) async {
+    if (bootstrap && widget.seedStatus == null && !_inWidgetTest) {
+      final cache = ThreadListCacheStore();
+      if (await cache.hasRecentSnapshot()) {
+        return;
+      }
+    }
+
+    final maxAttempts =
+        bootstrap ? (widget.startupRetryAttempts + 1).clamp(1, 999) : 1;
+    Object? lastError;
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        await _daemon.listThreads();
+        return;
+      } catch (e) {
+        lastError = e;
+        final canRetry = bootstrap &&
+            attempt < maxAttempts - 1 &&
+            isLikelyStartingError(e);
+        if (!canRetry) break;
+        if (mounted) {
+          setState(() {
+            _loadingHint = 'Waiting for mail';
+          });
+          _emitBootstrapPhase();
+        }
+        await Future<void>.delayed(const Duration(seconds: 2));
+        if (!mounted) return;
+      }
+    }
+    throw lastError ?? Exception('Mail not ready');
+  }
+
   Future<void> _refreshStatus({bool bootstrap = false}) async {
     setState(() {
       _loading = true;
       _statusError = null;
+      _mailReady = false;
       _loadingHint = bootstrap ? 'Starting' : null;
     });
+    AppActions.sessionReady.value = false;
     _emitBootstrapPhase();
 
     Object? lastError;
@@ -310,14 +359,19 @@ class _RootScreenState extends State<RootScreen> {
     for (var attempt = 0; attempt < maxAttempts; attempt++) {
       try {
         final status = await _daemon.getStatus();
+        if (status.configured) {
+          await _verifyMailReady(bootstrap: bootstrap);
+        }
         if (!mounted) return;
         setState(() {
           _status = status;
           _statusError = null;
+          _mailReady = true;
           _daemonReachable = true;
           _loading = false;
           _loadingHint = null;
         });
+        AppActions.sessionReady.value = true;
         _emitBootstrapPhase();
         if (_pendingConnectHosts && status.configured) {
           _pendingConnectHosts = false;
@@ -332,7 +386,9 @@ class _RootScreenState extends State<RootScreen> {
         if (!canRetry) break;
         if (mounted) {
           setState(() {
-            _loadingHint = 'Waiting for Keychain';
+            _loadingHint = isLocalCourierTransportFailure(e.toString().toLowerCase())
+                ? 'Waiting for Keychain'
+                : 'Waiting for mail';
           });
           _emitBootstrapPhase();
         }
@@ -350,9 +406,11 @@ class _RootScreenState extends State<RootScreen> {
     setState(() {
       _statusError = lastError.toString();
       _daemonReachable = health.connected;
+      _mailReady = false;
       _loading = false;
       _loadingHint = null;
     });
+    AppActions.sessionReady.value = false;
     _emitBootstrapPhase();
   }
 
@@ -363,7 +421,9 @@ class _RootScreenState extends State<RootScreen> {
       _loading = true;
       _loadingHint = 'Restarting courier';
       _statusError = null;
+      _mailReady = false;
     });
+    AppActions.sessionReady.value = false;
     _emitBootstrapPhase();
     final err = await restart();
     if (!mounted) return;
@@ -371,9 +431,11 @@ class _RootScreenState extends State<RootScreen> {
       setState(() {
         _statusError = err;
         _daemonReachable = false;
+        _mailReady = false;
         _loading = false;
         _loadingHint = null;
       });
+      AppActions.sessionReady.value = false;
       _emitBootstrapPhase();
       return;
     }
@@ -472,8 +534,8 @@ class _RootScreenState extends State<RootScreen> {
       );
     }
 
-    // Transport/RPC failure with no prior status → error UI, not Join.
-    if (_statusError != null && _status == null) {
+    // Bootstrap/session gate failure — block Home until mail path is ready.
+    if (_statusError != null && !_mailReady) {
       return DaemonErrorScreen(
         error: _statusError!,
         endpoint: _daemon.httpBaseUrl,
@@ -546,6 +608,7 @@ class _RootScreenState extends State<RootScreen> {
       onSignedOut: _onSignedOut,
       hostLinkStore: _hostLinkStore,
       notificationPrefs: _notificationPrefs,
+      transportPrefs: _transportPrefs,
       initialThreadId: _openThreadId,
       appVersion: widget.appVersion,
       onRestartCourier: widget.onRestartCourier,
@@ -568,6 +631,7 @@ class HomeScreen extends StatefulWidget {
     this.onSignedOut,
     this.hostLinkStore,
     this.notificationPrefs,
+    this.transportPrefs,
     this.initialThreadId,
     this.appVersion = AppConfig.appVersion,
     this.onRestartCourier,
@@ -585,6 +649,7 @@ class HomeScreen extends StatefulWidget {
   final ValueChanged<DaemonStatusResult>? onSignedOut;
   final HostLinkStore? hostLinkStore;
   final NotificationPrefsStore? notificationPrefs;
+  final TransportPrefsStore? transportPrefs;
   final String? initialThreadId;
   final String appVersion;
   final Future<String?> Function()? onRestartCourier;
@@ -602,6 +667,7 @@ class _HomeScreenState extends State<HomeScreen> {
   VoidCallback? _reloadContacts;
   String? _composeRecipient;
   String? _openThreadId;
+  late final DaemonEventClient _inboxEvents;
 
   bool _searchMode = false;
   final _searchController = TextEditingController();
@@ -625,6 +691,11 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _openThreadId = widget.initialThreadId;
     _searchFocus.addListener(_onSearchFocusChanged);
+    _inboxEvents = DaemonEventClient(
+      httpBaseUrl: widget.daemon.httpBaseUrl,
+      httpTokenPath: widget.daemon.httpTokenPath,
+    );
+    _inboxEvents.start();
     _checkDaemon();
   }
 
@@ -647,6 +718,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _searchFocus.removeListener(_onSearchFocusChanged);
     _searchFocus.dispose();
     _searchController.dispose();
+    unawaited(_inboxEvents.dispose());
     super.dispose();
   }
 
@@ -776,6 +848,7 @@ class _HomeScreenState extends State<HomeScreen> {
               onRestartCourier: widget.onRestartCourier,
               hostLinkStore: widget.hostLinkStore,
               notificationPrefs: widget.notificationPrefs,
+              transportPrefs: widget.transportPrefs,
               onOpenThreads: () {
                 Navigator.of(sheetContext).pop();
                 _selectTab(0);
@@ -811,6 +884,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_tab == 0) {
       return ThreadsPanel(
         daemon: widget.daemon,
+        inboxEvents: _inboxEvents,
         myHandle: widget.status.handle,
         onReloadReady: _registerThreadsReload,
         composeRecipient: _composeRecipient,

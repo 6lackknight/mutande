@@ -3,15 +3,17 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
+import '../models/agent_transport.dart';
 import '../platform/user_home.dart';
 import 'daemon_errors.dart';
 
 /// Local IPC client for `mutande-core serve`.
 ///
 /// App transport (current): JSON-RPC 2.0 over HTTP POST to
-/// `{httpBaseUrl}/rpc` (dev bridge). Daemon-native transport is a Unix domain
-/// socket at `~/.mutande/daemon.sock` (`mutande-core serve --socket`); this
-/// client does not speak the socket yet — [socketPath] is informational only.
+/// `{httpBaseUrl}/rpc` (dev bridge). Inbox push uses WebSocket
+/// `ws://127.0.0.1:3847/ws` ([DaemonEventClient]). Daemon-native transport is a
+/// Unix domain socket at `~/.mutande/daemon.sock` (`mutande-core serve --socket`);
+/// this client does not speak the Unix socket yet — [socketPath] is informational only.
 ///
 /// ## HTTP auth
 ///
@@ -44,6 +46,8 @@ import 'daemon_errors.dart';
 /// | `connect_host` | Write MCP configs (`host`: cursor\|claude\|chatgpt\|all) |
 /// | `get_safety_number` | Own fingerprint + URI + hex `pubkey` |
 /// | `register_device` | Force-publish this device pubkey to the hub |
+/// | `get_transport_defaults` | Hub preferred transport per slug |
+/// | `set_transport_default` | Hub Settings write for preferred transport |
 ///
 /// MCP tools forward to the same daemon surface via `mutande-core mcp` stdio —
 /// not called directly from Flutter.
@@ -416,6 +420,26 @@ class DaemonClient {
             .toList(),
     });
     return RouterConfig.fromJson(result as Map<String, dynamic>? ?? {});
+  }
+
+  /// Hub preferred transport per display slug (`GET /v1/agents/transport-defaults`).
+  ///
+  /// Wire: `{ defaults: { slug: "sidecar"|"mcp" } }`.
+  Future<Map<String, dynamic>> getTransportDefaults() async {
+    final result = await _call('get_transport_defaults');
+    return result as Map<String, dynamic>? ?? const {};
+  }
+
+  /// Hub Settings write (`PUT /v1/agents/transport-defaults`).
+  Future<Map<String, dynamic>> setTransportDefault({
+    required String slug,
+    required AgentTransport transport,
+  }) async {
+    final result = await _call('set_transport_default', {
+      'slug': slug,
+      'transport': transport.wireValue,
+    });
+    return result as Map<String, dynamic>? ?? const {};
   }
 
   /// Send notes to [recipient] (optional agent suffix) via `forward_draft`.
@@ -844,20 +868,101 @@ class ThreadSummary {
         lastSubject == other.lastSubject &&
         lastPreview == other.lastPreview;
   }
+
+  factory ThreadSummary.fromJson(Map<String, dynamic> map) {
+    return ThreadSummary(
+      id: map['id'] as String? ?? '',
+      kind: map['kind'] as String? ?? '',
+      status: map['status'] as String? ?? '',
+      from: map['from'] as String? ?? '',
+      audience: map['audience'] as String? ?? '',
+      yourStatus: map['your_status'] as String?,
+      replyCount: (map['reply_count'] as num?)?.toInt() ?? 0,
+      agentBadge: map['agent_badge'] as String?,
+      updatedAt: map['updated_at'] as String?,
+      lastFrom: map['last_from'] as String?,
+      lastSubject: map['last_subject'] as String?,
+      lastPreview: map['last_preview'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'kind': kind,
+        'status': status,
+        'from': from,
+        'audience': audience,
+        if (yourStatus != null) 'your_status': yourStatus,
+        'reply_count': replyCount,
+        if (agentBadge != null) 'agent_badge': agentBadge,
+        if (updatedAt != null) 'updated_at': updatedAt,
+        if (lastFrom != null) 'last_from': lastFrom,
+        if (lastSubject != null) 'last_subject': lastSubject,
+        if (lastPreview != null) 'last_preview': lastPreview,
+      };
 }
 
 class AgentInfo {
-  const AgentInfo({required this.id, required this.slug});
+  const AgentInfo({
+    required this.id,
+    required this.slug,
+    this.transport,
+    this.trustTier,
+    this.lastSeen,
+  });
 
   factory AgentInfo.fromJson(Map<String, dynamic> map) {
+    // Hub may use `id` or `agent_id`.
+    final id = map['id'] as String? ?? map['agent_id'] as String? ?? '';
     return AgentInfo(
-      id: map['id'] as String? ?? '',
+      id: id,
       slug: map['slug'] as String? ?? '',
+      transport: AgentTransport.tryParse(map['transport'] as String?),
+      trustTier: TrustTier.tryParse(map['trust_tier'] as String?),
+      lastSeen: _parseDateTime(
+        map['last_seen'] ?? map['capability_refreshed_at'],
+      ),
     );
   }
 
   final String id;
   final String slug;
+
+  /// Hub-assigned: `sidecar` | `mcp`. Null when API omits (pre-L1) → hide chip.
+  final AgentTransport? transport;
+
+  /// Hub-assigned: `org` | `external` | `enterprise`.
+  final TrustTier? trustTier;
+
+  /// Last capability handshake / connect refresh (optional).
+  final DateTime? lastSeen;
+
+  /// True when [lastSeen] is within the capability freshness TTL.
+  bool get capabilityFresh => isCapabilityFresh(lastSeen);
+
+  AgentInfo copyWith({
+    String? id,
+    String? slug,
+    AgentTransport? transport,
+    TrustTier? trustTier,
+    DateTime? lastSeen,
+  }) {
+    return AgentInfo(
+      id: id ?? this.id,
+      slug: slug ?? this.slug,
+      transport: transport ?? this.transport,
+      trustTier: trustTier ?? this.trustTier,
+      lastSeen: lastSeen ?? this.lastSeen,
+    );
+  }
+}
+
+DateTime? _parseDateTime(Object? raw) {
+  if (raw == null) return null;
+  if (raw is DateTime) return raw;
+  final s = raw.toString().trim();
+  if (s.isEmpty) return null;
+  return DateTime.tryParse(s);
 }
 
 class AgentListResult {

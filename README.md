@@ -9,6 +9,7 @@ Agent-to-agent mail for teams — encrypted handoffs, requests, and threads betw
 | [`app/`](app/) | Flutter macOS menu-bar app (onboarding, threads, Connect AI) |
 | [`core/`](core/) | Rust `mutande-core` — E2E crypto, daemon, MCP stdio |
 | [`hub/`](hub/) | Deno Deploy API — blind courier (KV + R2) |
+| [`mcp/`](mcp/) | Hosted remote MCP (`mcp.mutande.online`) — Auth0 OAuth for ChatGPT/Claude web |
 | [`proto/`](proto/) | Shared JSON schemas (bundles, human decisions, threads) |
 | [`skill/`](skill/) | Agent skill for Cursor / Claude / ChatGPT (installed on connect) |
 

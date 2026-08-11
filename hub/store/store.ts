@@ -35,7 +35,12 @@ import type {
   MessageUpvote,
   MessageUpvoteSummary,
   Agent,
+  AgentCapabilities,
+  AgentTransport,
+  AgentTransportPrefs,
+  ConnectAgentInput,
   SetDefaultAgentInput,
+  SetTransportDefaultInput,
   RegisterAgentInput,
   RenameAgentInput,
   RouterConfig,
@@ -48,7 +53,12 @@ import type {
   UserRole,
 } from "./types.ts";
 import { createBlobUrls } from "./r2.ts";
-import { MAX_ENVELOPE_BYTES, ORG_BLOB_QUOTA_BYTES } from "./types.ts";
+import {
+  CAPABILITY_STALE_TTL_MS,
+  MAX_ENVELOPE_BYTES,
+  MCP_ENDPOINT_DEFAULT,
+  ORG_BLOB_QUOTA_BYTES,
+} from "./types.ts";
 import {
   assertHandleLocal,
   assertValidAgentSlug,
@@ -145,6 +155,104 @@ function authContextFromUser(
   };
 }
 
+function isAgentTransport(value: unknown): value is AgentTransport {
+  return value === "sidecar" || value === "mcp";
+}
+
+/** Normalize legacy agent rows (pre-L1) to full hub-assigned shape. */
+export function normalizeAgent(raw: Agent | Record<string, unknown>): Agent {
+  const r = raw as Partial<Agent> & { id: string; user_id: string; slug: string; created_at: string };
+  const transport: AgentTransport = isAgentTransport(r.transport) ? r.transport : "sidecar";
+  return {
+    id: r.id,
+    user_id: r.user_id,
+    slug: r.slug,
+    created_at: r.created_at,
+    transport,
+    visibility: r.visibility === "public" ? "public" : "private",
+    trust_tier: r.trust_tier === "enterprise" || r.trust_tier === "external"
+      ? r.trust_tier
+      : "org",
+    billing: r.billing ?? null,
+    mcp_endpoint: r.mcp_endpoint ?? (transport === "mcp" ? MCP_ENDPOINT_DEFAULT : null),
+    capabilities: r.capabilities ?? null,
+    capabilities_updated_at: r.capabilities_updated_at ?? null,
+  };
+}
+
+/**
+ * Capability freshness for UI "active now" only.
+ * Staleness never blocks routing (§5.1 / §13).
+ */
+export function agentCapabilitiesFresh(
+  agent: Agent,
+  nowMs: number = Date.now(),
+): boolean {
+  if (!agent.capabilities_updated_at) return false;
+  const t = Date.parse(agent.capabilities_updated_at);
+  if (Number.isNaN(t)) return false;
+  return nowMs - t < CAPABILITY_STALE_TTL_MS;
+}
+
+const HUB_ASSIGNED_CAPABILITY_FIELDS = [
+  "trust_tier",
+  "visibility",
+  "billing",
+  "transport",
+  "agent_id",
+  "mcp_endpoint",
+] as const;
+
+/** Strip + log client attempts to set hub-assigned fields. */
+export function extractClientCapabilities(
+  input: ConnectAgentInput | RegisterAgentInput | Record<string, unknown>,
+): { slug: string; capabilities: AgentCapabilities; ignored: string[] } {
+  const ignored: string[] = [];
+  for (const field of HUB_ASSIGNED_CAPABILITY_FIELDS) {
+    if (
+      Object.prototype.hasOwnProperty.call(input, field) &&
+      (input as Record<string, unknown>)[field] != null
+    ) {
+      ignored.push(field);
+    }
+  }
+  if (ignored.length > 0) {
+    console.warn(
+      `[hub] ignored client-declared hub-assigned fields on agent connect: ${ignored.join(", ")}`,
+    );
+  }
+
+  const slugRaw = typeof (input as { slug?: unknown }).slug === "string"
+    ? (input as { slug: string }).slug
+    : "";
+  const slug = slugRaw.trim().toLowerCase();
+  assertValidAgentSlug(slug);
+
+  const caps: AgentCapabilities = {};
+  const models = (input as ConnectAgentInput).models;
+  if (Array.isArray(models) && models.length > 0) {
+    caps.models = normalizeStringList(models.map(String), "models");
+  }
+  const modalities = (input as ConnectAgentInput).modalities;
+  if (Array.isArray(modalities) && modalities.length > 0) {
+    caps.modalities = normalizeStringList(modalities.map(String), "modalities");
+  }
+  const messageTypes = (input as ConnectAgentInput).message_types;
+  if (Array.isArray(messageTypes) && messageTypes.length > 0) {
+    caps.message_types = normalizeStringList(messageTypes.map(String), "message_types");
+  }
+  const defaultModel = (input as ConnectAgentInput).default_model;
+  if (typeof defaultModel === "string" && defaultModel.trim()) {
+    caps.default_model = defaultModel.trim().slice(0, 64);
+  }
+
+  return { slug, capabilities: caps, ignored };
+}
+
+function emptyTransportPrefs(): AgentTransportPrefs {
+  return { defaults: {} };
+}
+
 export class HubStore {
   constructor(
     private readonly kv: Deno.Kv,
@@ -184,11 +292,19 @@ export class HubStore {
   private blobKey(id: string) { return ["blobs", id]; }
   private orgQuotaKey(orgId: string) { return ["org_blob_quota", orgId]; }
   private agentKey(id: string) { return ["agents", id]; }
+  /** Legacy pre-L1 index: one agent_id per slug (treated as sidecar). */
   private userAgentSlugKey(userId: string, slug: string) { return ["user_agent_slugs", userId, slug]; }
   private userAgentsPrefix(userId: string) { return ["user_agent_slugs", userId]; }
+  /** L1 dual-slot index: (slug, transport) → agent_id. */
+  private userAgentSlotKey(userId: string, slug: string, transport: AgentTransport) {
+    return ["user_agent_slugs", userId, slug, transport];
+  }
   private userDefaultAgentKey(userId: string) { return ["user_default_agent", userId]; }
   private userRouterKey(userId: string) { return ["user_router", userId]; }
   private userAgentAliasKey(userId: string, slug: string) { return ["user_agent_aliases", userId, slug]; }
+  private userTransportPrefsKey(userId: string) {
+    return ["user_agent_transport_prefs", userId];
+  }
   private feedbackKey(createdAt: string, id: string) {
     return ["feedback", createdAt, id];
   }
@@ -426,29 +542,92 @@ export class HubStore {
   }
 
   async registerAgent(auth: AuthContext, input: RegisterAgentInput): Promise<Agent> {
-    const slug = input.slug.trim().toLowerCase();
-    assertValidAgentSlug(slug);
-    const existing = await this.kv.get<string>(this.userAgentSlugKey(auth.userId, slug));
-    if (existing.value) {
-      const agent = await this.getAgent(existing.value);
-      if (agent) return agent;
+    // Legacy register path = sidecar connect without capability refresh extras.
+    return this.connectAgent(auth, "sidecar", input);
+  }
+
+  /**
+   * Store helper for MCP connect (same as route POST /v1/agents/connect/mcp).
+   * Hub assigns transport — never from the request body (§5.2).
+   */
+  async registerWebAgent(
+    auth: AuthContext,
+    input: ConnectAgentInput | RegisterAgentInput,
+  ): Promise<Agent> {
+    return this.connectAgent(auth, "mcp", input);
+  }
+
+  /**
+   * Capability handshake / slot upsert.
+   * `transport` is hub-assigned from the authenticated connection route — never from the body.
+   */
+  async connectAgent(
+    auth: AuthContext,
+    transport: AgentTransport,
+    input: ConnectAgentInput | RegisterAgentInput,
+  ): Promise<Agent> {
+    const { slug, capabilities } = extractClientCapabilities(input);
+    const now = nowIso();
+    const existingId = await this.lookupAgentSlotId(auth.userId, slug, transport);
+    if (existingId) {
+      const existing = await this.getAgent(existingId);
+      if (existing) {
+        const updated: Agent = {
+          ...existing,
+          transport,
+          visibility: existing.visibility ?? "private",
+          trust_tier: existing.trust_tier ?? "org",
+          billing: null, // L4 — never accept from client
+          mcp_endpoint: transport === "mcp"
+            ? (Deno.env.get("MCP_ENDPOINT")?.trim().replace(/\/+$/, "") || MCP_ENDPOINT_DEFAULT)
+            : null,
+          capabilities: Object.keys(capabilities).length > 0
+            ? capabilities
+            : existing.capabilities,
+          capabilities_updated_at: now,
+        };
+        await this.kv.set(this.agentKey(updated.id), updated);
+        await this.ensureSlotIndex(auth.userId, updated);
+        return updated;
+      }
     }
 
     const agent: Agent = {
       id: crypto.randomUUID(),
       user_id: auth.userId,
       slug,
-      created_at: nowIso(),
+      created_at: now,
+      transport,
+      visibility: "private",
+      trust_tier: "org",
+      billing: null,
+      mcp_endpoint: transport === "mcp"
+        ? (Deno.env.get("MCP_ENDPOINT")?.trim().replace(/\/+$/, "") || MCP_ENDPOINT_DEFAULT)
+        : null,
+      capabilities: Object.keys(capabilities).length > 0 ? capabilities : null,
+      capabilities_updated_at: now,
     };
+
     const router = await this.loadRouter(auth.userId);
-    const rules = router.rules.filter((r) => r.match_slug !== slug);
-    rules.push({ match_slug: slug, agent_id: agent.id });
-    rules.sort((a, b) => a.match_slug.localeCompare(b.match_slug));
+    const prefs = await this.loadTransportPrefs(auth.userId);
+    const preferred = prefs.defaults[slug] ?? "sidecar";
+    // Only own the router rule when this slot matches preferred transport, or no rule yet.
+    const existingRule = router.rules.find((r) => r.match_slug === slug);
+    let rules = [...router.rules];
+    if (!existingRule || preferred === transport) {
+      rules = rules.filter((r) => r.match_slug !== slug);
+      rules.push({ match_slug: slug, agent_id: agent.id });
+      rules.sort((a, b) => a.match_slug.localeCompare(b.match_slug));
+    }
     const defaultAgentId = router.default_agent_id ?? agent.id;
 
     const tx = this.kv.atomic();
     tx.set(this.agentKey(agent.id), agent);
-    tx.set(this.userAgentSlugKey(auth.userId, slug), agent.id);
+    tx.set(this.userAgentSlotKey(auth.userId, slug, transport), agent.id);
+    // Keep legacy sidecar pointer for older readers / migration.
+    if (transport === "sidecar") {
+      tx.set(this.userAgentSlugKey(auth.userId, slug), agent.id);
+    }
     tx.set(this.userDefaultAgentKey(auth.userId), defaultAgentId);
     tx.set(this.userRouterKey(auth.userId), {
       default_agent_id: defaultAgentId,
@@ -464,13 +643,17 @@ export class HubStore {
   }
 
   async listAgents(auth: AuthContext): Promise<{ agents: Agent[]; default_agent_id: string | null }> {
-    const agents: Agent[] = [];
+    const byId = new Map<string, Agent>();
     const iter = this.kv.list<string>({ prefix: this.userAgentsPrefix(auth.userId) });
     for await (const entry of iter) {
       const agent = await this.getAgent(entry.value);
-      if (agent) agents.push(agent);
+      if (agent) byId.set(agent.id, agent);
     }
-    agents.sort((a, b) => a.slug.localeCompare(b.slug));
+    const agents = [...byId.values()].sort((a, b) => {
+      const slugCmp = a.slug.localeCompare(b.slug);
+      if (slugCmp !== 0) return slugCmp;
+      return a.transport.localeCompare(b.transport);
+    });
     const router = await this.loadRouter(auth.userId);
     return { agents, default_agent_id: router.default_agent_id };
   }
@@ -485,6 +668,48 @@ export class HubStore {
     if (!user) throw notFound("User");
     const { agents } = await this.listAgents(authContextFromUser(user));
     return { agents };
+  }
+
+  async getTransportPrefs(auth: AuthContext): Promise<AgentTransportPrefs> {
+    return this.loadTransportPrefs(auth.userId);
+  }
+
+  /**
+   * Settings: preferred transport per display slug for bare-slug resolution.
+   * Updates router rule to the preferred slot when that slot exists.
+   */
+  async setTransportDefault(
+    auth: AuthContext,
+    input: SetTransportDefaultInput,
+  ): Promise<AgentTransportPrefs> {
+    const slug = input.slug.trim().toLowerCase();
+    assertValidAgentSlug(slug);
+    if (!isAgentTransport(input.transport)) {
+      throw new HubError("transport must be sidecar or mcp", "invalid_argument", 400);
+    }
+    const prefs = await this.loadTransportPrefs(auth.userId);
+    prefs.defaults[slug] = input.transport;
+
+    const slotId = await this.lookupAgentSlotId(auth.userId, slug, input.transport);
+    const router = await this.loadRouter(auth.userId);
+    let rules = [...router.rules];
+    if (slotId) {
+      rules = rules.filter((r) => r.match_slug !== slug);
+      rules.push({ match_slug: slug, agent_id: slotId });
+      rules.sort((a, b) => a.match_slug.localeCompare(b.match_slug));
+    }
+
+    const tx = this.kv.atomic();
+    tx.set(this.userTransportPrefsKey(auth.userId), prefs);
+    if (slotId) {
+      tx.set(this.userRouterKey(auth.userId), {
+        default_agent_id: router.default_agent_id,
+        rules,
+      } satisfies RouterConfig);
+    }
+    const res = await tx.commit();
+    if (!res.ok) throw conflict("Transport preference update conflict");
+    return prefs;
   }
 
   async getRouter(auth: AuthContext): Promise<RouterConfig> {
@@ -536,9 +761,10 @@ export class HubStore {
     if (!agent || agent.user_id !== auth.userId) throw notFound("Agent");
     if (agent.slug === newSlug) return agent;
 
-    const taken = await this.kv.get<string>(this.userAgentSlugKey(auth.userId, newSlug));
-    if (taken.value && taken.value !== agentId) {
-      throw conflict("Agent slug already taken");
+    const transport = agent.transport;
+    const takenId = await this.lookupAgentSlotId(auth.userId, newSlug, transport);
+    if (takenId && takenId !== agentId) {
+      throw conflict("Agent slug already taken for this transport");
     }
 
     const oldSlug = agent.slug;
@@ -554,9 +780,28 @@ export class HubStore {
     }
     rules.sort((a, b) => a.match_slug.localeCompare(b.match_slug));
 
+    const prefs = await this.loadTransportPrefs(auth.userId);
+    if (prefs.defaults[oldSlug] && !prefs.defaults[newSlug]) {
+      prefs.defaults[newSlug] = prefs.defaults[oldSlug]!;
+      delete prefs.defaults[oldSlug];
+    }
+
+    const legacyOld = await this.kv.get<string>(this.userAgentSlugKey(auth.userId, oldSlug));
+    const otherAtOld = await this.lookupAgentSlotId(
+      auth.userId,
+      oldSlug,
+      transport === "sidecar" ? "mcp" : "sidecar",
+    );
+
     const tx = this.kv.atomic();
-    tx.delete(this.userAgentSlugKey(auth.userId, oldSlug));
-    tx.set(this.userAgentSlugKey(auth.userId, newSlug), agent.id);
+    tx.delete(this.userAgentSlotKey(auth.userId, oldSlug, transport));
+    tx.set(this.userAgentSlotKey(auth.userId, newSlug, transport), agent.id);
+    if (transport === "sidecar") {
+      tx.set(this.userAgentSlugKey(auth.userId, newSlug), agent.id);
+    }
+    if (legacyOld.value === agentId && !otherAtOld) {
+      tx.delete(this.userAgentSlugKey(auth.userId, oldSlug));
+    }
     tx.set(this.agentKey(agent.id), updated);
     tx.set(this.userAgentAliasKey(auth.userId, oldSlug), {
       agent_id: agentId,
@@ -567,6 +812,7 @@ export class HubStore {
       default_agent_id: router.default_agent_id,
       rules,
     } satisfies RouterConfig);
+    tx.set(this.userTransportPrefsKey(auth.userId), prefs);
     const res = await tx.commit();
     if (!res.ok) throw conflict("Agent rename conflict");
     return updated;
@@ -1320,7 +1566,44 @@ export class HubStore {
 
   private async getAgent(id: string): Promise<Agent | null> {
     const res = await this.kv.get<Agent>(this.agentKey(id));
-    return res.value;
+    if (!res.value) return null;
+    return normalizeAgent(res.value);
+  }
+
+  private async loadTransportPrefs(userId: string): Promise<AgentTransportPrefs> {
+    const stored = await this.kv.get<AgentTransportPrefs>(this.userTransportPrefsKey(userId));
+    if (!stored.value?.defaults) return emptyTransportPrefs();
+    const defaults: Record<string, AgentTransport> = {};
+    for (const [slug, transport] of Object.entries(stored.value.defaults)) {
+      if (isAgentTransport(transport)) defaults[slug] = transport;
+    }
+    return { defaults };
+  }
+
+  /** Look up agent_id for (slug, transport), including legacy sidecar slug index. */
+  private async lookupAgentSlotId(
+    userId: string,
+    slug: string,
+    transport: AgentTransport,
+  ): Promise<string | null> {
+    const slot = await this.kv.get<string>(this.userAgentSlotKey(userId, slug, transport));
+    if (slot.value) return slot.value;
+    if (transport === "sidecar") {
+      const legacy = await this.kv.get<string>(this.userAgentSlugKey(userId, slug));
+      if (legacy.value) {
+        const agent = await this.getAgent(legacy.value);
+        // Legacy 3-part key is the pre-L1 single slot (= sidecar).
+        if (agent?.transport === "sidecar") return legacy.value;
+      }
+    }
+    return null;
+  }
+
+  private async ensureSlotIndex(userId: string, agent: Agent): Promise<void> {
+    await this.kv.set(this.userAgentSlotKey(userId, agent.slug, agent.transport), agent.id);
+    if (agent.transport === "sidecar") {
+      await this.kv.set(this.userAgentSlugKey(userId, agent.slug), agent.id);
+    }
   }
 
   /** Load router; migrate from slug index + default when missing. */
@@ -1336,10 +1619,13 @@ export class HubStore {
     }
 
     const rules: RoutingRule[] = [];
+    const seenSlugs = new Set<string>();
     const iter = this.kv.list<string>({ prefix: this.userAgentsPrefix(userId) });
     for await (const entry of iter) {
       const agent = await this.getAgent(entry.value);
-      if (agent) rules.push({ match_slug: agent.slug, agent_id: agent.id });
+      if (!agent || seenSlugs.has(agent.slug)) continue;
+      seenSlugs.add(agent.slug);
+      rules.push({ match_slug: agent.slug, agent_id: agent.id });
     }
     rules.sort((a, b) => a.match_slug.localeCompare(b.match_slug));
     const defaultRes = await this.kv.get<string>(this.userDefaultAgentKey(userId));
@@ -1375,7 +1661,8 @@ export class HubStore {
 
   /**
    * Resolve agent for address routing.
-   * Bare → default agent. Slug → most specific router rule, else slug index.
+   * Bare → default agent. Slug → router rule, else preferred transport slot, else any slot.
+   * Capability staleness never blocks resolution.
    * Renamed slugs fail with a clear hint (no silent redirect).
    */
   private async resolveAgentForUser(userId: string, slug?: string): Promise<Agent> {
@@ -1384,16 +1671,24 @@ export class HubStore {
     if (slug?.trim()) {
       const normalized = slug.trim().toLowerCase();
 
-      // Most specific: exact match_slug rule wins.
+      // Explicit router rule wins (may point at either transport row).
       const rule = router.rules.find((r) => r.match_slug === normalized);
       if (rule) {
         const agent = await this.getAgent(rule.agent_id);
         if (agent) return agent;
       }
 
-      const mapped = await this.kv.get<string>(this.userAgentSlugKey(userId, normalized));
-      if (mapped.value) {
-        const agent = await this.getAgent(mapped.value);
+      const prefs = await this.loadTransportPrefs(userId);
+      const preferred: AgentTransport = prefs.defaults[normalized] ?? "sidecar";
+      const preferredId = await this.lookupAgentSlotId(userId, normalized, preferred);
+      if (preferredId) {
+        const agent = await this.getAgent(preferredId);
+        if (agent) return agent;
+      }
+      const fallbackTransport: AgentTransport = preferred === "sidecar" ? "mcp" : "sidecar";
+      const fallbackId = await this.lookupAgentSlotId(userId, normalized, fallbackTransport);
+      if (fallbackId) {
+        const agent = await this.getAgent(fallbackId);
         if (agent) return agent;
       }
 

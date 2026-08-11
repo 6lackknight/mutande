@@ -37,6 +37,7 @@ dirs = "5"
 uuid = { version = "1", features = ["v4"] }
 base64 = "0.22"
 zip = { version = "2", default-features = false, features = ["deflate"] }
+sha1 = "0.10"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

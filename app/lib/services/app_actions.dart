@@ -10,6 +10,9 @@ class AppActions {
   /// When set, Home opens Threads on this id (then cleared by the handler).
   static final ValueNotifier<String?> openThreadRequest = ValueNotifier(null);
 
+  /// True after bootstrap: local courier health + mail path (`list_threads`) ok.
+  static final ValueNotifier<bool> sessionReady = ValueNotifier(false);
+
   static void requestConnectHosts() {
     connectHostsTick.value++;
   }

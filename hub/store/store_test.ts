@@ -1,6 +1,11 @@
 import { assertEquals, assertExists, assertRejects, assertThrows } from "jsr:@std/assert@1";
 import { HubError } from "./errors.ts";
-import { HubStore, createStore, createStoreWithTestAuth } from "./store.ts";
+import {
+  HubStore,
+  agentCapabilitiesFresh,
+  createStore,
+  createStoreWithTestAuth,
+} from "./store.ts";
 import type { Auth0Claims, Envelope } from "./types.ts";
 import { MAX_ENVELOPE_BYTES, ORG_BLOB_QUOTA_BYTES } from "./types.ts";
 
@@ -13,10 +18,20 @@ function sampleEnvelope(tag = "a"): Envelope {
   };
 }
 
-async function withTestStore(fn: (ctx: { store: HubStore; signToken: (c: Auth0Claims) => Promise<string> }) => Promise<void>) {
+async function withTestStore(
+  fn: (ctx: {
+    store: HubStore;
+    kv: Deno.Kv;
+    signToken: (c: Auth0Claims) => Promise<string>;
+  }) => Promise<void>,
+) {
   const kv = await Deno.openKv(":memory:");
   const { store, signToken } = await createStoreWithTestAuth(kv);
-  try { await fn({ store, signToken }); } finally { kv.close(); }
+  try {
+    await fn({ store, kv, signToken });
+  } finally {
+    kv.close();
+  }
 }
 
 async function setupOrgWithUsers(store: HubStore) {
@@ -620,5 +635,112 @@ Deno.test("verifyAuth0 token helper", async () => {
   await withTestStore(async ({ store, signToken }) => {
     const claims = await store.verifyAuth0Token(await signToken({ sub: "auth0|tok", email: "tok@test.com" }));
     assertEquals(claims.sub, "auth0|tok");
+  });
+});
+
+Deno.test("L1 dual agent rows same slug different transport", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth } = await setupOrgWithUsers(store);
+    const sidecar = await store.connectAgent(aliceAuth, "sidecar", {
+      slug: "chatgpt",
+      models: ["local"],
+    });
+    const mcp = await store.connectAgent(aliceAuth, "mcp", {
+      slug: "chatgpt",
+      models: ["gpt-4o"],
+      default_model: "gpt-4o",
+      modalities: ["text", "image"],
+      message_types: ["thread", "question"],
+    });
+    assertEquals(sidecar.slug, "chatgpt");
+    assertEquals(mcp.slug, "chatgpt");
+    assertEquals(sidecar.transport, "sidecar");
+    assertEquals(mcp.transport, "mcp");
+    assertEquals(sidecar.id === mcp.id, false);
+    assertEquals(mcp.mcp_endpoint, "https://mcp.mutande.online");
+    assertEquals(sidecar.mcp_endpoint, null);
+    assertEquals(mcp.visibility, "private");
+    assertEquals(mcp.trust_tier, "org");
+    assertEquals(mcp.billing, null);
+
+    const { agents } = await store.listAgents(aliceAuth);
+    const chatgptRows = agents.filter((a) => a.slug === "chatgpt");
+    assertEquals(chatgptRows.length, 2);
+    assertEquals(new Set(chatgptRows.map((a) => a.transport)).size, 2);
+  });
+});
+
+Deno.test("L1 client cannot elevate trust_tier or transport", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth } = await setupOrgWithUsers(store);
+    const agent = await store.connectAgent(aliceAuth, "sidecar", {
+      slug: "research",
+      models: ["x"],
+      trust_tier: "enterprise",
+      visibility: "public",
+      billing: { methods: ["per_message"], price_usd: "1", currency: "USD" },
+      transport: "mcp",
+      agent_id: "00000000-0000-0000-0000-000000000099",
+    });
+    assertEquals(agent.transport, "sidecar");
+    assertEquals(agent.trust_tier, "org");
+    assertEquals(agent.visibility, "private");
+    assertEquals(agent.billing, null);
+    assertEquals(agent.id === "00000000-0000-0000-0000-000000000099", false);
+    assertEquals(agent.capabilities?.models, ["x"]);
+  });
+});
+
+Deno.test("L1 stale capability does not block resolve", async () => {
+  await withTestStore(async ({ store, kv }) => {
+    const { aliceAuth, bobAuth } = await setupOrgWithUsers(store);
+    const mcp = await store.connectAgent(aliceAuth, "mcp", {
+      slug: "webslot",
+      models: ["gpt-4o"],
+    });
+    await store.setTransportDefault(aliceAuth, { slug: "webslot", transport: "mcp" });
+
+    const staleAt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    await kv.set(["agents", mcp.id], {
+      ...mcp,
+      capabilities_updated_at: staleAt,
+    });
+    const stored = (await kv.get<typeof mcp>(["agents", mcp.id])).value!;
+    assertEquals(agentCapabilitiesFresh(stored as typeof mcp), false);
+
+    // Staleness is UI-only — routing still resolves the slot.
+    const { thread } = await store.createThread(bobAuth, {
+      to: "alice@acme/webslot",
+      envelope: sampleEnvelope("stale-ok"),
+      from_agent: "claude",
+    });
+    assertEquals(thread.audience_agent_id, mcp.id);
+    assertEquals(thread.audience, "alice@acme/webslot");
+  });
+});
+
+Deno.test("L1 transport default prefers configured slot", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth, bobAuth } = await setupOrgWithUsers(store);
+    const sidecar = await store.connectAgent(aliceAuth, "sidecar", { slug: "dual" });
+    const mcp = await store.connectAgent(aliceAuth, "mcp", { slug: "dual" });
+    // Default is sidecar until Settings says otherwise.
+    const { thread: t1 } = await store.createThread(bobAuth, {
+      to: "alice@acme/dual",
+      envelope: sampleEnvelope("pref-sidecar"),
+      from_agent: "claude",
+    });
+    assertEquals(t1.audience_agent_id, sidecar.id);
+
+    await store.setTransportDefault(aliceAuth, { slug: "dual", transport: "mcp" });
+    const prefs = await store.getTransportPrefs(aliceAuth);
+    assertEquals(prefs.defaults["dual"], "mcp");
+
+    const { thread: t2 } = await store.createThread(bobAuth, {
+      to: "alice@acme/dual",
+      envelope: sampleEnvelope("pref-mcp"),
+      from_agent: "claude",
+    });
+    assertEquals(t2.audience_agent_id, mcp.id);
   });
 });

@@ -7,6 +7,27 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # app/macos/Runner/Scripts → repo root is ../../../../
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 CORE_DIR="$REPO_ROOT/core"
+PUBSPEC="$REPO_ROOT/app/pubspec.yaml"
+
+read_app_version() {
+  if [[ ! -f "$PUBSPEC" ]]; then
+    echo "warning: missing $PUBSPEC — skipping app/core version sync check"
+    return 0
+  fi
+  local raw
+  raw="$(grep -E '^version:' "$PUBSPEC" | head -1 | sed -E 's/^version:[[:space:]]*//')"
+  printf '%s' "${raw%%+*}" | tr -d '[:space:]'
+}
+
+read_core_version() {
+  local bin="$1"
+  if [[ ! -x "$bin" ]]; then
+    return 1
+  fi
+  "$bin" --version 2>/dev/null | awk '{print $NF}' | tr -d '[:space:]'
+}
+
+APP_VERSION="$(read_app_version || true)"
 
 RESOURCES_DIR="${BUILT_PRODUCTS_DIR:-}/${CONTENTS_FOLDER_PATH:-Contents}/Resources"
 mkdir -p "$RESOURCES_DIR"
@@ -121,6 +142,14 @@ if [[ -z "$SRC" ]]; then
   SRC="$(pick_newest 0 || true)"
 fi
 
+if [[ -n "$APP_VERSION" && -n "$SRC" ]]; then
+  CORE_VER="$(read_core_version "$SRC" || true)"
+  if [[ -n "$CORE_VER" && "$CORE_VER" != "$APP_VERSION" ]]; then
+    echo "note: mutande-core v${CORE_VER} != app v${APP_VERSION}; rebuilding…"
+    SRC=""
+  fi
+fi
+
 if [[ -z "$SRC" ]] || sources_newer_than "$SRC"; then
   if ! command -v cargo >/dev/null 2>&1; then
     # cargo often lives only in interactive shells
@@ -145,6 +174,20 @@ fi
 if [[ -z "$SRC" ]]; then
   echo "error: mutande-core binary not found under core/target/** after build."
   exit 1
+fi
+
+if [[ -n "$APP_VERSION" ]]; then
+  CORE_VER="$(read_core_version "$SRC" || true)"
+  if [[ -z "$CORE_VER" ]]; then
+    echo "error: could not read version from $SRC (--version failed)"
+    exit 1
+  fi
+  if [[ "$CORE_VER" != "$APP_VERSION" ]]; then
+    echo "error: mutande-core v${CORE_VER} != app v${APP_VERSION}"
+    echo "       sync core/Cargo.toml with app/pubspec.yaml and rebuild"
+    exit 1
+  fi
+  echo "Bundling mutande-core v${CORE_VER} (matches app v${APP_VERSION})"
 fi
 
 if ! arch_compatible "$SRC"; then

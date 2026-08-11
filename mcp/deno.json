@@ -1,0 +1,18 @@
+{
+  "name": "@mutande/mcp",
+  "version": "0.1.0",
+  "exports": "./main.ts",
+  "tasks": {
+    "dev": "deno run --allow-net --allow-env --allow-read --watch main.ts",
+    "check": "deno check main.ts auth/oauth_test.ts protocol/tools_test.ts",
+    "test": "deno test --allow-env --allow-read --allow-net auth/ protocol/",
+    "deploy": "deployctl deploy --project=mutande-mcp main.ts"
+  },
+  "imports": {
+    "hono": "jsr:@hono/hono@^4",
+    "jose": "jsr:@panva/jose@^6"
+  },
+  "compilerOptions": {
+    "lib": ["deno.window", "deno.unstable"]
+  }
+}
