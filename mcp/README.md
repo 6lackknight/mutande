@@ -18,7 +18,7 @@ ChatGPT web / Claude.ai connect **to us** as MCP clients. Identity is Auth0 OAut
 | Auth | Validates Auth0 JWT for HTTP API | Same Auth0 tenant; exposes RFC 9728 PRM for MCP clients |
 | Agent rows | Source of truth (`transport: mcp` via `POST /v1/agents/connect/mcp`) | Binds session → Auth0 user → hub MCP agent slot |
 
-Shared Auth0 audience (`https://hub.mutande.app`) means hosted MCP calls hub with the user's Bearer token **without** OBO. Optional later: dedicated MCP audience + OBO (`AUTH0_MCP_AUDIENCE`).
+Shared Auth0 audiences (`https://hub.mutande.app` + `https://mcp.mutande.online`) mean hosted MCP calls hub with the user's Bearer token **without** OBO. ChatGPT DCR issues the MCP resource as `aud`; set `AUTH0_MCP_AUDIENCE` on **both** mcp and hub. Optional later: OBO only (`AUTH0_MCP_AUDIENCE` on mcp, hub stays hub-aud).
 
 ## Connect ChatGPT / Claude.ai
 
@@ -116,7 +116,7 @@ npx @modelcontextprotocol/inspector
 
 **Live:** `https://mcp.mutande.online` (Deno Deploy project `mutande-mcp`).
 
-1. Confirm Deploy env matches `.env.example` names: `AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, `MUTANDE_HUB_URL`, `MCP_PUBLIC_URL` (optional `MCP_DEFAULT_AGENT_SLUG`, `AUTH0_MCP_AUDIENCE`).
+1. Confirm Deploy env matches `.env.example` names: `AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, `AUTH0_MCP_AUDIENCE`, `MUTANDE_HUB_URL`, `MCP_PUBLIC_URL` (optional `MCP_DEFAULT_AGENT_SLUG`).
 2. Hub: `MCP_ENDPOINT=https://mcp.mutande.online` if not using the built-in default; prod **`APP_ENVELOPE_KEY`** must stay set.
 3. Ship:
    ```bash
@@ -124,15 +124,17 @@ npx @modelcontextprotocol/inspector
    ```
 4. Smoke: `curl -s https://mcp.mutande.online/health` then reconnect a host and call `health`.
 
-## Auth0 (prod configured)
+## Auth0 (operator)
 
-Resource Parameter Compatibility, domain-level connections, and DCR or manual ChatGPT/Claude clients are **done in prod**. Operator reference: [`docs/AUTH0.md`](../docs/AUTH0.md) §8. Short checklist:
+MCP only exposes RFC 9728 PRM → Auth0. **DCR lives on the Auth0 tenant** (`POST https://auth.mutande.online/oidc/register`). If ChatGPT shows `dynamic client registration is disabled`, enable DCR in Auth0 — do not redeploy this package. Full steps + troubleshooting: [`docs/AUTH0.md`](../docs/AUTH0.md) §8 · end-user: [`docs/HOSTED-MCP.md`](../docs/HOSTED-MCP.md).
 
-1. Reuse API audience `https://hub.mutande.app` so MCP→hub uses one token.
-2. Tenant **Advanced**: Resource Parameter Compatibility + Include Issuer in Authorization Responses.
+Short checklist:
+
+1. Create Auth0 API Identifier `https://mcp.mutande.online` (ChatGPT sends that as `resource`); keep hub API `https://hub.mutande.app` for Mac/web.
+2. Tenant **Advanced**: Resource Parameter Compatibility + Include Issuer + **DCR** (or CIMD import) + Enable Application Connections.
 3. Domain-level DB/social connections for third-party MCP clients.
-4. DCR **or** manually register host redirect URIs.
-5. Optional later: API `https://mcp.mutande.online` + OBO (`AUTH0_MCP_AUDIENCE`).
+4. Default third-party permissions on **both** APIs (`https://mcp.mutande.online` and `https://hub.mutande.app`).
+5. Deploy `AUTH0_MCP_AUDIENCE=https://mcp.mutande.online` on mcp **and** hub.
 
 ## Streamable HTTP notes
 

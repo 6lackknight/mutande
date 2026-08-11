@@ -2588,7 +2588,11 @@ export function createStore(
     if (domain === "chevrondigital.auth0.com" && !aliases.includes("auth.mutande.online")) {
       aliases.push("auth.mutande.online");
     }
-    return new HubStore(kv, createAuth0Verifier({ domain, audience, issuerAliases: aliases }));
+    const mcpAudience = Deno.env.get("AUTH0_MCP_AUDIENCE")?.trim() || null;
+    return new HubStore(
+      kv,
+      createAuth0Verifier({ domain, audience, mcpAudience, issuerAliases: aliases }),
+    );
   }
   return new HubStore(kv, {
     async verifyAccessToken() {

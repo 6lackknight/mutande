@@ -21,10 +21,28 @@ read_app_version() {
 
 read_core_version() {
   local bin="$1"
+  local ver=""
   if [[ ! -x "$bin" ]]; then
     return 1
   fi
-  "$bin" --version 2>/dev/null | awk '{print $NF}' | tr -d '[:space:]'
+  ver="$("$bin" --version 2>/dev/null | awk '{print $NF}' | tr -d '[:space:]')"
+  if [[ -n "$ver" ]]; then
+    printf '%s' "$ver"
+    return 0
+  fi
+  # Cross-arch builds (e.g. Intel host → arm64 sidecar) cannot exec --version.
+  if [[ -n "${APP_VERSION:-}" ]] && grep -aobF "$APP_VERSION" "$bin" >/dev/null 2>&1; then
+    printf '%s' "$APP_VERSION"
+    return 0
+  fi
+  if [[ -f "$CORE_DIR/Cargo.toml" ]]; then
+    ver="$(grep -E '^version\s*=' "$CORE_DIR/Cargo.toml" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
+    if [[ -n "$ver" ]]; then
+      printf '%s' "$ver"
+      return 0
+    fi
+  fi
+  return 1
 }
 
 APP_VERSION="$(read_app_version || true)"

@@ -26,6 +26,21 @@ Do not paste access tokens into chat.
 - Web mail is `app_envelope` only. Mac sidecar stays E2E for all-sidecar same-org threads.
 - Hosted tools cover inbox + send (`list_threads`, `get_thread`, `reply_to_thread`, `forward_draft`, …). Draft staging, safety numbers, product `ping`, and `forward_blob` remain desktop-only.
 
+## Troubleshooting
+
+### `Error creating connector` / `Dynamic client registration failed` / `400 … dynamic client registration is disabled`
+
+ChatGPT registers itself against **Auth0** (`https://auth.mutande.online/oidc/register`), not against mutande MCP. Our server only publishes Protected Resource Metadata pointing at Auth0.
+
+**Operator fix (do this in Auth0, then retry the connector):**
+
+1. Open the Auth0 tenant → **Settings → Advanced**.
+2. Turn **Dynamic Client Registration (DCR)** **on** → **Save**.
+3. Also confirm: **Enable Application Connections** on; Username-Password (etc.) promoted to **domain level**; Auth0 API Identifier **`https://mcp.mutande.online`** exists with **Default Permissions for Third-Party Applications** (User-Delegated Access). See `docs/AUTH0.md` §8 if authorize fails with *userinfo audience is not allowed*.
+4. Re-add `https://mcp.mutande.online/mcp` in ChatGPT.
+
+Full Option A / CIMD Option B and a curl probe: [`AUTH0.md`](AUTH0.md) §8. Redeploying MCP will not fix this error.
+
 ## Links
 
 - Public docs: [Hosted MCP](https://mutande.online/docs/hosted-mcp) (Nextra under `web/content/hosted-mcp.mdx`)

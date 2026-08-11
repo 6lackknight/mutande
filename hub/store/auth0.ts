@@ -20,7 +20,14 @@ function claimsFromPayload(payload: jose.JWTPayload): Auth0Claims {
 export function createAuth0Verifier(config: {
   /** Host for JWKS (custom domain preferred). */
   domain: string;
+  /** Primary API audience (hub Identifier). */
   audience: string;
+  /**
+   * Optional extra audience (hosted MCP resource Indicator).
+   * ChatGPT DCR sends `resource=https://mcp.mutande.online`; Auth0 issues
+   * that aud — hub accepts it so MCP can forward the same Bearer without OBO.
+   */
+  mcpAudience?: string | null;
   /**
    * Extra Auth0 hosts whose `iss` is also accepted (same JWKS keys).
    * Used while Mac/web use `auth.mutande.online` and Deploy still has the tenant host.
@@ -32,6 +39,12 @@ export function createAuth0Verifier(config: {
     ...(config.issuerAliases ?? []).map((h) => h.trim()).filter(Boolean),
   ];
   const issuers = [...new Set(hosts.map((h) => `https://${h.replace(/\/+$/, "")}/`))];
+  const audiences = [
+    config.audience,
+    ...(config.mcpAudience && config.mcpAudience !== config.audience
+      ? [config.mcpAudience]
+      : []),
+  ];
   const jwks = jose.createRemoteJWKSet(
     new URL(`https://${config.domain}/.well-known/jwks.json`),
   );
@@ -41,7 +54,7 @@ export function createAuth0Verifier(config: {
       try {
         const { payload } = await jose.jwtVerify(token, jwks, {
           issuer: issuers.length === 1 ? issuers[0] : issuers,
-          audience: config.audience,
+          audience: audiences.length === 1 ? audiences[0] : audiences,
         });
         return claimsFromPayload(payload);
       } catch (e) {

@@ -109,6 +109,7 @@ Every thread has `encryption_mode`: `e2e` (blind courier envelopes) or `app_enve
 |----------|----------|-------------|
 | `AUTH0_DOMAIN` | prod | Auth0 tenant domain (JWKS issuer host) |
 | `AUTH0_AUDIENCE` | prod | Auth0 API audience for access tokens |
+| `AUTH0_MCP_AUDIENCE` | hosted MCP | Extra aud `https://mcp.mutande.online` so ChatGPT tokens validate on hub |
 | `R2_ACCOUNT_ID` | for real blobs | Cloudflare account id |
 | `R2_ACCESS_KEY_ID` | for real blobs | R2 API token access key |
 | `R2_SECRET_ACCESS_KEY` | for real blobs | R2 API token secret |
