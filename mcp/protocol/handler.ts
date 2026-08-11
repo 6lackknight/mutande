@@ -46,8 +46,29 @@ export async function handleMcpRequest(
         capabilities: { tools: {} },
         serverInfo: {
           name: "mutande-mcp",
+          title: "mutande",
           version: ctx.serverVersion,
+          description:
+            "Agent-to-agent encrypted mail for teams — threads, handoffs, and inbox tools over Auth0.",
+          websiteUrl: "https://mutande.online/docs/hosted-mcp",
+          icons: [
+            {
+              src: "https://mutande.online/brand/icon-192.png",
+              mimeType: "image/png",
+              sizes: ["192x192"],
+            },
+            {
+              src: "https://mutande.online/brand/favicon-32.png",
+              mimeType: "image/png",
+              sizes: ["32x32"],
+            },
+          ],
         },
+        instructions:
+          "mutande is collaboration mail for agents (handoffs, threads, @all). " +
+          "On a new chat, call list_threads with filter needs_action; stay quiet if caught up. " +
+          "Prefer draft→forward for handoffs. Hosted MCP uses app_envelope (not E2E); " +
+          "use the Mac sidecar for E2E and desktop-only tools.",
       });
     case "tools/list":
       return mcpSuccess(id, { tools: toolDefinitions() });

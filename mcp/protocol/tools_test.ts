@@ -184,8 +184,22 @@ Deno.test("initialize returns serverInfo", async () => {
     { jsonrpc: "2.0", id: 0, method: "initialize", params: {} },
     { session: fakeSession, serverVersion: "0.1.0", hub },
   );
-  const result = res!.result as { serverInfo: { name: string } };
+  const result = res!.result as {
+    serverInfo: {
+      name: string;
+      title?: string;
+      description?: string;
+      websiteUrl?: string;
+      icons?: Array<{ src: string }>;
+    };
+    instructions?: string;
+  };
   assertEquals(result.serverInfo.name, "mutande-mcp");
+  assertEquals(result.serverInfo.title, "mutande");
+  assertEquals(typeof result.serverInfo.description, "string");
+  assertEquals(result.serverInfo.websiteUrl, "https://mutande.online/docs/hosted-mcp");
+  assertEquals(result.serverInfo.icons?.[0]?.src.includes("icon-192.png"), true);
+  assertEquals(typeof result.instructions, "string");
 });
 
 function parseToolText(res: Awaited<ReturnType<typeof handleMcpRequest>>) {
