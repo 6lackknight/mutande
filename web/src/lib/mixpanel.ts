@@ -11,28 +11,44 @@ const TOKEN =
   "1e8a0fecb8ae62df4dbe2e7c62efe05c";
 
 let ready = false;
+const pending: Array<{
+  event: string;
+  props?: Record<string, string | number | boolean>;
+}> = [];
+
+type TrackProps = Record<string, string | number | boolean | undefined>;
+
+function cleanProps(
+  props?: TrackProps,
+): Record<string, string | number | boolean> | undefined {
+  if (!props) return undefined;
+  const clean: Record<string, string | number | boolean> = {};
+  for (const [k, v] of Object.entries(props)) {
+    if (v === undefined) continue;
+    if (/email|handle|password|token/i.test(k)) continue;
+    clean[k] = v;
+  }
+  return clean;
+}
 
 export function initMixpanel(): void {
   if (ready || typeof window === "undefined") return;
   mixpanel.init(TOKEN, {
     autocapture: true,
-    record_sessions_percent: 100,
+    // Full session replay on every visit hammers TBT; sample instead.
+    record_sessions_percent: 10,
   });
   ready = true;
+  for (const item of pending.splice(0)) {
+    mixpanel.track(item.event, item.props);
+  }
 }
 
-export function track(
-  event: string,
-  props?: Record<string, string | number | boolean | undefined>,
-): void {
-  if (!ready) return;
-  const clean: Record<string, string | number | boolean> = {};
-  if (props) {
-    for (const [k, v] of Object.entries(props)) {
-      if (v === undefined) continue;
-      if (/email|handle|password|token/i.test(k)) continue;
-      clean[k] = v;
-    }
+export function track(event: string, props?: TrackProps): void {
+  const clean = cleanProps(props);
+  if (!ready) {
+    pending.push({ event, props: clean });
+    return;
   }
   mixpanel.track(event, clean);
 }

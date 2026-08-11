@@ -56,6 +56,7 @@ upload_one() {
     *.png) ctype="image/png" ;;
     *.jpg|*.jpeg) ctype="image/jpeg" ;;
     *.webp) ctype="image/webp" ;;
+    *.svg) ctype="image/svg+xml" ;;
   esac
   echo "==> s3://${R2_BUCKET}/${key} (${ctype})"
   aws s3 cp "$file" "s3://${R2_BUCKET}/${key}" \
@@ -72,12 +73,14 @@ if [[ ${#FILES[@]} -eq 0 ]]; then
     done < <(find "$SRC_DIR" \( \
       -name 'landing-intro.mp4' -o \
       -name 'landing-intro.webm' -o \
-      -name 'landing-intro-poster.png' \
+      -name 'landing-intro-poster.png' -o \
+      -name 'landing-intro-poster.webp' \
     \) -type f -print0 | sort -z)
   else
     for cand in \
       web/public/brand/landing-intro.mp4 \
       web/public/brand/landing-intro.webm \
+      web/public/brand/landing-intro-poster.webp \
       web/public/brand/landing-intro-poster.png
     do
       [[ -f "$cand" ]] && FILES+=("$cand")

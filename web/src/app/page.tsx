@@ -4,12 +4,19 @@ import { LandingNav } from "@/components/landing-nav";
 import { TrackButtonLink } from "@/components/track-button-link";
 import { BrandMark } from "@/components/ui";
 import { AnalyticsEvent } from "@/lib/analytics-events";
-
-export const dynamic = "force-dynamic";
+import { LANDING_INTRO_POSTER_URL } from "@/lib/brand-assets";
 
 export default function LandingPage() {
   return (
     <LandingForceField>
+      {/* Discover LCP poster in the initial document (cross-origin R2). */}
+      <link
+        rel="preload"
+        as="image"
+        href={LANDING_INTRO_POSTER_URL}
+        fetchPriority="high"
+      />
+      <link rel="preconnect" href="https://downloads.mutande.online" />
       <div className="bg-relay grain relative flex min-h-dvh flex-1 flex-col overflow-hidden">
         <div
           aria-hidden

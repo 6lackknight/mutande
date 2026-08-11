@@ -23,7 +23,13 @@ function brandUrl(fileName: string, localPath: string): string {
   return localPath;
 }
 
+/** Prefer WebP (smaller); PNG kept as encode fallback / older Safari. */
 export const LANDING_INTRO_POSTER_URL = brandUrl(
+  "landing-intro-poster.webp",
+  "/brand/landing-intro-poster.webp",
+);
+
+export const LANDING_INTRO_POSTER_PNG_URL = brandUrl(
   "landing-intro-poster.png",
   "/brand/landing-intro-poster.png",
 );

@@ -22,4 +22,4 @@ npm run upload:r2 # push landing-intro.* to mutande-releases/brand/
 npm run ship      # render + optimize + poster + R2 upload
 ```
 
-Landing `<video>` loads from the downloads CDN (WebM first, MP4 for Safari). Local `/brand/…` still works with `NEXT_PUBLIC_BRAND_ASSETS_LOCAL=1`.
+Landing `<video>` loads from the downloads CDN (WebM first, MP4 for Safari). Poster is WebP on R2. Local `/brand/…` still works with `NEXT_PUBLIC_BRAND_ASSETS_LOCAL=1`.

@@ -20,7 +20,7 @@ const nextConfig: NextConfig = {
   turbopack: {
     root,
     resolveAlias: {
-      "next-mdx-import-source-file": path.join(root, "mdx-components.tsx"),
+      "next-mdx-import-source-file": "./mdx-components.tsx",
     },
   },
 };
