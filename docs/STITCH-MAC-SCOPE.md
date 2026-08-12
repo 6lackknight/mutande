@@ -14,11 +14,11 @@ Produce a coherent, high-fidelity screen set for the Mac tray app so Flutter can
 
 ## Brand assets (use these)
 
-Hosted on prod web — prefer these URLs in Stitch:
+**Masters** live in repo `brand/sources/` (`ai-mark.png` = `@i` seal, `ai-tray.png`, `mt-ligature.png`). Regenerate consumers with `./scripts/sync-brand-assets.sh` (see `brand/README.md`). Hosted on prod web — prefer these URLs in Stitch:
 
 | Asset | URL | Use |
 |-------|-----|-----|
-| `@i` mark (white on black) | https://mutande.online/brand/mt-mark.png | Primary seal — splash, About-style moments, large brand |
+| `@i` mark (white on black) | https://mutande.online/brand/mt-mark.png | Primary seal — splash, About-style moments, large brand. Filename is historical (`mt-mark`); art is **`@i`**, not MT letters. |
 | MT ligature (legacy) | https://mutande.online/brand/mt-ligature.png | Optional secondary mark where the wordmark ligature still fits |
 | Tray icon (rounded square) | https://mutande.online/brand/tray-icon.png | Menu-bar glyph, in-app nav mark, small brand (`@i`) |
 | Favicon / touch | https://mutande.online/brand/favicon-32.png · [icon-192](https://mutande.online/brand/icon-192.png) · [apple-touch](https://mutande.online/brand/apple-touch-icon.png) | Optional reference only |

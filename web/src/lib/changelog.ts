@@ -1,6 +1,6 @@
 /**
- * Product-facing desktop alpha notes for /changelog and the download page.
- * Keep entries short; prefer themes from release cuts over git-log dumps.
+ * Customer-facing desktop alpha notes for /changelog and the download page.
+ * User-visible changes only — no internal tooling, infra, or implementation detail.
  */
 
 export type ChangelogEntry = {
@@ -14,48 +14,46 @@ export const CHANGELOG: ChangelogEntry[] = [
   {
     version: "1.1.1",
     date: "2026-08-11",
-    title: "Desktop alpha rebuild",
+    title: "Refreshed logo",
     notes: [
-      "Matched app + mutande-core 1.1.1 desktop alpha cut for Mac and Windows.",
+      "Updated @i mark across the Mac app, menu bar, and website.",
     ],
   },
   {
     version: "1.1.0",
     date: "2026-08-11",
-    title: "Network zoom & external contacts",
+    title: "Network & external contacts",
     notes: [
-      "Agents tab becomes Network: zoom Me · Org · External to inspect routing at each scope.",
-      "External contacts with pairing PIN, plus enterprise-thread warnings when mail leaves E2E.",
-      "Threads compose moves into the toolbar; list Needs you reads as plain amber text.",
+      "Network tab: zoom between Me, your org, and external contacts to see how mail routes.",
+      "Add external contacts with a pairing PIN; warnings when a thread is no longer end-to-end encrypted.",
+      "Compose moved to the toolbar; clearer Needs you labels in the thread list.",
     ],
   },
   {
     version: "1.0.12",
     date: "2026-08-07",
-    title: "Matched app + courier binaries",
+    title: "Version sync",
     notes: [
-      "Desktop alpha ships with matching mutande app and mutande-core versions in the bundle (reinstall from /download if Restart courier still reports a mismatch).",
-      "Release packaging verifies mutande-core --version against the app before notarizing DMGs.",
-      "Clearer Settings guidance when the bundled courier is stale — reinstall replaces Contents/Resources; Restart alone cannot.",
+      "App and background courier stay matched — reinstall from Download if Restart courier reports a mismatch.",
+      "Clearer Settings guidance when a fresh install is needed to pick up an update.",
     ],
   },
   {
     version: "1.0.11",
     date: "2026-08-07",
-    title: "Sentry error reporting",
+    title: "Stability & Windows installer",
     notes: [
-      "Desktop app and mutande-core report crashes and failures to Sentry for faster alpha triage.",
-      "Hub Deno Deploy gains matching Sentry wiring for API-side errors.",
-      "Windows alpha ships as an Inno Setup installer (mutande-alpha-windows-setup.exe) on the downloads CDN.",
+      "Improved crash and error reporting for faster fixes during alpha.",
+      "Windows alpha now ships as an installer alongside Mac.",
     ],
   },
   {
     version: "1.0.10",
     date: "2026-08-06",
-    title: "Restart courier & version mismatch",
+    title: "Restart courier",
     notes: [
-      "Settings Restart courier clears a stuck or stale mutande-core sidecar without resetting onboarding.",
-      "Detects app vs daemon version mismatch so a leftover core binary no longer blocks the desktop.",
+      "Restart courier in Settings clears a stuck background service without resetting your account.",
+      "Detects version mismatches so an outdated courier no longer blocks the app.",
     ],
   },
   {
@@ -63,49 +61,48 @@ export const CHANGELOG: ChangelogEntry[] = [
     date: "2026-08-06",
     title: "Attachments & host connect",
     notes: [
-      "Thread reading pane shows file attachments with in-app preview for common types.",
-      "Hardened AI host connect (MCP + skill) and Settings host-link status.",
-      "Hub device registration / store updates for multi-device wrap targets.",
+      "View file attachments in threads with in-app preview for common types.",
+      "More reliable Connect AI hosts flow and clearer connection status in Settings.",
+      "Better support when you use mutande on more than one device.",
     ],
   },
   {
     version: "1.0.8",
     date: "2026-08-05",
-    title: "Courier fixes & landing refresh",
+    title: "Sync fixes & landing refresh",
     notes: [
-      "Daemon RPC and hub store fixes ahead of the next desktop cut.",
-      "Refreshed Address Intelligence landing intro video and poster.",
+      "Stability fixes for background sync.",
+      "Refreshed Address Intelligence intro on the website.",
     ],
   },
   {
     version: "1.0.7",
     date: "2026-08-05",
-    title: "One-shot Mac + Windows release",
+    title: "Mac & Windows alpha",
     notes: [
-      "Single release-desktop path: notarized Mac DMGs, Windows zip, downloads CDN, site redeploy.",
-      "Join UI polish and tighter Auth0 membership checks.",
-      "Auth0 sign-out and clearer onboarding error handling.",
+      "Mac and Windows alphas available from Download.",
+      "Smoother join flow if you already have a team from the web.",
+      "Clearer sign-out and onboarding error messages.",
     ],
   },
   {
     version: "1.0.6",
     date: "2026-08-05",
-    title: "Onboarding & Mac release hardening",
+    title: "Onboarding polish",
     notes: [
-      "Skip create/join when the account already has a team (e.g. finished on the web).",
-      "Mac DMG release script verifies a real Flutter binary before reusing a build tree.",
-      "Windows CI build fixes for the unsigned alpha zip.",
+      "Skip create/join when your account already belongs to a team.",
+      "More reliable Mac and Windows alpha installers.",
     ],
   },
   {
     version: "1.0.5",
     date: "2026-08-05",
-    title: "Host skill, notifications, Windows on CDN",
+    title: "Notifications & Windows",
     notes: [
-      "Two-step Connect AI hosts flow: MCP, then skill install.",
-      "Local inbox notifications with mute and Settings → Notifications.",
-      "Windows alpha zip published to downloads.mutande.online alongside Mac DMGs.",
-      "Mac Release notification delegate fix for menu-bar banners.",
+      "Connect AI hosts in two steps: link the host, then install the collaboration skill.",
+      "Local inbox notifications with mute controls in Settings.",
+      "Windows alpha available alongside Mac.",
+      "Fix for menu-bar notification banners on Mac.",
     ],
   },
   {
@@ -120,11 +117,11 @@ export const CHANGELOG: ChangelogEntry[] = [
   {
     version: "1.0.3",
     date: "2026-08-04",
-    title: "Windows shell & Mac chrome",
+    title: "Windows & Mac polish",
     notes: [
-      "First Windows alpha app shell (portable zip via Actions).",
-      "In-app feedback from Settings; Threads reading UI refresh.",
-      "Short dark welcome splash with the working orb on Mac launch.",
+      "First Windows alpha app.",
+      "Send feedback from Settings; refreshed Threads reading view.",
+      "Short welcome splash on Mac launch.",
     ],
   },
   {
@@ -132,17 +129,16 @@ export const CHANGELOG: ChangelogEntry[] = [
     date: "2026-07-28",
     title: "Rolling alpha downloads",
     notes: [
-      "Public installers use a rolling alpha channel on the downloads CDN.",
-      "Mac DMGs ship as mutande-alpha.dmg (Silicon) and mutande-alpha-intel.dmg.",
+      "Download page offers the latest alpha builds for Mac (Apple Silicon and Intel).",
     ],
   },
   {
     version: "1.0.1",
     date: "2026-07-28",
-    title: "Host picker & agent routing",
+    title: "Host picker & routing",
     notes: [
-      "Connect hosts one at a time via picker with consistent host icons.",
-      "Agents & routing improvements; notarized Mac DMG release path hardening.",
+      "Connect AI hosts one at a time with a clearer picker.",
+      "Agents and routing improvements.",
     ],
   },
 ];
