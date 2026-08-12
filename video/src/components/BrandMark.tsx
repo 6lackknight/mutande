@@ -8,28 +8,23 @@ export type BrandId =
   | "cursor"
   | "kimi"
   | "openclaw"
+  | "n8n"
   | "default";
 
 const ink = colors.stone900;
 
-/** Same family as Mac `AiHostIcon` — Simple Icons where we have them. */
+/** Product marks for the intro cast — Simple Icons / official favicons as gray+alpha PNGs. */
 export const BrandMark: React.FC<{ brand: BrandId; size: number }> = ({
   brand,
   size,
 }) => {
-  if (brand === "cursor") {
-    // Quiet cursor mark — no host PNG in repo
-    return (
-      <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden>
-        <path
-          fill={ink}
-          d="M5.5 3.2 18.8 12l-6.2 1.5 2.4 6.6-3.1 1.1-2.4-6.5L5.5 19.2z"
-        />
-      </svg>
-    );
-  }
-
-  if (brand === "claude" || brand === "chatgpt") {
+  if (
+    brand === "cursor" ||
+    brand === "claude" ||
+    brand === "chatgpt" ||
+    brand === "openclaw" ||
+    brand === "n8n"
+  ) {
     return (
       <Img
         src={staticFile(`hosts/${brand}.png`)}
@@ -37,7 +32,7 @@ export const BrandMark: React.FC<{ brand: BrandId; size: number }> = ({
           width: size,
           height: size,
           objectFit: "contain",
-          // Match app: monochrome ink
+          // Match app AiHostIcon: monochrome ink on light plates
           filter: "brightness(0) saturate(100%)",
           opacity: 0.92,
         }}
@@ -52,18 +47,6 @@ export const BrandMark: React.FC<{ brand: BrandId; size: number }> = ({
         <path
           fill={ink}
           d="M4.5 4.2h3.2v6.1L13.4 4.2h3.8l-6.2 7.1 6.6 8.5h-3.9l-4.7-6.2v6.2H4.5z"
-        />
-      </svg>
-    );
-  }
-
-  if (brand === "openclaw") {
-    // Abstract claw mark
-    return (
-      <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden>
-        <path
-          fill={ink}
-          d="M12 2.5c-2.2 3.4-5.8 5.6-9.5 6.2 2.1 1.1 3.6 3.2 4.1 5.7-.9-.4-1.7-1-2.4-1.8-.2 3.8 1.6 7.4 4.8 9.2-1.5-2.6-1.6-5.7-.2-8.3 1.2 2.4 3.5 4.2 6.2 4.8-.4-1.5-.4-3.1.1-4.6 1.8 1.5 2.9 3.7 3.1 6.1 2.6-2.2 4-5.6 3.6-9.1-1.8.9-3.3 2.3-4.2 4.1.2-2.8-1-5.5-3.2-7.3.7 1.6.9 3.4.5 5.1C13.8 8.4 12.6 5.2 12 2.5z"
         />
       </svg>
     );

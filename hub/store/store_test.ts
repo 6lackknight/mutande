@@ -84,7 +84,7 @@ Deno.test("update profile display name and avatar", async () => {
     assertEquals(me.user?.avatar_url, undefined);
 
     await assertRejects(
-      () => store.updateProfile(claims, { display_name: "x".repeat(65) }),
+      () => store.updateProfile(claims, { display_name: "x".repeat(129) }),
       HubError,
       "display_name too long",
     );
@@ -102,6 +102,117 @@ Deno.test("update profile display name and avatar", async () => {
       HubError,
       "Onboarding required",
     );
+  });
+});
+
+Deno.test("update profile renames handle local part", async () => {
+  await withTestStore(async ({ store }) => {
+    const claims = { sub: "auth0|ren", email: "ren@co.test" };
+    const { user } = await store.createOrgWithAdmin(claims, {
+      slug: "renco",
+      name: "RenCo",
+      handle: "ren@renco",
+    });
+
+    let me = await store.updateProfile(claims, { handle: "rene" });
+    assertEquals(me.user?.handle, "rene@renco");
+
+    me = await store.updateProfile(claims, { handle: "pat@renco" });
+    assertEquals(me.user?.handle, "pat@renco");
+
+    // Old handle is free for someone else.
+    const invite = await store.createInvite(store.authContextFromUser(user));
+    const other = { sub: "auth0|other", email: "other@co.test" };
+    await store.joinOrg(other, { invite_code: invite.code, handle: "ren@renco" });
+    assertEquals((await store.getMe(other)).user?.handle, "ren@renco");
+
+    await assertRejects(
+      () => store.updateProfile(claims, { handle: "ren@renco" }),
+      HubError,
+      "Handle already registered",
+    );
+    await assertRejects(
+      () => store.updateProfile(claims, { handle: "pat@otherorg" }),
+      HubError,
+      "Handle must stay in your org",
+    );
+    await assertRejects(
+      () => store.updateProfile(claims, { handle: "" }),
+      HubError,
+      "handle is required",
+    );
+  });
+});
+
+Deno.test("Auth0 profile seed fills empty fields once", async () => {
+  await withTestStore(async ({ store }) => {
+    const claims = {
+      sub: "auth0|seed",
+      email: "seed@co.test",
+      name: "Seed User",
+      picture: "https://cdn.example.test/seed.jpg",
+    };
+    const { user } = await store.createOrgWithAdmin(claims, {
+      slug: "seedco",
+      name: "SeedCo",
+    });
+    assertEquals(user.display_name, "Seed User");
+    assertEquals(user.avatar_url, "https://cdn.example.test/seed.jpg");
+    assertEquals(user.email, "seed@co.test");
+    assertEquals(typeof user.auth0_profile_seeded_at, "string");
+
+    // Later Auth0 changes must not overwrite mutande profile.
+    let me = await store.seedProfile(
+      { ...claims, name: "Auth0 Renamed", picture: "https://cdn.example.test/new.jpg" },
+      {
+        display_name: "Auth0 Renamed",
+        avatar_url: "https://cdn.example.test/new.jpg",
+      },
+    );
+    assertEquals(me.user?.display_name, "Seed User");
+    assertEquals(me.user?.avatar_url, "https://cdn.example.test/seed.jpg");
+
+    // Clears stay cleared — seed does not refill name/photo.
+    me = await store.updateProfile(claims, { display_name: "", avatar_url: "" });
+    assertEquals(me.user?.display_name, undefined);
+    assertEquals(me.user?.avatar_url, undefined);
+    me = await store.seedProfile(claims, {
+      display_name: "Back from Auth0",
+      avatar_url: "https://cdn.example.test/again.jpg",
+    });
+    assertEquals(me.user?.display_name, undefined);
+    assertEquals(me.user?.avatar_url, undefined);
+
+    // Email can still backfill when missing.
+    const bare = { sub: "auth0|emailonly" };
+    await store.createOrgWithAdmin(bare, { slug: "emco", name: "EmCo", handle: "e@emco" });
+    me = await store.getMe(bare);
+    assertEquals(me.email, undefined);
+    me = await store.seedProfile(bare, { email: "e@co.test" });
+    assertEquals(me.email, "e@co.test");
+    assertEquals(me.user?.email, "e@co.test");
+  });
+});
+
+Deno.test("seedProfile from web session before flag is set", async () => {
+  await withTestStore(async ({ store }) => {
+    // Create without profile claims (typical access-token create).
+    const claims = { sub: "auth0|late", email: "late@co.test" };
+    const { user } = await store.createOrgWithAdmin(claims, {
+      slug: "lateco",
+      name: "LateCo",
+    });
+    assertEquals(user.auth0_profile_seeded_at, undefined);
+    assertEquals(user.display_name, undefined);
+
+    const me = await store.seedProfile(claims, {
+      display_name: "Late Seed",
+      avatar_url: "https://cdn.example.test/late.jpg",
+      email: "late@co.test",
+    });
+    assertEquals(me.user?.display_name, "Late Seed");
+    assertEquals(me.user?.avatar_url, "https://cdn.example.test/late.jpg");
+    assertEquals(typeof me.user?.auth0_profile_seeded_at, "string");
   });
 });
 

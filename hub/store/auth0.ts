@@ -13,8 +13,17 @@ function claimsFromPayload(payload: jose.JWTPayload): Auth0Claims {
     throw unauthorized("Invalid token: missing sub");
   }
   const email = typeof payload.email === "string" ? payload.email : undefined;
+  const name = typeof payload.name === "string" ? payload.name : undefined;
+  const picture =
+    typeof payload.picture === "string" ? payload.picture : undefined;
   const roles = extractAuth0Roles(payload as Record<string, unknown>);
-  return { sub, email, ...(roles.length ? { roles } : {}) };
+  return {
+    sub,
+    ...(email ? { email } : {}),
+    ...(name ? { name } : {}),
+    ...(picture ? { picture } : {}),
+    ...(roles.length ? { roles } : {}),
+  };
 }
 
 export function createAuth0Verifier(config: {
@@ -97,6 +106,8 @@ export async function createTestTokenVerifier(config: {
   const signToken = async (claims: Auth0Claims): Promise<string> => {
     const body: Record<string, unknown> = {};
     if (claims.email) body.email = claims.email;
+    if (claims.name) body.name = claims.name;
+    if (claims.picture) body.picture = claims.picture;
     if (claims.roles?.length) {
       body[AUTH0_ROLES_CLAIM_KEYS[0]] = claims.roles;
     }

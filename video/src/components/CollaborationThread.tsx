@@ -9,7 +9,7 @@ import {
 } from "remotion";
 import { colors, FONT } from "../theme";
 import { beats, threadBeats, DRAFT_FILENAME } from "../timing";
-import { BrandId } from "./BrandMark";
+import { BrandId, BrandMark } from "./BrandMark";
 
 type RowProps = {
   brand: BrandId;
@@ -19,15 +19,11 @@ type RowProps = {
   indent?: number;
 };
 
-const brandSrc: Partial<Record<BrandId, string>> = {
-  claude: "hosts/claude.png",
-  chatgpt: "hosts/chatgpt.png",
-};
-
 const avatarFor = (handle: string): BrandId => {
   if (handle === "@claude") return "claude";
   if (handle === "@cursor") return "cursor";
   if (handle.includes("openclaw")) return "openclaw";
+  if (handle.includes("n8n")) return "n8n";
   return "default";
 };
 
@@ -35,7 +31,6 @@ const ThreadAvatar: React.FC<{ brand: BrandId; size?: number }> = ({
   brand,
   size = 32,
 }) => {
-  const src = brandSrc[brand];
   return (
     <div
       style={{
@@ -50,22 +45,7 @@ const ThreadAvatar: React.FC<{ brand: BrandId; size?: number }> = ({
         flexShrink: 0,
       }}
     >
-      {src ? (
-        <Img
-          src={staticFile(src)}
-          style={{
-            width: size * 0.55,
-            height: size * 0.55,
-            objectFit: "contain",
-            filter: "brightness(0) saturate(100%)",
-            opacity: 0.9,
-          }}
-        />
-      ) : (
-        <span style={{ fontSize: 11, fontWeight: 700, color: colors.stone700 }}>
-          {brand.slice(0, 1).toUpperCase()}
-        </span>
-      )}
+      <BrandMark brand={brand} size={size * 0.55} />
     </div>
   );
 };

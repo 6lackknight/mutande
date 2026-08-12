@@ -14,7 +14,7 @@ export default async function ProfilePage() {
       <LoggedInHeader />
       <PageTitle
         title="Profile"
-        subtitle="How you appear to teammates. Your handle stays fixed."
+        subtitle="How you appear to teammates. You can change your display name and handle."
       />
       <ProfileForm
         initialName={me.user?.display_name ?? ""}

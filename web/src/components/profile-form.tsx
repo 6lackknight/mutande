@@ -52,6 +52,12 @@ function Avatar({ src, fallback }: { src: string | null; fallback: string }) {
   );
 }
 
+function splitHandle(handle: string): { local: string; orgSlug: string } {
+  const at = handle.lastIndexOf("@");
+  if (at <= 0) return { local: handle, orgSlug: "" };
+  return { local: handle.slice(0, at), orgSlug: handle.slice(at + 1) };
+}
+
 export function ProfileForm({
   initialName,
   initialAvatarUrl,
@@ -68,6 +74,7 @@ export function ProfileForm({
   const [avatarChanged, setAvatarChanged] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const { local, orgSlug } = splitHandle(handle);
 
   const fallbackInitial = (initialName || handle || email || "?")
     .trim()
@@ -131,19 +138,40 @@ export function ProfileForm({
         <Input
           name="display_name"
           defaultValue={initialName}
-          maxLength={64}
+          maxLength={128}
           autoComplete="name"
           placeholder="Your name"
         />
       </Field>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <div>
-          <div className="text-[13px] font-medium tracking-wide text-stone-700">
-            Handle
+        <Field
+          label="Handle"
+          hint={
+            orgSlug
+              ? "Local part only — org stays fixed. Old mail keeps the previous address."
+              : "Lowercase letters, digits, dots, underscores, or hyphens."
+          }
+        >
+          <div className="flex items-center gap-1.5">
+            <Input
+              name="handle_local"
+              defaultValue={local}
+              required
+              autoComplete="off"
+              spellCheck={false}
+              maxLength={32}
+              className="min-w-0 flex-1"
+              pattern="[a-z0-9]([a-z0-9._-]{0,30}[a-z0-9])?"
+              title="1–32 lowercase letters, digits, dots, underscores, or hyphens"
+            />
+            {orgSlug ? (
+              <span className="shrink-0 text-[15px] text-stone-500">
+                @{orgSlug}
+              </span>
+            ) : null}
           </div>
-          <div className="mt-1.5 text-[15px] text-stone-500">{handle}</div>
-        </div>
+        </Field>
         <div>
           <div className="text-[13px] font-medium tracking-wide text-stone-700">
             Email

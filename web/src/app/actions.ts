@@ -95,12 +95,28 @@ export async function updateProfileAction(
   await requireSession("/profile");
 
   const display_name = String(formData.get("display_name") ?? "").trim();
-  if (display_name.length > 64) {
-    return { error: "Name is too long (max 64 characters)." };
+  if (display_name.length > 128) {
+    return { error: "Name is too long (max 128 characters)." };
   }
 
-  const input: { display_name: string; avatar_url?: string } = {
+  const handleLocal = String(formData.get("handle_local") ?? "").trim().toLowerCase();
+  if (!handleLocal) {
+    return { error: "Handle is required." };
+  }
+  if (!/^[a-z0-9](?:[a-z0-9._-]{0,30}[a-z0-9])?$/.test(handleLocal)) {
+    return {
+      error:
+        "Handle must be 1–32 lowercase letters, digits, dots, underscores, or hyphens.",
+    };
+  }
+
+  const input: {
+    display_name: string;
+    handle: string;
+    avatar_url?: string;
+  } = {
     display_name,
+    handle: handleLocal,
   };
   // Hidden field is only submitted when the avatar changed; empty string clears.
   const avatar = formData.get("avatar_url");

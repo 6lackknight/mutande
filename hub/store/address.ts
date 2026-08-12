@@ -134,9 +134,19 @@ export function parseWirePath(path: string): { orgSlug: string; local: string; a
   return { orgSlug: parts[0], local: parts[1], agentSlug: parts[2] };
 }
 
+/** User local part: 1–32 lowercase letters, digits, `.` `_` `-` (no leading/trailing separator). */
+const HANDLE_LOCAL_RE = /^[a-z0-9](?:[a-z0-9._-]{0,30}[a-z0-9])?$/;
+
 export function assertHandleLocal(local: string): void {
-  if (local.toLowerCase() === "@all" || local.toLowerCase().startsWith("@all")) {
+  const normalized = local.trim().toLowerCase();
+  if (!normalized || normalized === "@all" || normalized.startsWith("@all")) {
     throw new HubError("Handle cannot use @all broadcast prefix", "invalid_handle");
+  }
+  if (!HANDLE_LOCAL_RE.test(normalized)) {
+    throw new HubError(
+      "Handle must be 1–32 lowercase letters, digits, dots, underscores, or hyphens",
+      "invalid_handle",
+    );
   }
 }
 

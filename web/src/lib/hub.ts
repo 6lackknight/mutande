@@ -8,6 +8,7 @@ import {
   type ListInvitesResponse,
   type ListWaitlistResponse,
   type MeResponse,
+  type SeedProfileInput,
   type UpdateProfileInput,
 } from "@/lib/types";
 
@@ -97,6 +98,16 @@ export async function updateProfile(
 ): Promise<MeResponse> {
   return hubFetch<MeResponse>("/v1/me/profile", {
     method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+/** One-shot Auth0 → mutande seed (empty fields only). */
+export async function seedProfile(
+  input: SeedProfileInput = {},
+): Promise<MeResponse> {
+  return hubFetch<MeResponse>("/v1/me/profile/seed", {
+    method: "POST",
     body: JSON.stringify(input),
   });
 }

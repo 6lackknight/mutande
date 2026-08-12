@@ -30,12 +30,32 @@ export interface User {
   display_name?: string;
   /** Small avatar — base64 image data URL (client-resized) or https URL. */
   avatar_url?: string;
+  /**
+   * Set after the one-shot Auth0 name/photo seed. Later clears/edits stay on
+   * mutande — empty display_name/avatar_url are not re-filled from Auth0.
+   */
+  auth0_profile_seeded_at?: string;
 }
 
 /** Web profile management — omit a field to leave it unchanged; empty/null clears. */
 export interface UpdateProfileInput {
   display_name?: string | null;
   avatar_url?: string | null;
+  /**
+   * Local part or full `local@org`. Org must match the user's current org.
+   * Empty/null is rejected (handle cannot be cleared).
+   */
+  handle?: string | null;
+}
+
+/**
+ * Fill empty profile fields from Auth0 (ID-token session or access-token claims).
+ * Never overwrites mutande edits; name/photo seed runs at most once per user.
+ */
+export interface SeedProfileInput {
+  email?: string;
+  display_name?: string;
+  avatar_url?: string;
 }
 
 export interface Device {
@@ -424,6 +444,9 @@ export const EXTERNAL_LINK_MSGS_PER_DAY = 200;
 export interface Auth0Claims {
   sub: string;
   email?: string;
+  /** Auth0 `profile` scope — often on ID token; may be on access token via Action. */
+  name?: string;
+  picture?: string;
   /** Auth0 RBAC role names/ids from access-token custom claims. */
   roles?: string[];
 }

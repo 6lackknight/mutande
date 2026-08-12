@@ -5,6 +5,7 @@ export type UserRole = "org_admin" | "member";
 export interface HubUser {
   id: string;
   auth0_sub: string;
+  email?: string;
   handle?: string;
   org_id?: string;
   /** Prefer roles[]; hub may still emit singular role during migration. */
@@ -14,10 +15,21 @@ export interface HubUser {
   display_name?: string;
   /** Small avatar — base64 image data URL (client-resized) or https URL. */
   avatar_url?: string;
+  /** Set after one-shot Auth0 name/photo seed. */
+  auth0_profile_seeded_at?: string;
 }
 
 /** Omit a field to leave it unchanged; empty string clears. */
 export interface UpdateProfileInput {
+  display_name?: string;
+  avatar_url?: string;
+  /** Local part or full `local@org` (org must match). */
+  handle?: string;
+}
+
+/** Empty-only Auth0 seed — never overwrites mutande profile edits. */
+export interface SeedProfileInput {
+  email?: string;
   display_name?: string;
   avatar_url?: string;
 }

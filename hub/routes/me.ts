@@ -12,5 +12,10 @@ export function createMeRoutes(store: HubStore) {
     const input = await c.req.json().catch(() => ({}));
     return c.json(await store.updateProfile(c.get("auth0"), input));
   });
+  /** One-shot Auth0 seed — empty fields only; mutande profile owns later edits. */
+  routes.post("/profile/seed", auth0Middleware(store), async (c) => {
+    const input = await c.req.json().catch(() => ({}));
+    return c.json(await store.seedProfile(c.get("auth0"), input));
+  });
   return routes;
 }

@@ -43,7 +43,7 @@ export const PARTICIPANTS: readonly Participant[] = [
     id: "alice-n8n",
     address: "alice@acme/n8n-tickets",
     hostHint: "n8n",
-    brand: "default",
+    brand: "n8n",
     accent: colors.accent,
     kind: "teammate-agent",
   },

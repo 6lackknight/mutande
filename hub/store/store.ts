@@ -88,6 +88,7 @@ import type {
   ThreadMeta,
   ThreadDowngradeProposal,
   ProposeThreadDowngradeInput,
+  SeedProfileInput,
   UpdateProfileInput,
   User,
   UserRole,
@@ -185,7 +186,7 @@ function isOnboarded(user: User | null | undefined): boolean {
   return Boolean(user?.org_id && user?.handle);
 }
 
-const MAX_DISPLAY_NAME_LENGTH = 64;
+const MAX_DISPLAY_NAME_LENGTH = 128;
 /** Data-URL avatars are client-resized; keep well under Deno KV's 64KiB value limit. */
 const MAX_AVATAR_URL_LENGTH = 48_000;
 
@@ -207,6 +208,55 @@ function assertValidAvatarUrl(value: string): void {
       400,
     );
   }
+}
+
+/**
+ * Fill empty profile fields from Auth0. Email may backfill anytime; name/photo
+ * only before `auth0_profile_seeded_at` so mutande edits (including clears) stick.
+ * Pass `seedNamePhoto: false` for claim-only email backfill (access tokens often
+ * omit profile claims — web still needs a chance to seed from the ID token).
+ * `forceMarkSeeded` is for the explicit POST /profile/seed path so we don't retry
+ * forever when Auth0 has no name/picture.
+ */
+function applyAuth0ProfileSeed(
+  user: User,
+  seed: { email?: string; name?: string; picture?: string },
+  opts: { seedNamePhoto?: boolean; forceMarkSeeded?: boolean } = {},
+): boolean {
+  const seedNamePhoto = opts.seedNamePhoto !== false;
+  let changed = false;
+
+  const email = seed.email?.trim();
+  if (!user.email && email) {
+    user.email = email;
+    changed = true;
+  }
+
+  if (seedNamePhoto && !user.auth0_profile_seeded_at) {
+    const name = seed.name?.trim();
+    if (!user.display_name && name) {
+      user.display_name = name.slice(0, MAX_DISPLAY_NAME_LENGTH);
+      changed = true;
+    }
+
+    const picture = seed.picture?.trim();
+    if (!user.avatar_url && picture) {
+      try {
+        assertValidAvatarUrl(picture);
+        user.avatar_url = picture;
+        changed = true;
+      } catch {
+        // Ignore IdP picture URLs that fail our avatar rules.
+      }
+    }
+
+    if (opts.forceMarkSeeded || name || picture) {
+      user.auth0_profile_seeded_at = nowIso();
+      changed = true;
+    }
+  }
+
+  return changed;
 }
 
 function authContextFromUser(
@@ -577,13 +627,26 @@ export class HubStore {
   }
 
   async getMe(claims: Auth0Claims): Promise<MeResponse> {
-    const user = await this.getUserByAuth0Sub(claims.sub);
+    let user = await this.getUserByAuth0Sub(claims.sub);
+    if (user) {
+      // Access tokens often lack profile claims — only backfill email here.
+      // Name/photo come from create/join or POST /profile/seed (web ID token).
+      const seeded = applyAuth0ProfileSeed(
+        user,
+        { email: claims.email },
+        { seedNamePhoto: false },
+      );
+      if (seeded) {
+        await this.kv.set(this.userKey(user.id), user);
+        user = (await this.getUser(user.id)) ?? user;
+      }
+    }
     const onboarded = isOnboarded(user);
     const org = user?.org_id ? await this.getOrg(user.org_id) : null;
     const auth0_roles = claims.roles ?? [];
     return {
       auth0_sub: claims.sub,
-      email: claims.email ?? user?.email,
+      email: user?.email ?? claims.email,
       onboarded,
       needs_onboarding: !onboarded,
       user: user ?? undefined,
@@ -593,13 +656,14 @@ export class HubStore {
     };
   }
 
-  /** Small profile management (web): display name + avatar. */
+  /** Small profile management (web): display name, avatar, handle local part. */
   async updateProfile(
     claims: Auth0Claims,
     input: UpdateProfileInput,
   ): Promise<MeResponse> {
     const user = await this.getUserByAuth0Sub(claims.sub);
     if (!user) throw forbidden("Onboarding required");
+    if (!user.org_id || !user.handle) throw forbidden("Onboarding required");
 
     if (input.display_name !== undefined) {
       const name = (input.display_name ?? "").trim();
@@ -624,7 +688,79 @@ export class HubStore {
       }
     }
 
-    await this.kv.set(this.userKey(user.id), user);
+    let rename: { oldHandle: string; newHandle: string } | undefined;
+    if (input.handle !== undefined) {
+      const raw = (input.handle ?? "").trim();
+      if (!raw) {
+        throw new HubError("handle is required", "invalid_argument", 400);
+      }
+      const org = await this.getOrg(user.org_id);
+      if (!org) throw notFound("Org");
+      const parsed = raw.includes("@")
+        ? parseUserHandle(raw)
+        : { local: raw, orgSlug: org.slug };
+      const local = parsed.local.trim().toLowerCase();
+      assertHandleLocal(local);
+      if (parsed.orgSlug.toLowerCase() !== org.slug) {
+        throw forbidden("Handle must stay in your org");
+      }
+      const newHandle = `${local}@${org.slug}`;
+      if (newHandle !== user.handle) {
+        rename = { oldHandle: user.handle, newHandle };
+        user.handle = newHandle;
+      }
+    }
+
+    // Explicit mutande edit — don't let later Auth0 seed refill clears.
+    if (!user.auth0_profile_seeded_at) {
+      user.auth0_profile_seeded_at = nowIso();
+    }
+
+    if (rename) {
+      const userRes = await this.kv.get(this.userKey(user.id));
+      const oldRes = await this.kv.get(this.handleKey(rename.oldHandle));
+      const newRes = await this.kv.get(this.handleKey(rename.newHandle));
+      if (newRes.value && newRes.value !== user.id) {
+        throw conflict("Handle already registered");
+      }
+      const tx = this.kv.atomic();
+      tx.check(userRes).check(oldRes).check(newRes);
+      tx.set(this.userKey(user.id), user);
+      if (rename.oldHandle !== rename.newHandle) {
+        tx.delete(this.handleKey(rename.oldHandle));
+      }
+      tx.set(this.handleKey(rename.newHandle), user.id);
+      const res = await tx.commit();
+      if (!res.ok) throw conflict("Handle update conflict");
+    } else {
+      await this.kv.set(this.userKey(user.id), user);
+    }
+    return this.getMe(claims);
+  }
+
+  /**
+   * One-shot Auth0 → mutande profile seed (web ID-token session or token claims).
+   * Never overwrites existing name/photo/email; name/photo only before first seed.
+   */
+  async seedProfile(
+    claims: Auth0Claims,
+    input: SeedProfileInput = {},
+  ): Promise<MeResponse> {
+    const user = await this.getUserByAuth0Sub(claims.sub);
+    if (!user) throw forbidden("Onboarding required");
+
+    const changed = applyAuth0ProfileSeed(
+      user,
+      {
+        email: input.email?.trim() || claims.email,
+        name: input.display_name?.trim() || claims.name,
+        picture: input.avatar_url?.trim() || claims.picture,
+      },
+      { forceMarkSeeded: true },
+    );
+    if (changed) {
+      await this.kv.set(this.userKey(user.id), user);
+    }
     return this.getMe(claims);
   }
 
@@ -654,9 +790,9 @@ export class HubStore {
       throw conflict("User already onboarded");
     }
 
-    const local = input.handle
+    const local = (input.handle
       ? parseUserHandle(input.handle.includes("@") ? input.handle : `${input.handle}@${slug}`).local
-      : (emailLocalPart(claims.email) ?? "admin");
+      : (emailLocalPart(claims.email) ?? "admin")).trim().toLowerCase();
     assertHandleLocal(local);
     const handle = `${local}@${slug}`;
 
@@ -675,6 +811,11 @@ export class HubStore {
       email: claims.email,
       created_at: nowIso(),
     };
+    applyAuth0ProfileSeed(user, {
+      email: claims.email,
+      name: claims.name,
+      picture: claims.picture,
+    });
 
     const subRes = await this.kv.get(this.auth0SubKey(claims.sub));
     const tx = this.kv.atomic();
@@ -711,9 +852,10 @@ export class HubStore {
     if (input.handle) {
       const raw = input.handle.includes("@") ? input.handle : `${input.handle}@${org.slug}`;
       const { local, orgSlug } = parseUserHandle(raw);
-      assertHandleLocal(local);
-      if (orgSlug !== org.slug) throw forbidden("Handle must belong to invite org");
-      handle = `${local}@${org.slug}`;
+      const normalized = local.trim().toLowerCase();
+      assertHandleLocal(normalized);
+      if (orgSlug.toLowerCase() !== org.slug) throw forbidden("Handle must belong to invite org");
+      handle = `${normalized}@${org.slug}`;
     } else {
       const local = emailLocalPart(claims.email) ?? "user";
       assertHandleLocal(local);
@@ -732,6 +874,11 @@ export class HubStore {
       email: claims.email,
       created_at: nowIso(),
     };
+    applyAuth0ProfileSeed(user, {
+      email: claims.email,
+      name: claims.name,
+      picture: claims.picture,
+    });
 
     const subRes = await this.kv.get(this.auth0SubKey(claims.sub));
     const tx = this.kv.atomic();

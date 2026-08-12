@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth0 } from "@/lib/auth0";
-import { formatHubError, getMe } from "@/lib/hub";
+import { formatHubError, getMe, seedProfile } from "@/lib/hub";
 import {
   extractAuth0Roles,
   isPlatformOpsAdmin,
@@ -70,8 +70,44 @@ export async function sessionShowsOps(me?: MeResponse | null): Promise<boolean> 
   return false;
 }
 
+function auth0SessionProfile(user: Record<string, unknown>): {
+  email?: string;
+  display_name?: string;
+  avatar_url?: string;
+} {
+  const email = typeof user.email === "string" ? user.email : undefined;
+  const display_name = typeof user.name === "string" ? user.name : undefined;
+  const avatar_url = typeof user.picture === "string" ? user.picture : undefined;
+  return {
+    ...(email ? { email } : {}),
+    ...(display_name ? { display_name } : {}),
+    ...(avatar_url ? { avatar_url } : {}),
+  };
+}
+
+function needsAuth0ProfileSeed(me: MeResponse): boolean {
+  if (!me.email && !me.user?.email) return true;
+  if (me.user?.auth0_profile_seeded_at) return false;
+  return !me.user?.display_name || !me.user?.avatar_url;
+}
+
+/** Push ID-token name/email/picture into empty hub profile fields (once). */
+async function seedMeFromAuth0Session(
+  me: MeResponse,
+  sessionUser: Record<string, unknown>,
+): Promise<MeResponse> {
+  if (!needsAuth0ProfileSeed(me)) return me;
+  const seed = auth0SessionProfile(sessionUser);
+  if (!seed.email && !seed.display_name && !seed.avatar_url) return me;
+  try {
+    return await seedProfile(seed);
+  } catch {
+    return me;
+  }
+}
+
 export async function requireOnboarded(): Promise<MeResponse> {
-  await requireSession();
+  const session = await requireSession();
   const { me, error } = await loadMeOrNull();
   if (error || !me) {
     redirect(
@@ -80,6 +116,10 @@ export async function requireOnboarded(): Promise<MeResponse> {
   }
   if (!me.onboarded) {
     redirect("/signup");
+  }
+  const user = session.user as Record<string, unknown> | undefined;
+  if (user && typeof user === "object") {
+    return seedMeFromAuth0Session(me, user);
   }
   return me;
 }
