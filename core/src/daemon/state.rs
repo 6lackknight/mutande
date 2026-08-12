@@ -2486,11 +2486,16 @@ fn status_from_me(hub_url: &Option<String>, me: &MeResponse) -> StatusResult {
 
 /// All device pubkeys for a contact (multi-device fan-out), falling back to legacy `pubkey`.
 fn contact_device_pubkeys(contact: &Contact) -> Vec<DevicePubKey> {
-    let keys: Vec<DevicePubKey> = contact
-        .devices
-        .iter()
-        .filter_map(|d| pubkey_from_hub_string(&d.pubkey))
-        .collect();
+    let mut keys = Vec::new();
+    let mut seen = HashSet::new();
+    for d in &contact.devices {
+        let Some(pk) = pubkey_from_hub_string(&d.pubkey) else {
+            continue;
+        };
+        if seen.insert(pk) {
+            keys.push(pk);
+        }
+    }
     if !keys.is_empty() {
         return keys;
     }

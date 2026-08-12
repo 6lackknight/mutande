@@ -21,11 +21,17 @@ pub fn seal(plaintext: &[u8], recipients: &[DevicePubKey]) -> Result<Envelope, C
         return Err(CryptoError::EmptyRecipients);
     }
 
+    // Hub may still expose legacy duplicate device rows for the same pubkey;
+    // collapse before wrapping so teammates don't fail with DuplicateRecipient.
     let mut seen = HashSet::with_capacity(recipients.len());
+    let mut unique = Vec::with_capacity(recipients.len());
     for key in recipients {
-        if !seen.insert(*key) {
-            return Err(CryptoError::DuplicateRecipient);
+        if seen.insert(*key) {
+            unique.push(*key);
         }
+    }
+    if unique.is_empty() {
+        return Err(CryptoError::EmptyRecipients);
     }
 
     let mut rng = OsRng;
@@ -40,8 +46,8 @@ pub fn seal(plaintext: &[u8], recipients: &[DevicePubKey]) -> Result<Envelope, C
         .encrypt(ContentNonce::from_slice(&content_nonce), plaintext)
         .map_err(|_| CryptoError::OpenFailed)?;
 
-    let mut wraps = Vec::with_capacity(recipients.len());
-    for recipient in recipients {
+    let mut wraps = Vec::with_capacity(unique.len());
+    for recipient in &unique {
         let ephemeral_secret = SecretKey::generate(&mut rng);
         let ephemeral_public = ephemeral_secret.public_key();
         let recipient_public = public_key_from_device(recipient);
@@ -202,11 +208,10 @@ mod tests {
     }
 
     #[test]
-    fn rejects_duplicate_recipient() {
-        let (pk, _) = generate_device_keypair();
-        assert_eq!(
-            seal(b"x", &[pk, pk]),
-            Err(CryptoError::DuplicateRecipient)
-        );
+    fn dedupes_duplicate_recipient() {
+        let (pk, sk) = generate_device_keypair();
+        let env = seal(b"x", &[pk, pk]).unwrap();
+        assert_eq!(env.wraps.len(), 1);
+        assert_eq!(open(&env, &sk).unwrap(), b"x");
     }
 }

@@ -39,10 +39,10 @@ export function BrandMark({
   const icon = size === "lg" ? 36 : size === "sm" ? 22 : 26;
   const text =
     size === "lg"
-      ? "text-[1.625rem]"
+      ? "text-[1.75rem]"
       : size === "sm"
-        ? "text-[15px]"
-        : "text-[1.125rem]";
+        ? "text-[17px]"
+        : "text-[1.25rem]";
   const gap = size === "lg" ? "gap-2.5" : size === "sm" ? "gap-1.5" : "gap-2";
 
   return (

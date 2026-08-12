@@ -148,6 +148,48 @@ Deno.test("registerDevice is idempotent by pubkey", async () => {
   });
 });
 
+Deno.test("listDevices and contacts collapse legacy duplicate pubkeys", async () => {
+  await withTestStore(async ({ store, kv }) => {
+    const { aliceAuth, bobAuth } = await setupOrgWithUsers(store);
+    const alice = (await store.getMe({ sub: "auth0|alice", email: "alice@example.com" })).user!;
+    const pubkey = "alice-legacy-dup-pk";
+    const ids = ["dup-a", "dup-b", "dup-c"];
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i]!;
+      const device = {
+        id,
+        user_id: alice.id,
+        pubkey,
+        platform: "macos" as const,
+        created_at: `2026-07-28T15:0${i}:00.000Z`,
+      };
+      await kv.set(["devices", id], device);
+      await kv.set(["user_devices", alice.id, id], id);
+    }
+
+    const listed = await store.listDevices(aliceAuth);
+    assertEquals(listed.devices.filter((d) => d.pubkey === pubkey).length, 1);
+    assertEquals(listed.devices.find((d) => d.pubkey === pubkey)?.id, "dup-a");
+
+    const contact = (await store.listContacts(bobAuth)).contacts.find((c) =>
+      c.handle === "alice@acme"
+    );
+    assertEquals(contact?.devices.filter((d) => d.pubkey === pubkey).length, 1);
+
+    // Re-register purges the extra KV rows.
+    await store.registerDevice(aliceAuth, { pubkey, platform: "macos" });
+    const rawLeft: string[] = [];
+    for await (
+      const entry of kv.list<string>({ prefix: ["user_devices", alice.id] })
+    ) {
+      const d = await kv.get<{ id: string; pubkey: string }>(["devices", entry.value]);
+      if (d.value?.pubkey === pubkey) rawLeft.push(d.value.id);
+    }
+    assertEquals(rawLeft.length, 1);
+    assertEquals(rawLeft[0], "dup-a");
+  });
+});
+
 Deno.test("registerDevice concurrent-style races resolve to one device", async () => {
   await withTestStore(async ({ store }) => {
     const { aliceAuth } = await setupOrgWithUsers(store);

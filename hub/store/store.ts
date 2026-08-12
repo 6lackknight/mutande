@@ -320,6 +320,18 @@ export function extractClientCapabilities(
   return { slug, capabilities: caps, ignored };
 }
 
+/** Prefer earliest row when legacy re-registers minted the same pubkey more than once. */
+function dedupeDevicesByPubkey(devices: Device[]): Device[] {
+  const seen = new Set<string>();
+  const out: Device[] = [];
+  for (const d of devices) {
+    if (seen.has(d.pubkey)) continue;
+    seen.add(d.pubkey);
+    out.push(d);
+  }
+  return out;
+}
+
 function emptyTransportPrefs(): AgentTransportPrefs {
   return { defaults: {} };
 }
@@ -746,6 +758,9 @@ export class HubStore {
     const pubkey = input.pubkey.trim();
     const pubkeyIndex = this.userPubkeyKey(auth.userId, pubkey);
 
+    // Collapse pre-index duplicates so contacts never expose the same pubkey N times.
+    await this.purgeDuplicateDevices(auth);
+
     const returnOrUpdate = async (existing: Device): Promise<Device> => {
       if (existing.platform === input.platform) return existing;
       const updated: Device = { ...existing, platform: input.platform };
@@ -761,7 +776,7 @@ export class HubStore {
     }
 
     // Legacy devices registered before the pubkey index existed.
-    const { devices } = await this.listDevices(auth);
+    const devices = await this.fetchDevices(auth);
     const legacy = devices.find((d) => d.pubkey === pubkey);
     if (legacy) {
       await this.kv.set(pubkeyIndex, legacy.id);
@@ -793,7 +808,8 @@ export class HubStore {
     return device;
   }
 
-  async listDevices(auth: AuthContext): Promise<{ devices: Device[] }> {
+  /** All device rows for a user (may include legacy same-pubkey duplicates). */
+  private async fetchDevices(auth: AuthContext): Promise<Device[]> {
     const devices: Device[] = [];
     const iter = this.kv.list<string>({ prefix: this.userDevicesPrefix(auth.userId) });
     for await (const entry of iter) {
@@ -801,7 +817,37 @@ export class HubStore {
       if (device.value) devices.push(device.value);
     }
     devices.sort((a, b) => a.created_at.localeCompare(b.created_at));
-    return { devices };
+    return devices;
+  }
+
+  /**
+   * Keep earliest device per pubkey; delete later duplicates and refresh pubkey index.
+   * Pre-index re-registers left multiple rows with the same key — that breaks seal.
+   */
+  private async purgeDuplicateDevices(auth: AuthContext): Promise<void> {
+    const devices = await this.fetchDevices(auth);
+    const keepByPubkey = new Map<string, Device>();
+    const remove: Device[] = [];
+    for (const d of devices) {
+      const existing = keepByPubkey.get(d.pubkey);
+      if (!existing) {
+        keepByPubkey.set(d.pubkey, d);
+      } else {
+        remove.push(d);
+      }
+    }
+    for (const d of remove) {
+      await this.kv.delete(this.deviceKey(d.id));
+      await this.kv.delete(this.userDeviceKey(auth.userId, d.id));
+    }
+    for (const [pubkey, d] of keepByPubkey) {
+      await this.kv.set(this.userPubkeyKey(auth.userId, pubkey), d.id);
+    }
+  }
+
+  async listDevices(auth: AuthContext): Promise<{ devices: Device[] }> {
+    const devices = await this.fetchDevices(auth);
+    return { devices: dedupeDevicesByPubkey(devices) };
   }
 
   async registerAgent(auth: AuthContext, input: RegisterAgentInput): Promise<Agent> {
@@ -1141,6 +1187,7 @@ export class HubStore {
       const user = await this.getUser(memberId);
       if (!user || !isOnboarded(user)) continue;
       const { devices } = await this.listDevices(authContextFromUser(user));
+      // listDevices already collapses same-pubkey legacy dupes — one wrap target each.
       const mapped = devices.map((d) => ({ pubkey: d.pubkey, platform: d.platform }));
       contacts.push({
         handle: user.handle!,
