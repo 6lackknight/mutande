@@ -34,6 +34,7 @@ deno task check
 | GET | `/v1/me` | Auth0 Bearer |
 | GET | `/v1/auth/me` | Auth0 Bearer (alias) |
 | POST | `/v1/orgs` | Auth0 Bearer (not yet onboarded) |
+| PATCH | `/v1/orgs` | Auth0 Bearer + hub `org_admin` — rename org slug (rewrites live member handles; thread history unchanged) |
 | POST | `/v1/onboarding/join` | Auth0 Bearer (not yet onboarded) |
 | POST | `/v1/devices` | Auth0 Bearer (onboarded) |
 | GET/POST | `/v1/admin/invites` | Auth0 Bearer + hub `org_admin` |

@@ -580,8 +580,11 @@ fn open_url(url: &str) -> Result<()> {
     }
     #[cfg(target_os = "windows")]
     {
-        std::process::Command::new("cmd")
-            .args(["/C", "start", "", url])
+        // Never `cmd /C start <url>`: cmd treats `&` as a command separator and
+        // opens only `…/authorize?response_type=code`, which Auth0 rejects as
+        // "Missing required parameter: client_id". rundll32 passes the URL intact.
+        std::process::Command::new("rundll32")
+            .args(["url.dll,FileProtocolHandler", url])
             .spawn()
             .context("open Auth0 authorize URL")?;
         return Ok(());
@@ -612,6 +615,31 @@ mod tests {
         let s = "openid profile email";
         let enc = percent_encode(s);
         assert_eq!(percent_decode(&enc), s);
+    }
+
+    #[test]
+    fn authorize_url_keeps_client_id_after_first_ampersand() {
+        // Guardrail for the Windows `cmd /C start` truncation bug: the first
+        // query pair is response_type; client_id must still be present as a
+        // later `&`-separated param (open_url must not drop those on Windows).
+        let cfg = Auth0NativeConfig {
+            domain: "auth.mutande.online".into(),
+            client_id: "native-client-id".into(),
+            audience: "https://hub.mutande.app".into(),
+            open_browser: false,
+        };
+        let redirect_uri = format!("http://127.0.0.1:{AUTH0_LOOPBACK_PORT}/callback");
+        let authorize = format!(
+            "{}?response_type=code&client_id={}&redirect_uri={}&scope={}&audience={}&state=s&code_challenge=c&code_challenge_method=S256",
+            auth0_authorize_endpoint(&cfg.domain),
+            percent_encode(&cfg.client_id),
+            percent_encode(&redirect_uri),
+            percent_encode("openid profile email offline_access"),
+            percent_encode(&cfg.audience),
+        );
+        assert!(authorize.contains("response_type=code&client_id=native-client-id"));
+        let after_first = authorize.split_once('&').expect("ampersand").1;
+        assert!(after_first.contains("client_id=native-client-id"));
     }
 
     #[test]

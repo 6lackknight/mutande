@@ -89,6 +89,7 @@ import type {
   ThreadDowngradeProposal,
   ProposeThreadDowngradeInput,
   SeedProfileInput,
+  UpdateOrgInput,
   UpdateProfileInput,
   User,
   UserRole,
@@ -2647,6 +2648,93 @@ export class HubStore {
   async createOrgForUser(claims: Auth0Claims, input: CreateOrgInput): Promise<MeResponse> {
     await this.createOrgWithAdmin(claims, input);
     return this.getMe(claims);
+  }
+
+  /**
+   * Org-admin typo fix: rename org slug and rewrite every member's live handle.
+   * Historical thread addresses are left unchanged (same as personal handle rename).
+   */
+  async updateOrgSlug(auth: AuthContext, input: UpdateOrgInput): Promise<MeResponse> {
+    if (auth.role !== "org_admin") throw forbidden("Org admin required");
+    const newSlug = input.slug.trim().toLowerCase();
+    assertValidSlug(newSlug);
+
+    const orgRes = await this.kv.get<Org>(this.orgKey(auth.orgId));
+    const org = orgRes.value;
+    if (!org) throw notFound("Org");
+
+    if (org.slug === newSlug) {
+      return this.getMe({ sub: auth.auth0Sub });
+    }
+
+    await this.enterprise.assertOrgSlugAvailable(newSlug);
+    const newSlugRes = await this.kv.get(this.orgSlugKey(newSlug));
+    if (newSlugRes.value) {
+      throw conflict(`Org slug '${newSlug}' already exists`);
+    }
+
+    const oldSlug = org.slug;
+    const memberIds = await this.listMemberIds(auth.orgId);
+    type MemberRename = {
+      user: User;
+      userRes: Deno.KvEntryMaybe<User>;
+      oldHandle: string;
+      newHandle: string;
+      oldHandleRes: Deno.KvEntryMaybe<unknown>;
+      newHandleRes: Deno.KvEntryMaybe<unknown>;
+    };
+    const renames: MemberRename[] = [];
+
+    for (const memberId of memberIds) {
+      const userRes = await this.kv.get<User>(this.userKey(memberId));
+      const user = userRes.value;
+      if (!user?.handle) continue;
+      const { local, orgSlug } = parseUserHandle(user.handle);
+      if (orgSlug !== oldSlug) {
+        throw new HubError(
+          `Member handle '${user.handle}' is not in org '${oldSlug}'`,
+          "internal",
+          500,
+        );
+      }
+      const newHandle = `${local}@${newSlug}`;
+      const oldHandleRes = await this.kv.get(this.handleKey(user.handle));
+      const newHandleRes = await this.kv.get(this.handleKey(newHandle));
+      if (newHandleRes.value && newHandleRes.value !== user.id) {
+        throw conflict(`Handle '${newHandle}' already registered`);
+      }
+      renames.push({
+        user: { ...user, handle: newHandle },
+        userRes,
+        oldHandle: user.handle,
+        newHandle,
+        oldHandleRes,
+        newHandleRes,
+      });
+    }
+
+    const oldSlugRes = await this.kv.get(this.orgSlugKey(oldSlug));
+    const updatedOrg: Org = { ...org, slug: newSlug };
+
+    const tx = this.kv.atomic();
+    tx.check(orgRes).check(oldSlugRes).check(newSlugRes);
+    for (const r of renames) {
+      tx.check(r.userRes).check(r.oldHandleRes).check(r.newHandleRes);
+    }
+    tx.set(this.orgKey(updatedOrg.id), updatedOrg);
+    tx.delete(this.orgSlugKey(oldSlug));
+    tx.set(this.orgSlugKey(newSlug), updatedOrg);
+    for (const r of renames) {
+      tx.set(this.userKey(r.user.id), r.user);
+      if (r.oldHandle !== r.newHandle) {
+        tx.delete(this.handleKey(r.oldHandle));
+      }
+      tx.set(this.handleKey(r.newHandle), r.user.id);
+    }
+    const res = await tx.commit();
+    if (!res.ok) throw conflict("Org slug update conflict");
+
+    return this.getMe({ sub: auth.auth0Sub });
   }
 
   async joinOrgWithInvite(claims: Auth0Claims, input: JoinOrgInput): Promise<MeResponse> {

@@ -45,6 +45,9 @@ export default async function DashboardPage() {
       </dl>
 
       <div className="mt-10 flex flex-wrap gap-3">
+        <ButtonLink href="/contacts" variant="secondary">
+          Contacts
+        </ButtonLink>
         {isAdmin ? (
           <ButtonLink href="/admin/invites">Manage invites</ButtonLink>
         ) : null}

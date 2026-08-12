@@ -1,14 +1,21 @@
 import { auth0 } from "@/lib/auth0";
 import {
   HubError,
+  type Contact,
   type CreateInviteResponse,
   type CreateOrgInput,
   type JoinOrgInput,
+  type ListContactsResponse,
   type ListFeedbackResponse,
   type ListInvitesResponse,
+  type ListPendingPairRequestsResponse,
   type ListWaitlistResponse,
   type MeResponse,
+  type PairingPinResponse,
+  type PairRequest,
   type SeedProfileInput,
+  type SubmitPairRequestInput,
+  type UpdateOrgInput,
   type UpdateProfileInput,
 } from "@/lib/types";
 
@@ -119,10 +126,100 @@ export async function createOrg(input: CreateOrgInput): Promise<MeResponse> {
   });
 }
 
+export async function updateOrg(input: UpdateOrgInput): Promise<MeResponse> {
+  return hubFetch<MeResponse>("/v1/orgs", {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
 export async function joinOrg(input: JoinOrgInput): Promise<MeResponse> {
   return hubFetch<MeResponse>("/v1/onboarding/join", {
     method: "POST",
     body: JSON.stringify(input),
+  });
+}
+
+export async function listContacts(): Promise<ListContactsResponse> {
+  const data = await hubFetch<ListContactsResponse | Contact[]>(
+    "/v1/contacts",
+  );
+  if (Array.isArray(data)) return { contacts: data };
+  if (Array.isArray(data.contacts)) return data;
+  return { contacts: [] };
+}
+
+export async function listExternalContacts(): Promise<ListContactsResponse> {
+  const data = await hubFetch<ListContactsResponse | Contact[]>(
+    "/v1/contacts/external",
+  );
+  if (Array.isArray(data)) return { contacts: data };
+  if (Array.isArray(data.contacts)) return data;
+  return { contacts: [] };
+}
+
+export async function getPairingPin(): Promise<PairingPinResponse | null> {
+  const data = await hubFetch<{ pin: PairingPinResponse | null }>(
+    "/v1/contacts/pairing/pin",
+  );
+  return data.pin ?? null;
+}
+
+export async function issuePairingPin(): Promise<PairingPinResponse> {
+  return hubFetch<PairingPinResponse>("/v1/contacts/pairing/pin", {
+    method: "POST",
+  });
+}
+
+export async function rotatePairingPin(): Promise<PairingPinResponse> {
+  return hubFetch<PairingPinResponse>("/v1/contacts/pairing/pin/rotate", {
+    method: "POST",
+  });
+}
+
+export async function submitPairRequest(
+  input: SubmitPairRequestInput,
+): Promise<{ request: PairRequest }> {
+  return hubFetch<{ request: PairRequest }>("/v1/contacts/pairing/request", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function listPendingPairRequests(): Promise<ListPendingPairRequestsResponse> {
+  const data = await hubFetch<
+    | ListPendingPairRequestsResponse
+    | { incoming?: PairRequest[]; outgoing?: PairRequest[] }
+  >("/v1/contacts/pairing/pending");
+  return {
+    incoming: Array.isArray(data.incoming) ? data.incoming : [],
+    outgoing: Array.isArray(data.outgoing) ? data.outgoing : [],
+  };
+}
+
+export async function approvePairRequest(
+  requestId: string,
+): Promise<{ contact: Contact }> {
+  return hubFetch(
+    `/v1/contacts/pairing/${encodeURIComponent(requestId)}/approve`,
+    { method: "POST" },
+  );
+}
+
+export async function denyPairRequest(
+  requestId: string,
+): Promise<{ ok: boolean }> {
+  return hubFetch(
+    `/v1/contacts/pairing/${encodeURIComponent(requestId)}/deny`,
+    { method: "POST" },
+  );
+}
+
+export async function unpairExternalContact(
+  linkId: string,
+): Promise<{ ok: boolean }> {
+  return hubFetch(`/v1/contacts/external/${encodeURIComponent(linkId)}`, {
+    method: "DELETE",
   });
 }
 

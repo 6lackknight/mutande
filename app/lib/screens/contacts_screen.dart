@@ -126,7 +126,8 @@ class _ContactsPanelState extends State<ContactsPanel> {
       return;
     }
     if (Platform.isWindows) {
-      await Process.run('cmd', ['/C', 'start', '', url], runInShell: true);
+      // Avoid `cmd /C start` — `&` in URLs is a cmd command separator.
+      await Process.run('rundll32', ['url.dll,FileProtocolHandler', url]);
       return;
     }
     await Clipboard.setData(ClipboardData(text: url));

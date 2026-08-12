@@ -472,6 +472,11 @@ export interface CreateOrgInput {
   handle?: string;
 }
 
+/** Org admin typo fix — rewrites live org slug + member handles. */
+export interface UpdateOrgInput {
+  slug: string;
+}
+
 export interface JoinOrgInput {
   invite_code: string;
   /** Defaults to email-local@org when omitted. */

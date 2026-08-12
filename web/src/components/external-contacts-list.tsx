@@ -1,0 +1,56 @@
+"use client";
+
+import { useActionState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { unpairExternalContactAction, type ActionState } from "@/app/actions";
+import { Alert, Button } from "@/components/ui";
+import type { Contact } from "@/lib/types";
+
+const initial: ActionState = {};
+
+function ExternalRow({ contact }: { contact: Contact }) {
+  const router = useRouter();
+  const [state, action, pending] = useActionState(
+    unpairExternalContactAction,
+    initial,
+  );
+
+  useEffect(() => {
+    if (state.ok) router.refresh();
+  }, [state.ok, router]);
+
+  const linkId = contact.external_link_id;
+  if (!linkId) return null;
+
+  return (
+    <li className="space-y-2 border-b border-stone-200/80 py-4 last:border-0">
+      {state.error ? <Alert tone="danger">{state.error}</Alert> : null}
+      {state.ok && !pending ? <Alert tone="ok">{state.ok}</Alert> : null}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className="font-medium text-stone-900">{contact.handle}</span>
+        <form action={action}>
+          <input type="hidden" name="link_id" value={linkId} />
+          <Button type="submit" variant="ghost" disabled={pending}>
+            {pending ? "Removing…" : "Unpair"}
+          </Button>
+        </form>
+      </div>
+    </li>
+  );
+}
+
+export function ExternalContactsList({ contacts }: { contacts: Contact[] }) {
+  if (contacts.length === 0) {
+    return (
+      <p className="text-sm text-muted">No external contacts yet.</p>
+    );
+  }
+
+  return (
+    <ul>
+      {contacts.map((c) => (
+        <ExternalRow key={c.external_link_id ?? c.handle} contact={c} />
+      ))}
+    </ul>
+  );
+}

@@ -73,9 +73,62 @@ export interface CreateOrgInput {
   handle?: string;
 }
 
+export interface UpdateOrgInput {
+  slug: string;
+}
+
 export interface JoinOrgInput {
   invite_code: string;
   handle: string;
+}
+
+export type ContactKind = "org" | "external" | "broadcast";
+
+export interface Contact {
+  handle: string;
+  pubkey: string | null;
+  devices: Array<{ pubkey: string; platform: string }>;
+  kind?: ContactKind;
+  external_link_id?: string;
+  linked_at?: string;
+  thread_id?: string;
+}
+
+export interface ListContactsResponse {
+  contacts: Contact[];
+}
+
+export interface PairingPinResponse {
+  pin: string;
+  handle: string;
+  expires_at: string;
+  /** `mutande://pair?handle=…&pin=…` for QR / deeplink. */
+  qr_uri: string;
+}
+
+export type PairRequestStatus = "pending" | "approved" | "denied";
+
+export interface PairRequest {
+  id: string;
+  requester_user_id: string;
+  requester_handle: string;
+  target_user_id: string;
+  target_handle: string;
+  intro?: string;
+  status: PairRequestStatus;
+  created_at: string;
+  resolved_at?: string;
+}
+
+export interface SubmitPairRequestInput {
+  handle: string;
+  pin: string;
+  intro?: string;
+}
+
+export interface ListPendingPairRequestsResponse {
+  incoming: PairRequest[];
+  outgoing: PairRequest[];
 }
 
 export interface Invite {

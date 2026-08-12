@@ -4,18 +4,25 @@ import { redirect } from "next/navigation";
 import {
   createInvite,
   createOrg,
+  denyPairRequest,
   formatHubError,
   getMe,
+  issuePairingPin,
   joinOrg,
   listEnterpriseMetrics,
   listFeedback,
   listRegistryAdmin,
   listWaitlistAdmin,
   publishRegistryListing,
+  rotatePairingPin,
+  submitPairRequest,
   suspendRegistryListing,
   topUpCredits,
+  unpairExternalContact,
+  updateOrg,
   updateProfile,
   verifyRegistryListing,
+  approvePairRequest,
 } from "@/lib/hub";
 import { sendInviteEmail } from "@/lib/plunk";
 import { joinUrlForCode, requireSession } from "@/lib/session";
@@ -131,6 +138,127 @@ export async function updateProfileAction(
   }
 
   return { ok: "Profile saved." };
+}
+
+export async function updateOrgSlugAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  await requireSession("/admin/invites");
+
+  const slug = slugify(String(formData.get("slug") ?? ""));
+  if (!slug || slug.length < 2) {
+    return { error: "Choose an org slug with at least 2 characters." };
+  }
+
+  try {
+    await updateOrg({ slug });
+  } catch (err) {
+    return { error: formatHubError(err) };
+  }
+
+  return { ok: "Organization handle updated." };
+}
+
+export async function issuePairingPinAction(
+  _prev: ActionState,
+  _formData: FormData,
+): Promise<ActionState> {
+  await requireSession("/contacts");
+  try {
+    await issuePairingPin();
+  } catch (err) {
+    return { error: formatHubError(err) };
+  }
+  return { ok: "Pairing PIN created." };
+}
+
+export async function rotatePairingPinAction(
+  _prev: ActionState,
+  _formData: FormData,
+): Promise<ActionState> {
+  await requireSession("/contacts");
+  try {
+    await rotatePairingPin();
+  } catch (err) {
+    return { error: formatHubError(err) };
+  }
+  return { ok: "Pairing PIN rotated." };
+}
+
+export async function submitPairRequestAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  await requireSession("/contacts");
+
+  const handle = String(formData.get("handle") ?? "").trim().toLowerCase();
+  const pin = String(formData.get("pin") ?? "").trim();
+  const intro = String(formData.get("intro") ?? "").trim();
+
+  if (!handle.includes("@")) {
+    return { error: "Enter their full handle (local@org)." };
+  }
+  if (!/^\d{6}$/.test(pin)) {
+    return { error: "PIN must be exactly 6 digits." };
+  }
+
+  try {
+    await submitPairRequest({
+      handle,
+      pin,
+      ...(intro ? { intro } : {}),
+    });
+  } catch (err) {
+    return { error: formatHubError(err) };
+  }
+
+  return { ok: "Pairing request sent — waiting for approval." };
+}
+
+export async function approvePairRequestAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  await requireSession("/contacts");
+  const requestId = String(formData.get("request_id") ?? "").trim();
+  if (!requestId) return { error: "Missing request." };
+  try {
+    await approvePairRequest(requestId);
+  } catch (err) {
+    return { error: formatHubError(err) };
+  }
+  return { ok: "Contact connected." };
+}
+
+export async function denyPairRequestAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  await requireSession("/contacts");
+  const requestId = String(formData.get("request_id") ?? "").trim();
+  if (!requestId) return { error: "Missing request." };
+  try {
+    await denyPairRequest(requestId);
+  } catch (err) {
+    return { error: formatHubError(err) };
+  }
+  return { ok: "Request denied." };
+}
+
+export async function unpairExternalContactAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  await requireSession("/contacts");
+  const linkId = String(formData.get("link_id") ?? "").trim();
+  if (!linkId) return { error: "Missing contact." };
+  try {
+    await unpairExternalContact(linkId);
+  } catch (err) {
+    return { error: formatHubError(err) };
+  }
+  return { ok: "Contact removed." };
 }
 
 export async function createInviteAction(

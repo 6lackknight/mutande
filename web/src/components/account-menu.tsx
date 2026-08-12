@@ -78,6 +78,9 @@ export function AccountMenu({
           <a role="menuitem" href="/profile" className={itemClass}>
             Profile
           </a>
+          <a role="menuitem" href="/contacts" className={itemClass}>
+            Contacts
+          </a>
           {showOrganization ? (
             <a role="menuitem" href="/admin/invites" className={itemClass}>
               Organization

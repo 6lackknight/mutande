@@ -144,6 +144,77 @@ Deno.test("update profile renames handle local part", async () => {
   });
 });
 
+Deno.test("update org slug rewrites member handles", async () => {
+  await withTestStore(async ({ store, kv }) => {
+    const adminClaims = { sub: "auth0|slugfix", email: "admin@typo.test" };
+    const { user: admin } = await store.createOrgWithAdmin(adminClaims, {
+      slug: "typo",
+      name: "Typo Co",
+      handle: "admin@typo",
+    });
+    const invite = await store.createInvite(store.authContextFromUser(admin));
+    const memberClaims = { sub: "auth0|slugmem", email: "mem@typo.test" };
+    await store.joinOrg(memberClaims, {
+      invite_code: invite.code,
+      handle: "mem@typo",
+    });
+
+    const me = await store.updateOrgSlug(store.authContextFromUser(admin), {
+      slug: "fixed",
+    });
+    assertEquals(me.org?.slug, "fixed");
+    assertEquals(me.user?.handle, "admin@fixed");
+    assertEquals((await store.getMe(memberClaims)).user?.handle, "mem@fixed");
+
+    // Old slug index gone; new slug resolves.
+    assertEquals((await kv.get(["org_slugs", "typo"])).value, null);
+    assertExists((await kv.get(["org_slugs", "fixed"])).value);
+    assertEquals((await kv.get(["handles", "admin@typo"])).value, null);
+    assertEquals((await kv.get(["handles", "admin@fixed"])).value, admin.id);
+
+    // No-op same slug.
+    const adminAfter = (await store.getMe(adminClaims)).user!;
+    const memberAfter = (await store.getMe(memberClaims)).user!;
+    const again = await store.updateOrgSlug(store.authContextFromUser(adminAfter), {
+      slug: "fixed",
+    });
+    assertEquals(again.org?.slug, "fixed");
+
+    await assertRejects(
+      () => store.updateOrgSlug(store.authContextFromUser(memberAfter), { slug: "other" }),
+      HubError,
+      "Org admin required",
+    );
+    await assertRejects(
+      () => store.updateOrgSlug(store.authContextFromUser(adminAfter), { slug: "BAD_SLUG" }),
+      HubError,
+      "Org slug must be lowercase alphanumeric",
+    );
+
+    await store.createOrgWithAdmin(
+      { sub: "auth0|takenorg", email: "t@taken.test" },
+      { slug: "taken", name: "Taken" },
+    );
+    await assertRejects(
+      () => store.updateOrgSlug(store.authContextFromUser(adminAfter), { slug: "taken" }),
+      HubError,
+      "already exists",
+    );
+
+    await kv.set(["reserved_org_slugs", "openai"], {
+      slug: "openai",
+      listing_id: "listing-1",
+      reserved_at: new Date().toISOString(),
+      org_id: "ent-org",
+    });
+    await assertRejects(
+      () => store.updateOrgSlug(store.authContextFromUser(adminAfter), { slug: "openai" }),
+      HubError,
+      "reserved for a verified enterprise",
+    );
+  });
+});
+
 Deno.test("Auth0 profile seed fills empty fields once", async () => {
   await withTestStore(async ({ store }) => {
     const claims = {
