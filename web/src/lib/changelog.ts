@@ -12,6 +12,15 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "1.1.2",
+    date: "2026-08-12",
+    title: "Icons & multi-device mail",
+    notes: [
+      "Sharper @i app and menu bar icons.",
+      "More reliable sending when the same device was registered more than once.",
+    ],
+  },
+  {
     version: "1.1.1",
     date: "2026-08-11",
     title: "Refreshed logo",
