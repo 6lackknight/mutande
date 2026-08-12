@@ -134,43 +134,15 @@ export function ProfileForm({
         ) : null}
       </div>
 
-      <Field label="Name" hint="Shown to teammates alongside your handle.">
-        <Input
-          name="display_name"
-          defaultValue={initialName}
-          maxLength={128}
-          autoComplete="name"
-          placeholder="Your name"
-        />
-      </Field>
-
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field
-          label="Handle"
-          hint={
-            orgSlug
-              ? "Local part only — org stays fixed. Old mail keeps the previous address."
-              : "Lowercase letters, digits, dots, underscores, or hyphens."
-          }
-        >
-          <div className="flex items-center gap-1.5">
-            <Input
-              name="handle_local"
-              defaultValue={local}
-              required
-              autoComplete="off"
-              spellCheck={false}
-              maxLength={32}
-              className="min-w-0 flex-1"
-              pattern="[a-z0-9]([a-z0-9._-]{0,30}[a-z0-9])?"
-              title="1–32 lowercase letters, digits, dots, underscores, or hyphens"
-            />
-            {orgSlug ? (
-              <span className="shrink-0 text-[15px] text-stone-500">
-                @{orgSlug}
-              </span>
-            ) : null}
-          </div>
+        <Field label="Name" hint="Shown to teammates alongside your handle.">
+          <Input
+            name="display_name"
+            defaultValue={initialName}
+            maxLength={128}
+            autoComplete="name"
+            placeholder="Your name"
+          />
         </Field>
         <div>
           <div className="text-[13px] font-medium tracking-wide text-stone-700">
@@ -178,6 +150,28 @@ export function ProfileForm({
           </div>
           <div className="mt-1.5 text-[15px] text-stone-500">{email}</div>
         </div>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field
+          label={orgSlug ? `Handle · @${orgSlug}` : "Handle"}
+          hint={
+            orgSlug
+              ? "Local part only — org stays fixed. Old threads keep the previous address."
+              : "Lowercase letters, digits, dots, underscores, or hyphens."
+          }
+        >
+          <Input
+            name="handle_local"
+            defaultValue={local}
+            required
+            autoComplete="off"
+            spellCheck={false}
+            maxLength={128}
+            pattern="[a-z0-9]([a-z0-9._-]{0,126}[a-z0-9])?"
+            title="1–128 lowercase letters, digits, dots, underscores, or hyphens"
+          />
+        </Field>
       </div>
 
       <Button type="submit" disabled={pending}>

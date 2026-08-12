@@ -330,11 +330,14 @@ If you instead create a normal **Native / SPA** app by hand: Authorization Code 
 
 ### Troubleshooting: `Dynamic client registration failed` / `registration endpoint returned 400`
 
-Exact Auth0 body: `Bad Request: dynamic client registration is disabled`.
+Exact Auth0 body (DCR off): `Bad Request: dynamic client registration is disabled`.
+
+Exact Auth0 body (free-tier full): **403** `You reached the limit of entities of this type for this tenant` (`errorCode: too_many_entities`). ChatGPT surfaces this as *Couldn’t register with … sign-in service* / *add an OAuth Client ID* with an `ofid_…` reference — same root cause: Auth0 refused `POST /oidc/register`.
 
 | Check | Where |
 |-------|--------|
 | DCR toggle off | **Settings → Advanced → Dynamic Client Registration (DCR)** |
+| Probe **403** `too_many_entities` | Auth0 **Applications** → delete leftover third-party / `tpc_…` / `mutande-dcr-probe` / stale ChatGPT connector apps, then re-probe / re-add connector |
 | Probe still 400 | `POST https://auth.mutande.online/oidc/register` (see Option A) |
 | Login fails after DCR works | See **no connections enabled** below |
 | Token works but hub 401/403 | API **Default Permissions for Third-Party Applications** on `https://hub.mutande.app` |

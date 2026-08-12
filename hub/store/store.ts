@@ -1897,19 +1897,6 @@ export class HubStore {
       throw new HubError("Thread is closed", "thread_closed", 409);
     }
 
-    if (
-      inbox.role === "sender" &&
-      !input.to_agent?.trim() &&
-      !thread.enterprise_listing_id &&
-      !thread.external_link_id
-    ) {
-      throw new HubError(
-        "Sender cannot reply on own thread; start a new thread instead",
-        "invalid_reply",
-        400,
-      );
-    }
-
     if (thread.external_link_id) {
       await assertExternalLinkVelocity(
         this.pairingCtx(),
@@ -2072,9 +2059,23 @@ export class HubStore {
         your_status: "replied",
         updated_at: ts,
       });
-      // Self-collab shares one inbox key — do not re-read+write the same key
+      // Self-collab shares one inbox key — never re-write auth.userId here
       // (that clobbers replied back to a stale pending).
-      if (thread.from_user_id !== auth.userId) {
+      if (thread.from_user_id === auth.userId) {
+        // OP correction / follow-up: bump every other participant to Needs you.
+        const peerIds = await this.listThreadPeerUserIds(thread, auth.userId);
+        for (const peerId of peerIds) {
+          const peerInbox = await this.getInboxEntry(peerId, threadId);
+          if (!peerInbox) continue;
+          tx.set(this.inboxKey(peerId, threadId), {
+            ...peerInbox,
+            your_status: "pending",
+            updated_at: ts,
+          });
+        }
+      } else {
+        // Recipient reply: only the original sender needs action (broadcast
+        // replies are sender-only — do not wake other recipients).
         const senderInbox = await this.getInboxEntry(thread.from_user_id, threadId);
         if (senderInbox) {
           tx.set(this.inboxKey(thread.from_user_id, threadId), {
@@ -2318,6 +2319,31 @@ export class HubStore {
   private async getInboxEntry(userId: string, threadId: string): Promise<InboxEntry | null> {
     const res = await this.kv.get<InboxEntry>(this.inboxKey(userId, threadId));
     return res.value;
+  }
+
+  /**
+   * Other users who already have an inbox row for this thread (exclude caller).
+   * Uses participant_user_ids when present (cross-org); otherwise org members.
+   */
+  private async listThreadPeerUserIds(
+    thread: ThreadMeta,
+    excludeUserId: string,
+  ): Promise<string[]> {
+    const candidates = new Set<string>();
+    if (thread.participant_user_ids?.length) {
+      for (const uid of thread.participant_user_ids) candidates.add(uid);
+    } else {
+      candidates.add(thread.from_user_id);
+      for (const uid of await this.listMemberIds(thread.org_id)) {
+        candidates.add(uid);
+      }
+    }
+    candidates.delete(excludeUserId);
+    const peers: string[] = [];
+    for (const uid of candidates) {
+      if (await this.getInboxEntry(uid, thread.id)) peers.push(uid);
+    }
+    return peers;
   }
 
   /**

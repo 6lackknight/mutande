@@ -2329,6 +2329,13 @@ impl DaemonState {
     }
 
     async fn resolve_recipient_pubkeys(&self, recipient: &str) -> Result<Vec<DevicePubKey>> {
+        let mut keys = self.resolve_audience_pubkeys(recipient).await?;
+        // Always wrap this user's devices so OP can re-read outbound mail on Mac/iOS.
+        self.append_own_device_pubkeys(&mut keys).await;
+        Ok(keys)
+    }
+
+    async fn resolve_audience_pubkeys(&self, recipient: &str) -> Result<Vec<DevicePubKey>> {
         let trimmed = recipient.trim();
         let parsed = parse_display_address(trimmed)?;
 
@@ -2414,17 +2421,70 @@ impl DaemonState {
         Ok(keys)
     }
 
-    /// Seal replies to the original sender's devices.
+    async fn append_own_device_pubkeys(&self, keys: &mut Vec<DevicePubKey>) {
+        match self.own_device_pubkeys().await {
+            Ok(own) => {
+                for pk in own {
+                    if !keys.iter().any(|k| k == &pk) {
+                        keys.push(pk);
+                    }
+                }
+            }
+            Err(err) => {
+                tracing::warn!(error = %err, "could not add own device wraps");
+            }
+        }
+    }
+
+    async fn bare_handle_is_me(&self, bare: &str) -> bool {
+        if self.cached_bare_handle().as_deref() == Some(bare) {
+            return true;
+        }
+        let Some(hub) = self.hub_client() else {
+            return false;
+        };
+        match hub.me().await {
+            Ok(me) => {
+                let mine = me
+                    .user
+                    .as_ref()
+                    .and_then(|u| u.handle.as_deref())
+                    .map(strip_agent_suffix);
+                if let Some(b) = mine {
+                    self.remember_bare_handle(b);
+                    b == bare
+                } else {
+                    false
+                }
+            }
+            Err(_) => false,
+        }
+    }
+
+    /// Seal keys for a reply.
+    ///
+    /// Recipient → original sender's devices. OP follow-up → original audience
+    /// (so corrections reach the other side). Own devices are always included
+    /// via [`Self::resolve_recipient_pubkeys`] so this Mac can re-open the mail.
     ///
     /// Org `@all@org` announcements are sender-only. My-agents `@all` groups seal
     /// to the same user devices so every agent on this Mac can open peer replies.
-    /// Direct-thread replies likewise go back to the original sender's devices.
     async fn resolve_reply_recipients(
         &self,
         detail: &OpenedThreadDetail,
     ) -> Result<Vec<DevicePubKey>> {
-        let sender = strip_agent_suffix(&detail.thread.from).to_string();
-        self.resolve_recipient_pubkeys(&sender).await
+        let from_bare = strip_agent_suffix(&detail.thread.from).to_string();
+        let target = if self.bare_handle_is_me(&from_bare).await {
+            let audience = detail.thread.audience.trim();
+            if audience.is_empty() {
+                from_bare
+            } else {
+                audience.to_string()
+            }
+        } else {
+            from_bare
+        };
+        self.resolve_recipient_pubkeys(&target).await
     }
 
 }
@@ -3898,9 +3958,134 @@ mod tests {
 
         state.attach_hub_for_test(HubClient::new(HubConfig::new(server.uri(), "tok")).unwrap());
         let keys = state.resolve_recipient_pubkeys("bob@acme").await.unwrap();
-        assert_eq!(keys.len(), 2);
+        // Teammate devices + own device (so OP can re-read outbound mail).
+        assert_eq!(keys.len(), 3);
         assert!(keys.iter().any(|k| k.0 == pk_a.0));
         assert!(keys.iter().any(|k| k.0 == pk_b.0));
+        assert!(keys.iter().any(|k| k.0 == state.device_public().unwrap().0));
+    }
+
+    #[tokio::test]
+    async fn teammate_outbound_includes_own_wrap_so_op_can_open() {
+        use crate::crypto::seal;
+        use crate::hub_client::{pubkey_to_hub_string, HubConfig};
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let state = DaemonState::new_in_memory_for_test().unwrap();
+        let own_pk = state.device_public().unwrap();
+        let bob_pk = DevicePubKey([44u8; 32]);
+        let server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/v1/contacts"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                "contacts": [{
+                    "handle": "bob@acme",
+                    "pubkey": pubkey_to_hub_string(&bob_pk),
+                    "devices": [
+                        { "pubkey": pubkey_to_hub_string(&bob_pk), "platform": "macos" }
+                    ]
+                }]
+            })))
+            .mount(&server)
+            .await;
+
+        state.attach_hub_for_test(HubClient::new(HubConfig::new(server.uri(), "tok")).unwrap());
+        let keys = state.resolve_recipient_pubkeys("bob@acme").await.unwrap();
+        assert!(keys.iter().any(|k| k.0 == bob_pk.0));
+        assert!(keys.iter().any(|k| k.0 == own_pk.0));
+        let env = seal(b"{\"notes\":\"hello bob\"}", &keys).unwrap();
+        assert_eq!(
+            state.open_envelope(&env).unwrap(),
+            b"{\"notes\":\"hello bob\"}"
+        );
+    }
+
+    #[tokio::test]
+    async fn op_reply_seals_to_audience_not_only_self() {
+        use crate::hub_client::{
+            pubkey_to_hub_string, HubConfig, ThreadKind, ThreadMeta, ThreadStatus, YourStatus,
+        };
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let state = DaemonState::new_in_memory_for_test().unwrap();
+        state.set_cached_bare_handle_for_test(Some("alice@acme"));
+        let own_pk = state.device_public().unwrap();
+        let bob_pk = DevicePubKey([55u8; 32]);
+        let server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/v1/me"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                "user": { "id": "u-alice", "handle": "alice@acme", "org_id": "o1", "org_slug": "acme" },
+                "org": { "id": "o1", "slug": "acme", "name": "Acme" }
+            })))
+            .mount(&server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/v1/contacts"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                "contacts": [{
+                    "handle": "bob@acme",
+                    "pubkey": pubkey_to_hub_string(&bob_pk),
+                    "devices": [
+                        { "pubkey": pubkey_to_hub_string(&bob_pk), "platform": "macos" }
+                    ]
+                }]
+            })))
+            .mount(&server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/v1/devices"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                "devices": []
+            })))
+            .mount(&server)
+            .await;
+
+        state.attach_hub_for_test(HubClient::new(HubConfig::new(server.uri(), "tok")).unwrap());
+
+        let detail = OpenedThreadDetail {
+            thread: ThreadMeta {
+                id: "t1".into(),
+                kind: ThreadKind::Direct,
+                status: ThreadStatus::Open,
+                from: "alice@acme/cursor".into(),
+                from_user_id: "u-alice".into(),
+                from_agent_id: None,
+                audience: "bob@acme/claude".into(),
+                audience_agent_id: None,
+                audience_wire_path: None,
+                org_id: "o1".into(),
+                participant_count: 2,
+                reply_count: 0,
+                your_status: Some(YourStatus::Replied),
+                created_at: "2026-01-01T00:00:00Z".into(),
+                updated_at: "2026-01-01T00:00:00Z".into(),
+                encryption_mode: Some("e2e".into()),
+                downgrade_point: None,
+                enterprise_listing_id: None,
+                last_from: None,
+                last_subject: None,
+                last_preview: None,
+            },
+            messages: vec![],
+            pending_downgrade: None,
+        };
+
+        let keys = state.resolve_reply_recipients(&detail).await.unwrap();
+        assert!(
+            keys.iter().any(|k| k.0 == bob_pk.0),
+            "OP correction must wrap audience devices"
+        );
+        assert!(
+            keys.iter().any(|k| k.0 == own_pk.0),
+            "OP correction must wrap own device for re-read"
+        );
     }
 
     #[tokio::test]

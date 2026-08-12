@@ -103,10 +103,10 @@ export async function updateProfileAction(
   if (!handleLocal) {
     return { error: "Handle is required." };
   }
-  if (!/^[a-z0-9](?:[a-z0-9._-]{0,30}[a-z0-9])?$/.test(handleLocal)) {
+  if (!/^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$/.test(handleLocal)) {
     return {
       error:
-        "Handle must be 1–32 lowercase letters, digits, dots, underscores, or hyphens.",
+        "Handle must be 1–128 lowercase letters, digits, dots, underscores, or hyphens.",
     };
   }
 

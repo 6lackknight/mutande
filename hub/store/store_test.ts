@@ -330,6 +330,36 @@ Deno.test("thread inbox filters", async () => {
   });
 });
 
+Deno.test("OP can reply with correction and bumps recipient Needs you", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth, bobAuth } = await setupOrgWithUsers(store);
+    const { thread } = await store.createThread(aliceAuth, {
+      to: "bob@acme",
+      envelope: sampleEnvelope("op"),
+    });
+    assertEquals((await store.listThreads(bobAuth, "needs_action")).threads.length, 1);
+
+    // OP correction before anyone replies.
+    await store.postReply(aliceAuth, thread.id, {
+      envelope: sampleEnvelope("op-correction"),
+    });
+    assertEquals((await store.getThread(aliceAuth, thread.id)).messages.length, 2);
+    assertEquals((await store.listThreads(bobAuth, "needs_action")).threads.length, 1);
+    assertEquals((await store.listThreads(aliceAuth, "needs_action")).threads.length, 0);
+
+    // Bob replies, then OP corrects again — bob Needs you again.
+    await store.postReply(bobAuth, thread.id, { envelope: sampleEnvelope("bob-r") });
+    assertEquals((await store.listThreads(bobAuth, "needs_action")).threads.length, 0);
+    assertEquals((await store.listThreads(aliceAuth, "needs_action")).threads.length, 1);
+    await store.postReply(aliceAuth, thread.id, {
+      envelope: sampleEnvelope("op-again"),
+    });
+    assertEquals((await store.getThread(aliceAuth, thread.id)).messages.length, 4);
+    assertEquals((await store.listThreads(bobAuth, "needs_action")).threads.length, 1);
+    assertEquals((await store.listThreads(aliceAuth, "needs_action")).threads.length, 0);
+  });
+});
+
 Deno.test("any participant can close; delete removes inbox", async () => {
   await withTestStore(async ({ store }) => {
     const { aliceAuth, bobAuth } = await setupOrgWithUsers(store);

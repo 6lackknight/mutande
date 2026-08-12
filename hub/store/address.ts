@@ -134,8 +134,8 @@ export function parseWirePath(path: string): { orgSlug: string; local: string; a
   return { orgSlug: parts[0], local: parts[1], agentSlug: parts[2] };
 }
 
-/** User local part: 1–32 lowercase letters, digits, `.` `_` `-` (no leading/trailing separator). */
-const HANDLE_LOCAL_RE = /^[a-z0-9](?:[a-z0-9._-]{0,30}[a-z0-9])?$/;
+/** User local part: 1–128 lowercase letters, digits, `.` `_` `-` (no leading/trailing separator). */
+const HANDLE_LOCAL_RE = /^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$/;
 
 export function assertHandleLocal(local: string): void {
   const normalized = local.trim().toLowerCase();
@@ -144,7 +144,7 @@ export function assertHandleLocal(local: string): void {
   }
   if (!HANDLE_LOCAL_RE.test(normalized)) {
     throw new HubError(
-      "Handle must be 1–32 lowercase letters, digits, dots, underscores, or hyphens",
+      "Handle must be 1–128 lowercase letters, digits, dots, underscores, or hyphens",
       "invalid_handle",
     );
   }
