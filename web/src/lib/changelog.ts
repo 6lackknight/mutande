@@ -12,6 +12,14 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "1.1.3",
+    date: "2026-08-12",
+    title: "Windows sign-in fix",
+    notes: [
+      "Windows Sign in opens the full Auth0 login URL again (browser was dropping parameters).",
+    ],
+  },
+  {
     version: "1.1.2",
     date: "2026-08-12",
     title: "Icons & multi-device mail",
