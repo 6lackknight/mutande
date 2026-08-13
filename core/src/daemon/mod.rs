@@ -4,6 +4,7 @@ mod auth0_defaults;
 mod sentry_defaults;
 mod config;
 mod connect_host;
+mod detect_ai_hosts;
 mod event_hub;
 mod http_bridge;
 mod inbox_watcher;
@@ -12,6 +13,8 @@ mod oauth;
 pub mod rpc;
 mod state;
 mod thread_list_cache;
+mod turn;
+mod trusted_contacts;
 
 pub use auth0_defaults::{
     AUTH0_AUDIENCE, AUTH0_DOMAIN, AUTH0_NATIVE_CLIENT_ID, HUB_URL as DEFAULT_HUB_URL,

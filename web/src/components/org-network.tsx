@@ -14,7 +14,7 @@ export type OrgNetworkPerson = {
   displayName?: string;
 };
 
-const SEAT_CAP = 20;
+const SEAT_CAP = 12;
 
 function localPart(handle: string): string {
   const h = handle.trim().toLowerCase();
@@ -45,7 +45,7 @@ export function OrgNetwork({
   const [sealed, setSealed] = useState<string | null>(null);
   const slug = orgSlug.trim().toLowerCase();
   const broadcast = slug ? `@all@${slug}` : "";
-  const shown = people.slice(0, 12);
+  const shown = people.slice(0, SEAT_CAP);
   const n = Math.max(shown.length, 1);
   const teammates = people.filter((p) => !p.isSelf);
   const title = (handle || orgName || slug || "Org").trim();
@@ -73,7 +73,7 @@ export function OrgNetwork({
             Org
           </p>
           <p className="text-[13px] tabular-nums text-muted">
-            seats {people.length}/{SEAT_CAP}
+            seats {shown.length}/{SEAT_CAP}
           </p>
         </div>
         <h2 className="-ml-[0.04em] mt-2 font-display text-[clamp(1.85rem,4vw,3.1rem)] font-semibold leading-[1.05] tracking-[-0.035em] text-stone-900">
@@ -93,9 +93,9 @@ export function OrgNetwork({
             <p className="text-[15px] leading-relaxed text-muted">
               Couldn’t load teammates. Refresh to try again.
             </p>
-          ) : people.length > 0 ? (
+          ) : shown.length > 0 ? (
             <ul className="divide-y divide-stone-200/80 border-y border-stone-200/80">
-              {people.map((person) => (
+              {shown.map((person) => (
                 <li key={person.handle}>
                   <button
                     type="button"

@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:macos_ui/macos_ui.dart';
@@ -12,9 +12,7 @@ import 'config/app_config.dart';
 import 'analytics_events.dart';
 import 'screens/agents_screen.dart';
 import 'screens/contacts_screen.dart';
-import 'screens/first_run_connect_screen.dart';
-import 'screens/first_run_ping_wizard.dart';
-import 'screens/join_screen.dart';
+import 'screens/onboarding_flow_screen.dart';
 import 'screens/search_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/threads_screen.dart';
@@ -33,6 +31,7 @@ import 'theme/mutande_macos_theme.dart';
 import 'widgets/daemon_error_screen.dart';
 import 'widgets/home_chrome_strip.dart';
 import 'widgets/thinking_orb.dart';
+import 'widgets/onboarding_stepper.dart';
 import 'widgets/welcome_splash.dart';
 
 /// Back-compat alias for content Material theme.
@@ -184,6 +183,12 @@ class RootScreen extends StatefulWidget {
 }
 
 class _RootScreenState extends State<RootScreen> {
+  /// Debug: replay onboarding on launch (`--dart-define=FORCE_ONBOARDING=false` to disable).
+  static const _forceOnboardingFlag = bool.fromEnvironment(
+    'FORCE_ONBOARDING',
+    defaultValue: true,
+  );
+
   bool get _inWidgetTest =>
       WidgetsBinding.instance.runtimeType.toString().contains('Test');
 
@@ -214,6 +219,40 @@ class _RootScreenState extends State<RootScreen> {
   String? _openThreadId;
   bool _trackedHomeReady = false;
 
+  bool get _forceOnboardingActive =>
+      !_inWidgetTest && kDebugMode && _forceOnboardingFlag;
+
+  bool _notificationsGateDone() {
+    if (_firstRunStore.notificationsComplete) return true;
+    // Grandfather users who finished ping before the notifications step shipped.
+    if (_firstRunStore.pingComplete && !_forceOnboardingActive) return true;
+    return false;
+  }
+
+  bool _needsOnboardingFlow() {
+    final connectDone =
+        _firstRunStore.connectComplete || _hasLinkedHost;
+    if (!connectDone) return true;
+    if (!_notificationsGateDone()) return true;
+    if (_firstRunStore.connectComplete && !_firstRunStore.pingComplete) {
+      return true;
+    }
+    return false;
+  }
+
+  OnboardingStep? _onboardingStartStep(bool configured) {
+    if (_forceOnboardingActive && configured) return OnboardingStep.team;
+    if (!configured) return null;
+    if (!(_firstRunStore.connectComplete || _hasLinkedHost)) {
+      return OnboardingStep.team;
+    }
+    if (!_notificationsGateDone()) return OnboardingStep.notifications;
+    if (_firstRunStore.connectComplete && !_firstRunStore.pingComplete) {
+      return OnboardingStep.ping;
+    }
+    return OnboardingStep.team;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -225,7 +264,11 @@ class _RootScreenState extends State<RootScreen> {
     // Widget tests that seed status skip the gate unless they inject a store.
     _firstRunStore = widget.firstRunStore ??
         (widget.seedStatus != null
-            ? FirstRunStore.memory(connectComplete: true, pingComplete: true)
+            ? FirstRunStore.memory(
+                connectComplete: true,
+                pingComplete: true,
+                notificationsComplete: true,
+              )
             : FirstRunStore());
     _lastConnectTick = AppActions.connectHostsTick.value;
     AppActions.connectHostsTick.addListener(_onConnectHostsRequested);
@@ -239,6 +282,11 @@ class _RootScreenState extends State<RootScreen> {
       _firstRunReady = true;
     }
     _bootstrapFirstRun();
+    if (_forceOnboardingActive &&
+        widget.firstRunStore == null &&
+        widget.seedStatus == null) {
+      unawaited(_firstRunStore.resetForDebug());
+    }
     AppActions.sessionReady.value = false;
     if (widget.seedStatus != null) {
       _status = widget.seedStatus;
@@ -557,14 +605,6 @@ class _RootScreenState extends State<RootScreen> {
     // but surface a banner when we know about the error.
     final status = _status;
     final configured = status?.configured ?? false;
-    if (!configured) {
-      return OnboardingScreen(
-        config: widget.config,
-        daemon: _daemon,
-        status: status,
-        onOnboarded: _onOnboarded,
-      );
-    }
 
     if (!_firstRunReady) {
       return const Scaffold(
@@ -574,28 +614,20 @@ class _RootScreenState extends State<RootScreen> {
       );
     }
 
-    final connectDone =
-        _firstRunStore.connectComplete || _hasLinkedHost;
-    if (!connectDone) {
-      return FirstRunConnectScreen(
+    if (!configured || _needsOnboardingFlow()) {
+      return OnboardingFlowScreen(
+        config: widget.config,
         daemon: _daemon,
         firstRunStore: _firstRunStore,
         hostLinkStore: _hostLinkStore,
-        onComplete: () {
-          _refreshFirstRunGate();
-        },
-      );
-    }
-
-    // Only users who finished the connect gate (not grandfathered links) get the ping wizard.
-    if (_firstRunStore.connectComplete && !_firstRunStore.pingComplete) {
-      return FirstRunPingWizard(
-        daemon: _daemon,
-        firstRunStore: _firstRunStore,
-        onComplete: (threadId) {
-          setState(() {
-            _openThreadId = threadId;
-          });
+        initialStatus: status,
+        forceDebug: _forceOnboardingActive,
+        initialStep: _onboardingStartStep(configured),
+        onComplete: (updated, threadId) {
+          _onOnboarded(updated);
+          if (threadId != null) {
+            setState(() => _openThreadId = threadId);
+          }
           _refreshFirstRunGate();
         },
       );

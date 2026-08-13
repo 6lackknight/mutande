@@ -4,8 +4,9 @@
   "title": "HumanDecision",
   "description": "Platform-agnostic payload for AskQuestion (Cursor) or structured chat fallback.",
   "type": "object",
-  "required": ["kind", "prompt"],
+  "required": ["id", "kind", "prompt"],
   "properties": {
+    "id": { "type": "string" },
     "kind": {
       "type": "string",
       "enum": ["question", "confirm_forward", "verify_contact"]
@@ -15,12 +16,17 @@
     "options": {
       "type": "array",
       "items": {
-        "type": "object",
-        "required": ["id", "label"],
-        "properties": {
-          "id": { "type": "string" },
-          "label": { "type": "string" }
-        }
+        "oneOf": [
+          { "type": "string" },
+          {
+            "type": "object",
+            "required": ["id", "label"],
+            "properties": {
+              "id": { "type": "string" },
+              "label": { "type": "string" }
+            }
+          }
+        ]
       }
     },
     "allow_multiple": { "type": "boolean", "default": false }

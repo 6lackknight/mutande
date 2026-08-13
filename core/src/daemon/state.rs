@@ -61,6 +61,11 @@ impl PingKind {
 /// Plaintext draft matching proto/bundle.schema.json (subset used in v1).
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MutandeBundle {
+    /// Bundle schema version. Absent = 1; turn-based fields use 2.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intent: Option<MessageIntent>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subject: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -79,15 +84,164 @@ pub struct MutandeBundle {
     pub ping_kind: Option<PingKind>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub in_reply_to: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub next_turn: Vec<TurnEntry>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task: Option<BundleTask>,
+    /// Unknown hint kinds are dropped at parse time (forward-compatible).
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        deserialize_with = "deserialize_hints"
+    )]
+    pub hints: Vec<BundleHint>,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MessageIntent {
+    Question,
+    Answer,
+    Handoff,
+    Status,
+    Fyi,
+}
+
+impl MessageIntent {
+    pub fn parse(raw: &str) -> Result<Self> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "question" => Ok(Self::Question),
+            "answer" => Ok(Self::Answer),
+            "handoff" => Ok(Self::Handoff),
+            "status" => Ok(Self::Status),
+            "fyi" => Ok(Self::Fyi),
+            other => bail!("unknown intent `{other}` — use question|answer|handoff|status|fyi"),
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Question => "question",
+            Self::Answer => "answer",
+            Self::Handoff => "handoff",
+            Self::Status => "status",
+            Self::Fyi => "fyi",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TurnActor {
+    Agent,
+    Human,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TurnReason {
+    Question { question_id: String },
+    Review,
+    Handoff,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TurnEntry {
+    pub address: String,
+    pub actor: TurnActor,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<TurnReason>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BundleTask {
+    pub objective: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub steps: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub deliverables: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub constraints: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub done_when: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum HintKind {
+    RenderDecision,
+    RenderCanvas,
+    RecallContext,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct BundleHint {
+    pub kind: HintKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub params: Option<serde_json::Value>,
+}
+
+impl<'de> Deserialize<'de> for BundleHint {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Raw {
+            kind: String,
+            #[serde(default)]
+            params: Option<serde_json::Value>,
+        }
+        let raw = Raw::deserialize(deserializer)?;
+        let kind = match raw.kind.as_str() {
+            "render_decision" => HintKind::RenderDecision,
+            "render_canvas" => HintKind::RenderCanvas,
+            "recall_context" => HintKind::RecallContext,
+            // Forward-compatible: unknown kinds surface as deserialize skip via Vec filter.
+            other => {
+                return Err(serde::de::Error::unknown_variant(
+                    other,
+                    &["render_decision", "render_canvas", "recall_context"],
+                ));
+            }
+        };
+        Ok(Self {
+            kind,
+            params: raw.params,
+        })
+    }
+}
+
+fn deserialize_hints<'de, D>(deserializer: D) -> std::result::Result<Vec<BundleHint>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let raw: Vec<serde_json::Value> = Vec::deserialize(deserializer)?;
+    Ok(raw
+        .into_iter()
+        .filter_map(|v| serde_json::from_value::<BundleHint>(v).ok())
+        .collect())
+}
+
+/// AskQuestion / structured-chat option — string labels or `{id,label}`.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum DecisionOption {
+    Label(String),
+    Structured { id: String, label: String },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct HumanDecision {
     pub id: String,
     pub kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
     pub prompt: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub options: Option<Vec<String>>,
+    pub options: Option<Vec<DecisionOption>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allow_multiple: Option<bool>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -148,6 +302,20 @@ pub struct OpenedThreadMessage {
     pub open_error: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub upvotes: Option<crate::hub_client::MessageUpvoteSummary>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub receipts: Option<crate::hub_client::MessageReceiptSummary>,
+    /// True when this message's `task` is gated pending human approve.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_pending_approval: Option<bool>,
+}
+
+/// Pending task gate surfaced to Mac UI / MCP.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PendingTaskApproval {
+    pub message_id: String,
+    pub from_handle: String,
+    pub objective: String,
+    pub decision: HumanDecision,
 }
 
 /// Hub thread metadata plus locally opened (or failed) messages.
@@ -157,6 +325,8 @@ pub struct OpenedThreadDetail {
     pub messages: Vec<OpenedThreadMessage>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pending_downgrade: Option<crate::hub_client::ThreadDowngradeProposal>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_task_approvals: Option<Vec<PendingTaskApproval>>,
 }
 
 /// Result of `forward_draft` / `forward_blob` / `ping`.
@@ -406,6 +576,10 @@ pub struct DaemonState {
     draft: Mutex<MutandeBundle>,
     draft_id: Mutex<Option<String>>,
     processed_threads: Mutex<HashSet<String>>,
+    /// Approved task message ids (`thread_id:message_id`) — skip gate after human allow.
+    approved_tasks: Mutex<HashSet<String>>,
+    /// Denied task message ids — task stays non-actionable.
+    denied_tasks: Mutex<HashSet<String>>,
     connected_agent_slug: Mutex<Option<String>>,
     /// Last successful hub device register (throttle status-path re-publish).
     last_device_register: Mutex<Option<Instant>>,
@@ -445,6 +619,8 @@ impl DaemonState {
             draft: Mutex::new(MutandeBundle::default()),
             draft_id: Mutex::new(None),
             processed_threads: Mutex::new(HashSet::new()),
+            approved_tasks: Mutex::new(HashSet::new()),
+            denied_tasks: Mutex::new(HashSet::new()),
             connected_agent_slug: Mutex::new(None),
             last_device_register: Mutex::new(None),
             cached_bare_handle: Mutex::new(None),
@@ -510,6 +686,8 @@ impl DaemonState {
             draft: Mutex::new(MutandeBundle::default()),
             draft_id: Mutex::new(None),
             processed_threads: Mutex::new(HashSet::new()),
+            approved_tasks: Mutex::new(HashSet::new()),
+            denied_tasks: Mutex::new(HashSet::new()),
             connected_agent_slug: Mutex::new(None),
             last_device_register: Mutex::new(None),
             cached_bare_handle: Mutex::new(None),
@@ -1254,6 +1432,7 @@ impl DaemonState {
                 let mut enrich_cache = thread_list_cache::ThreadListEnrichmentCache::load_default();
                 let keep_ids: HashSet<String> =
                     threads.iter().map(|t| t.id.clone()).collect();
+                let my_bare = self.my_bare_handle().await.ok();
                 for t in &mut threads {
                     if enrich_cache.apply_if_fresh(t) {
                         continue;
@@ -1262,11 +1441,13 @@ impl DaemonState {
                         Ok(detail) => {
                             apply_last_message_snippet(t, &detail);
                             if t.status == ThreadStatus::Open {
-                                t.your_status = Some(if thread_needs_human(&detail) {
-                                    YourStatus::Pending
-                                } else {
-                                    YourStatus::Replied
-                                });
+                                let (awaiting, status) = self.resolve_awaiting_status(
+                                    &detail,
+                                    my_bare.as_deref(),
+                                    None,
+                                );
+                                t.awaiting = Some(awaiting);
+                                t.your_status = Some(status);
                             }
                             enrich_cache.record(t);
                         }
@@ -1320,6 +1501,7 @@ impl DaemonState {
         if detail.thread.status != ThreadStatus::Open {
             return Ok(detail);
         }
+        let my_bare = self.my_bare_handle().await.ok();
         if let Some(slug) = agent_slug.map(str::trim).filter(|s| !s.is_empty()) {
             let user_id = if let Some(hub) = self.hub_client() {
                 hub.me()
@@ -1332,20 +1514,26 @@ impl DaemonState {
             };
             let default_slug = self.default_agent_slug().await;
             let default_slug = default_slug.as_deref().unwrap_or(slug);
-            detail.thread.your_status = Some(agent_your_status(
-                &detail.thread,
-                &user_id,
-                slug,
-                default_slug,
-            ));
-        } else {
-            // Mac / human: Needs you only for outstanding human decisions.
-            detail.thread.your_status = Some(if thread_needs_human(&detail) {
-                YourStatus::Pending
+            let (awaiting, status) = if super::turn::thread_has_declared_turns(&detail) {
+                self.resolve_awaiting_status(&detail, my_bare.as_deref(), Some(slug))
             } else {
-                YourStatus::Replied
-            });
+                (
+                    Vec::new(),
+                    agent_your_status(&detail.thread, &user_id, slug, default_slug),
+                )
+            };
+            detail.thread.awaiting = Some(awaiting);
+            detail.thread.your_status = Some(status);
+        } else {
+            let (awaiting, status) = self.resolve_awaiting_status(
+                &detail,
+                my_bare.as_deref(),
+                None,
+            );
+            detail.thread.awaiting = Some(awaiting);
+            detail.thread.your_status = Some(status);
         }
+        self.apply_task_gate(&mut detail).await;
         Ok(detail)
     }
 
@@ -1375,12 +1563,13 @@ impl DaemonState {
             subject: Some("Pong".into()),
             notes: Some("auto".into()),
             ping_kind: Some(PingKind::Health),
+            intent: Some(MessageIntent::Answer),
             in_reply_to: Some(root.id.clone()),
             ..Default::default()
         };
         self.reply_to_opened_thread(&detail.thread.id, detail, pong, None, None)
             .await?;
-        self.mark_processed(&detail.thread.id);
+        let _ = self.mark_processed_async(&detail.thread.id, None).await;
         Ok(true)
     }
 
@@ -1396,6 +1585,7 @@ impl DaemonState {
             thread: detail.thread,
             messages,
             pending_downgrade: detail.pending_downgrade,
+            pending_task_approvals: None,
         }
     }
 
@@ -1408,6 +1598,7 @@ impl DaemonState {
             thread: detail.thread,
             messages,
             pending_downgrade: detail.pending_downgrade,
+            pending_task_approvals: None,
         }
     }
 
@@ -1692,17 +1883,19 @@ impl DaemonState {
         bundle: &MutandeBundle,
         from_agent: Option<&str>,
     ) -> Result<String> {
+        let turns = self.hub_turns_for_bundle(bundle).await;
+        let turns_ref = turns.as_deref();
         if self.recipient_needs_app_envelope(to, from_agent).await? {
             let payload = bundle_to_app_envelope(bundle)?;
             let resp = hub
-                .create_thread_app_envelope(to, &payload, from_agent)
+                .create_thread_app_envelope(to, &payload, from_agent, turns_ref)
                 .await?;
             Ok(resp.thread.id)
         } else {
             let plain = serde_json::to_vec(bundle)?;
             let seal_keys = self.resolve_recipient_pubkeys(to).await?;
             let env = self.seal_inline_or_blob(&plain, &seal_keys).await?;
-            let resp = hub.create_thread(to, &env, from_agent).await?;
+            let resp = hub.create_thread(to, &env, from_agent, turns_ref).await?;
             Ok(resp.thread.id)
         }
     }
@@ -1827,7 +2020,10 @@ impl DaemonState {
         if let Some(parent) = in_reply_to.map(str::trim).filter(|s| !s.is_empty()) {
             bundle.in_reply_to = Some(parent.to_string());
         }
-        let plain = serde_json::to_vec(&bundle).context("serialize blob bundle")?;
+        if bundle.intent.is_none() {
+            bundle.intent = Some(MessageIntent::Handoff);
+        }
+        super::turn::stamp_bundle_v2(&mut bundle);
 
         if let Some(tid) = thread_id {
             let hub = self
@@ -1835,6 +2031,21 @@ impl DaemonState {
                 .context("hub not configured — forward_blob requires hub upload")?;
             let detail = self.fetch_and_open_thread(tid).await?;
             let from_agent = self.from_agent_for_send(agent_slug);
+            let sender_addr = self
+                .sender_display_address(agent_slug)
+                .await
+                .unwrap_or_else(|_| "unknown".into());
+            self.finalize_outgoing_bundle(
+                &mut bundle,
+                &detail,
+                &sender_addr,
+                None,
+                None,
+            )
+            .await?;
+            let turns = self.hub_turns_for_bundle(&bundle).await;
+            let turns_ref = turns.as_deref();
+            let plain = serde_json::to_vec(&bundle).context("serialize blob bundle")?;
             let mode = detail
                 .thread
                 .encryption_mode
@@ -1848,6 +2059,7 @@ impl DaemonState {
                     from_agent.as_deref(),
                     None,
                     bundle.in_reply_to.as_deref(),
+                    turns_ref,
                 )
                 .await?;
             } else {
@@ -1859,6 +2071,7 @@ impl DaemonState {
                     from_agent.as_deref(),
                     None,
                     bundle.in_reply_to.as_deref(),
+                    turns_ref,
                 )
                 .await?;
             }
@@ -1879,6 +2092,27 @@ impl DaemonState {
             .context("hub not configured — forward_blob requires hub upload")?;
         let hub_tos = self.expand_hub_recipients(recipient, agent_slug).await?;
         let from_agent = self.from_agent_for_send(agent_slug);
+        let sender_addr = self
+            .sender_display_address(agent_slug)
+            .await
+            .unwrap_or_else(|_| "unknown".into());
+        let my_bare = self.my_bare_handle().await.ok();
+        if bundle.next_turn.is_empty() {
+            let intent = bundle.intent.unwrap_or(MessageIntent::Handoff);
+            bundle.next_turn = super::turn::derive_next_turn(
+                intent,
+                &bundle,
+                &[],
+                &sender_addr,
+                Some(recipient),
+                None,
+                my_bare.as_deref(),
+            );
+        }
+        super::turn::stamp_bundle_v2(&mut bundle);
+        let turns = self.hub_turns_for_bundle(&bundle).await;
+        let turns_ref = turns.as_deref();
+        let plain = serde_json::to_vec(&bundle).context("serialize blob bundle")?;
         let mut thread_ids = Vec::with_capacity(hub_tos.len());
         for to in &hub_tos {
             if self
@@ -1887,14 +2121,14 @@ impl DaemonState {
             {
                 let payload = bundle_to_app_envelope(&bundle)?;
                 let resp = hub
-                    .create_thread_app_envelope(to, &payload, from_agent.as_deref())
+                    .create_thread_app_envelope(to, &payload, from_agent.as_deref(), turns_ref)
                     .await?;
                 thread_ids.push(resp.thread.id);
             } else {
                 let seal_keys = self.resolve_recipient_pubkeys(to).await?;
                 let env = self.seal_and_upload_blob(&plain, &seal_keys).await?;
                 let resp = hub
-                    .create_thread(to, &env, from_agent.as_deref())
+                    .create_thread(to, &env, from_agent.as_deref(), turns_ref)
                     .await?;
                 thread_ids.push(resp.thread.id);
             }
@@ -1943,7 +2177,7 @@ impl DaemonState {
         &self,
         thread_id: &str,
         detail: &OpenedThreadDetail,
-        bundle: MutandeBundle,
+        mut bundle: MutandeBundle,
         to_agent: Option<&str>,
         agent_slug: Option<&str>,
     ) -> Result<()> {
@@ -1958,12 +2192,35 @@ impl DaemonState {
             }
         }
 
+        let sender_addr = self
+            .sender_display_address(agent_slug)
+            .await
+            .unwrap_or_else(|_| detail.thread.from.clone());
+        let my_bare = self.my_bare_handle().await.ok();
+        let recipient_address = to_agent.map(|s| {
+            let slug = s.strip_prefix('@').unwrap_or(s);
+            my_bare
+                .as_deref()
+                .map(|h| format!("{h}/{slug}"))
+                .unwrap_or_else(|| format!("@{slug}"))
+        });
+        self.finalize_outgoing_bundle(
+            &mut bundle,
+            detail,
+            &sender_addr,
+            recipient_address.as_deref(),
+            to_agent,
+        )
+        .await?;
+
         let mode = detail
             .thread
             .encryption_mode
             .as_deref()
             .unwrap_or("e2e");
         let from_agent = self.from_agent_for_send(agent_slug);
+        let turns = self.hub_turns_for_bundle(&bundle).await;
+        let turns_ref = turns.as_deref();
 
         if let Some(hub) = self.hub_client() {
             if mode == "app_envelope" {
@@ -1974,6 +2231,7 @@ impl DaemonState {
                     from_agent.as_deref(),
                     to_agent,
                     bundle.in_reply_to.as_deref(),
+                    turns_ref,
                 )
                 .await?;
             } else {
@@ -2005,6 +2263,7 @@ impl DaemonState {
                     from_agent.as_deref(),
                     to_agent,
                     bundle.in_reply_to.as_deref(),
+                    turns_ref,
                 )
                 .await?;
             }
@@ -2182,6 +2441,10 @@ impl DaemonState {
             candidate.to_string()
         };
         let verified = fingerprints_match(&expected.fingerprint, &candidate_fp);
+        if verified {
+            let mut trusted = super::trusted_contacts::TrustedContacts::load_default();
+            let _ = trusted.trust(handle);
+        }
         Ok(SafetyNumberResult {
             verified: Some(verified),
             ..expected
@@ -2208,8 +2471,261 @@ impl DaemonState {
         self.processed_threads.lock().unwrap().insert(thread_id.to_string());
     }
 
+    /// Local bookkeeping + hub receipt on the latest message (informational).
+    pub async fn mark_processed_async(
+        &self,
+        thread_id: &str,
+        agent_slug: Option<&str>,
+    ) -> Result<()> {
+        self.mark_processed(thread_id);
+        if let Some(hub) = self.hub_client() {
+            if let Ok(detail) = hub.get_thread(thread_id).await {
+                if let Some(last) = detail.messages.last() {
+                    let from_agent = self.from_agent_for_send(agent_slug);
+                    let _ = hub
+                        .post_message_receipt(thread_id, &last.id, from_agent.as_deref())
+                        .await;
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub fn is_processed(&self, thread_id: &str) -> bool {
         self.processed_threads.lock().unwrap().contains(thread_id)
+    }
+
+    pub fn approve_task(&self, thread_id: &str, message_id: &str) -> Result<()> {
+        let key = format!("{thread_id}:{message_id}");
+        self.denied_tasks.lock().unwrap().remove(&key);
+        self.approved_tasks.lock().unwrap().insert(key);
+        self.notify_inbox_changed();
+        Ok(())
+    }
+
+    pub fn deny_task(&self, thread_id: &str, message_id: &str) -> Result<()> {
+        let key = format!("{thread_id}:{message_id}");
+        self.approved_tasks.lock().unwrap().remove(&key);
+        self.denied_tasks.lock().unwrap().insert(key);
+        self.notify_inbox_changed();
+        Ok(())
+    }
+
+    fn resolve_awaiting_status(
+        &self,
+        detail: &OpenedThreadDetail,
+        my_bare: Option<&str>,
+        agent_slug: Option<&str>,
+    ) -> (Vec<TurnEntry>, YourStatus) {
+        if super::turn::thread_has_declared_turns(detail) {
+            let awaiting = super::turn::fold_awaiting(detail);
+            let status = match my_bare {
+                Some(bare) => {
+                    super::turn::your_status_from_awaiting(&awaiting, bare, agent_slug)
+                }
+                None => YourStatus::Replied,
+            };
+            return (awaiting, status);
+        }
+        // Legacy heuristics
+        let status = if agent_slug.is_none() {
+            if thread_needs_human(detail) {
+                YourStatus::Pending
+            } else {
+                YourStatus::Replied
+            }
+        } else {
+            YourStatus::Replied
+        };
+        (Vec::new(), status)
+    }
+
+    async fn finalize_outgoing_bundle(
+        &self,
+        bundle: &mut MutandeBundle,
+        detail: &OpenedThreadDetail,
+        sender_address: &str,
+        recipient_address: Option<&str>,
+        to_agent: Option<&str>,
+    ) -> Result<()> {
+        let intent = match bundle.intent {
+            Some(i) => i,
+            None => {
+                // Legacy callers (Mac composer / auto-pong): infer.
+                if !bundle.answers.is_empty() {
+                    MessageIntent::Answer
+                } else if !bundle.questions.is_empty() {
+                    MessageIntent::Question
+                } else if bundle.task.is_some() {
+                    MessageIntent::Handoff
+                } else {
+                    MessageIntent::Answer
+                }
+            }
+        };
+        let prior = if super::turn::thread_has_declared_turns(detail) {
+            super::turn::fold_awaiting(detail)
+        } else {
+            Vec::new()
+        };
+        let held: Vec<TurnEntry> = prior
+            .iter()
+            .filter(|e| {
+                let n = super::turn::normalize_address(sender_address);
+                super::turn::normalize_address(&e.address) == n
+                    || super::turn::strip_agent(&e.address).eq_ignore_ascii_case(
+                        &super::turn::strip_agent(sender_address),
+                    )
+            })
+            .cloned()
+            .collect();
+        super::turn::validate_mandatory_answers(&held, sender_address, &bundle.answers)?;
+        let my_bare = self.my_bare_handle().await.ok();
+        super::turn::prepare_outgoing_bundle(
+            bundle,
+            intent,
+            &prior,
+            sender_address,
+            recipient_address.or(Some(detail.thread.audience.as_str())),
+            to_agent,
+            my_bare.as_deref(),
+        )?;
+        let merged = super::turn::merge_reply_into_awaiting(
+            &prior,
+            sender_address,
+            &bundle.next_turn,
+            &bundle.answers,
+        );
+        // Store post-merge as the declared next_turn for hub mirror consistency.
+        bundle.next_turn = merged;
+        Ok(())
+    }
+
+    async fn hub_turns_for_bundle(
+        &self,
+        bundle: &MutandeBundle,
+    ) -> Option<Vec<crate::hub_client::HubAwaitingEntry>> {
+        if bundle.next_turn.is_empty() {
+            return Some(vec![]);
+        }
+        let hub = self.hub_client()?;
+        let me = hub.me().await.ok()?;
+        let my_id = me.user.as_ref()?.id.clone();
+        let my_handle = me.user.as_ref()?.handle.clone().unwrap_or_default();
+        let contacts = hub.list_contacts().await.unwrap_or_default();
+        let resolve = |bare: &str| -> Option<String> {
+            let bare_l = bare.to_ascii_lowercase();
+            if strip_agent_suffix(&my_handle).eq_ignore_ascii_case(&bare_l)
+                || my_handle.eq_ignore_ascii_case(&bare_l)
+            {
+                return Some(my_id.clone());
+            }
+            contacts
+                .iter()
+                .find(|c| {
+                    strip_agent_suffix(&c.handle).eq_ignore_ascii_case(&bare_l)
+                        || c.handle.eq_ignore_ascii_case(&bare_l)
+                })
+                .and_then(|_| {
+                    // Contacts don't expose user_id on all rows — fall back to handle match via hub me peers.
+                    None
+                })
+        };
+        // Prefer mapping via thread participants when possible; for create use contact handles.
+        // Minimal: map own handle; for others look up by listing threads' from_user_id is unavailable.
+        // Use hub contact user ids when present on Contact.
+        let mut out = Vec::new();
+        for e in &bundle.next_turn {
+            let bare = super::turn::strip_agent(&e.address);
+            let user_id = if strip_agent_suffix(&my_handle).eq_ignore_ascii_case(&bare)
+                || bare.starts_with('@')
+            {
+                // @slug self-collab → own user
+                Some(my_id.clone())
+            } else {
+                contacts
+                    .iter()
+                    .find(|c| strip_agent_suffix(&c.handle).eq_ignore_ascii_case(&bare))
+                    .and_then(|c| c.user_id.clone())
+                    .or_else(|| resolve(&bare))
+            };
+            let Some(uid) = user_id else { continue };
+            let actor = match e.actor {
+                TurnActor::Human => "human",
+                TurnActor::Agent => "agent",
+            };
+            if let Some(existing) = out.iter_mut().find(|h: &&mut crate::hub_client::HubAwaitingEntry| {
+                h.user_id == uid
+            }) {
+                if actor == "human" {
+                    existing.actor = "human".into();
+                }
+            } else {
+                out.push(crate::hub_client::HubAwaitingEntry {
+                    user_id: uid,
+                    actor: actor.into(),
+                });
+            }
+        }
+        Some(out)
+    }
+
+    async fn sender_display_address(&self, agent_slug: Option<&str>) -> Result<String> {
+        let bare = self.my_bare_handle().await?;
+        if let Some(slug) = self.effective_agent_slug(agent_slug).await {
+            Ok(format!("{bare}/{slug}"))
+        } else {
+            Ok(bare)
+        }
+    }
+
+    async fn apply_task_gate(&self, detail: &mut OpenedThreadDetail) {
+        let trusted = super::trusted_contacts::TrustedContacts::load_default();
+        let my_bare = self.my_bare_handle().await.ok();
+        let mut pending = Vec::new();
+        for msg in &mut detail.messages {
+            let Some(bundle) = msg.bundle.as_mut() else {
+                continue;
+            };
+            let Some(task) = bundle.task.clone() else {
+                continue;
+            };
+            let from_bare = strip_agent_suffix(&msg.from_handle);
+            let is_self = my_bare
+                .as_deref()
+                .is_some_and(|h| h.eq_ignore_ascii_case(from_bare));
+            let key = format!("{}:{}", detail.thread.id, msg.id);
+            if self.approved_tasks.lock().unwrap().contains(&key) {
+                msg.task_pending_approval = Some(false);
+                continue;
+            }
+            if self.denied_tasks.lock().unwrap().contains(&key) {
+                msg.task_pending_approval = Some(true);
+                bundle.task = None; // not actionable
+                continue;
+            }
+            if is_self || trusted.is_trusted(from_bare) {
+                msg.task_pending_approval = Some(false);
+                continue;
+            }
+            // Gate: hide task as actionable until human approves.
+            msg.task_pending_approval = Some(true);
+            let decision = super::turn::task_gate_decision(
+                &msg.from_handle,
+                &task.objective,
+                &msg.id,
+            );
+            pending.push(PendingTaskApproval {
+                message_id: msg.id.clone(),
+                from_handle: msg.from_handle.clone(),
+                objective: task.objective.clone(),
+                decision,
+            });
+            // Agents see pending_approval flag; task body remains for UI context.
+        }
+        if !pending.is_empty() {
+            detail.pending_task_approvals = Some(pending);
+        }
     }
 
     async fn my_bare_handle(&self) -> Result<String> {
@@ -2787,6 +3303,7 @@ fn bundle_to_app_envelope(
             PingKind::Health => "health".into(),
             PingKind::Thread => "thread".into(),
         }),
+        intent: bundle.intent.map(|i| i.as_str().to_string()),
         questions: if bundle.questions.is_empty() {
             None
         } else {
@@ -2808,6 +3325,21 @@ fn bundle_to_app_envelope(
             Some(serde_json::to_value(&bundle.resource_requests)?)
         },
         in_reply_to: bundle.in_reply_to.clone(),
+        next_turn: if bundle.next_turn.is_empty() {
+            None
+        } else {
+            Some(serde_json::to_value(&bundle.next_turn)?)
+        },
+        task: bundle
+            .task
+            .as_ref()
+            .map(serde_json::to_value)
+            .transpose()?,
+        hints: if bundle.hints.is_empty() {
+            None
+        } else {
+            Some(serde_json::to_value(&bundle.hints)?)
+        },
     };
     let size = serde_json::to_vec(&payload)?.len();
     const MAX_APP_ENVELOPE: usize = 60 * 1024;

@@ -93,10 +93,22 @@ http.Response _rpcOk(Object? id, Map<String, dynamic> result) {
   );
 }
 
-Future<void> _openAgentsTab(WidgetTester tester) async {
-  final agents = find.text('Agents');
-  expect(agents, findsWidgets);
-  await tester.tap(agents.first);
+Future<void> _tapGraphAgent(WidgetTester tester, String slug) async {
+  for (var i = 0; i < 40; i++) {
+    await tester.pump(const Duration(milliseconds: 100));
+    if (find.text(slug).evaluate().isNotEmpty) break;
+  }
+  final node = find.text(slug);
+  expect(node, findsWidgets);
+  await tester.ensureVisible(node.last);
+  await tester.tap(node.last);
+  await tester.pumpAndSettle();
+}
+
+Future<void> _openNetworkTab(WidgetTester tester) async {
+  final network = find.text('Network');
+  expect(network, findsWidgets);
+  await tester.tap(network.first);
   await tester.pumpAndSettle();
 }
 
@@ -131,6 +143,11 @@ void main() {
       MutandeApp(
         config: const AppConfig(hubUrl: 'http://localhost:8000'),
         daemon: daemon,
+        firstRunStore: FirstRunStore.memory(
+          connectComplete: true,
+          pingComplete: true,
+          notificationsComplete: true,
+        ),
         seedStatus: const DaemonStatusResult(
           configured: true,
           hubUrl: 'http://localhost:8000',
@@ -143,7 +160,7 @@ void main() {
 
     expect(find.bySemanticsLabel('mutande'), findsOneWidget);
     expect(find.text('Threads'), findsWidgets);
-    expect(find.text('Agents'), findsOneWidget);
+    expect(find.text('Network'), findsWidgets);
     expect(find.text('Contacts'), findsOneWidget);
     expect(find.text('bob@acme'), findsOneWidget);
     expect(find.byTooltip('alice@acme'), findsOneWidget);
@@ -186,7 +203,7 @@ void main() {
         config: const AppConfig(hubUrl: 'http://localhost:8000'),
         daemon: daemon,
         firstRunStore:
-            FirstRunStore.memory(connectComplete: true, pingComplete: true),
+            FirstRunStore.memory(connectComplete: true, pingComplete: true, notificationsComplete: true),
         welcomeDuration: Duration.zero,
         startupRetryAttempts: 0,
       ),
@@ -243,7 +260,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Settings'), findsWidgets);
     expect(find.text('Local courier'), findsOneWidget);
-    expect(find.text('Agents & routing'), findsOneWidget);
+    expect(find.text('Network'), findsWidgets);
     await tester.ensureVisible(find.text('Check daemon'));
     expect(find.text('Check daemon'), findsOneWidget);
     await tester.ensureVisible(find.text('Connect new host'));
@@ -338,6 +355,12 @@ void main() {
       if (method == 'list_threads') {
         return _rpcOk(body['id'], {'threads': []});
       }
+      if (method == 'list_contacts') {
+        return _rpcOk(body['id'], {'contacts': []});
+      }
+      if (method == 'list_external_contacts') {
+        return _rpcOk(body['id'], {'contacts': []});
+      }
       if (method == 'list_agents') {
         if (connectedHost == null) {
           return _rpcOk(body['id'], {
@@ -389,11 +412,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await _openAgentsTab(tester);
-    expect(
-      find.text('Add an AI host for your primary agent.'),
-      findsOneWidget,
-    );
+    await _openNetworkTab(tester);
 
     await tester.tap(find.byIcon(Icons.add).last);
     await tester.pumpAndSettle();
@@ -485,8 +504,8 @@ void main() {
     await tester.pump(); // splash dismisses after bootstrap post-frame
 
     expect(find.text('mutande'), findsOneWidget);
-    expect(find.text('Sign in'), findsOneWidget);
     expect(find.text('Sign in'), findsWidgets);
+    expect(find.text('Sign in with Auth0'), findsOneWidget);
   });
 
   testWidgets('onboarding choose step when signed in', (WidgetTester tester) async {
@@ -515,9 +534,9 @@ void main() {
     );
     await tester.pump(); // post-frame org re-check
 
+    expect(find.text('Set up your team'), findsOneWidget);
     expect(find.text('Create a team'), findsOneWidget);
     expect(find.text('I have an invite'), findsOneWidget);
-    expect(find.text('a@x.com'), findsOneWidget);
   });
 
   testWidgets('web-joined user refreshes past create/join', (WidgetTester tester) async {
@@ -546,6 +565,7 @@ void main() {
         firstRunStore: FirstRunStore.memory(
           connectComplete: true,
           pingComplete: true,
+          notificationsComplete: true,
         ),
         hostLinkStore: HostLinkStore.memory(),
         welcomeDuration: Duration.zero,
@@ -574,6 +594,7 @@ void main() {
         firstRunStore: FirstRunStore.memory(
           connectComplete: true,
           pingComplete: true,
+          notificationsComplete: true,
         ),
         hostLinkStore: HostLinkStore.memory(),
         welcomeDuration: Duration.zero,
@@ -838,6 +859,12 @@ test('validateHandle and validateHubUrl', () {
       if (method == 'list_threads') {
         return _rpcOk(body['id'], {'threads': []});
       }
+      if (method == 'list_contacts') {
+        return _rpcOk(body['id'], {'contacts': []});
+      }
+      if (method == 'list_external_contacts') {
+        return _rpcOk(body['id'], {'contacts': []});
+      }
       if (method == 'list_agents') {
         return _rpcOk(body['id'], {
           'agents': [
@@ -878,12 +905,11 @@ test('validateHandle and validateHubUrl', () {
     );
     await tester.pumpAndSettle();
 
-    await _openAgentsTab(tester);
+    await _openNetworkTab(tester);
 
-    await tester.tap(find.text('claude').first);
-    await tester.pumpAndSettle();
+    await _tapGraphAgent(tester, 'claude');
 
-    expect(find.text('Agent Inspector'), findsOneWidget);
+    expect(find.text('Address'), findsOneWidget);
     expect(find.text('alice@acme/claude'), findsOneWidget);
     expect(find.text('Claude Desktop'), findsOneWidget);
     expect(find.text('Not linked'), findsWidgets);
@@ -927,6 +953,12 @@ test('validateHandle and validateHubUrl', () {
       if (method == 'list_threads') {
         return _rpcOk(body['id'], {'threads': []});
       }
+      if (method == 'list_contacts') {
+        return _rpcOk(body['id'], {'contacts': []});
+      }
+      if (method == 'list_external_contacts') {
+        return _rpcOk(body['id'], {'contacts': []});
+      }
       if (method == 'list_agents') {
         return _rpcOk(body['id'], {
           'agents': [
@@ -969,9 +1001,8 @@ test('validateHandle and validateHubUrl', () {
       ),
     );
     await tester.pumpAndSettle();
-    await _openAgentsTab(tester);
-    await tester.tap(find.text('claude').first);
-    await tester.pumpAndSettle();
+    await _openNetworkTab(tester);
+    await _tapGraphAgent(tester, 'claude');
 
     expect(find.text('Connect host'), findsOneWidget);
     await tester.tap(find.text('Connect host'));
@@ -979,10 +1010,8 @@ test('validateHandle and validateHubUrl', () {
     await _finishConnectHostFlow(tester);
     expect(connectedHost, 'claude');
     expect(find.textContaining('Linked Claude'), findsWidgets);
-    expect(find.text('Agent Inspector'), findsNothing);
 
-    await tester.tap(find.text('claude').first);
-    await tester.pumpAndSettle();
+    await _tapGraphAgent(tester, 'claude');
     expect(find.text('Linked'), findsWidgets);
     expect(find.text('View threads'), findsOneWidget);
     expect(find.text('Set as default'), findsOneWidget);
@@ -1007,6 +1036,12 @@ test('validateHandle and validateHubUrl', () {
       final method = body['method'] as String?;
       if (method == 'list_threads') {
         return _rpcOk(body['id'], {'threads': []});
+      }
+      if (method == 'list_contacts') {
+        return _rpcOk(body['id'], {'contacts': []});
+      }
+      if (method == 'list_external_contacts') {
+        return _rpcOk(body['id'], {'contacts': []});
       }
       if (method == 'list_agents') {
         return _rpcOk(body['id'], {
@@ -1042,9 +1077,8 @@ test('validateHandle and validateHubUrl', () {
       ),
     );
     await tester.pumpAndSettle();
-    await _openAgentsTab(tester);
-    await tester.tap(find.text('claude').first);
-    await tester.pumpAndSettle();
+    await _openNetworkTab(tester);
+    await _tapGraphAgent(tester, 'claude');
 
     expect(find.text('View threads'), findsOneWidget);
     expect(find.text('Set as default'), findsOneWidget);
@@ -1073,6 +1107,12 @@ test('validateHandle and validateHubUrl', () {
       if (method == 'list_threads') {
         return _rpcOk(body['id'], {'threads': []});
       }
+      if (method == 'list_contacts') {
+        return _rpcOk(body['id'], {'contacts': []});
+      }
+      if (method == 'list_external_contacts') {
+        return _rpcOk(body['id'], {'contacts': []});
+      }
       if (method == 'list_agents') {
         return _rpcOk(body['id'], {
           'agents': [
@@ -1098,7 +1138,7 @@ test('validateHandle and validateHubUrl', () {
       ),
     );
     await tester.pumpAndSettle();
-    await _openAgentsTab(tester);
+    await _openNetworkTab(tester);
     await tester.tap(find.text('cursor').first);
     await tester.pumpAndSettle();
 
@@ -1157,9 +1197,76 @@ test('validateHandle and validateHubUrl', () {
     expect(find.text('Invite teammates'), findsOneWidget);
   });
 
+  testWidgets('contacts tab shows teammate display name', (
+    WidgetTester tester,
+  ) async {
+    final daemon = _mockDaemon((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      final method = body['method'] as String?;
+      if (method == 'list_threads') {
+        return _rpcOk(body['id'], {'threads': []});
+      }
+      if (method == 'list_contacts') {
+        return _rpcOk(body['id'], {
+          'contacts': [
+            {'handle': '@all@acme', 'pubkey': null, 'devices': []},
+            {
+              'handle': 'bob@acme',
+              'kind': 'org',
+              'display_name': 'Bob Builder',
+              'devices': [],
+            },
+          ],
+        });
+      }
+      return _rpcOk(body['id'], {
+        'ok': true,
+        'service': 'mutande-core',
+        'version': '0.0.0',
+      });
+    });
+
+    await tester.pumpWidget(
+      MutandeApp(
+        config: const AppConfig(hubUrl: 'http://localhost:8000'),
+        daemon: daemon,
+        seedStatus: const DaemonStatusResult(
+          configured: true,
+          hubUrl: 'http://localhost:8000',
+          handle: 'alice@acme',
+        ),
+        welcomeDuration: Duration.zero,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Contacts'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Bob Builder'), findsOneWidget);
+    expect(find.text('bob@acme'), findsOneWidget);
+    expect(find.text('You’re the only member of acme'), findsNothing);
+  });
+
   testWidgets('first-run connect gate shows when incomplete', (WidgetTester tester) async {
     final daemon = _mockDaemon((request) async {
       final body = jsonDecode(request.body) as Map<String, dynamic>;
+      final method = body['method'] as String?;
+      if (method == 'list_contacts') {
+        return _rpcOk(body['id'], {
+          'contacts': [
+            {'handle': 'alice@acme', 'kind': 'member'},
+          ],
+        });
+      }
+      if (method == 'detect_ai_hosts') {
+        return _rpcOk(body['id'], {
+          'hosts': [
+            {'host': 'cursor', 'installed': true, 'config_present': false},
+            {'host': 'claude', 'installed': false, 'config_present': false},
+            {'host': 'chatgpt', 'installed': false, 'config_present': false},
+          ],
+        });
+      }
       return _rpcOk(body['id'], {'ok': true});
     });
 
@@ -1179,8 +1286,12 @@ test('validateHandle and validateHubUrl', () {
     );
     await tester.pumpAndSettle();
 
+    expect(find.text('Your team'), findsWidgets);
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+
     expect(find.text('Connect an AI host'), findsOneWidget);
-    expect(find.text('Choose host'), findsOneWidget);
+    expect(find.text('Installed'), findsOneWidget);
     expect(find.text('Threads'), findsNothing);
   });
 
@@ -1199,7 +1310,10 @@ test('validateHandle and validateHubUrl', () {
         config: const AppConfig(hubUrl: 'http://localhost:8000'),
         daemon: daemon,
         hostLinkStore: HostLinkStore.memory(),
-        firstRunStore: FirstRunStore.memory(connectComplete: true),
+        firstRunStore: FirstRunStore.memory(
+          connectComplete: true,
+          notificationsComplete: true,
+        ),
         seedStatus: const DaemonStatusResult(
           configured: true,
           hubUrl: 'http://localhost:8000',
@@ -1225,7 +1339,10 @@ test('validateHandle and validateHubUrl', () {
       return _rpcOk(body['id'], {'ok': true});
     });
 
-    final firstRun = FirstRunStore.memory(connectComplete: true);
+    final firstRun = FirstRunStore.memory(
+      connectComplete: true,
+      notificationsComplete: true,
+    );
     await tester.pumpWidget(
       MutandeApp(
         config: const AppConfig(hubUrl: 'http://localhost:8000'),

@@ -327,6 +327,7 @@ class _ContactsPanelState extends State<ContactsPanel> {
           for (final contact in teammates)
             _TeammateRow(
               handle: contact.handle,
+              name: contact.displayName,
               onCopy: () => _copyHandle(contact.handle),
               onMessage: widget.onStartThread == null
                   ? null
@@ -402,6 +403,7 @@ class _ContactsPanelState extends State<ContactsPanel> {
           for (final contact in _external)
             _ExternalRow(
               handle: contact.handle,
+              name: contact.displayName,
               onCopy: () => _copyHandle(contact.handle),
               onMessage: widget.onStartThread == null
                   ? null
@@ -556,16 +558,20 @@ class _TeammateRow extends StatelessWidget {
   const _TeammateRow({
     required this.handle,
     required this.onCopy,
+    this.name,
     this.onMessage,
   });
 
   final String handle;
+  final String? name;
   final VoidCallback onCopy;
   final VoidCallback? onMessage;
 
   @override
   Widget build(BuildContext context) {
-    final label = formatMailAddress(handle);
+    final display = name?.trim();
+    final titled = display != null && display.isNotEmpty;
+    final label = titled ? display : formatMailAddress(handle);
     final initial = label.isNotEmpty ? label[0].toUpperCase() : '?';
 
     return Material(
@@ -593,12 +599,24 @@ class _TeammateRow extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: Text(
-                  label,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: const Color(0xFF292524),
-                        fontWeight: FontWeight.w500,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: const Color(0xFF292524),
+                            fontWeight: FontWeight.w500,
+                          ),
+                    ),
+                    if (titled)
+                      Text(
+                        formatMailAddress(handle),
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: const Color(0xFFA8A29E),
+                            ),
                       ),
+                  ],
                 ),
               ),
               if (onMessage != null)
@@ -679,17 +697,21 @@ class _ExternalRow extends StatelessWidget {
   const _ExternalRow({
     required this.handle,
     required this.onCopy,
+    this.name,
     this.onMessage,
     this.onRemove,
   });
 
   final String handle;
+  final String? name;
   final VoidCallback onCopy;
   final VoidCallback? onMessage;
   final VoidCallback? onRemove;
 
   @override
   Widget build(BuildContext context) {
+    final display = name?.trim();
+    final titled = display != null && display.isNotEmpty;
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 10),
       decoration: const BoxDecoration(
@@ -704,14 +726,16 @@ class _ExternalRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  formatMailAddress(handle),
+                  titled ? display : formatMailAddress(handle),
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: const Color(0xFF292524),
                         fontWeight: FontWeight.w500,
                       ),
                 ),
                 Text(
-                  'via external · not E2E',
+                  titled
+                      ? formatMailAddress(handle)
+                      : 'via external · not E2E',
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
                         color: const Color(0xFFA8A29E),
                       ),

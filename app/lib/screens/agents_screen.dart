@@ -469,13 +469,21 @@ class _AgentsPanelState extends State<AgentsPanel> {
             bareMailHandle(c.handle) != myBare)
           _OrbitPerson(
             id: bareMailHandle(c.handle),
-            label: _localPart(c.handle),
+            label: _contactLabel(c),
             caption: formatMailAddress(c.handle),
             avatarUrl: c.avatarUrl,
             agentSlugs: _slugsFor(c.handle),
           ),
     ];
-    return people;
+    return people.take(12).toList();
+  }
+
+  static String _contactLabel(ContactView c) {
+    final name = c.displayName?.trim();
+    if (name != null && name.isNotEmpty) {
+      return name.split(RegExp(r'\s+')).first;
+    }
+    return _localPart(c.handle);
   }
 
   List<String> _slugsFor(String handle) =>
@@ -490,9 +498,10 @@ class _AgentsPanelState extends State<AgentsPanel> {
       if (mine != null && mine.isNotEmpty)
         bareMailHandle(mine): _uniqueAgentSlugs(own.agents),
     };
+    final room = (mine != null && mine.isNotEmpty) ? 11 : 12;
     final peers = org
         .where((c) => !c.isBroadcast && c.handle.trim().isNotEmpty)
-        .take(12)
+        .take(room)
         .toList();
     await Future.wait([
       for (final c in peers)
@@ -642,9 +651,10 @@ class _AgentsPanelState extends State<AgentsPanel> {
         break;
       }
     }
+    final fullName = hit?.displayName?.trim();
     return PeerInspectData(
       id: p.id,
-      label: p.label,
+      label: (fullName != null && fullName.isNotEmpty) ? fullName : p.label,
       handle: handles.isNotEmpty ? handles.first : p.id,
       handles: handles,
       avatarUrl: p.avatarUrl,

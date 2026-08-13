@@ -70,6 +70,16 @@ pub struct ThreadMeta {
     /// Daemon-filled after local open — body preview of the latest message (notes/etc).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_preview: Option<String>,
+    /// Hub mirror of post-merge awaiting holders (`{user_id, actor}`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub awaiting: Option<Vec<HubAwaitingEntry>>,
+}
+
+/// Hub-stored awaiting holder (blind courier mirror of E2E `next_turn`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HubAwaitingEntry {
+    pub user_id: String,
+    pub actor: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -95,6 +105,8 @@ pub struct ThreadMessage {
     pub parent_message_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub upvotes: Option<MessageUpvoteSummary>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub receipts: Option<MessageReceiptSummary>,
 }
 
 /// Hub-readable application-layer payload (directory.prd §4.2.1).
@@ -110,6 +122,8 @@ pub struct AppEnvelopePayload {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ping_kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intent: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub questions: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub answers: Option<serde_json::Value>,
@@ -119,6 +133,12 @@ pub struct AppEnvelopePayload {
     pub resource_requests: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub in_reply_to: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_turn: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hints: Option<serde_json::Value>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -146,6 +166,32 @@ pub struct ToggleUpvoteRequest<'a> {
 pub struct ToggleUpvoteResponse {
     pub upvoted: bool,
     pub upvotes: MessageUpvoteSummary,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MessageReceipt {
+    pub agent_id: String,
+    pub from_handle: String,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MessageReceiptSummary {
+    pub count: u32,
+    pub receipts: Vec<MessageReceipt>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub your_receipts: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct PostReceiptRequest<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from_agent: Option<&'a str>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PostReceiptResponse {
+    pub receipts: MessageReceiptSummary,
 }
 
 /// Org member or synthetic broadcast handle (`@all@org`).
@@ -590,6 +636,9 @@ pub struct CreateThreadRequest<'a> {
     pub app_envelope: Option<&'a AppEnvelopePayload>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub from_agent: Option<&'a str>,
+    /// Post-merge awaiting mirror computed by sender core.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub turns: Option<&'a [HubAwaitingEntry]>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -604,6 +653,9 @@ pub struct ReplyRequest<'a> {
     pub to_agent: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent_message_id: Option<&'a str>,
+    /// Post-merge awaiting mirror computed by sender core.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub turns: Option<&'a [HubAwaitingEntry]>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

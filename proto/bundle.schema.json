@@ -5,6 +5,16 @@
   "description": "Plaintext bundle shape before client-side E2E encryption.",
   "type": "object",
   "properties": {
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Bundle schema version. Absent = 1; this revision = 2."
+    },
+    "intent": {
+      "type": "string",
+      "enum": ["question", "answer", "handoff", "status", "fyi"],
+      "description": "Message intent. Required by MCP tools; optional for legacy bundles."
+    },
     "subject": { "type": "string" },
     "context": { "type": "string" },
     "questions": {
@@ -70,6 +80,102 @@
       "type": "string",
       "format": "uuid",
       "description": "Parent message id for nested thread replies."
+    },
+    "next_turn": {
+      "type": "array",
+      "description": "Declared holders of the next turn after this message.",
+      "items": { "$ref": "#/$defs/TurnEntry" }
+    },
+    "task": {
+      "$ref": "#/$defs/Task",
+      "description": "Structured work handoff (expected with intent=handoff)."
+    },
+    "hints": {
+      "type": "array",
+      "description": "Enumerated handling/presentation advice. Unknown kinds must be ignored.",
+      "items": { "$ref": "#/$defs/Hint" }
+    }
+  },
+  "$defs": {
+    "TurnEntry": {
+      "type": "object",
+      "required": ["address", "actor"],
+      "properties": {
+        "address": {
+          "type": "string",
+          "description": "Display address expected to act (handle, handle/agent, or @slug)."
+        },
+        "actor": {
+          "type": "string",
+          "enum": ["agent", "human"]
+        },
+        "reason": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": ["kind", "question_id"],
+              "properties": {
+                "kind": { "const": "question" },
+                "question_id": { "type": "string" }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": ["kind"],
+              "properties": {
+                "kind": { "const": "review" }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": ["kind"],
+              "properties": {
+                "kind": { "const": "handoff" }
+              },
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "Task": {
+      "type": "object",
+      "required": ["objective"],
+      "properties": {
+        "objective": { "type": "string" },
+        "steps": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "deliverables": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "constraints": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "done_when": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "Hint": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["render_decision", "render_canvas", "recall_context"]
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

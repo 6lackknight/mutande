@@ -517,12 +517,14 @@ impl HubClient {
         to: &str,
         envelope: &Envelope,
         from_agent: Option<&str>,
+        turns: Option<&[HubAwaitingEntry]>,
     ) -> Result<CreateThreadResponse> {
         let body = CreateThreadRequest {
             to,
             envelope: Some(envelope),
             app_envelope: None,
             from_agent,
+            turns,
         };
         self.post_json("/v1/threads", &body, true).await
     }
@@ -533,12 +535,14 @@ impl HubClient {
         to: &str,
         app_envelope: &AppEnvelopePayload,
         from_agent: Option<&str>,
+        turns: Option<&[HubAwaitingEntry]>,
     ) -> Result<CreateThreadResponse> {
         let body = CreateThreadRequest {
             to,
             envelope: None,
             app_envelope: Some(app_envelope),
             from_agent,
+            turns,
         };
         self.post_json("/v1/threads", &body, true).await
     }
@@ -554,6 +558,7 @@ impl HubClient {
         from_agent: Option<&str>,
         to_agent: Option<&str>,
         parent_message_id: Option<&str>,
+        turns: Option<&[HubAwaitingEntry]>,
     ) -> Result<()> {
         let body = ReplyRequest {
             envelope: Some(envelope),
@@ -561,6 +566,7 @@ impl HubClient {
             from_agent,
             to_agent,
             parent_message_id,
+            turns,
         };
         let _: serde_json::Value = self
             .post_json(
@@ -579,6 +585,7 @@ impl HubClient {
         from_agent: Option<&str>,
         to_agent: Option<&str>,
         parent_message_id: Option<&str>,
+        turns: Option<&[HubAwaitingEntry]>,
     ) -> Result<()> {
         let body = ReplyRequest {
             envelope: None,
@@ -586,6 +593,7 @@ impl HubClient {
             from_agent,
             to_agent,
             parent_message_id,
+            turns,
         };
         let _: serde_json::Value = self
             .post_json(
@@ -606,6 +614,21 @@ impl HubClient {
         let body = ToggleUpvoteRequest { from_agent };
         self.post_json(
             &format!("/v1/threads/{thread_id}/messages/{message_id}/upvote"),
+            &body,
+            true,
+        )
+        .await
+    }
+
+    pub async fn post_message_receipt(
+        &self,
+        thread_id: &str,
+        message_id: &str,
+        from_agent: Option<&str>,
+    ) -> Result<PostReceiptResponse> {
+        let body = PostReceiptRequest { from_agent };
+        self.post_json(
+            &format!("/v1/threads/{thread_id}/messages/{message_id}/receipt"),
             &body,
             true,
         )

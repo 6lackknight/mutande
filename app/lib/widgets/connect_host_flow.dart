@@ -42,6 +42,7 @@ Future<ConnectHostFlowResult?> showConnectHostFlow({
   required String host,
   bool celebrateFirstHost = false,
   Rect? morphOrigin,
+  bool fullScreen = false,
 }) {
   final reduceMotion =
       MediaQuery.maybeOf(context)?.disableAnimations ?? false;
@@ -51,7 +52,20 @@ Future<ConnectHostFlowResult?> showConnectHostFlow({
     host: host,
     celebrateFirstHost: celebrateFirstHost,
     useIconHero: morphOrigin != null && !reduceMotion,
+    embedded: fullScreen,
   );
+
+  if (fullScreen) {
+    return Navigator.of(context).push<ConnectHostFlowResult>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (ctx) => Scaffold(
+          backgroundColor: const Color(0xFFFAFAF9),
+          body: SafeArea(child: dialog),
+        ),
+      ),
+    );
+  }
 
   if (morphOrigin == null || reduceMotion) {
     return showDialog<ConnectHostFlowResult>(
@@ -102,6 +116,7 @@ class _ConnectHostFlowDialog extends StatefulWidget {
     required this.host,
     required this.celebrateFirstHost,
     this.useIconHero = false,
+    this.embedded = false,
   });
 
   final DaemonClient daemon;
@@ -109,6 +124,7 @@ class _ConnectHostFlowDialog extends StatefulWidget {
   final String host;
   final bool celebrateFirstHost;
   final bool useIconHero;
+  final bool embedded;
 
   @override
   State<_ConnectHostFlowDialog> createState() => _ConnectHostFlowDialogState();
@@ -330,57 +346,74 @@ class _ConnectHostFlowDialogState extends State<_ConnectHostFlowDialog>
         (_skillStatus == SkillLinkStatus.needsSetup ||
             (_skill?.isManual ?? false));
 
+    final content = SingleChildScrollView(
+      padding: EdgeInsets.fromLTRB(
+        widget.embedded ? 32 : 28,
+        widget.embedded ? 24 : 28,
+        widget.embedded ? 32 : 28,
+        widget.embedded ? 32 : 24,
+      ),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: widget.embedded ? 720 : 420,
+          maxHeight: widget.embedded ? double.infinity : 560,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: widget.useIconHero
+                  ? Hero(
+                      tag: connectHostIconHeroTag(widget.host),
+                      child: Material(
+                        type: MaterialType.transparency,
+                        child: AiHostIcon(widget.host, size: 48),
+                      ),
+                    )
+                  : AiHostIcon(widget.host, size: 48),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Connect $label',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF292524),
+              ),
+            ),
+            const SizedBox(height: 16),
+            _StepRail(
+              step: _step,
+              mcpDone: _step == _Step.skill ||
+                  _step == _Step.done ||
+                  (_step == _Step.mcp && !_busy && _error == null),
+              skillDone: _skillStatus == SkillLinkStatus.installed ||
+                  _step == _Step.done,
+            ),
+            const SizedBox(height: 24),
+            AnimatedSwitcher(
+              duration: Duration(milliseconds: _reduceMotion ? 0 : 220),
+              child: KeyedSubtree(
+                key: ValueKey('${_step}_$_busy$_error$_skillStatus'),
+                child: _body(theme, label, showSkillActions),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (widget.embedded) {
+      return content;
+    }
+
     return Dialog(
       backgroundColor: const Color(0xFFFAFAF9),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 420, maxHeight: 560),
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(28, 28, 28, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Center(
-                child: widget.useIconHero
-                    ? Hero(
-                        tag: connectHostIconHeroTag(widget.host),
-                        child: Material(
-                          type: MaterialType.transparency,
-                          child: AiHostIcon(widget.host, size: 48),
-                        ),
-                      )
-                    : AiHostIcon(widget.host, size: 48),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Connect $label',
-                textAlign: TextAlign.center,
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: const Color(0xFF292524),
-                ),
-              ),
-              const SizedBox(height: 16),
-              _StepRail(
-                step: _step,
-                mcpDone: _step == _Step.skill ||
-                    _step == _Step.done ||
-                    (_step == _Step.mcp && !_busy && _error == null),
-                skillDone: _skillStatus == SkillLinkStatus.installed ||
-                    _step == _Step.done,
-              ),
-              const SizedBox(height: 24),
-              AnimatedSwitcher(
-                duration: Duration(milliseconds: _reduceMotion ? 0 : 220),
-                child: KeyedSubtree(
-                  key: ValueKey('${_step}_$_busy$_error$_skillStatus'),
-                  child: _body(theme, label, showSkillActions),
-                ),
-              ),
-            ],
-          ),
-        ),
+        child: content,
       ),
     );
   }

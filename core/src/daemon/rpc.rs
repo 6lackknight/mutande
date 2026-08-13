@@ -346,6 +346,10 @@ async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Resu
             }
             Ok(serde_json::to_value(result)?)
         }
+        "detect_ai_hosts" => {
+            let hosts = super::detect_ai_hosts::detect();
+            Ok(serde_json::json!({ "hosts": hosts }))
+        }
         "install_skill" => {
             let host = param_str(&params, "host")?;
             let result = super::install_skill::install_skill(&host, None)?;

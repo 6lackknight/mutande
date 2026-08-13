@@ -70,6 +70,11 @@ import type {
   ToggleUpvoteResult,
   MessageUpvote,
   MessageUpvoteSummary,
+  HubAwaitingEntry,
+  PostReceiptInput,
+  PostReceiptResult,
+  MessageReceipt,
+  MessageReceiptSummary,
   Agent,
   AgentCapabilities,
   AgentTransport,
@@ -429,6 +434,12 @@ export class HubStore {
   }
   private messageUpvotesPrefix(threadId: string, messageId: string) {
     return ["message_upvotes", threadId, messageId];
+  }
+  private messageReceiptKey(threadId: string, messageId: string, agentId: string) {
+    return ["message_receipts", threadId, messageId, agentId];
+  }
+  private messageReceiptsPrefix(threadId: string, messageId: string) {
+    return ["message_receipts", threadId, messageId];
   }
   private draftKey(userId: string, draftId: string) { return ["drafts", userId, draftId]; }
   private draftsPrefix(userId: string) { return ["drafts", userId]; }
@@ -1547,6 +1558,7 @@ export class HubStore {
       });
     }
 
+    const turns = this.normalizeTurns(input.turns);
     const thread: ThreadMeta = {
       id: threadId,
       kind: isBroadcast ? "broadcast" : "direct",
@@ -1561,6 +1573,7 @@ export class HubStore {
       participant_count: isBroadcast ? recipientIds.length + 1 : 2,
       reply_count: 0,
       encryption_mode: encryptionMode,
+      ...(turns ? { awaiting: turns } : {}),
       ...(enterpriseListing
         ? { enterprise_listing_id: enterpriseListing.id }
         : {}),
@@ -1624,19 +1637,16 @@ export class HubStore {
       // includes the sender. One inbox key per user — keep Waiting (replied) and
       // role=recipient so own agents can still reply. Do not clobber to pending.
       const selfDelivery = recipientIds.includes(sender.id);
-      tx.set(this.inboxKey(sender.id, threadId), {
-        thread_id: threadId,
-        your_status: "replied",
-        role: selfDelivery ? "recipient" : "sender",
-        updated_at: ts,
-      } satisfies InboxEntry);
-
-      for (const rid of recipientIds) {
-        if (rid === sender.id) continue;
-        tx.set(this.inboxKey(rid, threadId), {
+      const allIds = [sender.id, ...recipientIds.filter((id) => id !== sender.id)];
+      for (const uid of allIds) {
+        const isSender = uid === sender.id;
+        const status = turns
+          ? (turns.some((t) => t.user_id === uid) ? "pending" : "replied")
+          : (isSender ? "replied" : "pending");
+        tx.set(this.inboxKey(uid, threadId), {
           thread_id: threadId,
-          your_status: "pending",
-          role: "recipient",
+          your_status: status,
+          role: isSender ? (selfDelivery ? "recipient" : "sender") : "recipient",
           updated_at: ts,
         } satisfies InboxEntry);
       }
@@ -1713,6 +1723,7 @@ export class HubStore {
       messages.map(async (msg) => ({
         ...msg,
         upvotes: await this.getMessageUpvoteSummary(auth, threadId, msg.id),
+        receipts: await this.getMessageReceiptSummary(auth, threadId, msg.id),
       })),
     );
 
@@ -1871,6 +1882,108 @@ export class HubStore {
     };
   }
 
+  /** Idempotent processed receipt (never clears turns). */
+  async postMessageReceipt(
+    auth: AuthContext,
+    threadId: string,
+    messageId: string,
+    input: PostReceiptInput,
+  ): Promise<PostReceiptResult> {
+    const inbox = await this.getInboxEntry(auth.userId, threadId);
+    if (!inbox) throw forbidden("Not a thread participant");
+
+    const threadRes = await this.kv.get<ThreadMeta>(this.threadKey(threadId));
+    const thread = threadRes.value ? this.normalizeThread(threadRes.value) : null;
+    if (!thread || !this.threadVisibleToOrg(auth, thread)) throw notFound("Thread");
+
+    const msgRes = await this.kv.get<ThreadMessage>(this.messageKey(threadId, messageId));
+    const msg = msgRes.value;
+    if (!msg || msg.thread_id !== threadId) throw notFound("Message");
+    if (!this.canViewMessage(auth, thread, inbox, msg)) {
+      throw forbidden("Cannot receipt this message");
+    }
+
+    const user = await this.getUser(auth.userId);
+    if (!user?.handle) throw notFound("User");
+
+    const userParts = parseUserHandle(user.handle);
+    const fromAgent = await this.resolveSenderAgent(auth.userId, {
+      from_agent_id: input.from_agent_id,
+      from_agent: input.from_agent,
+    });
+    const fromDisplay = formatDisplayAddress(userParts.local, userParts.orgSlug, fromAgent.slug);
+
+    const key = this.messageReceiptKey(threadId, messageId, fromAgent.id);
+    const existing = await this.kv.get(key);
+    if (!existing.value) {
+      await this.kv.set(key, {
+        thread_id: threadId,
+        message_id: messageId,
+        agent_id: fromAgent.id,
+        from_user_id: user.id,
+        from_handle: fromDisplay,
+        created_at: nowIso(),
+      });
+    }
+
+    const receipts = await this.getMessageReceiptSummary(auth, threadId, messageId);
+    return { receipts };
+  }
+
+  private async getMessageReceiptSummary(
+    auth: AuthContext,
+    threadId: string,
+    messageId: string,
+  ): Promise<MessageReceiptSummary> {
+    const receipts: MessageReceipt[] = [];
+    const yourReceipts: string[] = [];
+    const userAgentIds = new Set(await this.listAgentIdsForUser(auth.userId));
+
+    const iter = this.kv.list<{
+      agent_id: string;
+      from_user_id: string;
+      from_handle: string;
+      created_at: string;
+    }>({ prefix: this.messageReceiptsPrefix(threadId, messageId) });
+
+    for await (const entry of iter) {
+      const v = entry.value;
+      receipts.push({
+        agent_id: v.agent_id,
+        from_handle: v.from_handle,
+        created_at: v.created_at,
+      });
+      if (v.from_user_id === auth.userId && userAgentIds.has(v.agent_id)) {
+        yourReceipts.push(v.agent_id);
+      }
+    }
+
+    receipts.sort((a, b) => a.created_at.localeCompare(b.created_at));
+    return {
+      count: receipts.length,
+      receipts,
+      ...(yourReceipts.length > 0 ? { your_receipts: yourReceipts } : {}),
+    };
+  }
+
+  /** Normalize optional turns mirror; null when input omitted. */
+  private normalizeTurns(
+    turns: HubAwaitingEntry[] | undefined,
+  ): HubAwaitingEntry[] | null {
+    if (turns === undefined) return null;
+    const out: HubAwaitingEntry[] = [];
+    for (const t of turns) {
+      if (!t?.user_id || (t.actor !== "agent" && t.actor !== "human")) continue;
+      const existing = out.find((e) => e.user_id === t.user_id);
+      if (existing) {
+        if (t.actor === "human") existing.actor = "human";
+        continue;
+      }
+      out.push({ user_id: t.user_id, actor: t.actor });
+    }
+    return out;
+  }
+
   private async listAgentIdsForUser(userId: string): Promise<string[]> {
     const ids: string[] = [];
     const iter = this.kv.list<string>({ prefix: this.userAgentsPrefix(userId) });
@@ -1965,11 +2078,15 @@ export class HubStore {
       }
     }
 
+    const turns = this.normalizeTurns(input.turns);
     let updatedThread: ThreadMeta = {
       ...thread,
       reply_count: thread.reply_count + 1,
       updated_at: ts,
     };
+    if (input.turns !== undefined) {
+      updatedThread = { ...updatedThread, awaiting: turns ?? [] };
+    }
 
     if (input.to_agent?.trim()) {
       const toAgent = await this.resolveAgentForUser(auth.userId, input.to_agent.trim());
@@ -2057,35 +2174,52 @@ export class HubStore {
 
       if (debitPlan) debitPlan.apply(tx);
 
-      tx.set(this.inboxKey(auth.userId, threadId), {
-        ...inbox,
-        your_status: "replied",
-        updated_at: ts,
-      });
-      // Self-collab shares one inbox key — never re-write auth.userId here
-      // (that clobbers replied back to a stale pending).
-      if (thread.from_user_id === auth.userId) {
-        // OP correction / follow-up: bump every other participant to Needs you.
-        const peerIds = await this.listThreadPeerUserIds(thread, auth.userId);
-        for (const peerId of peerIds) {
-          const peerInbox = await this.getInboxEntry(peerId, threadId);
-          if (!peerInbox) continue;
-          tx.set(this.inboxKey(peerId, threadId), {
-            ...peerInbox,
-            your_status: "pending",
+      if (turns || input.turns !== undefined) {
+        // Declared awaiting mirror: pending exactly for users in awaiting.
+        const awaiting = turns ?? [];
+        const peerIds = await this.listThreadPeerUserIds(updatedThread, "");
+        const allIds = new Set<string>([auth.userId, ...peerIds, thread.from_user_id]);
+        for (const uid of allIds) {
+          const peerInbox = await this.getInboxEntry(uid, threadId);
+          if (!peerInbox && uid !== auth.userId) continue;
+          const entry = peerInbox ?? inbox;
+          tx.set(this.inboxKey(uid, threadId), {
+            ...entry,
+            your_status: awaiting.some((t) => t.user_id === uid) ? "pending" : "replied",
             updated_at: ts,
           });
         }
       } else {
-        // Recipient reply: only the original sender needs action (broadcast
-        // replies are sender-only — do not wake other recipients).
-        const senderInbox = await this.getInboxEntry(thread.from_user_id, threadId);
-        if (senderInbox) {
-          tx.set(this.inboxKey(thread.from_user_id, threadId), {
-            ...senderInbox,
-            your_status: "pending",
-            updated_at: ts,
-          });
+        tx.set(this.inboxKey(auth.userId, threadId), {
+          ...inbox,
+          your_status: "replied",
+          updated_at: ts,
+        });
+        // Self-collab shares one inbox key — never re-write auth.userId here
+        // (that clobbers replied back to a stale pending).
+        if (thread.from_user_id === auth.userId) {
+          // OP correction / follow-up: bump every other participant to Needs you.
+          const peerIds = await this.listThreadPeerUserIds(thread, auth.userId);
+          for (const peerId of peerIds) {
+            const peerInbox = await this.getInboxEntry(peerId, threadId);
+            if (!peerInbox) continue;
+            tx.set(this.inboxKey(peerId, threadId), {
+              ...peerInbox,
+              your_status: "pending",
+              updated_at: ts,
+            });
+          }
+        } else {
+          // Recipient reply: only the original sender needs action (broadcast
+          // replies are sender-only — do not wake other recipients).
+          const senderInbox = await this.getInboxEntry(thread.from_user_id, threadId);
+          if (senderInbox) {
+            tx.set(this.inboxKey(thread.from_user_id, threadId), {
+              ...senderInbox,
+              your_status: "pending",
+              updated_at: ts,
+            });
+          }
         }
       }
       const res = await tx.commit();
@@ -2165,6 +2299,12 @@ export class HubStore {
         });
         for await (const upvote of upvoteIter) {
           bodyKeys.push(upvote.key);
+        }
+        const receiptIter = this.kv.list({
+          prefix: this.messageReceiptsPrefix(threadId, messageId),
+        });
+        for await (const receipt of receiptIter) {
+          bodyKeys.push(receipt.key);
         }
         bodyKeys.push(entry.key);
       }
@@ -2360,6 +2500,12 @@ export class HubStore {
     thread: ThreadMeta,
     inbox: InboxEntry,
   ): "pending" | "replied" {
+    // Declared awaiting mirror wins when present.
+    if (thread.awaiting) {
+      return thread.awaiting.some((t) => t.user_id === auth.userId)
+        ? "pending"
+        : "replied";
+    }
     // One inbox key per user cannot express per-agent pending. Self-collab
     // (own agents / @all) is Waiting for the human Mac inbox — heal stale
     // pending rows from older create/reply clobbers.

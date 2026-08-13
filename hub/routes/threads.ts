@@ -20,6 +20,7 @@ export function createThreadRoutes(store: HubStore) {
       app_envelope?: AppEnvelopePayload;
       from_agent?: string;
       from_agent_id?: string;
+      turns?: { user_id: string; actor: "agent" | "human" }[];
     }>();
     const result = await store.createThread(c.get("auth"), body);
     return c.json(result, 201);
@@ -56,6 +57,7 @@ export function createThreadRoutes(store: HubStore) {
       from_agent_id?: string;
       to_agent?: string;
       parent_message_id?: string;
+      turns?: { user_id: string; actor: "agent" | "human" }[];
     }>();
     const result = await store.postReply(c.get("auth"), c.req.param("id"), body);
     return c.json(result, 201);
@@ -69,6 +71,7 @@ export function createThreadRoutes(store: HubStore) {
       from_agent_id?: string;
       to_agent?: string;
       parent_message_id?: string;
+      turns?: { user_id: string; actor: "agent" | "human" }[];
     }>();
     const result = await store.postReply(c.get("auth"), c.req.param("id"), body);
     return c.json(result, 201);
@@ -78,6 +81,18 @@ export function createThreadRoutes(store: HubStore) {
     const body = await c.req.json<{ from_agent?: string; from_agent_id?: string }>()
       .catch(() => ({}));
     const result = await store.toggleMessageUpvote(
+      c.get("auth"),
+      c.req.param("id"),
+      c.req.param("messageId"),
+      body,
+    );
+    return c.json(result);
+  });
+
+  threadRoutes.post("/:id/messages/:messageId/receipt", async (c) => {
+    const body = await c.req.json<{ from_agent?: string; from_agent_id?: string }>()
+      .catch(() => ({}));
+    const result = await store.postMessageReceipt(
       c.get("auth"),
       c.req.param("id"),
       c.req.param("messageId"),

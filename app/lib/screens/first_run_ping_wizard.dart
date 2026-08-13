@@ -7,6 +7,8 @@ import '../analytics_events.dart';
 import '../services/analytics.dart';
 import '../services/daemon_client.dart';
 import '../services/first_run_store.dart';
+import '../theme/mutande_macos_theme.dart';
+import '../widgets/onboarding_stepper.dart';
 import '../widgets/thinking_orb.dart';
 
 /// Copy-paste prompt for first thread ping; polls until a pong reply lands.
@@ -16,11 +18,13 @@ class FirstRunPingWizard extends StatefulWidget {
     required this.daemon,
     required this.firstRunStore,
     required this.onComplete,
+    this.embedded = false,
   });
 
   final DaemonClient daemon;
   final FirstRunStore firstRunStore;
   final ValueChanged<String?> onComplete;
+  final bool embedded;
 
   static const prompt = 'Use mutande to ping @all (thread)';
 
@@ -127,6 +131,33 @@ class _FirstRunPingWizardState extends State<FirstRunPingWizard> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final body = switch (_step) {
+      _PingStep.copy => _CopyStep(
+          theme: theme,
+          embedded: widget.embedded,
+          onCopy: _copyPrompt,
+          onWaiting: _startWaiting,
+          onSkip: _skip,
+        ),
+      _PingStep.waiting => _WaitingStep(
+          theme: theme,
+          embedded: widget.embedded,
+          error: _error,
+          onSkip: _skip,
+        ),
+      _PingStep.success => _SuccessStep(theme: theme, embedded: widget.embedded),
+      _PingStep.timeout => _TimeoutStep(
+          theme: theme,
+          embedded: widget.embedded,
+          onRetry: () => setState(() => _step = _PingStep.copy),
+          onSkip: _skip,
+        ),
+    };
+
+    if (widget.embedded) {
+      return body;
+    }
+
     return Scaffold(
       body: SafeArea(
         child: Center(
@@ -134,73 +165,7 @@ class _FirstRunPingWizardState extends State<FirstRunPingWizard> {
             constraints: const BoxConstraints(maxWidth: 480),
             child: Padding(
               padding: const EdgeInsets.all(28),
-              child: switch (_step) {
-                _PingStep.copy => _CopyStep(
-                    theme: theme,
-                    onCopy: _copyPrompt,
-                    onWaiting: _startWaiting,
-                    onSkip: _skip,
-                  ),
-                _PingStep.waiting => _WaitingStep(
-                    theme: theme,
-                    error: _error,
-                    onSkip: _skip,
-                  ),
-                _PingStep.success => Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.check_circle_outline,
-                        size: 48,
-                        color: theme.colorScheme.primary,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Pong received',
-                        style: theme.textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Your first thread is live.',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: const Color(0xFF78716C),
-                        ),
-                      ),
-                    ],
-                  ),
-                _PingStep.timeout => Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(
-                        'Still waiting for a pong',
-                        textAlign: TextAlign.center,
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Paste the prompt in your host again, or skip and try from Threads later.',
-                        textAlign: TextAlign.center,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: const Color(0xFF78716C),
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      FilledButton(
-                        onPressed: _busy ? null : _startWaiting,
-                        child: const Text('Retry'),
-                      ),
-                      TextButton(
-                        onPressed: _skip,
-                        child: const Text('Skip for now'),
-                      ),
-                    ],
-                  ),
-              },
+              child: body,
             ),
           ),
         ),
@@ -212,67 +177,84 @@ class _FirstRunPingWizardState extends State<FirstRunPingWizard> {
 class _CopyStep extends StatelessWidget {
   const _CopyStep({
     required this.theme,
+    required this.embedded,
     required this.onCopy,
     required this.onWaiting,
     required this.onSkip,
   });
 
   final ThemeData theme;
+  final bool embedded;
   final VoidCallback onCopy;
   final VoidCallback onWaiting;
   final VoidCallback onSkip;
 
   @override
   Widget build(BuildContext context) {
+    final align = embedded ? TextAlign.left : TextAlign.center;
     return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisAlignment:
+          embedded ? MainAxisAlignment.start : MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          'Send your first ping',
-          textAlign: TextAlign.center,
-          style: theme.textTheme.headlineSmall?.copyWith(
-            fontWeight: FontWeight.w700,
-            color: const Color(0xFF292524),
+        if (embedded)
+          const OnboardingHeading(
+            variant: OnboardingHeadingVariant.display,
+            title: 'Send your first ping',
+            subtitle:
+                'Paste this into your connected AI host. One host is enough — '
+                '@all reaches other agents when you add more.',
+          )
+        else ...[
+          Text(
+            'Send your first ping',
+            textAlign: align,
+            style: theme.textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: MutandeColors.stone800,
+            ),
           ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Paste this into your connected AI host. One host is enough — @all reaches other agents when you add more.',
-          textAlign: TextAlign.center,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: const Color(0xFF78716C),
+          const SizedBox(height: OnboardingSpace.xs),
+          Text(
+            'Paste this into your connected AI host. One host is enough — @all reaches other agents when you add more.',
+            textAlign: align,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: MutandeColors.stone500,
+              height: 1.45,
+            ),
           ),
-        ),
-        const SizedBox(height: 20),
+        ],
+        SizedBox(height: embedded ? OnboardingSpace.lg : 20),
         Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(OnboardingSpace.md),
           decoration: BoxDecoration(
-            color: const Color(0xFF1C1917),
+            color: MutandeColors.stone800,
             borderRadius: BorderRadius.circular(10),
           ),
           child: SelectableText(
             FirstRunPingWizard.prompt,
             style: theme.textTheme.bodyMedium?.copyWith(
               fontFamily: 'Menlo',
-              color: const Color(0xFFFAFAF9),
+              color: MutandeColors.stone50,
+              height: 1.4,
             ),
           ),
         ),
-        const SizedBox(height: 16),
-        FilledButton.icon(
-          onPressed: onCopy,
-          icon: const Icon(Icons.copy, size: 18),
-          label: const Text('Copy prompt'),
-        ),
-        const SizedBox(height: 10),
-        OutlinedButton(
-          onPressed: onWaiting,
-          child: const Text('I’ve pasted it — wait for pong'),
-        ),
-        TextButton(
-          onPressed: onSkip,
-          child: const Text('Skip for now'),
+        OnboardingActions(
+          topSpacing: OnboardingSpace.md,
+          primary: FilledButton.icon(
+            onPressed: onCopy,
+            icon: const Icon(Icons.copy, size: 18),
+            label: const Text('Copy prompt'),
+          ),
+          secondary: OutlinedButton(
+            onPressed: onWaiting,
+            child: const Text('I’ve pasted it — wait for pong'),
+          ),
+          tertiary: TextButton(
+            onPressed: onSkip,
+            child: const Text('Skip for now'),
+          ),
         ),
       ],
     );
@@ -282,49 +264,163 @@ class _CopyStep extends StatelessWidget {
 class _WaitingStep extends StatelessWidget {
   const _WaitingStep({
     required this.theme,
+    required this.embedded,
     required this.error,
     required this.onSkip,
   });
 
   final ThemeData theme;
+  final bool embedded;
   final String? error;
   final VoidCallback onSkip;
 
   @override
   Widget build(BuildContext context) {
     return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisAlignment:
+          embedded ? MainAxisAlignment.start : MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const MutandeOrb.standard(semanticLabel: 'Waiting for pong'),
-        const SizedBox(height: 20),
-        Text(
-          'Waiting for pong…',
-          style: theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w600,
-          ),
+        Center(
+          child: MutandeOrb.standard(semanticLabel: 'Waiting for pong'),
         ),
-        const SizedBox(height: 8),
-        Text(
-          'Your agent should call ping, then reply on the thread. This screen watches Threads.',
-          textAlign: TextAlign.center,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: const Color(0xFF78716C),
-          ),
-        ),
-        if (error != null) ...[
-          const SizedBox(height: 12),
+        SizedBox(height: embedded ? OnboardingSpace.lg : 20),
+        if (embedded)
+          const OnboardingHeading(
+            variant: OnboardingHeadingVariant.display,
+            title: 'Waiting for pong…',
+            subtitle:
+                'Your agent should call ping, then reply on the thread. '
+                'This screen watches Threads.',
+          )
+        else ...[
           Text(
-            error!,
+            'Waiting for pong…',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: MutandeColors.stone800,
+            ),
+          ),
+          const SizedBox(height: OnboardingSpace.xs),
+          Text(
+            'Your agent should call ping, then reply on the thread. This screen watches Threads.',
             textAlign: TextAlign.center,
             style: theme.textTheme.bodySmall?.copyWith(
-              color: const Color(0xFF991B1B),
+              color: MutandeColors.stone500,
+              height: 1.4,
             ),
           ),
         ],
-        const SizedBox(height: 20),
-        TextButton(
-          onPressed: onSkip,
-          child: const Text('Skip for now'),
+        if (error != null) ...[
+          const SizedBox(height: OnboardingSpace.sm),
+          OnboardingErrorBanner(message: error!),
+        ],
+        OnboardingActions(
+          topSpacing: OnboardingSpace.lg,
+          tertiary: TextButton(
+            onPressed: onSkip,
+            child: const Text('Skip for now'),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SuccessStep extends StatelessWidget {
+  const _SuccessStep({required this.theme, required this.embedded});
+
+  final ThemeData theme;
+  final bool embedded;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisAlignment:
+          embedded ? MainAxisAlignment.start : MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Icon(
+          Icons.check_circle_outline,
+          size: 48,
+          color: MutandeColors.emerald,
+        ),
+        const SizedBox(height: OnboardingSpace.md),
+        Text(
+          'Pong received',
+          textAlign: embedded ? TextAlign.left : TextAlign.center,
+          style: OnboardingHeading.displayTitleStyle(theme).copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: OnboardingSpace.xs),
+        Text(
+          'Your first thread is live.',
+          textAlign: embedded ? TextAlign.left : TextAlign.center,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: MutandeColors.stone500,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _TimeoutStep extends StatelessWidget {
+  const _TimeoutStep({
+    required this.theme,
+    required this.embedded,
+    required this.onRetry,
+    required this.onSkip,
+  });
+
+  final ThemeData theme;
+  final bool embedded;
+  final VoidCallback onRetry;
+  final VoidCallback onSkip;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (embedded)
+          const OnboardingHeading(
+            variant: OnboardingHeadingVariant.display,
+            title: 'Still waiting for a pong',
+            subtitle:
+                'Make sure your host ran ping and replied on the thread.',
+          )
+        else ...[
+          Text(
+            'Still waiting for a pong',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: MutandeColors.stone800,
+            ),
+          ),
+          const SizedBox(height: OnboardingSpace.sm),
+          Text(
+            'Make sure your host ran ping and replied on the thread.',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: MutandeColors.stone500,
+              height: 1.4,
+            ),
+          ),
+        ],
+        OnboardingActions(
+          topSpacing: embedded ? OnboardingSpace.lg : 20,
+          primary: FilledButton(
+            onPressed: onRetry,
+            child: const Text('Retry'),
+          ),
+          tertiary: TextButton(
+            onPressed: onSkip,
+            child: const Text('Skip for now'),
+          ),
         ),
       ],
     );

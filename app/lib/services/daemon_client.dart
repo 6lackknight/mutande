@@ -194,6 +194,69 @@ class DaemonClient {
     );
   }
 
+  /// Probe installed desktop apps + MCP config paths (`detect_ai_hosts` RPC).
+  Future<List<AiHostDetection>> detectAiHosts() async {
+    try {
+      final result = await _callWithTimeout(
+        'detect_ai_hosts',
+        null,
+        requestTimeout,
+      );
+      final map = result as Map<String, dynamic>? ?? {};
+      final raw = map['hosts'] as List<dynamic>? ?? const [];
+      return raw
+          .map((e) => AiHostDetection.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (_) {
+      return _detectAiHostsLocal();
+    }
+  }
+
+  List<AiHostDetection> _detectAiHostsLocal() {
+    if (!Platform.isMacOS) {
+      return const [
+        AiHostDetection(host: 'cursor', installed: false, configPresent: false),
+        AiHostDetection(host: 'claude', installed: false, configPresent: false),
+        AiHostDetection(host: 'chatgpt', installed: false, configPresent: false),
+      ];
+    }
+    final home = userHomeDir() ?? '';
+    bool appInstalled(String name) {
+      return Directory('/Applications/$name.app').existsSync() ||
+          Directory('$home/Applications/$name.app').existsSync();
+    }
+
+    bool configPresent(String host) {
+      switch (host) {
+        case 'cursor':
+          return File('$home/.cursor/mcp.json').existsSync();
+        case 'claude':
+          return File(
+            '$home/Library/Application Support/Claude/claude_desktop_config.json',
+          ).existsSync();
+        case 'chatgpt':
+          return File(
+            '$home/Library/Application Support/ChatGPT/mcp.json',
+          ).existsSync();
+        default:
+          return false;
+      }
+    }
+
+    return ['cursor', 'claude', 'chatgpt'].map((host) {
+      final appName = switch (host) {
+        'cursor' => 'Cursor',
+        'claude' => 'Claude',
+        _ => 'ChatGPT',
+      };
+      return AiHostDetection(
+        host: host,
+        installed: appInstalled(appName),
+        configPresent: configPresent(host),
+      );
+    }).toList();
+  }
+
   /// Install or stage the mutande agent skill for a host (`cursor`|`claude`|`chatgpt`).
   Future<InstallSkillResult> installSkill(String host) async {
     final result = await _callWithTimeout(
@@ -864,6 +927,55 @@ class ConnectHostResult {
   int get hashCode => Object.hash(command, Object.hashAll(args), Object.hashAll(hosts));
 }
 
+class AiHostDetection {
+  const AiHostDetection({
+    required this.host,
+    required this.installed,
+    required this.configPresent,
+  });
+
+  factory AiHostDetection.fromJson(Map<String, dynamic> map) {
+    return AiHostDetection(
+      host: map['host'] as String? ?? '',
+      installed: map['installed'] == true,
+      configPresent: map['config_present'] == true,
+    );
+  }
+
+  final String host;
+  final bool installed;
+  final bool configPresent;
+}
+
+/// Merged view for onboarding host tiles.
+class AiHostPresence {
+  const AiHostPresence({
+    required this.slug,
+    required this.installed,
+    required this.configPresent,
+    required this.linked,
+    required this.agentRegistered,
+  });
+
+  final String slug;
+  final bool installed;
+  final bool configPresent;
+  final bool linked;
+  final bool agentRegistered;
+
+  String get primaryBadge {
+    if (linked && agentRegistered) return 'Connected';
+    if (installed) return 'Installed';
+    return 'Not detected';
+  }
+
+  int get sortOrder {
+    if (linked && agentRegistered) return 2;
+    if (installed) return 0;
+    return 3;
+  }
+}
+
 class HostWriteResult {
   const HostWriteResult({
     required this.host,
@@ -1173,6 +1285,7 @@ class ContactView {
     this.devices = const [],
     this.kind,
     this.avatarUrl,
+    this.displayName,
     this.externalLinkId,
     this.linkedAt,
     this.threadId,
@@ -1181,6 +1294,7 @@ class ContactView {
   factory ContactView.fromJson(Map<String, dynamic> map) {
     final devicesRaw = map['devices'] as List<dynamic>? ?? const [];
     final avatar = map['avatar_url'] as String?;
+    final name = (map['display_name'] as String?)?.trim();
     return ContactView(
       handle: map['handle'] as String? ?? '',
       pubkey: map['pubkey'] as String?,
@@ -1189,6 +1303,7 @@ class ContactView {
           .toList(),
       kind: map['kind'] as String?,
       avatarUrl: (avatar != null && avatar.trim().isNotEmpty) ? avatar.trim() : null,
+      displayName: (name != null && name.isNotEmpty) ? name : null,
       externalLinkId: map['external_link_id'] as String?,
       linkedAt: map['linked_at'] as String?,
       threadId: map['thread_id'] as String?,
@@ -1200,6 +1315,7 @@ class ContactView {
   final List<ContactDeviceView> devices;
   final String? kind;
   final String? avatarUrl;
+  final String? displayName;
   final String? externalLinkId;
   final String? linkedAt;
   final String? threadId;

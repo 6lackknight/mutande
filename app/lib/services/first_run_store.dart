@@ -14,11 +14,13 @@ class FirstRunStore {
   factory FirstRunStore.memory({
     bool connectComplete = false,
     bool pingComplete = false,
+    bool notificationsComplete = false,
   }) =>
       FirstRunStore(
         memory: {
           'connect_complete': connectComplete,
           'ping_complete': pingComplete,
+          'notifications_complete': notificationsComplete,
         },
       );
 
@@ -27,10 +29,16 @@ class FirstRunStore {
 
   bool _connectComplete = false;
   bool _pingComplete = false;
+  bool _notificationsComplete = false;
   bool _loaded = false;
 
   bool get connectComplete => _connectComplete;
   bool get pingComplete => _pingComplete;
+  bool get notificationsComplete => _notificationsComplete;
+
+  /// True when all onboarding gates are satisfied.
+  bool get onboardingComplete =>
+      _connectComplete && _notificationsComplete && _pingComplete;
 
   File _resolveFile() {
     if (_file != null) return _file!;
@@ -46,6 +54,7 @@ class FirstRunStore {
     if (_memory != null) {
       _connectComplete = _memory!['connect_complete'] == true;
       _pingComplete = _memory!['ping_complete'] == true;
+      _notificationsComplete = _memory!['notifications_complete'] == true;
       _loaded = true;
       return;
     }
@@ -56,6 +65,7 @@ class FirstRunStore {
         if (raw is Map<String, dynamic>) {
           _connectComplete = raw['connect_complete'] == true;
           _pingComplete = raw['ping_complete'] == true;
+          _notificationsComplete = raw['notifications_complete'] == true;
         }
       }
     } catch (e, st) {
@@ -71,6 +81,7 @@ class FirstRunStore {
     if (_memory == null) return;
     _connectComplete = _memory!['connect_complete'] == true;
     _pingComplete = _memory!['ping_complete'] == true;
+    _notificationsComplete = _memory!['notifications_complete'] == true;
     _loaded = true;
   }
 
@@ -78,6 +89,7 @@ class FirstRunStore {
     final payload = {
       'connect_complete': _connectComplete,
       'ping_complete': _pingComplete,
+      'notifications_complete': _notificationsComplete,
     };
     if (_memory != null) {
       _memory!
@@ -99,6 +111,21 @@ class FirstRunStore {
   Future<void> markPingComplete() async {
     await load();
     _pingComplete = true;
+    await _persist();
+  }
+
+  Future<void> markNotificationsComplete({bool skipped = false}) async {
+    await load();
+    _notificationsComplete = true;
+    await _persist();
+  }
+
+  /// Debug-only: clear first-run gates so onboarding replays.
+  Future<void> resetForDebug() async {
+    _connectComplete = false;
+    _pingComplete = false;
+    _notificationsComplete = false;
+    _loaded = true;
     await _persist();
   }
 }

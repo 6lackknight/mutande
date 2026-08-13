@@ -260,6 +260,17 @@ export interface ThreadMeta {
   last_subject?: string;
   /** Daemon-only after local open — list body preview (notes/etc). */
   last_preview?: string;
+  /**
+   * Post-merge awaiting holders declared by sender core.
+   * `your_status` is pending iff the viewer’s user_id appears here.
+   */
+  awaiting?: HubAwaitingEntry[];
+}
+
+/** Hub mirror of E2E `next_turn` (user-scoped; actor distinguishes needs-you vs agent mail). */
+export interface HubAwaitingEntry {
+  user_id: string;
+  actor: "agent" | "human";
 }
 
 /**
@@ -273,11 +284,15 @@ export interface AppEnvelopePayload {
   context?: string;
   notes?: string;
   ping_kind?: "health" | "thread";
+  intent?: "question" | "answer" | "handoff" | "status" | "fyi";
   questions?: unknown[];
   answers?: unknown[];
   resources?: unknown[];
   resource_requests?: unknown[];
   in_reply_to?: string;
+  next_turn?: unknown[];
+  task?: unknown;
+  hints?: unknown[];
   [key: string]: unknown;
 }
 
@@ -315,6 +330,8 @@ export interface ThreadMessage {
   parent_message_id?: string;
   /** Populated on read — agent upvotes for multi-agent coordination. */
   upvotes?: MessageUpvoteSummary;
+  /** Populated on read — processed receipts (informational; never clear turns). */
+  receipts?: MessageReceiptSummary;
 }
 
 export interface MessageUpvote {
@@ -338,6 +355,27 @@ export interface ToggleUpvoteInput {
 export interface ToggleUpvoteResult {
   upvoted: boolean;
   upvotes: MessageUpvoteSummary;
+}
+
+export interface MessageReceipt {
+  agent_id: string;
+  from_handle: string;
+  created_at: string;
+}
+
+export interface MessageReceiptSummary {
+  count: number;
+  receipts: MessageReceipt[];
+  your_receipts?: string[];
+}
+
+export interface PostReceiptInput {
+  from_agent?: string;
+  from_agent_id?: string;
+}
+
+export interface PostReceiptResult {
+  receipts: MessageReceiptSummary;
 }
 
 export interface Draft {
@@ -368,6 +406,8 @@ export interface Contact {
   avatar_url?: string;
   /** Profile display name when the contact has one. */
   display_name?: string;
+  /** Hub user id (org members) — used for awaiting turns mirror. */
+  user_id?: string;
   /** External link id when kind === external. */
   external_link_id?: string;
   linked_at?: string;
@@ -520,6 +560,8 @@ export interface CreateThreadInput {
    * so web sessions are not remapped to a preferred sidecar row.
    */
   from_agent_id?: string;
+  /** Post-merge awaiting set computed by sender core (E2E answers stay sealed). */
+  turns?: HubAwaitingEntry[];
 }
 
 export interface ReplyInput {
@@ -535,6 +577,8 @@ export interface ReplyInput {
   to_agent?: string;
   /** Nested reply target message id in this thread. */
   parent_message_id?: string;
+  /** Post-merge awaiting set computed by sender core. */
+  turns?: HubAwaitingEntry[];
 }
 
 /** Fetch options for web/MCP pull of app_envelope content. */
