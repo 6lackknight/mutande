@@ -6,9 +6,11 @@ import { useEffect, useRef, useState } from "react";
 export function AccountMenu({
   label,
   avatarUrl,
+  showOrganization = false,
 }: {
   label: string;
   avatarUrl?: string;
+  showOrganization?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -79,6 +81,11 @@ export function AccountMenu({
           <a role="menuitem" href="/profile" className={itemClass}>
             Profile
           </a>
+          {showOrganization ? (
+            <a role="menuitem" href="/admin/invites" className={itemClass}>
+              Organization
+            </a>
+          ) : null}
           <div className="mx-3 my-1 border-t border-stone-200" />
           <a role="menuitem" href="/auth/logout" className={itemClass}>
             Log out

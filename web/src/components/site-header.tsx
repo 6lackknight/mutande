@@ -183,6 +183,7 @@ function SiteNav() {
                 <AccountMenu
                   label={state.handle}
                   avatarUrl={state.avatarUrl}
+                  showOrganization={showInvites}
                 />
               </motion.div>
             ) : state.authed ? (
