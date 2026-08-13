@@ -349,6 +349,9 @@ pub struct StatusResult {
     pub connected_agent: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_agent: Option<String>,
+    /// Auth0 subject for analytics identify — never email/handle.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth0_sub: Option<String>,
 }
 
 /// Safety-number compare result.
@@ -672,6 +675,7 @@ impl DaemonState {
             email: None,
             connected_agent: None,
             default_agent: None,
+            auth0_sub: None,
         })
     }
 
@@ -959,6 +963,7 @@ impl DaemonState {
                 email: None,
                 connected_agent: None,
                 default_agent: None,
+                auth0_sub: None,
             });
         }
 
@@ -2541,6 +2546,7 @@ fn status_from_me(hub_url: &Option<String>, me: &MeResponse) -> StatusResult {
             .or_else(|| me.user.as_ref().and_then(|u| u.email.clone())),
         connected_agent: None,
         default_agent: None,
+        auth0_sub: Some(me.auth0_sub.clone()),
     }
 }
 

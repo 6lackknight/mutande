@@ -1,6 +1,13 @@
 /**
  * Customer-facing desktop alpha notes for /changelog and the download page.
  * User-visible changes only — no internal tooling, infra, or implementation detail.
+ *
+ * --- unreleased (internal; fold into next cut or discard) ---
+ * v1.1.4+ (2026-08-13): Mixpanel on Mac/Windows desktop — onboarding funnel
+ * (sign-in, create/join, connect host, ping wizard, home). Web identify wired
+ * so same Auth0 account stitches web ↔ desktop in Mixpanel (Auth0 sub only;
+ * no email/handle in events). Not user-facing — no changelog bullet unless we
+ * disclose analytics in privacy copy first.
  */
 
 export type ChangelogEntry = {

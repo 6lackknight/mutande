@@ -11,6 +11,8 @@ const TOKEN =
   "1e8a0fecb8ae62df4dbe2e7c62efe05c";
 
 let ready = false;
+let identifiedSub: string | null = null;
+let pendingIdentify: string | null = null;
 const pending: Array<{
   event: string;
   props?: Record<string, string | number | boolean>;
@@ -31,6 +33,12 @@ function cleanProps(
   return clean;
 }
 
+function applyIdentify(sub: string): void {
+  if (identifiedSub === sub) return;
+  identifiedSub = sub;
+  mixpanel.identify(sub);
+}
+
 export function initMixpanel(): void {
   if (ready || typeof window === "undefined") return;
   mixpanel.init(TOKEN, {
@@ -38,7 +46,12 @@ export function initMixpanel(): void {
     // Full session replay on every visit hammers TBT; sample instead.
     record_sessions_percent: 10,
   });
+  mixpanel.register({ surface: "web" });
   ready = true;
+  if (pendingIdentify) {
+    applyIdentify(pendingIdentify);
+    pendingIdentify = null;
+  }
   for (const item of pending.splice(0)) {
     mixpanel.track(item.event, item.props);
   }
@@ -55,8 +68,19 @@ export function track(event: string, props?: TrackProps): void {
 
 /** Stable Auth0 subject only — do not pass email. */
 export function identifyAuth0Sub(sub: string): void {
-  if (!ready || !sub) return;
-  mixpanel.identify(sub);
+  if (!sub) return;
+  if (!ready) {
+    pendingIdentify = sub;
+    return;
+  }
+  applyIdentify(sub);
+}
+
+export function resetAnalyticsIdentity(): void {
+  identifiedSub = null;
+  pendingIdentify = null;
+  if (!ready) return;
+  mixpanel.reset();
 }
 
 export { AnalyticsEvent } from "@/lib/analytics-events";

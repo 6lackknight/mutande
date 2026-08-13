@@ -48,7 +48,7 @@ ChatGPT registers itself against **Auth0** (`https://auth.mutande.online/oidc/re
 
 1. Open the Auth0 tenant → **Settings → Advanced**.
 2. Turn **Dynamic Client Registration (DCR)** **on** → **Save**.
-3. Also confirm: **Enable Application Connections** on; Username-Password (etc.) promoted to **domain level**; Auth0 API Identifier **`https://mcp.mutande.online`** exists with **Default Permissions for Third-Party Applications** (User-Delegated Access). See `docs/AUTH0.md` §8 if authorize fails with *userinfo audience is not allowed*.
+3. Also confirm: **Enable Application Connections** on; Username-Password (etc.) promoted to **domain level**; Auth0 API Identifier **`https://mcp.mutande.online`** exists with **Default Permissions for Third-Party Applications** (User-Delegated Access). Hosts that send `resource=…/mcp` (e.g. Warp) also need a second API Identifier **`https://mcp.mutande.online/mcp`**. See `docs/AUTH0.md` §8 if authorize fails with *userinfo audience is not allowed* or *Service not found*.
 4. Re-add `https://mcp.mutande.online/mcp` in ChatGPT.
 
 Full Option A / CIMD Option B and a curl probe: [`AUTH0.md`](AUTH0.md) §8. Redeploying MCP will not fix this error.

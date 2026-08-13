@@ -9,6 +9,7 @@ import 'package:macos_ui/macos_ui.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'config/app_config.dart';
+import 'analytics_events.dart';
 import 'screens/agents_screen.dart';
 import 'screens/contacts_screen.dart';
 import 'screens/first_run_connect_screen.dart';
@@ -18,6 +19,7 @@ import 'screens/search_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/threads_screen.dart';
 import 'services/app_actions.dart';
+import 'services/analytics.dart';
 import 'services/daemon_client.dart';
 import 'services/daemon_errors.dart';
 import 'services/daemon_event_client.dart';
@@ -210,6 +212,7 @@ class _RootScreenState extends State<RootScreen> {
   bool _firstRunReady = false;
   bool _hasLinkedHost = false;
   String? _openThreadId;
+  bool _trackedHomeReady = false;
 
   @override
   void initState() {
@@ -371,6 +374,7 @@ class _RootScreenState extends State<RootScreen> {
           _loading = false;
           _loadingHint = null;
         });
+        Analytics.syncIdentityFromStatus(status);
         AppActions.sessionReady.value = true;
         _emitBootstrapPhase();
         if (_pendingConnectHosts && status.configured) {
@@ -443,6 +447,7 @@ class _RootScreenState extends State<RootScreen> {
   }
 
   void _onOnboarded(DaemonStatusResult status) {
+    Analytics.syncIdentityFromStatus(status);
     setState(() {
       _status = status;
       _statusError = null;
@@ -454,6 +459,8 @@ class _RootScreenState extends State<RootScreen> {
   }
 
   void _onSignedOut(DaemonStatusResult status) {
+    Analytics.track(AnalyticsEvent.signOut);
+    Analytics.reset();
     setState(() {
       _status = status;
       _statusError = null;
@@ -595,6 +602,10 @@ class _RootScreenState extends State<RootScreen> {
     }
 
     _ensureInboxWatch();
+    if (!_trackedHomeReady) {
+      _trackedHomeReady = true;
+      Analytics.track(AnalyticsEvent.homeReady);
+    }
     return HomeScreen(
       config: widget.config,
       daemon: _daemon,
@@ -876,6 +887,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _selectTab(int i) {
+    const tabs = ['threads', 'network', 'contacts'];
+    Analytics.track(AnalyticsEvent.tabSelect, {'tab': tabs[i]});
     setState(() {
       _tab = i;
       if (_searchMode) _searchMode = false;

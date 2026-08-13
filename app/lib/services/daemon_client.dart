@@ -804,6 +804,7 @@ class DaemonStatusResult {
     this.email,
     this.connectedAgent,
     this.defaultAgent,
+    this.auth0Sub,
   });
 
   factory DaemonStatusResult.fromJson(Map<String, dynamic> map) {
@@ -817,6 +818,7 @@ class DaemonStatusResult {
       email: map['email'] as String?,
       connectedAgent: map['connected_agent'] as String?,
       defaultAgent: map['default_agent'] as String?,
+      auth0Sub: map['auth0_sub'] as String?,
     );
   }
 
@@ -829,6 +831,7 @@ class DaemonStatusResult {
   final String? email;
   final String? connectedAgent;
   final String? defaultAgent;
+  final String? auth0Sub;
 }
 
 class OnboardResult {

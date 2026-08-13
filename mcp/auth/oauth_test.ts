@@ -1,6 +1,7 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1";
 import {
   createTestTokenVerifier,
+  expandMcpAudiences,
   protectedResourceMetadata,
   wwwAuthenticateHeader,
 } from "./oauth.ts";
@@ -90,6 +91,43 @@ Deno.test("dual audience rejects unrelated aud", async () => {
   );
   await assertRejects(() => verifier.verifyAccessToken(token));
 });
+
+Deno.test("expandMcpAudiences adds /mcp path alias", () => {
+  assertEquals(expandMcpAudiences(null), []);
+  assertEquals(expandMcpAudiences(""), []);
+  assertEquals(expandMcpAudiences("https://mcp.mutande.online"), [
+    "https://mcp.mutande.online",
+    "https://mcp.mutande.online/mcp",
+  ]);
+  assertEquals(expandMcpAudiences("https://mcp.mutande.online/"), [
+    "https://mcp.mutande.online",
+    "https://mcp.mutande.online/mcp",
+  ]);
+  // Already path-shaped — do not double-append.
+  assertEquals(expandMcpAudiences("https://mcp.mutande.online/mcp"), [
+    "https://mcp.mutande.online/mcp",
+  ]);
+});
+
+Deno.test(
+  "triple audience accepts Warp-shaped MCP /mcp resource token",
+  async () => {
+    const hubAud = "https://hub.mutande.app";
+    const mcpAud = "https://mcp.mutande.online";
+    const warpAud = "https://mcp.mutande.online/mcp";
+    const { verifier, signToken } = await createTestTokenVerifier({
+      issuer: "https://auth.mutande.online/",
+      audience: [hubAud, ...expandMcpAudiences(mcpAud)],
+    });
+    const token = await signToken(
+      { sub: "auth0|warp-user", email: "u@acme.co" },
+      { audience: warpAud, azp: "tpc_warp_connector" },
+    );
+    const claims = await verifier.verifyAccessToken(token);
+    assertEquals(claims.sub, "auth0|warp-user");
+    assertEquals(claims.email, "u@acme.co");
+  },
+);
 
 Deno.test("loadConfig defaults AUTH0_MCP_AUDIENCE to publicUrl", () => {
   const cfg = loadConfig({

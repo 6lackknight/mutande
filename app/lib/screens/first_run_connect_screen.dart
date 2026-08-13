@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../analytics_events.dart';
+import '../services/analytics.dart';
 import '../services/daemon_client.dart';
 import '../services/first_run_store.dart';
 import '../services/host_link_store.dart';
@@ -55,6 +57,7 @@ class _FirstRunConnectScreenState extends State<FirstRunConnectScreen> {
       ),
     );
     if (host == null || !mounted) return;
+    Analytics.track(AnalyticsEvent.connectHostPicked, {'host': host.toLowerCase()});
     await _connect(host);
   }
 
@@ -118,6 +121,10 @@ class _FirstRunConnectScreenState extends State<FirstRunConnectScreen> {
     if (!mounted) return;
     if (ok) {
       await widget.firstRunStore.markConnectComplete();
+      Analytics.track(AnalyticsEvent.connectComplete, {
+        'host': host.toLowerCase(),
+        'registered': true,
+      });
       widget.onComplete();
       return;
     }
@@ -131,6 +138,10 @@ class _FirstRunConnectScreenState extends State<FirstRunConnectScreen> {
 
   Future<void> _finishWithoutWait() async {
     await widget.firstRunStore.markConnectComplete();
+    Analytics.track(AnalyticsEvent.connectComplete, {
+      'host': (_host ?? 'unknown').toLowerCase(),
+      'registered': false,
+    });
     widget.onComplete();
   }
 

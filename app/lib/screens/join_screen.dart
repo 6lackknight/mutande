@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../analytics_events.dart';
 import '../config/app_config.dart';
+import '../services/analytics.dart';
 import '../services/daemon_client.dart';
 import '../theme/mutande_macos_theme.dart';
 import '../widgets/morphing_orb_button.dart';
@@ -112,6 +114,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   Future<void> _signIn() async {
+    Analytics.track(AnalyticsEvent.signInClick);
     setState(() {
       _submitting = true;
       _error = null;
@@ -125,9 +128,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       );
       if (!mounted) return;
       if (status.configured) {
+        Analytics.track(AnalyticsEvent.signInSuccess);
         widget.onOnboarded(status);
         return;
       }
+      Analytics.track(AnalyticsEvent.signInSuccess, {'needs_org': true});
       setState(() {
         _submitting = false;
         _email = status.email;
@@ -135,6 +140,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       });
     } catch (e) {
       if (!mounted) return;
+      Analytics.track(AnalyticsEvent.signInFailure, {'reason': 'auth_error'});
       setState(() {
         _submitting = false;
         _error = _friendlyError(e, what: 'Sign-in');
@@ -166,6 +172,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       _submitting = true;
       _error = null;
     });
+    Analytics.track(AnalyticsEvent.createTeamClick);
     try {
       await widget.daemon.createOrg(
         slug: slug,
@@ -173,12 +180,14 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         handle: handle.isEmpty ? null : handle,
       );
       await _finishIfConfigured();
+      Analytics.track(AnalyticsEvent.createTeamSuccess);
     } catch (e) {
       if (!mounted) return;
       // Web join may have completed for this Auth0 account already.
       if (_looksAlreadyOnboarded(e)) {
         try {
           await _finishIfConfigured();
+          Analytics.track(AnalyticsEvent.createTeamSuccess, {'already_onboarded': true});
           return;
         } catch (_) {}
       }
@@ -186,6 +195,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         _submitting = false;
         _error = _friendlyError(e, what: 'Create team');
       });
+      Analytics.track(AnalyticsEvent.createTeamFailure, {'reason': 'create_error'});
     }
   }
 
@@ -207,17 +217,20 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       _submitting = true;
       _error = null;
     });
+    Analytics.track(AnalyticsEvent.joinInviteClick);
     try {
       await widget.daemon.joinOrg(
         inviteCode: invite,
         handle: handle.isEmpty ? null : handle,
       );
       await _finishIfConfigured();
+      Analytics.track(AnalyticsEvent.joinInviteSuccess);
     } catch (e) {
       if (!mounted) return;
       if (_looksAlreadyOnboarded(e)) {
         try {
           await _finishIfConfigured();
+          Analytics.track(AnalyticsEvent.joinInviteSuccess, {'already_onboarded': true});
           return;
         } catch (_) {}
       }
@@ -225,6 +238,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         _submitting = false;
         _error = _friendlyError(e, what: 'Join');
       });
+      Analytics.track(AnalyticsEvent.joinInviteFailure, {'reason': 'join_error'});
     }
   }
 

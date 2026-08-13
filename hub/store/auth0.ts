@@ -26,6 +26,22 @@ function claimsFromPayload(payload: jose.JWTPayload): Auth0Claims {
   };
 }
 
+/**
+ * Canonical MCP resource Indicator plus the `/mcp` path alias.
+ * PRM advertises `https://mcp.mutande.online`; some hosts (e.g. Warp) send
+ * `resource=https://mcp.mutande.online/mcp` (connector URL) instead.
+ */
+export function expandMcpAudiences(
+  mcpAudience: string | null | undefined,
+): string[] {
+  if (!mcpAudience) return [];
+  const base = mcpAudience.replace(/\/+$/, "");
+  if (!base) return [];
+  const out = [base];
+  if (!base.endsWith("/mcp")) out.push(`${base}/mcp`);
+  return out;
+}
+
 export function createAuth0Verifier(config: {
   /** Host for JWKS (custom domain preferred). */
   domain: string;
@@ -35,6 +51,7 @@ export function createAuth0Verifier(config: {
    * Optional extra audience (hosted MCP resource Indicator).
    * ChatGPT DCR sends `resource=https://mcp.mutande.online`; Auth0 issues
    * that aud — hub accepts it so MCP can forward the same Bearer without OBO.
+   * Also accepts the `/mcp` path alias (Warp and similar).
    */
   mcpAudience?: string | null;
   /**
@@ -49,10 +66,10 @@ export function createAuth0Verifier(config: {
   ];
   const issuers = [...new Set(hosts.map((h) => `https://${h.replace(/\/+$/, "")}/`))];
   const audiences = [
-    config.audience,
-    ...(config.mcpAudience && config.mcpAudience !== config.audience
-      ? [config.mcpAudience]
-      : []),
+    ...new Set([
+      config.audience,
+      ...expandMcpAudiences(config.mcpAudience),
+    ]),
   ];
   const jwks = jose.createRemoteJWKSet(
     new URL(`https://${config.domain}/.well-known/jwks.json`),

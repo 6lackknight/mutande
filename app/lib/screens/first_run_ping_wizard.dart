@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../analytics_events.dart';
+import '../services/analytics.dart';
 import '../services/daemon_client.dart';
 import '../services/first_run_store.dart';
 import '../widgets/thinking_orb.dart';
@@ -43,6 +45,7 @@ class _FirstRunPingWizardState extends State<FirstRunPingWizard> {
   }
 
   Future<void> _copyPrompt() async {
+    Analytics.track(AnalyticsEvent.pingCopy);
     await Clipboard.setData(
       const ClipboardData(text: FirstRunPingWizard.prompt),
     );
@@ -54,6 +57,7 @@ class _FirstRunPingWizardState extends State<FirstRunPingWizard> {
 
   void _startWaiting() {
     _poll?.cancel();
+    Analytics.track(AnalyticsEvent.pingWaiting);
     setState(() {
       _step = _PingStep.waiting;
       _waitStarted = DateTime.now();
@@ -78,6 +82,7 @@ class _FirstRunPingWizardState extends State<FirstRunPingWizard> {
             _step = _PingStep.success;
             _threadId = detail.id;
           });
+          Analytics.track(AnalyticsEvent.pingSuccess);
           await Future<void>.delayed(const Duration(milliseconds: 900));
           await widget.firstRunStore.markPingComplete();
           if (!mounted) return;
@@ -90,6 +95,7 @@ class _FirstRunPingWizardState extends State<FirstRunPingWizard> {
           DateTime.now().difference(started) > const Duration(minutes: 5)) {
         _poll?.cancel();
         if (!mounted) return;
+        Analytics.track(AnalyticsEvent.pingTimeout);
         setState(() => _step = _PingStep.timeout);
       }
     } catch (e) {
@@ -113,6 +119,7 @@ class _FirstRunPingWizardState extends State<FirstRunPingWizard> {
 
   Future<void> _skip() async {
     _poll?.cancel();
+    Analytics.track(AnalyticsEvent.pingSkip);
     await widget.firstRunStore.markPingComplete();
     widget.onComplete(null);
   }

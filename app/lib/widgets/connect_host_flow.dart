@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../analytics_events.dart';
+import '../services/analytics.dart';
 import '../services/daemon_client.dart';
 import '../services/host_link_store.dart';
 import 'ai_host_icon.dart';
@@ -163,6 +165,9 @@ class _ConnectHostFlowDialogState extends State<_ConnectHostFlowDialog>
       }
       if (!mounted) return;
       if (write == null || !write.ok) {
+        Analytics.track(AnalyticsEvent.connectMcpFailure, {
+          'host': widget.host.toLowerCase(),
+        });
         setState(() {
           _busy = false;
           _error = write?.note?.trim().isNotEmpty == true
@@ -172,6 +177,9 @@ class _ConnectHostFlowDialogState extends State<_ConnectHostFlowDialog>
         });
         return;
       }
+      Analytics.track(AnalyticsEvent.connectMcpSuccess, {
+        'host': widget.host.toLowerCase(),
+      });
       setState(() {
         _busy = false;
         _mcpHint = write!.note?.trim().isNotEmpty == true
@@ -188,6 +196,9 @@ class _ConnectHostFlowDialogState extends State<_ConnectHostFlowDialog>
       await _runSkill();
     } catch (e) {
       if (!mounted) return;
+      Analytics.track(AnalyticsEvent.connectMcpFailure, {
+        'host': widget.host.toLowerCase(),
+      });
       setState(() {
         _busy = false;
         _error = friendlyDaemonError(e, what: 'Connect');
@@ -221,12 +232,26 @@ class _ConnectHostFlowDialogState extends State<_ConnectHostFlowDialog>
         _skill = skill;
         _skillStatus = status;
       });
+      if (skill.ok) {
+        Analytics.track(AnalyticsEvent.connectSkillSuccess, {
+          'host': widget.host.toLowerCase(),
+          'mode': skill.mode,
+        });
+      } else {
+        Analytics.track(AnalyticsEvent.connectSkillFailure, {
+          'host': widget.host.toLowerCase(),
+          'mode': skill.mode,
+        });
+      }
       if (skill.ok && !_reduceMotion) {
         await _checkCtrl.forward(from: 0);
       }
     } catch (e) {
       if (!mounted) return;
       final hint = friendlyDaemonError(e, what: 'Skill install');
+      Analytics.track(AnalyticsEvent.connectSkillFailure, {
+        'host': widget.host.toLowerCase(),
+      });
       await widget.hostLinkStore.recordSkill(
         host: widget.host,
         status: SkillLinkStatus.needsSetup,

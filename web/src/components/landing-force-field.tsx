@@ -1,13 +1,13 @@
 "use client";
 
-import dynamic from "next/dynamic";
-import { useEffect, useState, type ReactNode } from "react";
-
-const ForceField = dynamic(
-  () =>
-    import("@/components/canvas-ui/force-field").then((m) => m.ForceField),
-  { ssr: false },
-);
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
+import type { ForceFieldInstance } from "@/components/canvas-ui/force-field";
 
 type FieldTier = "desktop" | "mobile";
 
@@ -65,15 +65,64 @@ function fieldProps(tier: FieldTier) {
     grain: mobile ? 0.05 : 0.06,
     dim: 0,
     pageReact: 0,
+    captureContent: false as const,
   };
 }
 
+/** WebGL lattice overlay — mounts over stable page content without remounting it. */
+function LandingForceFieldOverlay({
+  shellRef,
+  tier,
+}: {
+  shellRef: RefObject<HTMLDivElement | null>;
+  tier: FieldTier;
+}) {
+  const sourceRef = useRef<HTMLCanvasElement>(null);
+  const outputRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const shell = shellRef.current;
+    const source = sourceRef.current;
+    const output = outputRef.current;
+    if (!shell || !source || !output) return;
+
+    let instance: ForceFieldInstance | null = null;
+    let cancelled = false;
+
+    void import("@/components/canvas-ui/force-field").then(
+      ({ createForceField }) => {
+        if (cancelled) return;
+        instance = createForceField(
+          { source, content: shell, output },
+          fieldProps(tier),
+        );
+      },
+    );
+
+    return () => {
+      cancelled = true;
+      instance?.destroy();
+    };
+  }, [shellRef, tier]);
+
+  return (
+    <>
+      <canvas ref={sourceRef} aria-hidden style={{ display: "none" }} />
+      <canvas
+        ref={outputRef}
+        aria-hidden
+        className="pointer-events-none absolute inset-0 h-full w-full"
+      />
+    </>
+  );
+}
+
 /**
- * Muted Force Field over the landing shell. Deferred a beat past first paint
- * for LCP, then wraps content so the lattice composites correctly (not under
- * the opaque relay background).
+ * Muted Force Field over the landing shell. Content stays in one stable wrapper
+ * for LCP; the lattice overlay is deferred a beat so PSI sees paint first.
  */
 export function LandingForceField({ children }: { children: ReactNode }) {
+  const shellRef = useRef<HTMLDivElement>(null);
   const [tier, setTier] = useState<FieldTier | null>(null);
 
   useEffect(() => {
@@ -92,24 +141,16 @@ export function LandingForceField({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  if (!tier) {
-    return (
-      <div
-        className="flex min-h-full flex-1 flex-col"
-        style={{ minHeight: "100%" }}
-      >
-        {children}
-      </div>
-    );
-  }
-
   return (
-    <ForceField
-      className="flex min-h-full flex-1 flex-col"
+    <div
+      ref={shellRef}
+      className="relative flex min-h-full flex-1 flex-col"
       style={{ minHeight: "100%" }}
-      {...fieldProps(tier)}
     >
       {children}
-    </ForceField>
+      {tier ? (
+        <LandingForceFieldOverlay shellRef={shellRef} tier={tier} />
+      ) : null}
+    </div>
   );
 }

@@ -10,7 +10,11 @@ export interface McpConfig {
   auth0Domain: string;
   /** Primary access-token audience (hub API by default). */
   auth0Audience: string;
-  /** Optional extra audience (MCP resource indicator). */
+  /**
+   * Canonical MCP resource Indicator (PRM `resource`).
+   * Verifiers also accept `${auth0McpAudience}/mcp` for hosts that send the
+   * connector URL as `resource` (e.g. Warp).
+   */
   auth0McpAudience: string | null;
   issuerAliases: string[];
   hubUrl: string;

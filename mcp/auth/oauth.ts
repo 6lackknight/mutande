@@ -19,6 +19,22 @@ function claimsFromPayload(payload: jose.JWTPayload): Auth0Claims {
   return { sub, email };
 }
 
+/**
+ * Canonical MCP resource Indicator plus the `/mcp` path alias.
+ * PRM advertises `https://mcp.mutande.online`; some hosts (e.g. Warp) send
+ * `resource=https://mcp.mutande.online/mcp` (connector URL) instead.
+ */
+export function expandMcpAudiences(
+  mcpAudience: string | null | undefined,
+): string[] {
+  if (!mcpAudience) return [];
+  const base = mcpAudience.replace(/\/+$/, "");
+  if (!base) return [];
+  const out = [base];
+  if (!base.endsWith("/mcp")) out.push(`${base}/mcp`);
+  return out;
+}
+
 /** Verify Auth0 access tokens (hub and/or MCP resource audience). */
 export function createAuth0Verifier(config: McpConfig): TokenVerifier {
   const hosts = [
@@ -29,8 +45,10 @@ export function createAuth0Verifier(config: McpConfig): TokenVerifier {
     ...new Set(hosts.map((h) => `https://${h.replace(/\/+$/, "")}/`)),
   ];
   const audiences = [
-    config.auth0Audience,
-    ...(config.auth0McpAudience ? [config.auth0McpAudience] : []),
+    ...new Set([
+      config.auth0Audience,
+      ...expandMcpAudiences(config.auth0McpAudience),
+    ]),
   ];
   const jwks = jose.createRemoteJWKSet(
     new URL(`https://${config.auth0Domain}/.well-known/jwks.json`),

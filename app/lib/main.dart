@@ -6,8 +6,10 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import 'app.dart';
+import 'analytics_events.dart';
 import 'config/app_config.dart';
 import 'platform/desktop_bootstrap.dart';
+import 'services/analytics.dart';
 import 'services/core_sidecar.dart';
 
 Future<void> main() async {
@@ -35,6 +37,9 @@ Future<void> main() async {
       final appVersion = definedVersion.isNotEmpty
           ? definedVersion
           : (await PackageInfo.fromPlatform()).version;
+
+      await Analytics.init(config: config, appVersion: appVersion);
+      Analytics.track(AnalyticsEvent.appOpen);
 
       await Sentry.configureScope((scope) {
         scope.setTag('app.version', appVersion);

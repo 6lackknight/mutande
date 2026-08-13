@@ -170,6 +170,8 @@ Legacy hub JWT is gone; do not restore it.
 exports.onExecutePostLogin = async (event, api) => {
   const HUB_AUDIENCE = "https://hub.mutande.app";
   const MCP_AUDIENCE = "https://mcp.mutande.online";
+  // Warp (and similar) send resource=<connector URL> including /mcp.
+  const MCP_AUDIENCE_PATH = "https://mcp.mutande.online/mcp";
   const CLAIM = `${HUB_AUDIENCE}/roles`;
 
   const roles = event.authorization?.roles ?? [];
@@ -182,7 +184,10 @@ exports.onExecutePostLogin = async (event, api) => {
     event.request?.query?.audience ??
     event.request?.query?.resource ??
     "";
-  const isOurApi = audience === HUB_AUDIENCE || audience === MCP_AUDIENCE;
+  const isOurApi =
+    audience === HUB_AUDIENCE ||
+    audience === MCP_AUDIENCE ||
+    audience === MCP_AUDIENCE_PATH;
   const isThirdParty = String(event.client?.client_id ?? "").startsWith("tpc_");
 
   try {
@@ -203,7 +208,7 @@ Enable **RBAC** on the Auth0 API (`https://hub.mutande.app`) so `event.authoriza
 
 - Never call `api.access.deny(...)` on missing roles/orgs — DCR clients (`tpc_…`) hit the same Post Login flow and would fail the connector OAuth.
 - Guard `api.accessToken.setCustomClaim` on a real API audience. Post Login cannot change or clear the audience, but writing access-token claims when the token is the opaque `…/userinfo` one is pointless and can surface as an Action error.
-- Keep `https://mcp.mutande.online` in the allowed-audience list so ChatGPT tokens (aud = MCP) still carry roles when hub sees the forwarded Bearer.
+- Keep `https://mcp.mutande.online` **and** `https://mcp.mutande.online/mcp` in the allowed-audience list so ChatGPT / Warp tokens still carry roles when hub sees the forwarded Bearer.
 - Actions run **after** audience resolution. `resource` → audience mapping is a tenant setting plus a matching API Identifier — not something an Action can fix. See [`userinfo audience is not allowed`](#troubleshooting-the-userinfo-audience-is-not-allowed-for-third-party-clients).
 
 After assigning the role or changing the Action, users must **sign out and sign in** so a fresh access token includes the claim. Org invites stay gated by hub `org_admin`.
@@ -278,9 +283,15 @@ Do **not** change PRM to advertise the hub Identifier — ChatGPT will not reque
 3. Signing Algorithm RS256 → **Create**
 4. **Settings → Default Permissions for Third-Party Applications** → **User-Delegated Access** = **Authorized** → **Save**
 
+**Create API alias (required for Warp and similar path-as-resource hosts):**
+
+1. Second API → Identifier exactly `https://mcp.mutande.online/mcp`
+2. Same third-party defaults + Allow Offline Access
+3. Redeploy mcp + hub after code that accepts this aud (no extra env — both auto-expand `AUTH0_MCP_AUDIENCE` with a `/mcp` alias)
+
 Keep the existing Hub API `https://hub.mutande.app` for Mac / web first-party apps (unchanged).
 
-**Same Bearer, dual audience (L0, no OBO):** ChatGPT tokens have `aud=https://mcp.mutande.online`. MCP and hub both accept that audience **and** the hub Identifier:
+**Same Bearer, multi audience (L0, no OBO):** ChatGPT tokens have `aud=https://mcp.mutande.online`; Warp may have `aud=https://mcp.mutande.online/mcp`. MCP and hub both accept those **and** the hub Identifier:
 
 | Deploy | Env |
 |--------|-----|
@@ -399,6 +410,29 @@ Run `./scripts/auth0-mcp-doctor.sh` to tell the two apart without dashboard acce
 5. Re-try ChatGPT connector OAuth (same `tpc_…` is fine).
 
 **Do not** rewrite PRM `resource` to the hub Identifier hoping ChatGPT will request hub aud — it won’t. OBO is optional later; dual-aud is the L0 path.
+
+### Troubleshooting: `Service not found: https://mcp.mutande.online/mcp`
+
+**Symptom (Auth0 log):**
+
+```
+description: "Service not found: https://mcp.mutande.online/mcp"
+client_name: "Warp"   # or another host that uses the connector URL as resource
+oauthError: "access_denied"
+qs.resource: "https://mcp.mutande.online/mcp"
+```
+
+**Cause:** The host sent `resource=` as the MCP **endpoint** (`…/mcp`) instead of the PRM resource (`https://mcp.mutande.online`). Auth0 looks up that exact string as an API Identifier.
+
+**Fix:**
+
+1. **Applications → APIs → Create API** — Identifier **`https://mcp.mutande.online/mcp`** (exact; keep the canonical `https://mcp.mutande.online` API too).
+2. Third-party defaults: User-Delegated Access = Authorized; Allow Offline Access on.
+3. Update the Post Login Action allowed-audience list to include `https://mcp.mutande.online/mcp` (see §7).
+4. Redeploy **mcp** and **hub** (verifiers auto-accept the `/mcp` alias of `AUTH0_MCP_AUDIENCE`).
+5. Retry the host OAuth (same `tpc_…` is fine).
+
+Do **not** change PRM `resource` to `…/mcp` — that would break ChatGPT, which correctly uses the origin URL.
 
 ### Troubleshooting: `MCP_ACTION_DISCOVERY_FAILED` / 424 / “Reauthentication required”
 

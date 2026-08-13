@@ -102,6 +102,8 @@ export interface ForceFieldOptions {
   clickRipples?: boolean;
   /** Called with the impact position in CSS pixels after each click. */
   onHit?: (x: number, y: number) => void;
+  /** Sample page pixels into the field shader (default true). Set false for overlay-only lattices. */
+  captureContent?: boolean;
 }
 
 export interface ForceFieldElements {
@@ -173,6 +175,7 @@ const DEFAULTS: Required<Omit<ForceFieldOptions, "onHit">> & {
   grain: 0.2,
   clickRipples: true,
   onHit: null,
+  captureContent: true,
 };
 
 type PaintableCanvas = HTMLCanvasElement & {
@@ -627,6 +630,7 @@ export function createForceField(
   const sourceCtx = source.getContext("2d") as ElementImageContext | null;
   const paintable = source as PaintableCanvas;
   const htmlInCanvas = Boolean(
+    config.captureContent &&
     sourceCtx &&
     typeof sourceCtx.drawElementImage === "function" &&
     typeof paintable.requestPaint === "function",

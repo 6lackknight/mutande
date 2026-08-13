@@ -9,6 +9,7 @@ class AppConfig {
     this.auth0Audience = defaultAuth0Audience,
     this.webAppUrl = defaultWebAppUrl,
     this.sentryDsn = defaultSentryDsn,
+    this.mixpanelToken = defaultMixpanelToken,
   });
 
   /// Deployed hub (Deno Deploy).
@@ -31,6 +32,10 @@ class AppConfig {
   /// Override with `--dart-define=SENTRY_DSN=` or a different DSN.
   static const defaultSentryDsn =
       'https://2c06fb0fcf2c4390ae727b548aeba5cd@app.glitchtip.com/26609';
+
+  /// Mixpanel project token (client-safe). Empty disables analytics.
+  /// Override with `--dart-define=MIXPANEL_TOKEN=` (e.g. staging or off).
+  static const defaultMixpanelToken = '1e8a0fecb8ae62df4dbe2e7c62efe05c';
 
   /// pubspec `version:` before `+`. Override with `--dart-define=APP_VERSION=`.
   static const appVersion = String.fromEnvironment(
@@ -65,6 +70,10 @@ class AppConfig {
       'SENTRY_DSN',
       defaultValue: defaultSentryDsn,
     );
+    const mixpanelToken = String.fromEnvironment(
+      'MIXPANEL_TOKEN',
+      defaultValue: defaultMixpanelToken,
+    );
     return AppConfig(
       hubUrl: hubUrl,
       auth0Domain: auth0Domain,
@@ -72,6 +81,7 @@ class AppConfig {
       auth0Audience: auth0Audience,
       webAppUrl: webAppUrl,
       sentryDsn: sentryDsn,
+      mixpanelToken: mixpanelToken,
     );
   }
 
@@ -81,4 +91,5 @@ class AppConfig {
   final String? auth0Audience;
   final String webAppUrl;
   final String sentryDsn;
+  final String mixpanelToken;
 }
