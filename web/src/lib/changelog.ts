@@ -3,7 +3,7 @@
  * User-visible changes only — no internal tooling, infra, or implementation detail.
  *
  * --- unreleased (internal; fold into next cut or discard) ---
- * v1.1.4+ (2026-08-13): Mixpanel on Mac/Windows desktop — onboarding funnel
+ * v1.1.4 (2026-08-13): Mixpanel on Mac/Windows desktop — onboarding funnel
  * (sign-in, create/join, connect host, ping wizard, home). Web identify wired
  * so same Auth0 account stitches web ↔ desktop in Mixpanel (Auth0 sub only;
  * no email/handle in events). Not user-facing — no changelog bullet unless we
@@ -18,6 +18,15 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "1.1.4",
+    date: "2026-08-13",
+    title: "Network inspect & mail split",
+    notes: [
+      "Network Org and External show real teammates and orgs; tap someone to unfold destinations and start a thread.",
+      "Threads reading is a mail split with Relay and a quiet inspector.",
+    ],
+  },
   {
     version: "1.1.3",
     date: "2026-08-12",

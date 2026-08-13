@@ -15,6 +15,7 @@ import {
   PointElement,
   Tooltip,
   type ChartConfiguration,
+  type Plugin,
 } from "chart.js";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -113,21 +114,77 @@ function emptyDataset(series: Series): boolean {
   return !series.labels.length || series.data.every((n) => n === 0);
 }
 
+function hexLuminance(hex: string): number {
+  const h = hex.replace("#", "");
+  if (h.length !== 6) return 0;
+  const r = Number.parseInt(h.slice(0, 2), 16);
+  const g = Number.parseInt(h.slice(2, 4), 16);
+  const b = Number.parseInt(h.slice(4, 6), 16);
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+}
+
+const inBarLabelsPlugin: Plugin<"bar"> = {
+  id: "inBarLabels",
+  afterDatasetsDraw(chart) {
+    if (chart.options.indexAxis !== "y") return;
+    const meta = chart.getDatasetMeta(0);
+    if (!meta?.data.length) return;
+    const labels = (chart.data.labels ?? []).map(String);
+    const colors = chart.data.datasets[0]?.backgroundColor;
+    const ctx = chart.ctx;
+    ctx.save();
+    ctx.font =
+      '600 12px -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif';
+    ctx.textBaseline = "middle";
+    meta.data.forEach((el, i) => {
+      const label = labels[i] ?? "";
+      if (!label) return;
+      const bar = el as BarElement;
+      const left = Math.min(bar.base, bar.x);
+      const right = Math.max(bar.base, bar.x);
+      const barW = right - left;
+      const pad = 10;
+      const textW = ctx.measureText(label).width;
+      const color = Array.isArray(colors)
+        ? String(colors[i] ?? "")
+        : String(colors ?? "");
+      const light = hexLuminance(color) > 0.62;
+      ctx.textAlign = "left";
+      if (barW >= textW + pad * 2) {
+        ctx.fillStyle = light ? "#1c1917" : "#fafaf9";
+        ctx.fillText(label, left + pad, bar.y);
+      } else {
+        ctx.fillStyle = "#44403c";
+        ctx.fillText(label, right + 8, bar.y);
+      }
+    });
+    ctx.restore();
+  },
+};
+
 function barOpts(horizontal = false): ChartConfiguration["options"] {
   return {
     indexAxis: horizontal ? "y" : "x",
     responsive: true,
-    maintainAspectRatio: true,
+    maintainAspectRatio: false,
     plugins: { legend: { display: false } },
+    datasets: horizontal
+      ? { bar: { barPercentage: 0.78, categoryPercentage: 0.92 } }
+      : undefined,
     scales: {
       x: {
         beginAtZero: true,
         ticks: { precision: 0, color: "#78716c" },
         grid: { color: "rgba(168,162,158,0.25)" },
+        border: { display: !horizontal },
       },
       y: {
-        ticks: { color: "#78716c" },
-        grid: { color: "rgba(168,162,158,0.15)" },
+        ticks: horizontal ? { display: false } : { color: "#78716c" },
+        grid: {
+          display: !horizontal,
+          color: "rgba(168,162,158,0.15)",
+        },
+        border: { display: !horizontal },
       },
     },
   };
@@ -136,7 +193,7 @@ function barOpts(horizontal = false): ChartConfiguration["options"] {
 function doughnutOpts(): ChartConfiguration["options"] {
   return {
     responsive: true,
-    maintainAspectRatio: true,
+    maintainAspectRatio: false,
     plugins: {
       legend: {
         position: "bottom",
@@ -186,7 +243,11 @@ function OpsChart({
     };
   }, [chartId, config]);
 
-  return <canvas ref={canvasRef} />;
+  return (
+    <div className="relative h-full w-full">
+      <canvas ref={canvasRef} />
+    </div>
+  );
 }
 
 function chartConfig(
@@ -212,6 +273,7 @@ function chartConfig(
       },
       options: {
         responsive: true,
+        maintainAspectRatio: false,
         plugins: { legend: { display: false } },
         scales: {
           x: { ticks: { color: "#78716c" }, grid: { display: false } },
@@ -243,6 +305,7 @@ function chartConfig(
         datasets: [{ data: [0], backgroundColor: "#d6d3d1" }],
       },
       options: barOpts(horizontal),
+      plugins: horizontal ? [inBarLabelsPlugin] : [],
     };
   }
 
@@ -271,6 +334,7 @@ function chartConfig(
       ],
     },
     options: barOpts(horizontal),
+    plugins: horizontal ? [inBarLabelsPlugin] : [],
   };
 }
 
@@ -508,14 +572,16 @@ export function OpsDashboard({
           ).map(({ title, id, config, wide }) => (
             <article
               key={id}
-              className={`min-h-64 rounded-md border border-stone-300/70 bg-white/60 p-4 ${
+              className={`flex min-h-64 flex-col rounded-md border border-stone-300/70 bg-white/60 p-4 ${
                 wide ? "md:col-span-2" : ""
               }`}
             >
-              <h2 className="mb-3 text-[13px] font-semibold tracking-wide text-muted">
+              <h2 className="mb-3 shrink-0 text-[13px] font-semibold tracking-wide text-muted">
                 {title}
               </h2>
-              <OpsChart chartId={id} config={config} />
+              <div className="relative min-h-40 flex-1">
+                <OpsChart chartId={id} config={config} />
+              </div>
             </article>
           ))}
         </div>
