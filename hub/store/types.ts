@@ -364,6 +364,8 @@ export interface Contact {
   devices: Array<{ pubkey: string; platform: DevicePlatform }>;
   /** `org` (default) or `external` for cross-org links. */
   kind?: "org" | "external" | "broadcast";
+  /** Profile photo when the contact has one. */
+  avatar_url?: string;
   /** External link id when kind === external. */
   external_link_id?: string;
   linked_at?: string;

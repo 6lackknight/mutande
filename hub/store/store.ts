@@ -1342,6 +1342,7 @@ export class HubStore {
         pubkey: mapped[0]?.pubkey ?? user.pubkey ?? null,
         devices: mapped,
         kind: "org",
+        ...(user.avatar_url ? { avatar_url: user.avatar_url } : {}),
       });
     }
     contacts.sort((a, b) => a.handle.localeCompare(b.handle));

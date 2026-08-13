@@ -15,8 +15,9 @@ import '../theme/mutande_macos_theme.dart';
 import '../util/address_display.dart';
 import '../util/clock_format.dart';
 import '../util/compose_transport.dart';
+import '../util/thread_peer.dart';
 import '../widgets/ai_host_icon.dart';
-import '../widgets/home_search_field.dart';
+import '../widgets/contact_avatar.dart';
 import '../widgets/message_attachments.dart';
 import '../widgets/pane_quiet_state.dart';
 import '../widgets/thinking_orb.dart';
@@ -121,6 +122,7 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
   bool _silentRefreshInFlight = false;
   String? _error;
   List<ThreadSummary> _threads = const [];
+  Map<String, String> _avatarsByHandle = const {};
   String? _openId;
   bool _composeOpen = false;
   String? _composePrefillRecipient;
@@ -274,6 +276,22 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
     });
   }
 
+  Future<Map<String, String>> _loadAvatarMap() async {
+    try {
+      final org = await widget.daemon.listContacts();
+      var external = <ContactView>[];
+      try {
+        external = await widget.daemon.listExternalContacts();
+      } catch (_) {}
+      return avatarUrlsByHandle([
+        for (final c in org) (handle: c.handle, avatarUrl: c.avatarUrl),
+        for (final c in external) (handle: c.handle, avatarUrl: c.avatarUrl),
+      ]);
+    } catch (_) {
+      return const {};
+    }
+  }
+
   /// Full reload shows the orb; [silent] merges without tearing down the list.
   Future<void> _reload({bool silent = false}) async {
     if (!mounted) return;
@@ -287,10 +305,14 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
       });
     }
     try {
-      final threads = await widget.daemon.listThreads(
+      final threadsFuture = widget.daemon.listThreads(
         filter: _filter == 'all' ? null : _filter,
       );
+      final avatarsFuture = _loadAvatarMap();
+      final threads = await threadsFuture;
+      final avatars = await avatarsFuture;
       if (!mounted) return;
+      _avatarsByHandle = avatars;
       _applyThreadList(threads, clearError: true);
       if (!_inWidgetTest) {
         unawaited(_threadCache.save(_filterKey, threads));
@@ -385,6 +407,16 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
 
   List<ThreadSummary> get _visible => _threads;
 
+  String? _avatarForThread(ThreadSummary t) {
+    final peer = threadPeerHandle(
+      t.from,
+      t.audience,
+      myHandle: widget.myHandle,
+    );
+    if (peer == null) return null;
+    return _avatarsByHandle[peer];
+  }
+
   Future<void> _closeThreadFromList(String threadId) async {
     final ok = await confirmThreadAction(
       context,
@@ -430,6 +462,26 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
     }
   }
 
+  void _onFilterChanged(String v) {
+    setState(() {
+      _filter = v;
+      _loading = true;
+      _error = null;
+    });
+    unawaited(_hydrateFromCacheThenReload());
+  }
+
+  int get _needsYouCount => _threads
+      .where(
+        (t) =>
+            ThreadStatusKindX.resolve(
+              status: t.status,
+              yourStatus: t.yourStatus,
+            ) ==
+            ThreadStatusKind.needsYou,
+      )
+      .length;
+
   @override
   Widget build(BuildContext context) {
     final listPane = Padding(
@@ -437,16 +489,16 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _ThreadsToolbar(
+          _ThreadsChrome(
             filter: _filter,
-            onFilterChanged: (v) {
-              setState(() {
-                _filter = v;
-                _loading = true;
-                _error = null;
-              });
-              unawaited(_hydrateFromCacheThenReload());
-            },
+            onFilterChanged: _onFilterChanged,
+            needsYouCount: _needsYouCount,
+            onCompose: () => setState(() => _composeOpen = true),
+            searchController: widget.searchController,
+            searchFocus: widget.searchFocus,
+            onSearchQueryChanged: widget.onSearchQueryChanged,
+            onSearchSubmit: widget.onSearchSubmit,
+            onClearSearch: widget.onClearSearch,
           ),
           if (_composeOpen) ...[
             const SizedBox(height: 12),
@@ -467,15 +519,6 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
               }),
             ),
           ],
-          const SizedBox(height: 8),
-          _ThreadsListToolbar(
-            onCompose: () => setState(() => _composeOpen = true),
-            searchController: widget.searchController,
-            searchFocus: widget.searchFocus,
-            onSearchQueryChanged: widget.onSearchQueryChanged,
-            onSearchSubmit: widget.onSearchSubmit,
-            onClearSearch: widget.onClearSearch,
-          ),
           const SizedBox(height: 8),
           Expanded(child: _buildListPane(context)),
         ],
@@ -560,6 +603,7 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
           key: ValueKey(t.id),
           thread: t,
           myHandle: widget.myHandle,
+          avatarUrl: _avatarForThread(t),
           selected: t.id == _openId,
           muted: _mutedIds.contains(t.id),
           onTap: () => setState(() => _openId = t.id),
@@ -587,58 +631,89 @@ class _EmptyReadingPane extends StatelessWidget {
   }
 }
 
-/// Inbox filter scope (search lives on the home chrome strip).
-class _ThreadsToolbar extends StatelessWidget {
-  const _ThreadsToolbar({required this.filter, required this.onFilterChanged});
+/// Pills chrome — All / Needs you / Open / Closed, then Search+Compose capsule.
+class _ThreadsChrome extends StatelessWidget {
+  const _ThreadsChrome({
+    required this.filter,
+    required this.onFilterChanged,
+    required this.needsYouCount,
+    required this.onCompose,
+    this.searchController,
+    this.searchFocus,
+    this.onSearchQueryChanged,
+    this.onSearchSubmit,
+    this.onClearSearch,
+  });
 
   final String filter;
   final ValueChanged<String> onFilterChanged;
-
-  String get _filterLabel => switch (filter) {
-    'needs_action' => 'Needs you',
-    'open' => 'Open',
-    'closed' => 'Closed',
-    _ => 'All',
-  };
+  final int needsYouCount;
+  final VoidCallback onCompose;
+  final TextEditingController? searchController;
+  final FocusNode? searchFocus;
+  final ValueChanged<String>? onSearchQueryChanged;
+  final VoidCallback? onSearchSubmit;
+  final VoidCallback? onClearSearch;
 
   @override
   Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: PopupMenuButton<String>(
-        tooltip: 'Filter scope',
-        padding: EdgeInsets.zero,
-        onSelected: onFilterChanged,
-        itemBuilder: (context) => const [
-          PopupMenuItem(value: 'all', child: Text('All')),
-          PopupMenuItem(value: 'needs_action', child: Text('Needs you')),
-          PopupMenuItem(value: 'open', child: Text('Open')),
-          PopupMenuItem(value: 'closed', child: Text('Closed')),
-        ],
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
+    final search = searchController != null &&
+        searchFocus != null &&
+        onSearchQueryChanged != null &&
+        onSearchSubmit != null &&
+        onClearSearch != null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
           child: Row(
-            mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                _filterLabel,
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: const Color(0xFF57534E),
-                  fontWeight: FontWeight.w600,
-                ),
+              _ScopePill(
+                label: 'All',
+                selected: filter == 'all',
+                onTap: () => onFilterChanged('all'),
               ),
-              const SizedBox(width: 2),
-              const Icon(Icons.expand_more, size: 16, color: Color(0xFFA8A29E)),
+              const SizedBox(width: 4),
+              _ScopePill(
+                label: 'Needs you',
+                selected: filter == 'needs_action',
+                badge: needsYouCount,
+                onTap: () => onFilterChanged('needs_action'),
+              ),
+              const SizedBox(width: 4),
+              _ScopePill(
+                label: 'Open',
+                selected: filter == 'open',
+                onTap: () => onFilterChanged('open'),
+              ),
+              const SizedBox(width: 4),
+              _ScopePill(
+                label: 'Closed',
+                selected: filter == 'closed',
+                onTap: () => onFilterChanged('closed'),
+              ),
             ],
           ),
         ),
-      ),
+        const SizedBox(height: 8),
+        _SearchComposeCapsule(
+          onCompose: onCompose,
+          searchController: search ? searchController : null,
+          searchFocus: search ? searchFocus : null,
+          onSearchQueryChanged: search ? onSearchQueryChanged : null,
+          onSearchSubmit: search ? onSearchSubmit : null,
+          onClearSearch: search ? onClearSearch : null,
+        ),
+      ],
     );
   }
 }
 
-class _ThreadsListToolbar extends StatelessWidget {
-  const _ThreadsListToolbar({
+/// Search + Compose in one pill — compose sits trailing inside the capsule.
+class _SearchComposeCapsule extends StatelessWidget {
+  const _SearchComposeCapsule({
     required this.onCompose,
     this.searchController,
     this.searchFocus,
@@ -662,44 +737,200 @@ class _ThreadsListToolbar extends StatelessWidget {
         onSearchSubmit != null &&
         onClearSearch != null;
 
-    return Row(
-      children: [
-        if (search)
-          Expanded(
-            child: SizedBox(
-              height: 32,
-              child: HomeSearchField(
-                controller: searchController!,
-                focusNode: searchFocus!,
-                onChanged: onSearchQueryChanged!,
-                onSubmit: onSearchSubmit!,
-                onClear: onClearSearch!,
+    if (!search) {
+      return Align(
+        alignment: Alignment.centerRight,
+        child: Tooltip(
+          message: 'Compose (C)',
+          child: Material(
+            color: MutandeColors.stone800,
+            shape: const CircleBorder(),
+            child: InkWell(
+              onTap: onCompose,
+              customBorder: const CircleBorder(),
+              child: const SizedBox(
+                width: 32,
+                height: 32,
+                child: Icon(
+                  LucideIcons.squarePen,
+                  size: 15,
+                  color: MutandeColors.stone50,
+                ),
               ),
             ),
-          )
-        else
-          const Spacer(),
-        const SizedBox(width: 8),
-        IconButton(
-          tooltip: 'Compose (C)',
-          onPressed: onCompose,
-          icon: const Icon(LucideIcons.squarePen, size: 18),
-          color: const Color(0xFF292524),
-          visualDensity: VisualDensity.compact,
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          ),
         ),
-      ],
+      );
+    }
+
+    return ListenableBuilder(
+      listenable: Listenable.merge([searchController!, searchFocus!]),
+      builder: (context, _) {
+        final focused = searchFocus!.hasFocus;
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            color: MutandeColors.stone100,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: focused ? MutandeColors.stone800 : MutandeColors.stone200,
+              width: focused ? 1.5 : 1,
+            ),
+          ),
+          child: SizedBox(
+            height: 34,
+            child: Row(
+              children: [
+                const SizedBox(width: 10),
+                const Icon(
+                  Icons.search,
+                  size: 15,
+                  color: MutandeColors.stone400,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: TextField(
+                    controller: searchController,
+                    focusNode: searchFocus,
+                    onChanged: onSearchQueryChanged,
+                    onSubmitted: (_) => onSearchSubmit?.call(),
+                    cursorColor: MutandeColors.stone800,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: MutandeColors.stone800,
+                    ),
+                    decoration: const InputDecoration(
+                      hintText: 'Search',
+                      isDense: true,
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      disabledBorder: InputBorder.none,
+                      contentPadding: EdgeInsets.symmetric(vertical: 8),
+                    ),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.singleLineFormatter,
+                    ],
+                  ),
+                ),
+                if (searchController!.text.isNotEmpty)
+                  IconButton(
+                    tooltip: 'Clear',
+                    onPressed: onClearSearch,
+                    icon: const Icon(Icons.close, size: 14),
+                    color: MutandeColors.stone400,
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 28,
+                      minHeight: 28,
+                    ),
+                  ),
+                Container(
+                  width: 1,
+                  height: 18,
+                  margin: const EdgeInsets.symmetric(horizontal: 2),
+                  color: MutandeColors.stone200,
+                ),
+                Tooltip(
+                  message: 'Compose (C)',
+                  child: InkWell(
+                    onTap: onCompose,
+                    borderRadius: BorderRadius.circular(14),
+                    child: const SizedBox(
+                      width: 32,
+                      height: 32,
+                      child: Icon(
+                        LucideIcons.squarePen,
+                        size: 15,
+                        color: MutandeColors.stone800,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 2),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
 
+class _ScopePill extends StatelessWidget {
+  const _ScopePill({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.badge = 0,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  final int badge;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? MutandeColors.stone800 : MutandeColors.stone100,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: selected ? MutandeColors.stone800 : MutandeColors.stone200,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: selected ? MutandeColors.stone50 : MutandeColors.stone600,
+              ),
+            ),
+            if (badge > 0) ...[
+              const SizedBox(width: 6),
+              Container(
+                constraints: const BoxConstraints(minWidth: 16),
+                height: 16,
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: MutandeColors.amber,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  badge > 9 ? '9+' : '$badge',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                    height: 1,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Pulse list row — unread weight, circular mark, last-author snippet, relative time.
 class _ThreadRow extends StatelessWidget {
   const _ThreadRow({
     super.key,
     required this.thread,
     required this.onTap,
     this.myHandle,
+    this.avatarUrl,
     this.selected = false,
     this.muted = false,
     this.onClose,
@@ -710,6 +941,7 @@ class _ThreadRow extends StatelessWidget {
   final ThreadSummary thread;
   final VoidCallback onTap;
   final String? myHandle;
+  final String? avatarUrl;
   final bool selected;
   final bool muted;
   final VoidCallback? onClose;
@@ -719,9 +951,10 @@ class _ThreadRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final title = _rowTitle(thread, myHandle: myHandle);
-    final meta = _rowMeta(thread);
+    final snippet = _rowSnippet(thread, myHandle: myHandle);
     final status = _rowStatus(thread);
-    final time = formatClockHm(thread.updatedAt);
+    final unread = status == ThreadStatusKind.needsYou;
+    final time = formatRelativeTime(thread.updatedAt);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 2),
@@ -757,109 +990,107 @@ class _ThreadRow extends StatelessWidget {
               if (value == 'delete') onDelete?.call();
             });
           },
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(10),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 140),
             curve: Curves.easeOutCubic,
+            padding: const EdgeInsets.fromLTRB(6, 9, 8, 9),
             decoration: BoxDecoration(
               color: selected ? MutandeColors.stone100 : Colors.transparent,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: selected ? MutandeColors.stone200 : Colors.transparent,
-              ),
+              borderRadius: BorderRadius.circular(10),
             ),
-            child: IntrinsicHeight(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 140),
-                    curve: Curves.easeOutCubic,
-                    width: 3,
-                    margin: const EdgeInsets.symmetric(vertical: 6),
-                    decoration: BoxDecoration(
-                      color: selected
-                          ? MutandeColors.bronze
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(5, 10, 8, 10),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          _ThreadMark(thread: thread, label: title),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  title,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context).textTheme.bodyMedium
-                                      ?.copyWith(
-                                        color: MutandeColors.stone800,
-                                        fontWeight: selected
-                                            ? FontWeight.w700
-                                            : FontWeight.w600,
-                                        height: 1.2,
-                                      ),
-                                ),
-                                if (meta.isNotEmpty) ...[
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    meta,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: Theme.of(context).textTheme.bodySmall
-                                        ?.copyWith(
-                                          color: MutandeColors.stone400,
-                                          height: 1.2,
-                                        ),
-                                  ),
-                                ],
-                              ],
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 8,
+                  child: unread
+                      ? Center(
+                          child: Container(
+                            width: 7,
+                            height: 7,
+                            decoration: const BoxDecoration(
+                              color: MutandeColors.amber,
+                              shape: BoxShape.circle,
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          // List pane: Muted · Needs you · else HH:MM (never Waiting).
-                          if (muted)
-                            Text(
-                              'Muted',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .labelSmall
-                                  ?.copyWith(
-                                    color: MutandeColors.stone400,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                            )
-                          else if (status == ThreadStatusKind.needsYou)
-                            ThreadStatusBadge(kind: status, compact: true)
-                          else if (time.isNotEmpty)
-                            Text(
-                              time,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .labelSmall
-                                  ?.copyWith(
-                                    color: MutandeColors.stone400,
-                                    fontWeight: FontWeight.w500,
-                                    fontFeatures: const [
-                                      FontFeature.tabularFigures(),
-                                    ],
-                                  ),
-                            ),
-                        ],
+                        )
+                      : null,
+                ),
+                _ThreadMark(
+                  thread: thread,
+                  label: title,
+                  avatarUrl: avatarUrl,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: MutandeColors.stone800,
+                          fontWeight: unread || selected
+                              ? FontWeight.w700
+                              : FontWeight.w600,
+                          height: 1.2,
+                        ),
                       ),
-                    ),
+                      if (snippet.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          snippet,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: unread
+                                ? MutandeColors.stone600
+                                : MutandeColors.stone400,
+                            fontWeight: unread
+                                ? FontWeight.w500
+                                : FontWeight.w400,
+                            height: 1.25,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(width: 8),
+                // List pane: Muted · else relative time (+ Needs you when pending).
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    if (muted)
+                      Text(
+                        'Muted',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: MutandeColors.stone400,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      )
+                    else if (time.isNotEmpty)
+                      Text(
+                        time,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: unread
+                              ? MutandeColors.amber
+                              : MutandeColors.stone400,
+                          fontWeight: unread
+                              ? FontWeight.w700
+                              : FontWeight.w500,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    if (!muted && unread) ...[
+                      const SizedBox(height: 4),
+                      ThreadStatusBadge(kind: status, compact: true),
+                    ],
+                  ],
+                ),
+              ],
             ),
           ),
         ),
@@ -869,47 +1100,150 @@ class _ThreadRow extends StatelessWidget {
 }
 
 class _ThreadMark extends StatelessWidget {
-  const _ThreadMark({required this.thread, required this.label});
+  const _ThreadMark({
+    required this.thread,
+    required this.label,
+    this.avatarUrl,
+  });
 
   final ThreadSummary thread;
   final String label;
+  final String? avatarUrl;
+
+  static const _size = 36.0;
 
   @override
   Widget build(BuildContext context) {
     final host = _hostSlug(thread.agentBadge);
+    final selfCollab = _selfCollabTitle(thread) != null;
     final needsYou = _rowStatus(thread) == ThreadStatusKind.needsYou;
+    final live = isRecentActivity(thread.updatedAt);
     final plate = needsYou
-        ? MutandeColors.amberSoft.withValues(alpha: 0.65)
+        ? MutandeColors.amberSoft.withValues(alpha: 0.8)
         : MutandeColors.stone100;
     final border = needsYou
-        ? MutandeColors.amber.withValues(alpha: 0.28)
+        ? MutandeColors.amber.withValues(alpha: 0.35)
         : MutandeColors.stone200;
 
+    final initials = Text(
+      _initialsFor(label),
+      style: TextStyle(
+        color: MutandeColors.stone500,
+        fontWeight: FontWeight.w600,
+        fontSize: _size * 0.34,
+        letterSpacing: 0.2,
+      ),
+    );
+
     Widget mark;
-    if (host != null) {
-      mark = AiHostIcon(host, size: 28, showPlate: false);
-    } else {
-      final initials = _initialsFor(label);
-      mark = Text(
-        initials,
-        style: Theme.of(context).textTheme.labelMedium?.copyWith(
-          color: const Color(0xFF78716C),
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.2,
-        ),
+    if (!selfCollab && avatarUrl != null) {
+      mark = ContactAvatar(
+        url: avatarUrl!,
+        size: _size,
+        fallback: initials,
       );
+    } else if (host != null) {
+      mark = AiHostIcon(host, size: _size * 0.72, showPlate: false);
+    } else {
+      mark = initials;
     }
 
-    return Container(
-      width: 32,
-      height: 32,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: plate,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: border),
+    return SizedBox(
+      width: _size + 4,
+      height: _size + 4,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(
+            left: 0,
+            top: 0,
+            child: Container(
+              width: _size,
+              height: _size,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: plate,
+                shape: BoxShape.circle,
+                border: Border.all(color: border),
+              ),
+              child: mark,
+            ),
+          ),
+          Positioned(
+            right: 0,
+            bottom: 0,
+            child: _PresenceDot(live: live, attention: needsYou),
+          ),
+        ],
       ),
-      child: mark,
+    );
+  }
+}
+
+class _PresenceDot extends StatefulWidget {
+  const _PresenceDot({required this.live, required this.attention});
+
+  final bool live;
+  final bool attention;
+
+  @override
+  State<_PresenceDot> createState() => _PresenceDotState();
+}
+
+class _PresenceDotState extends State<_PresenceDot>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1400),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.live && !widget.attention) _c.repeat(reverse: true);
+  }
+
+  @override
+  void didUpdateWidget(covariant _PresenceDot oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final pulse = widget.live && !widget.attention;
+    if (pulse && !_c.isAnimating) {
+      _c.repeat(reverse: true);
+    } else if (!pulse && _c.isAnimating) {
+      _c.stop();
+      _c.value = 1;
+    }
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = widget.attention
+        ? MutandeColors.amber
+        : widget.live
+        ? MutandeColors.emerald
+        : MutandeColors.stone200;
+    return AnimatedBuilder(
+      animation: _c,
+      builder: (context, _) {
+        final glow = widget.live && !widget.attention
+            ? 0.45 + 0.55 * _c.value
+            : 1.0;
+        return Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: glow),
+            shape: BoxShape.circle,
+            border: Border.all(color: MutandeColors.stone50, width: 1.5),
+          ),
+        );
+      },
     );
   }
 }
@@ -942,6 +1276,31 @@ String _rowMeta(ThreadSummary t) {
   final preview = t.lastPreview?.trim();
   if (preview != null && preview.isNotEmpty) return preview;
   return '';
+}
+
+String _plainPreview(String raw) {
+  var s = raw.trim();
+  if (s.isEmpty) return '';
+  s = s.replaceAll(RegExp(r'^#+\s*'), '');
+  s = s.replaceAll('**', '');
+  s = s.replaceAll(RegExp(r'`+'), '');
+  s = s.replaceAll(RegExp(r'\s+'), ' ');
+  return s.trim();
+}
+
+String _lastAuthor(ThreadSummary t, {String? myHandle}) {
+  final from = (t.lastFrom ?? t.from).trim();
+  if (from.isEmpty) return '';
+  return formatMailAddress(from, myHandle: myHandle);
+}
+
+/// `@author` + latest preview — Pulse snippet line.
+String _rowSnippet(ThreadSummary t, {String? myHandle}) {
+  final preview = _plainPreview(_rowMeta(t));
+  if (preview.isEmpty) return '';
+  final author = _lastAuthor(t, myHandle: myHandle);
+  if (author.isEmpty) return preview;
+  return '$author  $preview';
 }
 
 String? _agentSlug(String? badge) {

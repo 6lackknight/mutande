@@ -151,11 +151,13 @@ export async function listExternalContacts(
     const otherHandle =
       link.user_a_id === auth.userId ? link.user_b_handle : link.user_a_handle;
     const devices = await ctx.listDevicesForUser(otherId);
+    const other = await ctx.getUser(otherId);
     contacts.push({
       handle: otherHandle,
       pubkey: devices[0]?.pubkey ?? null,
       devices,
       kind: "external",
+      ...(other?.avatar_url ? { avatar_url: other.avatar_url } : {}),
       external_link_id: link.id,
       linked_at: link.created_at,
       thread_id: link.thread_id,

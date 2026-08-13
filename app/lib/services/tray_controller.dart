@@ -6,7 +6,6 @@ import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'app_actions.dart';
-import 'app_actions.dart';
 import 'core_sidecar.dart';
 import 'daemon_client.dart';
 
@@ -43,8 +42,8 @@ class TrayController with TrayListener, WindowListener {
     trayManager.addListener(this);
     windowManager.addListener(this);
 
-    // Solid black plate + white mark — not a template (templates strip the fill).
-    await trayManager.setIcon(iconAsset, isTemplate: false);
+    // Transparent black @i — template on macOS so the menu bar tints it.
+    await trayManager.setIcon(iconAsset, isTemplate: Platform.isMacOS);
     await trayManager.setToolTip('mutande');
     AppActions.sessionReady.addListener(_onSessionReadyChanged);
     await _refreshMenu();

@@ -89,6 +89,7 @@ export interface Contact {
   pubkey: string | null;
   devices: Array<{ pubkey: string; platform: string }>;
   kind?: ContactKind;
+  avatar_url?: string;
   external_link_id?: string;
   linked_at?: string;
   thread_id?: string;

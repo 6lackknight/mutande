@@ -305,6 +305,20 @@ Deno.test("contacts expose device pubkeys", async () => {
   });
 });
 
+Deno.test("contacts include avatar_url", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth, bobAuth } = await setupOrgWithUsers(store);
+    await store.updateProfile(
+      { sub: "auth0|bob", email: "bob@example.com" },
+      { avatar_url: "https://cdn.example.test/bob.jpg" },
+    );
+    const bob = (await store.listContacts(aliceAuth)).contacts.find((c) => c.handle === "bob@acme");
+    assertEquals(bob?.avatar_url, "https://cdn.example.test/bob.jpg");
+    const alice = (await store.listContacts(bobAuth)).contacts.find((c) => c.handle === "alice@acme");
+    assertEquals(alice?.avatar_url, undefined);
+  });
+});
+
 Deno.test("registerDevice is idempotent by pubkey", async () => {
   await withTestStore(async ({ store }) => {
     const { aliceAuth } = await setupOrgWithUsers(store);

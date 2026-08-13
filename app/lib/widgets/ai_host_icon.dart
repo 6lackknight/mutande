@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 
 /// Host mark for connectable AI apps (`cursor` · `claude` · `chatgpt`).
 ///
-/// All three use [Simple Icons](https://simpleicons.org) glyphs, rendered with
-/// the same ink, plate, and padding so they read as one family.
+/// Renders each product PNG in its original colors on an optional plate.
 class AiHostIcon extends StatelessWidget {
   const AiHostIcon(
     this.host, {
@@ -69,18 +68,15 @@ class AiHostIcon extends StatelessWidget {
 
     final mark = asset == null
         ? Icon(fallbackIcon(slug), size: markSize, color: _ink)
-        : ColorFiltered(
-            colorFilter: const ColorFilter.mode(_ink, BlendMode.srcIn),
-            child: Image.asset(
-              asset,
-              width: markSize,
-              height: markSize,
-              filterQuality: FilterQuality.high,
-              errorBuilder: (context, error, stackTrace) => Icon(
-                fallbackIcon(slug),
-                size: markSize,
-                color: _ink,
-              ),
+        : Image.asset(
+            asset,
+            width: markSize,
+            height: markSize,
+            filterQuality: FilterQuality.high,
+            errorBuilder: (context, error, stackTrace) => Icon(
+              fallbackIcon(slug),
+              size: markSize,
+              color: _ink,
             ),
           );
 

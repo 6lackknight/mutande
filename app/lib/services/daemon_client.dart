@@ -1172,6 +1172,7 @@ class ContactView {
     this.pubkey,
     this.devices = const [],
     this.kind,
+    this.avatarUrl,
     this.externalLinkId,
     this.linkedAt,
     this.threadId,
@@ -1179,6 +1180,7 @@ class ContactView {
 
   factory ContactView.fromJson(Map<String, dynamic> map) {
     final devicesRaw = map['devices'] as List<dynamic>? ?? const [];
+    final avatar = map['avatar_url'] as String?;
     return ContactView(
       handle: map['handle'] as String? ?? '',
       pubkey: map['pubkey'] as String?,
@@ -1186,6 +1188,7 @@ class ContactView {
           .map((e) => ContactDeviceView.fromJson(e as Map<String, dynamic>))
           .toList(),
       kind: map['kind'] as String?,
+      avatarUrl: (avatar != null && avatar.trim().isNotEmpty) ? avatar.trim() : null,
       externalLinkId: map['external_link_id'] as String?,
       linkedAt: map['linked_at'] as String?,
       threadId: map['thread_id'] as String?,
@@ -1196,6 +1199,7 @@ class ContactView {
   final String? pubkey;
   final List<ContactDeviceView> devices;
   final String? kind;
+  final String? avatarUrl;
   final String? externalLinkId;
   final String? linkedAt;
   final String? threadId;

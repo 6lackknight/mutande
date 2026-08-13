@@ -159,6 +159,8 @@ pub struct Contact {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avatar_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub external_link_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub linked_at: Option<String>,

@@ -3,6 +3,7 @@
 import { useActionState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { unpairExternalContactAction, type ActionState } from "@/app/actions";
+import { ContactAvatar } from "@/components/contact-avatar";
 import { Alert, Button } from "@/components/ui";
 import type { Contact } from "@/lib/types";
 
@@ -27,7 +28,10 @@ function ExternalRow({ contact }: { contact: Contact }) {
       {state.error ? <Alert tone="danger">{state.error}</Alert> : null}
       {state.ok && !pending ? <Alert tone="ok">{state.ok}</Alert> : null}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <span className="font-medium text-stone-900">{contact.handle}</span>
+        <span className="flex min-w-0 items-center gap-3">
+          <ContactAvatar handle={contact.handle} avatarUrl={contact.avatar_url} />
+          <span className="truncate font-medium text-stone-900">{contact.handle}</span>
+        </span>
         <form action={action}>
           <input type="hidden" name="link_id" value={linkId} />
           <Button type="submit" variant="ghost" disabled={pending}>

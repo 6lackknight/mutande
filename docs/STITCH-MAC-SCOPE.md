@@ -14,18 +14,18 @@ Produce a coherent, high-fidelity screen set for the Mac tray app so Flutter can
 
 ## Brand assets (use these)
 
-**Masters** live in repo `brand/sources/` (`ai-mark.png` = `@i` seal, `ai-tray.png`, `mt-ligature.png`). Regenerate consumers with `./scripts/sync-brand-assets.sh` (see `brand/README.md`). Hosted on prod web — prefer these URLs in Stitch:
+**Masters** live in repo `brand/sources/` (`ai-mark.png` = `@i` seal, `ai-glyph.png` / `ai-glyph-white.png` = transparent mark, `mt-ligature.png`). Regenerate consumers with `./scripts/sync-brand-assets.sh` (see `brand/README.md`). Hosted on prod web — prefer these URLs in Stitch:
 
 | Asset | URL | Use |
 |-------|-----|-----|
 | `@i` mark (white on black) | https://mutande.online/brand/mt-mark.png | Primary seal — splash, About-style moments, large brand. Filename is historical (`mt-mark`); art is **`@i`**, not MT letters. |
 | MT ligature (legacy) | https://mutande.online/brand/mt-ligature.png | Optional secondary mark where the wordmark ligature still fits |
-| Tray icon (rounded square) | https://mutande.online/brand/tray-icon.png | Menu-bar glyph, in-app nav mark, small brand (`@i`) |
-| Favicon / touch | https://mutande.online/brand/favicon-32.png · [icon-192](https://mutande.online/brand/icon-192.png) · [apple-touch](https://mutande.online/brand/apple-touch-icon.png) | Optional reference only |
+| Tray / favicon glyph (no plate) | https://mutande.online/brand/tray-icon.png | Menu-bar glyph, in-app nav mark, small brand (`@i` on transparent) |
+| Favicon / touch | https://mutande.online/brand/favicon-32.png · [icon-192](https://mutande.online/brand/icon-192.png) · [apple-touch](https://mutande.online/brand/apple-touch-icon.png) | Favicon is the transparent glyph; apple-touch / 192 stay plated |
 
 **Wordmark:** always lowercase **`mutande`** (never “Mutande”). SF Pro / system UI sans. Slightly tight tracking, semibold for titles.
 
-**Mark rules:** Brand mark is **`@i`** (Address Intelligence). Prefer **white mark on solid black** for tray and seals. Do not invent a second logo, orb-as-logo, envelope mascot, or gradient lock.
+**Mark rules:** Brand mark is **`@i`** (Address Intelligence). Prefer **white mark on solid black** for seals / AppIcon. Tray and favicon use the transparent glyph. Do not invent a second logo, orb-as-logo, envelope mascot, or gradient lock.
 
 ---
 
