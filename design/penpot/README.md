@@ -14,9 +14,9 @@ Design surface for the Flutter companion **without** running the full app. Sourc
 |-------|-----|
 | Threads — mail split | Mail split; Compose (ink) + flex Search; Needs you |
 | Network — Me | **Calm concentric** — you + agents on one orbit |
-| Network — concentric · Org | Handles on ring; selected peer’s agents on local orbit |
+| Network — concentric · Org | Handles on ring; rim host ticks for known agents |
 | Network — concentric · External | Zoomed out — **orgs** on outer ring (not handles) |
-| Network — inspector states | Self / peer fresh / peer stale / external panels |
+| Network — inspector states | Org tap → unfold + write-to tray (destinations + copy) |
 | Agents — graph / list | Legacy — archive |
 | Contacts | Handle · `@all@org` · teammates · external |
 | Settings — hosts / trust | Hosts \| Trust segments |
@@ -25,7 +25,7 @@ Design surface for the Flutter companion **without** running the full app. Sourc
 
 **Network visual:** **concentric calm** (path spokes, soft glow on selection only). Force-scatter retired.
 
-**Peer visibility (mock):** full peer agent expansion assumes hub peer-visibility API later.
+**Peer visibility:** Org discs show known host slugs as rim ticks (`list_agents?handle=`). Tap unfolds the disc (88px face + label/handle + write-to rows for handle/`@host`, copy address, kind·org·devices·wrap). Esc / tap out dismisses. Local-orbit expansion and card/rail/capsule/address-bar/dossier inspect were prototyped and not locked.
 
 ## Rules (from `.impeccable.md`)
 

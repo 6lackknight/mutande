@@ -72,6 +72,7 @@ class AiHostIcon extends StatelessWidget {
             asset,
             width: markSize,
             height: markSize,
+            fit: BoxFit.cover,
             filterQuality: FilterQuality.high,
             errorBuilder: (context, error, stackTrace) => Icon(
               fallbackIcon(slug),

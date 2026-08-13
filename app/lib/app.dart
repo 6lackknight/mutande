@@ -933,6 +933,12 @@ class _HomeScreenState extends State<HomeScreen> {
         hostLinkStore: widget.hostLinkStore,
         onReloadReady: _registerAgentsReload,
         onViewThreads: () => _selectTab(0),
+        onStartThread: (handle) {
+          setState(() {
+            _tab = 0;
+            _composeRecipient = handle;
+          });
+        },
       );
     }
     return ContactsPanel(

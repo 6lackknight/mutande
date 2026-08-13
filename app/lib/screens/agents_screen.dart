@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -6,7 +7,9 @@ import 'package:flutter/services.dart';
 import '../services/daemon_client.dart';
 import '../services/host_link_store.dart';
 import '../util/address_display.dart';
+import '../util/thread_peer.dart';
 import '../widgets/ai_host_icon.dart';
+import '../widgets/peer_popover.dart';
 import '../widgets/connect_host_flow.dart';
 import '../widgets/connect_host_picker.dart';
 import '../widgets/host_link_status.dart';
@@ -65,6 +68,13 @@ Duration _agentsMotion(BuildContext context, Duration duration) {
   return MediaQuery.disableAnimationsOf(context) ? Duration.zero : duration;
 }
 
+/// Ease-out cubic unit interval — hub / ring / node entrance.
+double _easeUnit(double t, double begin, double end) {
+  if (end <= begin) return t >= end ? 1.0 : 0.0;
+  final u = ((t - begin) / (end - begin)).clamp(0.0, 1.0);
+  return Curves.easeOutCubic.transform(u);
+}
+
 /// Handle → primary (default) → sub-agents. Graph (Stitch) + list toggle.
 class AgentsPanel extends StatefulWidget {
   AgentsPanel({
@@ -73,6 +83,7 @@ class AgentsPanel extends StatefulWidget {
     this.handle,
     this.appVersion = '1.0.0',
     this.onViewThreads,
+    this.onStartThread,
     this.onReloadReady,
     HostLinkStore? hostLinkStore,
   }) : hostLinkStore = hostLinkStore ?? HostLinkStore();
@@ -81,6 +92,7 @@ class AgentsPanel extends StatefulWidget {
   final String? handle;
   final String appVersion;
   final VoidCallback? onViewThreads;
+  final ValueChanged<String>? onStartThread;
   final void Function(VoidCallback? reload)? onReloadReady;
   final HostLinkStore hostLinkStore;
 
@@ -95,8 +107,13 @@ class _AgentsPanelState extends State<AgentsPanel> {
   bool _adding = false;
   String? _error;
   AgentListResult? _list;
+  List<ContactView> _orgContacts = const [];
+  List<ContactView> _externalContacts = const [];
+  Map<String, List<String>> _peerAgents = const {};
+  String? _directoryError;
   _NetworkZoom _zoom = _NetworkZoom.me;
   String? _selectedAgentId;
+  String? _selectedPeerId;
   Map<String, HostLinkRecord> _hostLinks = const {};
 
   @override
@@ -128,12 +145,27 @@ class _AgentsPanelState extends State<AgentsPanel> {
     try {
       final list = await widget.daemon.listAgents();
       final links = await widget.hostLinkStore.load();
+      var org = const <ContactView>[];
+      var external = const <ContactView>[];
+      String? directoryError;
+      try {
+        org = await widget.daemon.listContacts();
+      } catch (e) {
+        directoryError = e.toString();
+      }
+      try {
+        external = await widget.daemon.listExternalContacts();
+      } catch (_) {}
       if (!mounted) return;
       setState(() {
         _list = list;
         _hostLinks = links;
+        _orgContacts = org;
+        _externalContacts = external;
+        _directoryError = directoryError;
         _loading = false;
       });
+      unawaited(_hydratePeerAgents(own: list, org: org));
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -340,7 +372,10 @@ class _AgentsPanelState extends State<AgentsPanel> {
           alignment: Alignment.centerLeft,
           child: _ZoomToggle(
             zoom: _zoom,
-            onChanged: (z) => setState(() => _zoom = z),
+            onChanged: (z) => setState(() {
+              _zoom = z;
+              _selectedPeerId = null;
+            }),
           ),
         ),
         const SizedBox(height: 4),
@@ -373,21 +408,24 @@ class _AgentsPanelState extends State<AgentsPanel> {
                   },
                   onAdd: _onAdd,
                 ),
-              _NetworkZoom.org => _ZoomPlaceholder(
-                  title: 'Org',
-                  body:
-                      'Teammates as ink discs on one orbit — peer agent trees open on select. Coming next.',
-                  hubLabel: _orgSlug(handle),
-                ),
-              _NetworkZoom.external => const _ZoomPlaceholder(
-                  title: 'External',
-                  body:
-                      'Cross-org peers farther out. Trust and pairing stay in the inspector.',
+              _NetworkZoom.org => _directoryError != null &&
+                      _orgPeople().length <= 1
+                  ? PaneQuietState(
+                      title: "Couldn't load org",
+                      body: friendlyAgentsError(_directoryError!),
+                      onRetry: _reload,
+                      icon: Icons.cloud_off_outlined,
+                    )
+                  : _orgGraph(handle),
+              _NetworkZoom.external => _peopleGraph(
                   hubLabel: 'you',
+                  hubCaption: formatMailAddress(handle),
+                  people: _externalOrgPeople(),
+                  onSelect: _onSelectExternalOrg,
                 ),
             },
           ),
-        _AgentsFooter(count: agents.length, version: widget.appVersion),
+        _AgentsFooter(count: _footerCount(agents.length), version: widget.appVersion),
       ],
     );
   }
@@ -396,6 +434,248 @@ class _AgentsPanelState extends State<AgentsPanel> {
     final at = handle.lastIndexOf('@');
     if (at < 0 || at >= handle.length - 1) return handle;
     return handle.substring(at + 1).toLowerCase();
+  }
+
+  static String _localPart(String handle) {
+    final h = bareMailHandle(handle);
+    final at = h.indexOf('@');
+    if (at <= 0) return h;
+    return h.substring(0, at);
+  }
+
+  int _footerCount(int agentCount) {
+    return switch (_zoom) {
+      _NetworkZoom.me => agentCount,
+      _NetworkZoom.org => _orgPeople().length,
+      _NetworkZoom.external => _externalOrgPeople().length,
+    };
+  }
+
+  List<_OrbitPerson> _orgPeople() {
+    final mine = widget.handle?.trim();
+    final myBare = mine == null || mine.isEmpty ? '' : bareMailHandle(mine);
+    final people = <_OrbitPerson>[
+      if (myBare.isNotEmpty)
+        _OrbitPerson(
+          id: myBare,
+          label: 'you',
+          caption: formatMailAddress(mine!),
+          isSelf: true,
+          agentSlugs: _slugsFor(myBare),
+        ),
+      for (final c in _orgContacts)
+        if (!c.isBroadcast &&
+            c.handle.trim().isNotEmpty &&
+            bareMailHandle(c.handle) != myBare)
+          _OrbitPerson(
+            id: bareMailHandle(c.handle),
+            label: _localPart(c.handle),
+            caption: formatMailAddress(c.handle),
+            avatarUrl: c.avatarUrl,
+            agentSlugs: _slugsFor(c.handle),
+          ),
+    ];
+    return people;
+  }
+
+  List<String> _slugsFor(String handle) =>
+      _peerAgents[bareMailHandle(handle)] ?? const [];
+
+  Future<void> _hydratePeerAgents({
+    required AgentListResult own,
+    required List<ContactView> org,
+  }) async {
+    final mine = widget.handle?.trim();
+    final out = <String, List<String>>{
+      if (mine != null && mine.isNotEmpty)
+        bareMailHandle(mine): _uniqueAgentSlugs(own.agents),
+    };
+    final peers = org
+        .where((c) => !c.isBroadcast && c.handle.trim().isNotEmpty)
+        .take(12)
+        .toList();
+    await Future.wait([
+      for (final c in peers)
+        () async {
+          try {
+            final list = await widget.daemon.listAgents(handle: c.handle);
+            out[bareMailHandle(c.handle)] = _uniqueAgentSlugs(list.agents);
+          } catch (_) {}
+        }(),
+    ]);
+    if (!mounted) return;
+    setState(() => _peerAgents = out);
+  }
+
+  static List<String> _uniqueAgentSlugs(Iterable<AgentInfo> agents) {
+    final seen = <String>{};
+    final out = <String>[];
+    for (final a in agents) {
+      final s = a.slug.trim().toLowerCase();
+      if (s.isEmpty || !seen.add(s)) continue;
+      out.add(s);
+    }
+    return out;
+  }
+
+  List<_OrbitPerson> _externalOrgPeople() {
+    final byOrg = <String, List<ContactView>>{};
+    for (final c in _externalContacts) {
+      final handle = c.handle.trim();
+      if (handle.isEmpty) continue;
+      final org = _orgSlug(handle);
+      if (org.isEmpty) continue;
+      byOrg.putIfAbsent(org, () => []).add(c);
+    }
+    final orgs = byOrg.keys.toList()..sort();
+    return [
+      for (final org in orgs)
+        _OrbitPerson(
+          id: org,
+          label: org,
+          caption: byOrg[org]!.length == 1
+              ? formatMailAddress(byOrg[org]!.first.handle)
+              : '${byOrg[org]!.length} people',
+          members: byOrg[org]!,
+        ),
+    ];
+  }
+
+  void _copyAddress(String address) {
+    Clipboard.setData(ClipboardData(text: address));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Copied $address'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Widget _orgGraph(String handle) {
+    return _peopleGraph(
+      hubLabel: _orgSlug(handle),
+      hubCaption: '@all@${_orgSlug(handle)}',
+      people: _orgPeople(),
+      onHubTap: () => _copyAddress('@all@${_orgSlug(handle)}'),
+      onSelect: _onSelectOrgPerson,
+    );
+  }
+
+  Widget _peopleGraph({
+    required String hubLabel,
+    required String? hubCaption,
+    required List<_OrbitPerson> people,
+    required ValueChanged<_OrbitPerson> onSelect,
+    VoidCallback? onHubTap,
+  }) {
+    final graph = _PeopleOrbitGraph(
+      hubLabel: hubLabel,
+      hubCaption: hubCaption,
+      people: people,
+      selectedId: _selectedPeerId,
+      onHubTap: onHubTap,
+      onSelect: onSelect,
+    );
+    final data = [for (final p in people) _inspectData(p)];
+    return PeerPopoverLayer(
+      graph: graph,
+      people: data,
+      selectedId: _selectedPeerId,
+      onDismiss: () => setState(() => _selectedPeerId = null),
+      onCopy: _copyQuiet,
+      onMessage: (h) => widget.onStartThread?.call(h),
+    );
+  }
+
+  ContactView? _contactFor(_OrbitPerson p) {
+    if (p.members != null && p.members!.isNotEmpty) return p.members!.first;
+    final id = bareMailHandle(p.id);
+    for (final c in [..._orgContacts, ..._externalContacts]) {
+      if (bareMailHandle(c.handle) == id) return c;
+    }
+    return null;
+  }
+
+  PeerInspectData _inspectData(_OrbitPerson p) {
+    final handles = p.members == null || p.members!.isEmpty
+        ? [
+            if ((p.caption ?? p.id).trim().isNotEmpty) p.caption ?? p.id,
+          ]
+        : [
+            for (final m in p.members!)
+              if (m.handle.trim().isNotEmpty) formatMailAddress(m.handle),
+          ];
+    final hit = _contactFor(p);
+    final members = p.members ?? [if (hit != null) hit];
+    final platforms = <String>{
+      for (final c in members)
+        for (final d in c.devices)
+          if ((d.platform ?? '').trim().isNotEmpty) d.platform!.trim().toLowerCase(),
+    };
+    final deviceCount = members.fold<int>(0, (n, c) => n + c.devices.length);
+    final hasPubkey = members.any(
+      (c) =>
+          (c.pubkey ?? '').trim().isNotEmpty ||
+          c.devices.any((d) => d.pubkey.trim().isNotEmpty),
+    );
+    String? orgSlug;
+    if (p.members != null && p.members!.isNotEmpty) {
+      orgSlug = p.id.toLowerCase();
+    } else {
+      final h = handles.isNotEmpty ? handles.first : p.id;
+      final at = h.lastIndexOf('@');
+      if (at >= 0 && at < h.length - 1) orgSlug = h.substring(at + 1).toLowerCase();
+    }
+    final kindLabel = p.isSelf
+        ? 'you'
+        : (p.members != null && p.members!.length > 1)
+            ? 'org'
+            : members.any((c) => c.isExternal)
+                ? 'external'
+                : 'teammate';
+    String? linkedAt;
+    for (final c in members) {
+      final at = c.linkedAt?.trim();
+      if (at != null && at.isNotEmpty) {
+        linkedAt = at;
+        break;
+      }
+    }
+    return PeerInspectData(
+      id: p.id,
+      label: p.label,
+      handle: handles.isNotEmpty ? handles.first : p.id,
+      handles: handles,
+      avatarUrl: p.avatarUrl,
+      agentSlugs: p.agentSlugs,
+      orgSlug: orgSlug,
+      kindLabel: kindLabel,
+      deviceCount: deviceCount,
+      hasPubkey: hasPubkey,
+      linkedAt: linkedAt,
+      hasThread: members.any((c) => (c.threadId ?? '').trim().isNotEmpty),
+      platforms: platforms.toList(),
+    );
+  }
+
+  void _copyQuiet(String address) {
+    Clipboard.setData(ClipboardData(text: address));
+  }
+
+  void _onSelectOrgPerson(_OrbitPerson person) {
+    if (person.isSelf) {
+      setState(() {
+        _selectedPeerId = person.id;
+        _zoom = _NetworkZoom.me;
+      });
+      return;
+    }
+    setState(() => _selectedPeerId = person.id);
+  }
+
+  void _onSelectExternalOrg(_OrbitPerson person) {
+    setState(() => _selectedPeerId = person.id);
   }
 }
 
@@ -452,77 +732,241 @@ class _ZoomToggle extends StatelessWidget {
   }
 }
 
-class _ZoomPlaceholder extends StatelessWidget {
-  const _ZoomPlaceholder({
-    required this.title,
-    required this.body,
-    required this.hubLabel,
+class _OrbitPerson {
+  const _OrbitPerson({
+    required this.id,
+    required this.label,
+    this.caption,
+    this.avatarUrl,
+    this.isSelf = false,
+    this.members,
+    this.agentSlugs = const [],
   });
 
-  final String title;
-  final String body;
+  final String id;
+  final String label;
+  final String? caption;
+  final String? avatarUrl;
+  final bool isSelf;
+  final List<ContactView>? members;
+  final List<String> agentSlugs;
+}
+
+/// Org / External: ink discs on one orbit around hub.
+class _PeopleOrbitGraph extends StatefulWidget {
+  const _PeopleOrbitGraph({
+    required this.hubLabel,
+    required this.people,
+    required this.onSelect,
+    this.hubCaption,
+    this.selectedId,
+    this.onHubTap,
+  });
+
   final String hubLabel;
+  final String? hubCaption;
+  final List<_OrbitPerson> people;
+  final String? selectedId;
+  final VoidCallback? onHubTap;
+  final ValueChanged<_OrbitPerson> onSelect;
+
+  @override
+  State<_PeopleOrbitGraph> createState() => _PeopleOrbitGraphState();
+}
+
+class _PeopleOrbitGraphState extends State<_PeopleOrbitGraph>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _enter;
+
+  @override
+  void initState() {
+    super.initState();
+    _enter = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 680),
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (MediaQuery.disableAnimationsOf(context)) {
+        _enter.value = 1;
+      } else {
+        _enter.forward();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _enter.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final people = widget.people;
+    final reduce = MediaQuery.disableAnimationsOf(context);
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
       child: ColoredBox(
         color: const Color(0xFFF5F5F4),
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 88,
-                height: 88,
-                alignment: Alignment.center,
-                decoration: const BoxDecoration(
-                  color: Color(0xFF292524),
-                  shape: BoxShape.circle,
-                ),
-                child: Text(
-                  hubLabel == 'you' ? 'you' : hubLabel,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Color(0xFFFAFAF9),
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF292524),
-                ),
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                width: 280,
-                child: Text(
-                  body,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    height: 1.4,
-                    color: Color(0xFF78716C),
-                  ),
-                ),
-              ),
-            ],
-          ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final size = Size(constraints.maxWidth, constraints.maxHeight);
+            final center = Offset(size.width * 0.48, size.height * 0.48);
+            final orbitR = (math.min(size.width, size.height) * 0.32)
+                .clamp(120.0, 190.0);
+            final n = math.max(people.length, 1);
+            final selectedIndex = widget.selectedId == null
+                ? -1
+                : people.indexWhere((p) => p.id == widget.selectedId);
+            final graphReady = _enter.value > 0.9;
+            final hubSize = widget.hubLabel.length > 8 ? 11.0 : 14.0;
+
+            return AnimatedBuilder(
+              animation: _enter,
+              builder: (context, _) {
+                final t = _enter.value;
+                final hubT = _easeUnit(t, 0.00, 0.36);
+                final labelT = _easeUnit(t, 0.10, 0.48);
+                return Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    CustomPaint(
+                      size: size,
+                      painter: _ConcentricOrbitPainter(
+                        center: center,
+                        orbitR: orbitR,
+                        agentCount: people.length,
+                        emphasizeIndex: selectedIndex,
+                        progress: t,
+                      ),
+                    ),
+                    Positioned(
+                      left: center.dx - 44,
+                      top: center.dy - 44,
+                      width: 88,
+                      child: Column(
+                        children: [
+                          Opacity(
+                            opacity: hubT,
+                            child: Transform.scale(
+                              scale: reduce ? 1 : 0.88 + 0.12 * hubT,
+                              child: GestureDetector(
+                                onTap: widget.onHubTap,
+                                child: Container(
+                                  width: 88,
+                                  height: 88,
+                                  alignment: Alignment.center,
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFF292524),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Text(
+                                    widget.hubLabel,
+                                    textAlign: TextAlign.center,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: const Color(0xFFFAFAF9),
+                                      fontSize: hubSize,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          if (widget.hubCaption != null) ...[
+                            const SizedBox(height: 8),
+                            Opacity(
+                              opacity: labelT,
+                              child: Text(
+                                widget.hubCaption!,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: Color(0xFF78716C),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    for (var i = 0; i < people.length; i++)
+                      _OrbitDiscNode(
+                        key: ValueKey(people[i].id),
+                        angle: -math.pi / 2 + (2 * math.pi * i / n),
+                        center: center,
+                        orbitR: orbitR,
+                        selected: people[i].id == widget.selectedId,
+                        reduceMotion: reduce,
+                        appearDelay: graphReady
+                            ? Duration.zero
+                            : Duration(
+                                milliseconds: 180 + math.min(i * 70, 280),
+                              ),
+                        label: people[i].label,
+                        ink: true,
+                        agentSlugs: people[i].agentSlugs,
+                        mark: _personMark(people[i]),
+                        onSelect: () => widget.onSelect(people[i]),
+                      ),
+                  ],
+                );
+              },
+            );
+          },
         ),
+      ),
+    );
+  }
+
+  static Widget _personMark(_OrbitPerson person) {
+    if (!person.isSelf &&
+        person.avatarUrl != null &&
+        person.avatarUrl!.isNotEmpty) {
+      return ClipOval(
+        child: Image.network(
+          person.avatarUrl!,
+          width: 56,
+          height: 56,
+          fit: BoxFit.cover,
+          filterQuality: FilterQuality.medium,
+          errorBuilder: (_, __, ___) => _personInitial(person.label),
+        ),
+      );
+    }
+    if (person.isSelf) {
+      return const Text(
+        'you',
+        style: TextStyle(
+          color: Color(0xFFFAFAF9),
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+        ),
+      );
+    }
+    return _personInitial(person.label);
+  }
+
+  static Widget _personInitial(String label) {
+    final ch = label.trim().isEmpty ? '?' : label.trim()[0].toUpperCase();
+    return Text(
+      ch,
+      style: const TextStyle(
+        color: Color(0xFFFAFAF9),
+        fontSize: 20,
+        fontWeight: FontWeight.w600,
       ),
     );
   }
 }
 
 /// Calm concentric map: you at center, agents on one orbit (Penpot Network — Me).
-class _AgentsGraph extends StatelessWidget {
+class _AgentsGraph extends StatefulWidget {
   const _AgentsGraph({
     required this.handle,
     required this.primary,
@@ -539,14 +983,46 @@ class _AgentsGraph extends StatelessWidget {
   final void Function(AgentInfo agent, bool isPrimary) onSelect;
   final VoidCallback onAdd;
 
+  @override
+  State<_AgentsGraph> createState() => _AgentsGraphState();
+}
+
+class _AgentsGraphState extends State<_AgentsGraph>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _enter;
+
   List<AgentInfo> get _orbitAgents => [
-        ?primary,
-        ...subs,
+        ?widget.primary,
+        ...widget.subs,
       ];
+
+  @override
+  void initState() {
+    super.initState();
+    _enter = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 680),
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (MediaQuery.disableAnimationsOf(context)) {
+        _enter.value = 1;
+      } else {
+        _enter.forward();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _enter.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final agents = _orbitAgents;
+    final reduce = MediaQuery.disableAnimationsOf(context);
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
       child: ColoredBox(
@@ -555,165 +1031,416 @@ class _AgentsGraph extends StatelessWidget {
           builder: (context, constraints) {
             final size = Size(constraints.maxWidth, constraints.maxHeight);
             final center = Offset(size.width * 0.48, size.height * 0.48);
-            final orbitR = (math.min(size.width, size.height) * 0.28)
-                .clamp(100.0, 160.0);
+            final orbitR = (math.min(size.width, size.height) * 0.32)
+                .clamp(120.0, 190.0);
             final n = math.max(agents.length, 1);
-            final selectedIndex = selectedId == null
+            final selectedIndex = widget.selectedId == null
                 ? -1
-                : agents.indexWhere((a) => a.id == selectedId);
+                : agents.indexWhere((a) => a.id == widget.selectedId);
+            final emphasize = selectedIndex >= 0
+                ? selectedIndex
+                : (widget.primary == null
+                    ? -1
+                    : agents.indexWhere((a) => a.id == widget.primary!.id));
+            final graphReady = _enter.value > 0.9;
 
-            return Stack(
-              clipBehavior: Clip.none,
-              children: [
-                CustomPaint(
-                  size: size,
-                  painter: _ConcentricOrbitPainter(
-                    center: center,
-                    orbitR: orbitR,
-                    agentCount: agents.length,
-                    emphasizeIndex: selectedIndex >= 0
-                        ? selectedIndex
-                        : (primary == null
-                            ? -1
-                            : agents.indexWhere((a) => a.id == primary!.id)),
-                  ),
-                ),
-                Positioned(
-                  left: center.dx - 44,
-                  top: center.dy - 44,
-                  width: 88,
-                  child: Column(
-                    children: [
-                      Container(
-                        width: 88,
-                        height: 88,
-                        alignment: Alignment.center,
-                        decoration: const BoxDecoration(
-                          color: Color(0xFF292524),
-                          shape: BoxShape.circle,
+            return AnimatedBuilder(
+              animation: _enter,
+              builder: (context, _) {
+                final t = _enter.value;
+                final hubT = _easeUnit(t, 0.00, 0.36);
+                final labelT = _easeUnit(t, 0.10, 0.48);
+                final addT = _easeUnit(t, 0.52, 0.82);
+                return Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    CustomPaint(
+                      size: size,
+                      painter: _ConcentricOrbitPainter(
+                        center: center,
+                        orbitR: orbitR,
+                        agentCount: agents.length,
+                        emphasizeIndex: emphasize,
+                        progress: t,
+                      ),
+                    ),
+                    Positioned(
+                      left: center.dx - 44,
+                      top: center.dy - 44,
+                      width: 88,
+                      child: Column(
+                        children: [
+                          Opacity(
+                            opacity: hubT,
+                            child: Transform.scale(
+                              scale: reduce ? 1 : 0.88 + 0.12 * hubT,
+                              child: Container(
+                                width: 88,
+                                height: 88,
+                                alignment: Alignment.center,
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFF292524),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Text(
+                                  'you',
+                                  style: TextStyle(
+                                    color: Color(0xFFFAFAF9),
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Opacity(
+                            opacity: labelT,
+                            child: Text(
+                              formatMailAddress(widget.handle),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: Color(0xFF78716C),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    for (var i = 0; i < agents.length; i++)
+                      _OrbitDiscNode(
+                        key: ValueKey(agents[i].id),
+                        angle: -math.pi / 2 + (2 * math.pi * i / n),
+                        center: center,
+                        orbitR: orbitR,
+                        selected: agents[i].id == widget.selectedId ||
+                            (widget.selectedId == null &&
+                                widget.primary != null &&
+                                agents[i].id == widget.primary!.id),
+                        reduceMotion: reduce,
+                        appearDelay: graphReady
+                            ? Duration.zero
+                            : Duration(
+                                milliseconds: 180 + math.min(i * 70, 280),
+                              ),
+                        label: agents[i].slug.trim().toLowerCase(),
+                        mark: AiHostIcon(
+                          agents[i].slug.trim().toLowerCase(),
+                          size: 28,
+                          showPlate: false,
                         ),
-                        child: const Text(
-                          'you',
-                          style: TextStyle(
-                            color: Color(0xFFFAFAF9),
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
+                        onSelect: () => widget.onSelect(
+                          agents[i],
+                          widget.primary != null &&
+                              agents[i].id == widget.primary!.id,
+                        ),
+                      ),
+                    Positioned(
+                      right: 16,
+                      bottom: 16,
+                      child: Opacity(
+                        opacity: addT,
+                        child: TextButton.icon(
+                          onPressed: widget.onAdd,
+                          icon: const Icon(Icons.add, size: 16),
+                          label: const Text('Add'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: const Color(0xFF57534E),
                           ),
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        formatMailAddress(handle),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: Color(0xFF78716C),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                for (var i = 0; i < agents.length; i++)
-                  _orbitNode(
-                    agent: agents[i],
-                    index: i,
-                    count: n,
-                    center: center,
-                    orbitR: orbitR,
-                    isPrimary: primary != null && agents[i].id == primary!.id,
-                    selected: agents[i].id == selectedId ||
-                        (selectedId == null &&
-                            primary != null &&
-                            agents[i].id == primary!.id),
-                  ),
-                Positioned(
-                  right: 16,
-                  bottom: 16,
-                  child: TextButton.icon(
-                    onPressed: onAdd,
-                    icon: const Icon(Icons.add, size: 16),
-                    label: const Text('Add'),
-                    style: TextButton.styleFrom(
-                      foregroundColor: const Color(0xFF57534E),
                     ),
-                  ),
-                ),
-              ],
+                  ],
+                );
+              },
             );
           },
         ),
       ),
     );
   }
+}
 
-  Widget _orbitNode({
-    required AgentInfo agent,
+class _OrbitDiscNode extends StatefulWidget {
+  const _OrbitDiscNode({
+    super.key,
+    required this.angle,
+    required this.center,
+    required this.orbitR,
+    required this.selected,
+    required this.reduceMotion,
+    required this.appearDelay,
+    required this.onSelect,
+    required this.label,
+    required this.mark,
+    this.ink = false,
+    this.agentSlugs = const [],
+  });
+
+  final double angle;
+  final Offset center;
+  final double orbitR;
+  final bool selected;
+  final bool reduceMotion;
+  final Duration appearDelay;
+  final VoidCallback onSelect;
+  final String label;
+  final Widget mark;
+  final bool ink;
+  final List<String> agentSlugs;
+
+  @override
+  State<_OrbitDiscNode> createState() => _OrbitDiscNodeState();
+}
+
+class _OrbitDiscNodeState extends State<_OrbitDiscNode>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _appear;
+  Timer? _delay;
+  bool _hover = false;
+  bool _press = false;
+
+  static const _disc = 56.0;
+  static const _tick = 18.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _appear = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 420),
+    );
+    if (widget.reduceMotion) {
+      _appear.value = 1;
+    } else if (widget.appearDelay == Duration.zero) {
+      _appear.forward();
+    } else {
+      _delay = Timer(widget.appearDelay, () {
+        if (mounted) _appear.forward();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _delay?.cancel();
+    _appear.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ax = widget.center.dx + math.cos(widget.angle) * widget.orbitR;
+    final ay = widget.center.dy + math.sin(widget.angle) * widget.orbitR;
+    final motion = _agentsMotion(context, const Duration(milliseconds: 180));
+    final hoverScale = widget.reduceMotion
+        ? 1.0
+        : _press
+            ? 0.96
+            : _hover
+                ? 1.05
+                : 1.0;
+    final ink = widget.ink;
+    final ticks = widget.agentSlugs.take(4).toList();
+    final extra = widget.agentSlugs.length - ticks.length;
+    final tickCount = ticks.length + (extra > 0 ? 1 : 0);
+    final boxW = ink ? 140.0 : 112.0;
+
+    return Positioned(
+      left: ax - boxW / 2,
+      top: ay - _disc / 2,
+      width: boxW,
+      child: AnimatedBuilder(
+        animation: _appear,
+        builder: (context, child) {
+          final at = Curves.easeOutCubic.transform(_appear.value);
+          final inward = widget.reduceMotion ? 0.0 : (1 - at) * 14;
+          return Opacity(
+            opacity: at,
+            child: Transform.translate(
+              offset: Offset(
+                -math.cos(widget.angle) * inward,
+                -math.sin(widget.angle) * inward,
+              ),
+              child: Transform.scale(
+                scale: widget.reduceMotion ? 1 : 0.86 + 0.14 * at,
+                child: child,
+              ),
+            ),
+          );
+        },
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          onEnter: (_) => setState(() => _hover = true),
+          onExit: (_) => setState(() {
+            _hover = false;
+            _press = false;
+          }),
+          child: GestureDetector(
+            onTapDown: (_) => setState(() => _press = true),
+            onTapUp: (_) => setState(() => _press = false),
+            onTapCancel: () => setState(() => _press = false),
+            onTap: widget.onSelect,
+            behavior: HitTestBehavior.opaque,
+            child: AnimatedScale(
+              scale: hoverScale,
+              duration: motion,
+              curve: Curves.easeOutCubic,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: boxW,
+                    height: _disc,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      alignment: Alignment.center,
+                      children: [
+                        AnimatedScale(
+                          scale: widget.selected ? 1.0 : 48 / _disc,
+                          duration: motion,
+                          curve: Curves.easeOutCubic,
+                          child: AnimatedContainer(
+                            duration: motion,
+                            curve: Curves.easeOutCubic,
+                            width: _disc,
+                            height: _disc,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: ink
+                                  ? const Color(0xFF292524)
+                                  : const Color(0xFFFAFAF9),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: widget.selected
+                                    ? (ink
+                                        ? const Color(0xFFFAFAF9)
+                                        : const Color(0xFF292524))
+                                    : (ink
+                                        ? const Color(0xFF292524)
+                                        : const Color(0xFFA8A29E)),
+                                width: widget.selected ? 2 : (ink ? 0 : 1),
+                              ),
+                              boxShadow: widget.selected
+                                  ? [
+                                      BoxShadow(
+                                        color: const Color(0xFF166534)
+                                            .withValues(alpha: 0.22),
+                                        blurRadius: 14,
+                                        spreadRadius: 2,
+                                      ),
+                                    ]
+                                  : null,
+                            ),
+                            child: widget.mark,
+                          ),
+                        ),
+                        if (ink)
+                          for (var i = 0; i < ticks.length; i++)
+                            _rimTick(
+                              index: i,
+                              count: tickCount,
+                              child: _HostRimChip(ticks[i], size: _tick),
+                            ),
+                        if (ink && extra > 0)
+                          _rimTick(
+                            index: ticks.length,
+                            count: tickCount,
+                            child: _HostCountChip('+$extra'),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    widget.label,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight:
+                          widget.selected ? FontWeight.w600 : FontWeight.w500,
+                      color: const Color(0xFF57534E),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _rimTick({
     required int index,
     required int count,
-    required Offset center,
-    required double orbitR,
-    required bool isPrimary,
-    required bool selected,
+    required Widget child,
   }) {
-    final ang = -math.pi / 2 + (2 * math.pi * index / count);
-    final ax = center.dx + math.cos(ang) * orbitR;
-    final ay = center.dy + math.sin(ang) * orbitR;
-    final nodeSize = selected ? 36.0 : 28.0;
-    final slug = agent.slug.trim().toLowerCase();
+    final spread = count <= 1 ? 0.0 : 0.55;
+    final t = count <= 1 ? 0.0 : (index / (count - 1) - 0.5);
+    final tickAng = widget.angle + t * spread;
+    const r = 34.0;
     return Positioned(
-      left: ax - 40,
-      top: ay - nodeSize / 2,
-      width: 80,
-      child: GestureDetector(
-        onTap: () => onSelect(agent, isPrimary),
-        behavior: HitTestBehavior.opaque,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: nodeSize,
-              height: nodeSize,
-              decoration: BoxDecoration(
-                color: const Color(0xFFFAFAF9),
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: selected
-                      ? const Color(0xFF292524)
-                      : const Color(0xFFA8A29E),
-                  width: selected ? 2 : 1,
-                ),
-                boxShadow: selected
-                    ? [
-                        BoxShadow(
-                          color: const Color(0xFF166534).withValues(alpha: 0.22),
-                          blurRadius: 14,
-                          spreadRadius: 2,
-                        ),
-                      ]
-                    : null,
-              ),
-              alignment: Alignment.center,
-              child: AiHostIcon(
-                slug,
-                size: selected ? 16 : 13,
-                showPlate: false,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              slug,
-              textAlign: TextAlign.center,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                color: const Color(0xFF57534E),
-              ),
-            ),
-          ],
+      left: (widget.ink ? 140.0 : 112.0) / 2 + math.cos(tickAng) * r - _tick / 2,
+      top: _disc / 2 + math.sin(tickAng) * r - _tick / 2,
+      child: child,
+    );
+  }
+}
+
+class _HostRimChip extends StatelessWidget {
+  const _HostRimChip(this.slug, {required this.size});
+
+  final String slug;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: const Color(0xFFFAFAF9),
+        shape: BoxShape.circle,
+        border: Border.all(color: const Color(0xFFE7E5E4)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x140C0A09),
+            blurRadius: 4,
+            offset: Offset(0, 1),
+          ),
+        ],
+      ),
+      child: AiHostIcon(slug, size: size * 0.62, showPlate: false),
+    );
+  }
+}
+
+class _HostCountChip extends StatelessWidget {
+  const _HostCountChip(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+      decoration: BoxDecoration(
+        color: const Color(0xFF292524),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Color(0xFFFAFAF9),
+          fontSize: 9,
+          fontWeight: FontWeight.w700,
         ),
       ),
     );
@@ -726,30 +1453,44 @@ class _ConcentricOrbitPainter extends CustomPainter {
     required this.orbitR,
     required this.agentCount,
     required this.emphasizeIndex,
+    required this.progress,
   });
 
   final Offset center;
   final double orbitR;
   final int agentCount;
   final int emphasizeIndex;
+  final double progress;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final guide = Paint()
-      ..color = const Color(0xFFE7E5E4)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1;
-    canvas.drawCircle(center, orbitR, guide);
-    canvas.drawCircle(
-      center,
-      orbitR + 70,
-      Paint()
-        ..color = const Color(0x66E7E5E4)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1,
-    );
+    final ringT = _easeUnit(progress, 0.10, 0.45);
+    final outerT = _easeUnit(progress, 0.18, 0.55);
+    final spokeT = _easeUnit(progress, 0.16, 0.58);
 
-    if (agentCount == 0) return;
+    if (ringT > 0) {
+      canvas.drawCircle(
+        center,
+        orbitR,
+        Paint()
+          ..color = const Color(0xFFE7E5E4).withValues(alpha: ringT)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1,
+      );
+    }
+    if (outerT > 0) {
+      const outer = Color(0x66E7E5E4);
+      canvas.drawCircle(
+        center,
+        orbitR + 70,
+        Paint()
+          ..color = outer.withValues(alpha: outer.a * outerT)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1,
+      );
+    }
+
+    if (agentCount == 0 || spokeT <= 0.02) return;
     final n = agentCount;
     for (var i = 0; i < n; i++) {
       final ang = -math.pi / 2 + (2 * math.pi * i / n);
@@ -758,16 +1499,18 @@ class _ConcentricOrbitPainter extends CustomPainter {
         center.dy + math.sin(ang) * orbitR,
       );
       final emphasized = i == emphasizeIndex;
+      final base = emphasized
+          ? const Color(0xBFA8A29E)
+          : const Color(0x80A8A29E);
       final spoke = Paint()
-        ..color = emphasized
-            ? const Color(0xBFA8A29E)
-            : const Color(0x80A8A29E)
+        ..color = base.withValues(alpha: base.a * spokeT)
         ..strokeWidth = emphasized ? 1.5 : 1.15
         ..style = PaintingStyle.stroke;
       final ux = (end.dx - center.dx) / orbitR;
       final uy = (end.dy - center.dy) / orbitR;
       final start = Offset(center.dx + ux * 44, center.dy + uy * 44);
-      final tip = Offset(end.dx - ux * 14, end.dy - uy * 14);
+      final fullTip = Offset(end.dx - ux * 24, end.dy - uy * 24);
+      final tip = Offset.lerp(start, fullTip, spokeT)!;
       canvas.drawLine(start, tip, spoke);
     }
   }
@@ -777,7 +1520,8 @@ class _ConcentricOrbitPainter extends CustomPainter {
     return oldDelegate.center != center ||
         oldDelegate.orbitR != orbitR ||
         oldDelegate.agentCount != agentCount ||
-        oldDelegate.emphasizeIndex != emphasizeIndex;
+        oldDelegate.emphasizeIndex != emphasizeIndex ||
+        oldDelegate.progress != progress;
   }
 }
 
