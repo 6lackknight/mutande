@@ -198,6 +198,9 @@ pub struct PostReceiptResponse {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Contact {
     pub handle: String,
+    /// Hub user id (org members) — used for awaiting turns mirror.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pubkey: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

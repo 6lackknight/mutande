@@ -1446,7 +1446,7 @@ impl DaemonState {
                                     my_bare.as_deref(),
                                     None,
                                 );
-                                t.awaiting = Some(awaiting);
+                                t.awaiting = Some(self.hub_awaiting_mirror(&awaiting).await);
                                 t.your_status = Some(status);
                             }
                             enrich_cache.record(t);
@@ -1522,7 +1522,8 @@ impl DaemonState {
                     agent_your_status(&detail.thread, &user_id, slug, default_slug),
                 )
             };
-            detail.thread.awaiting = Some(awaiting);
+            detail.thread.awaiting =
+                Some(self.hub_awaiting_mirror(&awaiting).await);
             detail.thread.your_status = Some(status);
         } else {
             let (awaiting, status) = self.resolve_awaiting_status(
@@ -1530,7 +1531,8 @@ impl DaemonState {
                 my_bare.as_deref(),
                 None,
             );
-            detail.thread.awaiting = Some(awaiting);
+            detail.thread.awaiting =
+                Some(self.hub_awaiting_mirror(&awaiting).await);
             detail.thread.your_status = Some(status);
         }
         self.apply_task_gate(&mut detail).await;
@@ -1686,6 +1688,8 @@ impl DaemonState {
             envelope: None,
             open_error: None,
             upvotes,
+            receipts: None,
+            task_pending_approval: None,
         }
     }
 
@@ -1724,6 +1728,8 @@ impl DaemonState {
             envelope: None,
             open_error,
             upvotes: upvotes.clone(),
+            receipts: None,
+            task_pending_approval: None,
         };
 
         let mut opened = match plain {
@@ -1742,6 +1748,8 @@ impl DaemonState {
                         envelope: None,
                         open_error: None,
                         upvotes: upvotes.clone(),
+                        receipts: None,
+                        task_pending_approval: None,
                     }
                 }
                 Err(_err) if is_blob => {
@@ -1761,6 +1769,8 @@ impl DaemonState {
                         envelope: None,
                         open_error: None,
                         upvotes: upvotes.clone(),
+                        receipts: None,
+                        task_pending_approval: None,
                     }
                 }
                 Err(err) => meta(Some(format!("decode bundle: {err}"))),
@@ -2538,6 +2548,39 @@ impl DaemonState {
             YourStatus::Replied
         };
         (Vec::new(), status)
+    }
+
+    async fn hub_awaiting_mirror(
+        &self,
+        awaiting: &[TurnEntry],
+    ) -> Vec<crate::hub_client::HubAwaitingEntry> {
+        let Some(hub) = self.hub_client() else {
+            return Vec::new();
+        };
+        let Ok(me) = hub.me().await else {
+            return Vec::new();
+        };
+        let Some(user) = me.user.as_ref() else {
+            return Vec::new();
+        };
+        let my_id = user.id.clone();
+        let my_handle = user.handle.clone().unwrap_or_default();
+        let contacts = hub.list_contacts().await.unwrap_or_default();
+        super::turn::hub_awaiting_from_turns(awaiting, |bare| {
+            let bare_l = bare.to_ascii_lowercase();
+            if strip_agent_suffix(&my_handle).eq_ignore_ascii_case(&bare_l)
+                || my_handle.eq_ignore_ascii_case(&bare_l)
+            {
+                return Some(my_id.clone());
+            }
+            contacts
+                .iter()
+                .find(|c| {
+                    strip_agent_suffix(&c.handle).eq_ignore_ascii_case(&bare_l)
+                        || c.handle.eq_ignore_ascii_case(&bare_l)
+                })
+                .and_then(|c| c.user_id.clone())
+        })
     }
 
     async fn finalize_outgoing_bundle(

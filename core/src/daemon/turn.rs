@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 
-use crate::hub_client::{ThreadMeta, YourStatus};
+use crate::hub_client::{HubAwaitingEntry, ThreadMeta, YourStatus};
 
 use super::state::{
     BundleAnswer, HumanDecision, MessageIntent, MutandeBundle, OpenedThreadDetail, OpenedThreadMessage,
@@ -259,6 +259,23 @@ pub fn hub_turns_mirror(
     out
 }
 
+/// Map local `TurnEntry` awaiting to hub `{user_id, actor}` rows.
+pub fn hub_awaiting_from_turns(
+    awaiting: &[TurnEntry],
+    resolve_user_id: impl Fn(&str) -> Option<String>,
+) -> Vec<HubAwaitingEntry> {
+    hub_turns_mirror(awaiting, resolve_user_id)
+        .into_iter()
+        .map(|h| HubAwaitingEntry {
+            user_id: h.user_id,
+            actor: match h.actor {
+                TurnActor::Human => "human".into(),
+                TurnActor::Agent => "agent".into(),
+            },
+        })
+        .collect()
+}
+
 /// Mac UI: Needs you when awaiting has human actor for my handle.
 pub fn your_status_from_awaiting(
     awaiting: &[TurnEntry],
@@ -398,8 +415,9 @@ pub fn apply_awaiting_to_thread_meta(
     awaiting: Vec<TurnEntry>,
     my_bare: Option<&str>,
     agent_slug: Option<&str>,
+    resolve_user_id: impl Fn(&str) -> Option<String>,
 ) {
-    thread.awaiting = Some(awaiting.clone());
+    thread.awaiting = Some(hub_awaiting_from_turns(&awaiting, resolve_user_id));
     if let Some(bare) = my_bare {
         thread.your_status = Some(your_status_from_awaiting(&awaiting, bare, agent_slug));
     }
