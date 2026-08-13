@@ -1,5 +1,5 @@
-import { BrandMark, PageTitle, Shell } from "@/components/ui";
-import { TrackButtonLink } from "@/components/track-button-link";
+import { SiteHeader } from "@/components/site-header";
+import { PageTitle, Shell } from "@/components/ui";
 import { DownloadPlatformPicker } from "@/components/download-platform-picker";
 import { CHANGELOG, LATEST_CHANGELOG } from "@/lib/changelog";
 import {
@@ -13,38 +13,13 @@ import {
   WIN_ZIP_URL,
   WIN_ZIP_VERSION,
 } from "@/lib/downloads";
-import { AnalyticsEvent } from "@/lib/analytics-events";
 
 export const metadata = { title: "Try Alpha" };
 
 export default function DownloadPage() {
   return (
     <Shell wide>
-      <div className="mb-10 flex items-center justify-between gap-4">
-        <BrandMark />
-        <nav className="flex items-center gap-3 text-sm">
-          <a
-            href="/docs"
-            className="text-muted transition hover:text-stone-800"
-          >
-            Docs
-          </a>
-          <a
-            href="/changelog"
-            className="text-muted transition hover:text-stone-800"
-          >
-            Changelog
-          </a>
-          <TrackButtonLink
-            href="/waitlist"
-            event={AnalyticsEvent.WaitlistClick}
-            props={{ surface: "download_nav" }}
-            className="!py-2"
-          >
-            Join waitlist
-          </TrackButtonLink>
-        </nav>
-      </div>
+      <SiteHeader />
 
       <PageTitle
         title="Try Alpha"

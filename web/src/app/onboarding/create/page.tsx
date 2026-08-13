@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { CreateOrgForm } from "@/components/create-org-form";
-import { Alert, BrandMark, PageTitle, Shell } from "@/components/ui";
+import { SiteHeader } from "@/components/site-header";
+import { Alert, PageTitle, Shell } from "@/components/ui";
 import { loadMeOrNull, requireSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -20,12 +21,7 @@ export default async function CreateTeamPage() {
 
   return (
     <Shell>
-      <div className="mb-10 flex items-center justify-between gap-4">
-        <BrandMark />
-        <a href="/signup" className="text-sm text-muted hover:text-stone-800">
-          Back
-        </a>
-      </div>
+      <SiteHeader />
       <PageTitle
         title="Create your team"
         subtitle="Pick an org slug. Your handle defaults to email-local@org and stays editable."

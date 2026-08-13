@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { OpsDashboard } from "@/components/ops-dashboard";
-import { BrandMark, PageTitle, Shell } from "@/components/ui";
+import { SiteHeader } from "@/components/site-header";
+import { PageTitle, Shell } from "@/components/ui";
 import {
   formatHubError,
   listEnterpriseMetrics,
@@ -49,20 +50,7 @@ export default async function AdminOpsPage() {
 
   return (
     <Shell xl>
-      <div className="mb-10 flex items-center justify-between gap-4">
-        <BrandMark />
-        <div className="flex flex-wrap items-center gap-4 text-sm">
-          <a
-            href="/admin/invites"
-            className="text-muted hover:text-stone-800"
-          >
-            Invites
-          </a>
-          <a href="/dashboard" className="text-muted hover:text-stone-800">
-            Dashboard
-          </a>
-        </div>
-      </div>
+      <SiteHeader />
       <PageTitle
         title="Ops"
         subtitle="Feedback, waitlist, and enterprise registry — Auth0 SuperAdmin only."

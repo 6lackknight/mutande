@@ -21,8 +21,21 @@ function CopyHandle({ contact }: { contact: Contact }) {
   return (
     <li className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200/80 py-3 last:border-0">
       <span className="flex min-w-0 items-center gap-3">
-        <ContactAvatar handle={contact.handle} avatarUrl={contact.avatar_url} />
-        <span className="truncate font-medium text-stone-900">{contact.handle}</span>
+        <ContactAvatar
+          handle={contact.handle}
+          avatarUrl={contact.avatar_url}
+          name={contact.display_name}
+        />
+        <span className="min-w-0">
+          <span className="block truncate font-medium leading-tight text-stone-900">
+            {(contact.display_name ?? "").trim() ||
+              contact.handle.split("@")[0] ||
+              contact.handle}
+          </span>
+          <span className="mt-0.5 block truncate text-[12px] leading-snug text-muted">
+            {contact.handle}
+          </span>
+        </span>
       </span>
       <Button type="button" variant="ghost" className="!min-h-9 !py-1.5" onClick={copy}>
         {copied ? "Copied" : "Copy"}

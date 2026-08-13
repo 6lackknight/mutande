@@ -1,4 +1,5 @@
-import { BrandMark, ButtonLink, PageTitle, Shell } from "@/components/ui";
+import { SiteHeader } from "@/components/site-header";
+import { PageTitle, Shell } from "@/components/ui";
 import { WaitlistForm } from "@/components/waitlist-form";
 
 export const metadata = { title: "Join waitlist" };
@@ -6,20 +7,7 @@ export const metadata = { title: "Join waitlist" };
 export default function WaitlistPage() {
   return (
     <Shell>
-      <div className="mb-10 flex items-center justify-between gap-4">
-        <BrandMark />
-        <nav className="flex items-center gap-3 text-sm">
-          <a
-            href="/docs"
-            className="text-muted transition hover:text-stone-800"
-          >
-            Docs
-          </a>
-          <ButtonLink href="/download" variant="secondary" className="!py-2">
-            Try Alpha
-          </ButtonLink>
-        </nav>
-      </div>
+      <SiteHeader />
 
       <PageTitle
         title="Join waitlist"

@@ -183,7 +183,10 @@ Deno.test("approve creates bilateral contact + connection ping", async () => {
 
     await store.updateProfile(
       { sub: "auth0|bob", email: "bob@acme.test" } as Auth0Claims,
-      { avatar_url: "https://cdn.example.test/bob.jpg" },
+      {
+        avatar_url: "https://cdn.example.test/bob.jpg",
+        display_name: "Bob Builder",
+      },
     );
     const aliceExt = await store.listExternalContacts(aliceAuth);
     const bobExt = await store.listExternalContacts(bobAuth);
@@ -191,6 +194,7 @@ Deno.test("approve creates bilateral contact + connection ping", async () => {
     assertEquals(bobExt.contacts.length, 1);
     assertEquals(aliceExt.contacts[0]!.handle, "bob@acme");
     assertEquals(aliceExt.contacts[0]!.avatar_url, "https://cdn.example.test/bob.jpg");
+    assertEquals(aliceExt.contacts[0]!.display_name, "Bob Builder");
     assertEquals(bobExt.contacts[0]!.handle, "alice@aliceco");
 
     // Both see the connection ping thread.

@@ -1,4 +1,4 @@
-import { LoggedInHeader } from "@/components/logged-in-header";
+import { SiteHeader } from "@/components/site-header";
 import { ChoiceCard, Alert, PageTitle, Shell } from "@/components/ui";
 import {
   defaultHandleFromEmail,
@@ -29,7 +29,7 @@ export default async function SignupPage({
 
   return (
     <Shell>
-      <LoggedInHeader />
+      <SiteHeader />
       <PageTitle
         title="How are you joining?"
         subtitle={`Signed in as ${email ?? session.user.name ?? "you"}. Create a team or redeem an invite. Your handle will look like ${previewHandle}.`}

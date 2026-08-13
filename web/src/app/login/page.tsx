@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { BrandMark } from "@/components/ui";
+import { SiteHeader } from "@/components/site-header";
 import { TrackButtonLink } from "@/components/track-button-link";
 import { AnalyticsEvent } from "@/lib/analytics-events";
 import { auth0 } from "@/lib/auth0";
@@ -28,23 +28,7 @@ export default async function LoginPage({
         className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_60%_45%_at_50%_0%,color-mix(in_oklch,var(--accent)_9%,transparent),transparent_65%)]"
       />
 
-      <header className="relative z-10 flex items-center justify-between px-6 py-5 sm:px-8">
-        <BrandMark />
-        <nav className="flex items-center gap-1 sm:gap-2">
-          <a
-            href="/docs"
-            className="rounded-md px-3 py-2 text-sm text-stone-700 transition hover:bg-stone-200/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/35"
-          >
-            Docs
-          </a>
-          <a
-            href="/download"
-            className="rounded-md px-3 py-2 text-sm text-stone-700 transition hover:bg-stone-200/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/35"
-          >
-            Try Alpha
-          </a>
-        </nav>
-      </header>
+      <SiteHeader variant="login" />
 
       <main className="relative z-10 flex flex-1 flex-col justify-center px-6 pb-16 pt-4 sm:px-8">
         <div className="mx-auto w-full max-w-[22rem]">

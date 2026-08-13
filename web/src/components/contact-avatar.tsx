@@ -2,13 +2,17 @@
 export function ContactAvatar({
   handle,
   avatarUrl,
+  name,
   size = 36,
 }: {
   handle: string;
   avatarUrl?: string;
+  name?: string;
   size?: number;
 }) {
-  const initial = (handle.split("@")[0] || "?").charAt(0).toUpperCase();
+  const initial = (name?.trim() || handle.split("@")[0] || "?")
+    .charAt(0)
+    .toUpperCase();
   const dim = `${size}px`;
 
   if (avatarUrl) {

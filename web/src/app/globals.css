@@ -115,6 +115,14 @@
   .seal-pulse {
     animation: seal-pulse 4.5s ease-in-out infinite;
   }
+
+  .orbit-spin {
+    animation: orbit-spin 90s linear infinite;
+  }
+
+  .orbit-spin-rev {
+    animation: orbit-spin 90s linear infinite reverse;
+  }
 }
 
 @keyframes fade-up {
@@ -132,7 +140,9 @@
   .fade-up,
   .fade-up-delay,
   .fade-up-late,
-  .seal-pulse {
+  .seal-pulse,
+  .orbit-spin,
+  .orbit-spin-rev {
     animation: none !important;
   }
 }
@@ -146,5 +156,11 @@
   50% {
     opacity: 0.55;
     transform: scale(1.04);
+  }
+}
+
+@keyframes orbit-spin {
+  to {
+    transform: rotate(360deg);
   }
 }

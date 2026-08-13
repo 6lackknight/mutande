@@ -1343,6 +1343,7 @@ export class HubStore {
         devices: mapped,
         kind: "org",
         ...(user.avatar_url ? { avatar_url: user.avatar_url } : {}),
+        ...(user.display_name ? { display_name: user.display_name } : {}),
       });
     }
     contacts.sort((a, b) => a.handle.localeCompare(b.handle));

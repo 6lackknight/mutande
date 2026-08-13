@@ -1,4 +1,4 @@
-import { LoggedInHeader } from "@/components/logged-in-header";
+import { SiteHeader } from "@/components/site-header";
 import { ProfileForm } from "@/components/profile-form";
 import { PageTitle, Shell } from "@/components/ui";
 import { requireOnboarded } from "@/lib/session";
@@ -11,7 +11,7 @@ export default async function ProfilePage() {
 
   return (
     <Shell wide>
-      <LoggedInHeader />
+      <SiteHeader />
       <PageTitle
         title="Profile"
         subtitle="How you appear to teammates. You can change your display name and handle."

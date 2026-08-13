@@ -90,6 +90,7 @@ export interface Contact {
   devices: Array<{ pubkey: string; platform: string }>;
   kind?: ContactKind;
   avatar_url?: string;
+  display_name?: string;
   external_link_id?: string;
   linked_at?: string;
   thread_id?: string;

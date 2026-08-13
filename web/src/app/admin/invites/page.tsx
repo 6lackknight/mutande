@@ -1,9 +1,10 @@
 import { redirect } from "next/navigation";
 import { InviteAdmin } from "@/components/invite-admin";
 import { OrgSlugForm } from "@/components/org-slug-form";
-import { Alert, BrandMark, PageTitle, Shell } from "@/components/ui";
+import { SiteHeader } from "@/components/site-header";
+import { Alert, PageTitle, Shell } from "@/components/ui";
 import { formatHubError, listInvites } from "@/lib/hub";
-import { requireOnboarded, sessionShowsOps } from "@/lib/session";
+import { requireOnboarded } from "@/lib/session";
 import { isOrgAdmin, type Invite } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +13,6 @@ export const metadata = { title: "Organization" };
 export default async function AdminInvitesPage() {
   const me = await requireOnboarded();
   const isAdmin = isOrgAdmin(me.user);
-  const showOps = await sessionShowsOps(me);
 
   if (!isAdmin) {
     redirect("/dashboard");
@@ -32,19 +32,7 @@ export default async function AdminInvitesPage() {
 
   return (
     <Shell wide>
-      <div className="mb-10 flex items-center justify-between gap-4">
-        <BrandMark />
-        <div className="flex flex-wrap items-center gap-4 text-sm">
-          {showOps ? (
-            <a href="/admin/ops" className="text-muted hover:text-stone-800">
-              Ops
-            </a>
-          ) : null}
-          <a href="/dashboard" className="text-muted hover:text-stone-800">
-            Dashboard
-          </a>
-        </div>
-      </div>
+      <SiteHeader />
       <PageTitle
         title="Organization"
         subtitle={`Settings and invites for ${orgLabel}.`}

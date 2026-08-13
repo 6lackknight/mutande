@@ -1,4 +1,5 @@
-import { BrandMark, ButtonLink, PageTitle, Shell } from "@/components/ui";
+import { SiteHeader } from "@/components/site-header";
+import { PageTitle, Shell } from "@/components/ui";
 
 export const metadata = {
   title: "Terms",
@@ -8,20 +9,7 @@ export const metadata = {
 export default function TermsPage() {
   return (
     <Shell wide>
-      <div className="mb-10 flex items-center justify-between gap-4">
-        <BrandMark />
-        <nav className="flex items-center gap-3 text-sm">
-          <a
-            href="/changelog"
-            className="text-muted transition hover:text-stone-800"
-          >
-            Changelog
-          </a>
-          <ButtonLink href="/download" variant="secondary" className="!py-2">
-            Try Alpha
-          </ButtonLink>
-        </nav>
-      </div>
+      <SiteHeader />
 
       <PageTitle
         title="Terms"

@@ -305,17 +305,22 @@ Deno.test("contacts expose device pubkeys", async () => {
   });
 });
 
-Deno.test("contacts include avatar_url", async () => {
+Deno.test("contacts include display_name and avatar_url", async () => {
   await withTestStore(async ({ store }) => {
     const { aliceAuth, bobAuth } = await setupOrgWithUsers(store);
     await store.updateProfile(
       { sub: "auth0|bob", email: "bob@example.com" },
-      { avatar_url: "https://cdn.example.test/bob.jpg" },
+      {
+        avatar_url: "https://cdn.example.test/bob.jpg",
+        display_name: "Bob Builder",
+      },
     );
     const bob = (await store.listContacts(aliceAuth)).contacts.find((c) => c.handle === "bob@acme");
     assertEquals(bob?.avatar_url, "https://cdn.example.test/bob.jpg");
+    assertEquals(bob?.display_name, "Bob Builder");
     const alice = (await store.listContacts(bobAuth)).contacts.find((c) => c.handle === "alice@acme");
     assertEquals(alice?.avatar_url, undefined);
+    assertEquals(alice?.display_name, undefined);
   });
 });
 

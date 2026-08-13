@@ -158,6 +158,7 @@ export async function listExternalContacts(
       devices,
       kind: "external",
       ...(other?.avatar_url ? { avatar_url: other.avatar_url } : {}),
+      ...(other?.display_name ? { display_name: other.display_name } : {}),
       external_link_id: link.id,
       linked_at: link.created_at,
       thread_id: link.thread_id,

@@ -1,5 +1,5 @@
 import { ExternalContactsList } from "@/components/external-contacts-list";
-import { LoggedInHeader } from "@/components/logged-in-header";
+import { SiteHeader } from "@/components/site-header";
 import { PairingPinCard } from "@/components/pairing-pin-card";
 import { PendingPairList } from "@/components/pending-pair-list";
 import { RequestPairForm } from "@/components/request-pair-form";
@@ -47,7 +47,7 @@ export default async function ContactsPage() {
 
   return (
     <Shell wide>
-      <LoggedInHeader />
+      <SiteHeader />
       <PageTitle
         title="Contacts"
         subtitle="Pair with people outside your org, or copy teammate handles. Encrypted mail still lives in the desktop app."
@@ -69,7 +69,7 @@ export default async function ContactsPage() {
           <PairingPinCard initialPin={pin} />
         </section>
 
-        <section className="max-w-md">
+        <section id="add-contact" className="max-w-md scroll-mt-8">
           <h2 className="mb-4 font-display text-xl text-stone-900">
             Add contact
           </h2>

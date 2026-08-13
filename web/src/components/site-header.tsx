@@ -4,10 +4,11 @@ import { useLayoutEffect, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { AccountMenu } from "@/components/account-menu";
 import { TrackLink } from "@/components/track-link";
+import { BrandMark } from "@/components/ui";
 import { AnalyticsEvent } from "@/lib/analytics-events";
 
 const navLinkClass =
-  "rounded-md px-3 py-2 text-sm text-stone-700 transition hover:bg-stone-200/40";
+  "rounded-md px-2.5 py-2 text-sm text-stone-700 transition hover:bg-stone-200/40 sm:px-3";
 
 const CACHE_KEY = "mutande.landing-nav.v1";
 
@@ -20,14 +21,14 @@ type AuthedNavState = {
   avatarUrl?: string;
 };
 
-type LandingNavState = { authed: false } | AuthedNavState;
+type SiteNavState = { authed: false } | AuthedNavState;
 
 function readCached(): AuthedNavState | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = localStorage.getItem(CACHE_KEY);
     if (!raw) return null;
-    const data = JSON.parse(raw) as LandingNavState;
+    const data = JSON.parse(raw) as SiteNavState;
     if (
       data?.authed === true &&
       typeof data.handle === "string" &&
@@ -50,7 +51,7 @@ function readCached(): AuthedNavState | null {
   return null;
 }
 
-function writeCached(state: LandingNavState) {
+function writeCached(state: SiteNavState) {
   try {
     if (state.authed) localStorage.setItem(CACHE_KEY, JSON.stringify(state));
     else localStorage.removeItem(CACHE_KEY);
@@ -59,7 +60,7 @@ function writeCached(state: LandingNavState) {
   }
 }
 
-function normalize(data: LandingNavState): LandingNavState {
+function normalize(data: SiteNavState): SiteNavState {
   if (data?.authed !== true) return { authed: false };
   return {
     authed: true,
@@ -71,7 +72,7 @@ function normalize(data: LandingNavState): LandingNavState {
   };
 }
 
-function sameNav(a: LandingNavState, b: LandingNavState): boolean {
+function sameNav(a: SiteNavState, b: SiteNavState): boolean {
   if (a.authed !== b.authed) return false;
   if (!a.authed || !b.authed) return true;
   return (
@@ -101,32 +102,30 @@ function useNavMotion() {
   };
 }
 
-/**
- * One persistent nav bar. Docs always stays. Logged-in / Ops items animate onto
- * the bar and remain until auth or role actually changes (localStorage cache
- * avoids guest↔account teardown on remount).
- */
-export function LandingNav() {
-  // null = not resolved yet (SSR + first hydrate show Docs only — no Sign in flash).
-  const [state, setState] = useState<LandingNavState | null>(null);
+function SiteNav() {
+  // null = unresolved (SSR + first hydrate: stable links only, no Sign in flash).
+  const [state, setState] = useState<SiteNavState | null>(null);
   const motionProps = useNavMotion();
 
   useLayoutEffect(() => {
-    setState(readCached() ?? { authed: false });
+    const cached = readCached();
+    if (cached) setState(cached);
 
     let cancelled = false;
     void fetch("/api/landing-nav", { credentials: "same-origin" })
-      .then((res) => (res.ok ? res.json() : { authed: false as const }))
-      .then((raw: LandingNavState) => {
+      .then((res) => (res.ok ? res.json() : null))
+      .then((raw: SiteNavState | null) => {
         if (cancelled) return;
+        if (!raw) {
+          setState((prev) => prev ?? { authed: false });
+          return;
+        }
         const next = normalize(raw);
         writeCached(next);
-        setState((prev) =>
-          prev && sameNav(prev, next) ? prev : next,
-        );
+        setState((prev) => (prev && sameNav(prev, next) ? prev : next));
       })
       .catch(() => {
-        // Keep current chrome on blips.
+        if (!cancelled) setState((prev) => prev ?? { authed: false });
       });
 
     return () => {
@@ -134,26 +133,47 @@ export function LandingNav() {
     };
   }, []);
 
+  const onboarded = Boolean(state?.authed && state.onboarded);
   const showOps = Boolean(state?.authed && state.showOps);
+  const showInvites = Boolean(state?.authed && state.showOrganization);
 
   return (
-    <nav className="flex items-center gap-1 sm:gap-2">
+    <nav className="flex flex-wrap items-center justify-end gap-0.5 sm:gap-1">
       <a href="/docs" className={navLinkClass}>
         Docs
       </a>
+      <TrackLink
+        href="/download"
+        event={AnalyticsEvent.DownloadNavClick}
+        props={{ surface: "site_nav" }}
+        className={navLinkClass}
+      >
+        Try Alpha
+      </TrackLink>
 
       {state ? (
         <>
           <AnimatePresence initial={false}>
-            {showOps ? (
-              <motion.a
-                key="ops"
-                href="/admin/ops"
-                className={navLinkClass}
+            {onboarded ? (
+              <motion.div
+                key="app-links"
+                className="flex flex-wrap items-center gap-0.5 sm:gap-1"
                 {...motionProps}
               >
-                Ops
-              </motion.a>
+                <a href="/contacts" className={navLinkClass}>
+                  Contacts
+                </a>
+                {showInvites ? (
+                  <a href="/admin/invites" className={navLinkClass}>
+                    Invites
+                  </a>
+                ) : null}
+                {showOps ? (
+                  <a href="/admin/ops" className={navLinkClass}>
+                    Ops
+                  </a>
+                ) : null}
+              </motion.div>
             ) : null}
           </AnimatePresence>
 
@@ -162,14 +182,13 @@ export function LandingNav() {
               <motion.div key="account" className="flex" {...motionProps}>
                 <AccountMenu
                   label={state.handle}
-                  showOrganization={state.showOrganization}
                   avatarUrl={state.avatarUrl}
                 />
               </motion.div>
             ) : state.authed ? (
               <motion.div
                 key="setup"
-                className="flex items-center gap-1 sm:gap-2"
+                className="flex items-center gap-0.5 sm:gap-1"
                 {...motionProps}
               >
                 <a
@@ -187,7 +206,7 @@ export function LandingNav() {
                 <TrackLink
                   href="/login"
                   event={AnalyticsEvent.SignInClick}
-                  props={{ surface: "landing_nav" }}
+                  props={{ surface: "site_nav" }}
                   className={navLinkClass}
                 >
                   Sign in
@@ -198,5 +217,27 @@ export function LandingNav() {
         </>
       ) : null}
     </nav>
+  );
+}
+
+const headerClass = {
+  shell: "mb-10 flex items-center justify-between gap-4",
+  landing:
+    "relative z-10 flex items-center justify-between gap-4 px-6 py-5 sm:px-10 lg:px-14",
+  login:
+    "relative z-10 flex items-center justify-between gap-4 px-6 py-5 sm:px-8",
+} as const;
+
+/** One chrome for marketing + app pages. Docs (Nextra) stays its own navbar. */
+export function SiteHeader({
+  variant = "shell",
+}: {
+  variant?: keyof typeof headerClass;
+}) {
+  return (
+    <header className={headerClass[variant]}>
+      <BrandMark />
+      <SiteNav />
+    </header>
   );
 }

@@ -366,6 +366,8 @@ export interface Contact {
   kind?: "org" | "external" | "broadcast";
   /** Profile photo when the contact has one. */
   avatar_url?: string;
+  /** Profile display name when the contact has one. */
+  display_name?: string;
   /** External link id when kind === external. */
   external_link_id?: string;
   linked_at?: string;

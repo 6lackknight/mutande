@@ -572,7 +572,7 @@ export function OpsDashboard({
           ).map(({ title, id, config, wide }) => (
             <article
               key={id}
-              className={`flex min-h-64 flex-col rounded-md border border-stone-300/70 bg-white/60 p-4 ${
+              className={`flex min-h-72 flex-col rounded-md border border-stone-300/70 bg-white/60 p-4 ${
                 wide ? "md:col-span-2" : ""
               }`}
             >

@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { JoinForm } from "@/components/join-form";
-import { Alert, BrandMark, PageTitle, Shell } from "@/components/ui";
+import { SiteHeader } from "@/components/site-header";
+import { Alert, PageTitle, Shell } from "@/components/ui";
 import {
   defaultHandleFromEmail,
   loadMeOrNull,
@@ -29,12 +30,7 @@ export default async function JoinPage({
 
   return (
     <Shell>
-      <div className="mb-10 flex items-center justify-between gap-4">
-        <BrandMark />
-        <a href="/signup" className="text-sm text-muted hover:text-stone-800">
-          Back
-        </a>
-      </div>
+      <SiteHeader />
       <PageTitle
         title="Join with invite"
         subtitle="Use the code from your admin or a shared /join?invite=… link."

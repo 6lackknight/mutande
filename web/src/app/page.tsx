@@ -1,8 +1,7 @@
 import { LandingForceField } from "@/components/landing-force-field";
 import { LandingIntroVideo } from "@/components/landing-intro-video";
-import { LandingNav } from "@/components/landing-nav";
+import { SiteHeader } from "@/components/site-header";
 import { TrackButtonLink } from "@/components/track-button-link";
-import { BrandMark } from "@/components/ui";
 import { AnalyticsEvent } from "@/lib/analytics-events";
 import { LANDING_INTRO_POSTER_URL } from "@/lib/brand-assets";
 
@@ -23,10 +22,7 @@ export default function LandingPage() {
           className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_70%_50%_at_80%_20%,color-mix(in_oklch,var(--accent)_10%,transparent),transparent_60%)]"
         />
 
-        <header className="relative z-10 flex items-center justify-between px-6 py-5 sm:px-10 lg:px-14">
-          <BrandMark />
-          <LandingNav />
-        </header>
+        <SiteHeader variant="landing" />
 
         <main className="relative z-10 flex flex-1 flex-col justify-center px-6 pb-12 pt-4 sm:px-10 lg:px-14">
           <div className="mx-auto grid w-full max-w-[72rem] items-center gap-10 md:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] md:gap-x-10 md:gap-y-0 lg:gap-x-14 xl:gap-x-20">

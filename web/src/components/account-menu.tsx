@@ -2,14 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 
-/** Small account dropdown — handle as trigger, org/profile/logout beneath. */
+/** Small account dropdown — handle as trigger, dashboard / profile / logout. */
 export function AccountMenu({
   label,
-  showOrganization,
   avatarUrl,
 }: {
   label: string;
-  showOrganization?: boolean;
   avatarUrl?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -75,17 +73,12 @@ export function AccountMenu({
           role="menu"
           className="absolute right-0 top-full z-30 mt-1.5 w-44 overflow-hidden rounded-lg border border-stone-300/60 bg-white/95 py-1 shadow-[0_12px_32px_-16px_rgba(28,25,23,0.35)] backdrop-blur-sm"
         >
+          <a role="menuitem" href="/dashboard" className={itemClass}>
+            Dashboard
+          </a>
           <a role="menuitem" href="/profile" className={itemClass}>
             Profile
           </a>
-          <a role="menuitem" href="/contacts" className={itemClass}>
-            Contacts
-          </a>
-          {showOrganization ? (
-            <a role="menuitem" href="/admin/invites" className={itemClass}>
-              Organization
-            </a>
-          ) : null}
           <div className="mx-3 my-1 border-t border-stone-200" />
           <a role="menuitem" href="/auth/logout" className={itemClass}>
             Log out
