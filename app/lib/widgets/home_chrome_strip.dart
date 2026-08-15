@@ -4,7 +4,8 @@ import '../theme/mutande_macos_theme.dart';
 
 /// Pinned home tabs: Threads · Collab · Network.
 ///
-/// [CupertinoSlidingSegmentedControl] in the titlebar / top chrome row.
+/// Custom stadium segmented control in the titlebar — Flutter's
+/// [CupertinoSlidingSegmentedControl] hardcodes a 7px thumb / 9px track.
 class HomeChromeStrip extends StatelessWidget {
   const HomeChromeStrip({
     super.key,
@@ -26,8 +27,12 @@ class HomeChromeStrip extends StatelessWidget {
     CupertinoIcons.person_2,
   ];
 
+  static const _height = 40.0;
+  static const _inset = 3.0;
+
   @override
   Widget build(BuildContext context) {
+    final thumbHeight = _height - _inset * 2;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -37,24 +42,76 @@ class HomeChromeStrip extends StatelessWidget {
             child: _AtIGlyph(),
           ),
         ],
-        CupertinoSlidingSegmentedControl<int>(
-          groupValue: tab,
-          onValueChanged: (value) {
-            if (value != null) onTab(value);
-          },
-          thumbColor: MutandeColors.stone50,
-          backgroundColor: MutandeColors.stone200,
-          proportionalWidth: true,
-          children: {
-            for (var i = 0; i < labels.length; i++)
-              i: _SegmentLabel(
-                icon: icons[i],
-                label: labels[i],
-                selected: tab == i,
+        SizedBox(
+          height: _height,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: MutandeColors.stone200,
+              borderRadius: BorderRadius.circular(_height / 2),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(6, _inset, 6, _inset),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (var i = 0; i < labels.length; i++)
+                    _HeaderThumb(
+                      selected: tab == i,
+                      thumbHeight: thumbHeight,
+                      onTap: () => onTab(i),
+                      child: _SegmentLabel(
+                        icon: icons[i],
+                        label: labels[i],
+                        selected: tab == i,
+                      ),
+                    ),
+                ],
               ),
-          },
+            ),
+          ),
         ),
       ],
+    );
+  }
+}
+
+class _HeaderThumb extends StatelessWidget {
+  const _HeaderThumb({
+    required this.selected,
+    required this.thumbHeight,
+    required this.onTap,
+    required this.child,
+  });
+
+  final bool selected;
+  final double thumbHeight;
+  final VoidCallback onTap;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          onTap: onTap,
+          behavior: HitTestBehavior.opaque,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 140),
+            height: thumbHeight,
+            constraints: const BoxConstraints(minWidth: 112),
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: selected ? MutandeColors.stone50 : const Color(0x00000000),
+              borderRadius: BorderRadius.circular(thumbHeight / 2),
+            ),
+            child: child,
+          ),
+        ),
+      ),
     );
   }
 }
@@ -76,12 +133,12 @@ class _SegmentLabel extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 14, color: color),
-        const SizedBox(width: 5),
+        Icon(icon, size: 16, color: color),
+        const SizedBox(width: 6),
         Text(
           label,
           style: TextStyle(
-            fontSize: 13,
+            fontSize: 15,
             fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
             color: color,
           ),

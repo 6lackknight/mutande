@@ -1141,7 +1141,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 automaticallyImplyLeading: false,
                 dividerColor: MacosColors.transparent,
                 title: _tabStrip(showGlyph: true),
-                titleWidth: 540,
+                titleWidth: 720,
                 actions: [
                   if (_searchInChrome)
                     CustomToolbarItem(

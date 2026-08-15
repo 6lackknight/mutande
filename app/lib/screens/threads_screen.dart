@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_resizable_container/flutter_resizable_container.dart';
@@ -702,35 +701,45 @@ class _ThreadsChrome extends StatelessWidget {
       children: [
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
-          child: CupertinoSlidingSegmentedControl<String>(
-            groupValue: filter,
-            proportionalWidth: true,
-            thumbColor: MutandeColors.stone50,
-            backgroundColor: MutandeColors.stone200,
-            onValueChanged: (value) {
-              if (value != null) onFilterChanged(value);
-            },
-            children: {
-              'all': _FilterSeg(label: 'All', selected: filter == 'all'),
-              'needs_action': _FilterSeg(
+          child: Row(
+            children: [
+              _ScopePill(
+                label: 'All',
+                selected: filter == 'all',
+                onTap: () => onFilterChanged('all'),
+              ),
+              const SizedBox(width: 4),
+              _ScopePill(
                 label: 'Needs you',
                 selected: filter == 'needs_action',
                 badge: needsYouCount,
+                onTap: () => onFilterChanged('needs_action'),
               ),
-              'open': _FilterSeg(label: 'Open', selected: filter == 'open'),
-              'closed': _FilterSeg(
+              const SizedBox(width: 4),
+              _ScopePill(
+                label: 'Open',
+                selected: filter == 'open',
+                onTap: () => onFilterChanged('open'),
+              ),
+              const SizedBox(width: 4),
+              _ScopePill(
                 label: 'Closed',
                 selected: filter == 'closed',
+                onTap: () => onFilterChanged('closed'),
               ),
-              'collab': _FilterSeg(
+              const SizedBox(width: 4),
+              _ScopePill(
                 label: 'Collab',
                 selected: filter == 'collab',
+                onTap: () => onFilterChanged('collab'),
               ),
-              'unfiled': _FilterSeg(
+              const SizedBox(width: 4),
+              _ScopePill(
                 label: 'Unfiled',
                 selected: filter == 'unfiled',
+                onTap: () => onFilterChanged('unfiled'),
               ),
-            },
+            ],
           ),
         ),
         const SizedBox(height: 8),
@@ -893,54 +902,71 @@ class _SearchComposeCapsule extends StatelessWidget {
   }
 }
 
-class _FilterSeg extends StatelessWidget {
-  const _FilterSeg({
+class _ScopePill extends StatelessWidget {
+  const _ScopePill({
     required this.label,
     required this.selected,
+    required this.onTap,
     this.badge = 0,
   });
 
   final String label;
   final bool selected;
+  final VoidCallback onTap;
   final int badge;
 
   @override
   Widget build(BuildContext context) {
-    final color = selected ? MutandeColors.stone800 : MutandeColors.stone500;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-            color: color,
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? MutandeColors.stone800 : MutandeColors.stone100,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: selected ? MutandeColors.stone800 : MutandeColors.stone200,
           ),
         ),
-        if (badge > 0) ...[
-          const SizedBox(width: 5),
-          Container(
-            constraints: const BoxConstraints(minWidth: 14),
-            height: 14,
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: MutandeColors.amber,
-              borderRadius: BorderRadius.circular(7),
-            ),
-            child: Text(
-              badge > 9 ? '9+' : '$badge',
-              style: const TextStyle(
-                color: Color(0xFFFFFFFF),
-                fontSize: 9,
-                fontWeight: FontWeight.w700,
-                height: 1,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: selected
+                    ? MutandeColors.stone50
+                    : MutandeColors.stone600,
               ),
             ),
-          ),
-        ],
-      ],
+            if (badge > 0) ...[
+              const SizedBox(width: 6),
+              Container(
+                constraints: const BoxConstraints(minWidth: 16),
+                height: 16,
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: MutandeColors.amber,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  badge > 9 ? '9+' : '$badge',
+                  style: const TextStyle(
+                    color: Color(0xFFFFFFFF),
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                    height: 1,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }
