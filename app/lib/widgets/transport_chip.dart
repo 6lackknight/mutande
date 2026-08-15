@@ -38,6 +38,28 @@ class TransportChip extends StatelessWidget {
     );
   }
 
+  /// Quiet "web" caption for roster pills. Null for sidecar / unknown.
+  static Widget? webCaption({
+    AgentTransport? transport,
+    bool inverted = false,
+    Key? key,
+  }) {
+    if (!isHostedWebTransport(transport)) return null;
+    return Text(
+      'web',
+      key: key,
+      style: TextStyle(
+        color: inverted
+            ? MutandeColors.stone50.withValues(alpha: 0.72)
+            : MutandeColors.stone500,
+        fontSize: 10,
+        fontWeight: FontWeight.w600,
+        height: 1.1,
+        letterSpacing: 0.15,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final label = transport.chipLabel;

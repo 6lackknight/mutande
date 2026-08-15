@@ -1,21 +1,14 @@
 import 'package:flutter/material.dart';
 
-import '../models/agent_transport.dart';
 import '../services/daemon_client.dart';
-import '../services/daemon_errors.dart';
 import '../theme/mutande_macos_theme.dart';
+import '../widgets/create_collab_sheet.dart';
 import '../widgets/pane_quiet_state.dart';
 import '../widgets/thinking_orb.dart';
 import 'threads_screen.dart';
 
-/// Honest encryption copy — never says "insecure"; names the cause address.
-String collabEncryptionCopy({required bool e2e, String? causeAddress}) {
-  if (e2e) {
-    return 'Mail in this collab is sealed to steerer devices.';
-  }
-  final who = (causeAddress ?? 'a hosted agent').toLowerCase();
-  return "E2E isn't available for this collab — $who reads mail through the hub.";
-}
+export '../widgets/create_collab_sheet.dart'
+    show collabEncryptionCopy, collabInstructionsVisible;
 
 /// Collab tab: named boards → Trello-style lanes. Card = thread.
 class CollabPanel extends StatefulWidget {
@@ -24,11 +17,15 @@ class CollabPanel extends StatefulWidget {
     required this.daemon,
     this.handle,
     this.onReloadReady,
+    this.initialCollabId,
+    this.onInitialCollabHandled,
   });
 
   final DaemonClient daemon;
   final String? handle;
   final void Function(VoidCallback? reload)? onReloadReady;
+  final String? initialCollabId;
+  final VoidCallback? onInitialCollabHandled;
 
   @override
   State<CollabPanel> createState() => _CollabPanelState();
@@ -44,7 +41,25 @@ class _CollabPanelState extends State<CollabPanel> {
   void initState() {
     super.initState();
     widget.onReloadReady?.call(_reload);
+    final initial = widget.initialCollabId?.trim();
+    if (initial != null && initial.isNotEmpty) {
+      _openId = initial;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        widget.onInitialCollabHandled?.call();
+      });
+    }
     _reload();
+  }
+
+  @override
+  void didUpdateWidget(covariant CollabPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final next = widget.initialCollabId?.trim();
+    final prev = oldWidget.initialCollabId?.trim();
+    if (next != null && next.isNotEmpty && next != prev) {
+      setState(() => _openId = next);
+      widget.onInitialCollabHandled?.call();
+    }
   }
 
   @override
@@ -54,8 +69,9 @@ class _CollabPanelState extends State<CollabPanel> {
   }
 
   Future<void> _reload() async {
+    final hasList = _collabs.isNotEmpty;
     setState(() {
-      _loading = true;
+      if (!hasList) _loading = true;
       _error = null;
     });
     try {
@@ -64,22 +80,22 @@ class _CollabPanelState extends State<CollabPanel> {
       setState(() {
         _collabs = list;
         _loading = false;
+        _error = null;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _loading = false;
         _error = friendlyDaemonError(e, what: 'Collab');
-        _collabs = const [];
       });
     }
   }
 
   Future<void> _create() async {
-    final created = await showDialog<CollabDetail>(
+    final created = await showCreateCollabSheet(
       context: context,
-      builder: (ctx) =>
-          _CreateCollabDialog(daemon: widget.daemon, handle: widget.handle),
+      daemon: widget.daemon,
+      handle: widget.handle,
     );
     if (created == null || !mounted) return;
     await _reload();
@@ -105,6 +121,15 @@ class _CollabPanelState extends State<CollabPanel> {
       return Center(child: MutandeOrb.standard(size: ThinkingOrbSize.panel));
     }
 
+    if (_error != null && _collabs.isEmpty) {
+      return PaneQuietState(
+        title: "Couldn't load collabs",
+        body: _error,
+        icon: Icons.cloud_off_outlined,
+        onRetry: _reload,
+      );
+    }
+
     if (_collabs.isEmpty) {
       return PaneQuietState(
         title: 'No collabs yet',
@@ -121,10 +146,7 @@ class _CollabPanelState extends State<CollabPanel> {
         if (_error != null)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: Text(
-              _error!,
-              style: const TextStyle(color: MutandeColors.bronze, fontSize: 12),
-            ),
+            child: PaneInlineError(message: _error!, onRetry: _reload),
           ),
         Align(
           alignment: Alignment.centerRight,
@@ -166,176 +188,6 @@ class _CollabPanelState extends State<CollabPanel> {
               );
             },
           ),
-        ),
-      ],
-    );
-  }
-}
-
-class _CreateCollabDialog extends StatefulWidget {
-  const _CreateCollabDialog({required this.daemon, this.handle});
-
-  final DaemonClient daemon;
-  final String? handle;
-
-  @override
-  State<_CreateCollabDialog> createState() => _CreateCollabDialogState();
-}
-
-class _CreateCollabDialogState extends State<_CreateCollabDialog> {
-  final _name = TextEditingController();
-  final _instructions = TextEditingController();
-  final _roster = TextEditingController();
-  bool _busy = false;
-  String? _error;
-  String? _cause;
-  bool _e2e = true;
-
-  @override
-  void dispose() {
-    _name.dispose();
-    _instructions.dispose();
-    _roster.dispose();
-    super.dispose();
-  }
-
-  Future<void> _refreshMode() async {
-    final addrs = _roster.text
-        .split(RegExp(r'[\s,]+'))
-        .map((s) => s.trim().toLowerCase())
-        .where((s) => s.isNotEmpty)
-        .toList();
-    var e2e = true;
-    String? cause;
-    try {
-      final own = await widget.daemon.listAgents();
-      for (final addr in addrs) {
-        final slug = addr.contains('/')
-            ? addr.split('/').last
-            : (addr.startsWith('@') ? addr.substring(1) : null);
-        if (slug == null) continue;
-        for (final a in own.agents) {
-          if (a.slug == slug && a.transport == AgentTransport.mcp) {
-            e2e = false;
-            cause = addr.startsWith('@')
-                ? '${(widget.handle ?? '').toLowerCase()}/$slug'.replaceFirst(
-                    RegExp(r'^/'),
-                    '',
-                  )
-                : addr;
-          }
-        }
-      }
-    } catch (_) {}
-    if (!mounted) return;
-    setState(() {
-      _e2e = e2e;
-      _cause = cause;
-    });
-  }
-
-  Future<void> _submit() async {
-    final name = _name.text.trim();
-    if (name.isEmpty) {
-      setState(() => _error = 'Name is required.');
-      return;
-    }
-    final roster = _roster.text
-        .split(RegExp(r'[\s,]+'))
-        .map((s) => s.trim().toLowerCase())
-        .where((s) => s.isNotEmpty)
-        .toList();
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
-    try {
-      final created = await widget.daemon.createCollab(
-        name: name,
-        rosterAddresses: roster,
-        instructions: _e2e ? null : _instructions.text.trim(),
-      );
-      if (!mounted) return;
-      Navigator.of(context).pop(created);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _busy = false;
-        _error = friendlyDaemonError(e, what: 'Create collab');
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Create collab'),
-      content: SizedBox(
-        width: 420,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            TextField(
-              controller: _name,
-              autofocus: true,
-              decoration: const InputDecoration(labelText: 'Name'),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _roster,
-              onChanged: (_) => _refreshMode(),
-              decoration: const InputDecoration(
-                labelText: 'Roster (agent addresses)',
-                hintText: '@cursor, bob@acme/claude',
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              collabEncryptionCopy(e2e: _e2e, causeAddress: _cause),
-              style: const TextStyle(
-                fontSize: 12,
-                color: MutandeColors.stone600,
-              ),
-            ),
-            if (!_e2e) ...[
-              const SizedBox(height: 10),
-              TextField(
-                controller: _instructions,
-                maxLines: 3,
-                decoration: const InputDecoration(
-                  labelText: 'Instructions',
-                  hintText: 'Standing context for this board',
-                ),
-              ),
-            ],
-            if (_error != null) ...[
-              const SizedBox(height: 8),
-              Text(
-                _error!,
-                style: const TextStyle(
-                  color: MutandeColors.bronze,
-                  fontSize: 12,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: _busy ? null : () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: _busy ? null : _submit,
-          child: _busy
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: MutandeOrb.standard(size: ThinkingOrbSize.inline),
-                )
-              : const Text('Create'),
         ),
       ],
     );
@@ -837,36 +689,44 @@ class _BrainPanelState extends State<_BrainPanel> {
   @override
   Widget build(BuildContext context) {
     final collab = widget.collab;
+    final showInstructions = collabInstructionsVisible(
+      steerers: collab.steererHandles.isNotEmpty
+          ? collab.steererHandles
+          : [if (widget.handle != null) widget.handle!],
+      roster: collab.roster.map((r) => r.address),
+    );
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
       children: [
-        const Text(
-          'Instructions',
-          style: TextStyle(
-            fontWeight: FontWeight.w600,
-            color: MutandeColors.stone800,
-          ),
-        ),
-        const SizedBox(height: 6),
-        TextField(
-          controller: _instructions,
-          maxLines: 5,
-          enabled: !collab.isE2e,
-          decoration: InputDecoration(
-            hintText: collab.isE2e
-                ? 'E2E instructions stay sealed on this device.'
-                : 'Standing context for this board',
-          ),
-        ),
-        if (!collab.isE2e)
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton(
-              onPressed: _saving ? null : _saveInstructions,
-              child: const Text('Save'),
+        if (showInstructions) ...[
+          const Text(
+            'Instructions',
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              color: MutandeColors.stone800,
             ),
           ),
-        const SizedBox(height: 12),
+          const SizedBox(height: 6),
+          TextField(
+            controller: _instructions,
+            maxLines: 5,
+            enabled: !collab.isE2e,
+            decoration: InputDecoration(
+              hintText: collab.isE2e
+                  ? 'E2E instructions stay sealed on this device.'
+                  : 'Standing context for this board',
+            ),
+          ),
+          if (!collab.isE2e)
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: _saving ? null : _saveInstructions,
+                child: const Text('Save'),
+              ),
+            ),
+          const SizedBox(height: 12),
+        ],
         const Text(
           'Learnings',
           style: TextStyle(

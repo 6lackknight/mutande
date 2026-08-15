@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_resizable_container/flutter_resizable_container.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -65,7 +64,7 @@ Future<bool?> confirmThreadAction(
   );
 }
 
-/// Stitch home threads — filters, list rows, search + new thread footer.
+/// Stitch home threads — filters, list rows, compose.
 class ThreadsPanel extends StatefulWidget {
   ThreadsPanel({
     super.key,
@@ -77,11 +76,6 @@ class ThreadsPanel extends StatefulWidget {
     this.onComposeRecipientHandled,
     this.initialThreadId,
     this.onInitialThreadHandled,
-    this.searchController,
-    this.searchFocus,
-    this.onSearchQueryChanged,
-    this.onSearchSubmit,
-    this.onClearSearch,
     NotificationPrefsStore? notificationPrefs,
   }) : notificationPrefs = notificationPrefs ?? NotificationPrefsStore();
 
@@ -102,13 +96,6 @@ class ThreadsPanel extends StatefulWidget {
   /// When set, opens this thread (e.g. after first-run ping).
   final String? initialThreadId;
   final VoidCallback? onInitialThreadHandled;
-
-  /// Home search — Compose + Search row (Penpot Threads).
-  final TextEditingController? searchController;
-  final FocusNode? searchFocus;
-  final ValueChanged<String>? onSearchQueryChanged;
-  final VoidCallback? onSearchSubmit;
-  final VoidCallback? onClearSearch;
 
   final NotificationPrefsStore notificationPrefs;
 
@@ -515,11 +502,6 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
             onFilterChanged: _onFilterChanged,
             needsYouCount: _needsYouCount,
             onCompose: () => setState(() => _composeOpen = true),
-            searchController: widget.searchController,
-            searchFocus: widget.searchFocus,
-            onSearchQueryChanged: widget.onSearchQueryChanged,
-            onSearchSubmit: widget.onSearchSubmit,
-            onClearSearch: widget.onClearSearch,
           ),
           if (_composeOpen) ...[
             const SizedBox(height: 12),
@@ -663,130 +645,71 @@ class _EmptyReadingPane extends StatelessWidget {
   }
 }
 
-/// Pills chrome — All / Needs you / Open / Closed, then Search+Compose capsule.
+/// Pills chrome — All / Needs you / Open / Closed / Collab / Unfiled, Compose trailing.
 class _ThreadsChrome extends StatelessWidget {
   const _ThreadsChrome({
     required this.filter,
     required this.onFilterChanged,
     required this.needsYouCount,
     required this.onCompose,
-    this.searchController,
-    this.searchFocus,
-    this.onSearchQueryChanged,
-    this.onSearchSubmit,
-    this.onClearSearch,
   });
 
   final String filter;
   final ValueChanged<String> onFilterChanged;
   final int needsYouCount;
   final VoidCallback onCompose;
-  final TextEditingController? searchController;
-  final FocusNode? searchFocus;
-  final ValueChanged<String>? onSearchQueryChanged;
-  final VoidCallback? onSearchSubmit;
-  final VoidCallback? onClearSearch;
 
   @override
   Widget build(BuildContext context) {
-    final search =
-        searchController != null &&
-        searchFocus != null &&
-        onSearchQueryChanged != null &&
-        onSearchSubmit != null &&
-        onClearSearch != null;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    return Row(
       children: [
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              _ScopePill(
-                label: 'All',
-                selected: filter == 'all',
-                onTap: () => onFilterChanged('all'),
-              ),
-              const SizedBox(width: 4),
-              _ScopePill(
-                label: 'Needs you',
-                selected: filter == 'needs_action',
-                badge: needsYouCount,
-                onTap: () => onFilterChanged('needs_action'),
-              ),
-              const SizedBox(width: 4),
-              _ScopePill(
-                label: 'Open',
-                selected: filter == 'open',
-                onTap: () => onFilterChanged('open'),
-              ),
-              const SizedBox(width: 4),
-              _ScopePill(
-                label: 'Closed',
-                selected: filter == 'closed',
-                onTap: () => onFilterChanged('closed'),
-              ),
-              const SizedBox(width: 4),
-              _ScopePill(
-                label: 'Collab',
-                selected: filter == 'collab',
-                onTap: () => onFilterChanged('collab'),
-              ),
-              const SizedBox(width: 4),
-              _ScopePill(
-                label: 'Unfiled',
-                selected: filter == 'unfiled',
-                onTap: () => onFilterChanged('unfiled'),
-              ),
-            ],
+        Expanded(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _ScopePill(
+                  label: 'All',
+                  selected: filter == 'all',
+                  onTap: () => onFilterChanged('all'),
+                ),
+                const SizedBox(width: 4),
+                _ScopePill(
+                  label: 'Needs you',
+                  selected: filter == 'needs_action',
+                  badge: needsYouCount,
+                  onTap: () => onFilterChanged('needs_action'),
+                ),
+                const SizedBox(width: 4),
+                _ScopePill(
+                  label: 'Open',
+                  selected: filter == 'open',
+                  onTap: () => onFilterChanged('open'),
+                ),
+                const SizedBox(width: 4),
+                _ScopePill(
+                  label: 'Closed',
+                  selected: filter == 'closed',
+                  onTap: () => onFilterChanged('closed'),
+                ),
+                const SizedBox(width: 4),
+                _ScopePill(
+                  label: 'Collab',
+                  selected: filter == 'collab',
+                  onTap: () => onFilterChanged('collab'),
+                ),
+                const SizedBox(width: 4),
+                _ScopePill(
+                  label: 'Unfiled',
+                  selected: filter == 'unfiled',
+                  onTap: () => onFilterChanged('unfiled'),
+                ),
+              ],
+            ),
           ),
         ),
-        const SizedBox(height: 8),
-        _SearchComposeCapsule(
-          onCompose: onCompose,
-          searchController: search ? searchController : null,
-          searchFocus: search ? searchFocus : null,
-          onSearchQueryChanged: search ? onSearchQueryChanged : null,
-          onSearchSubmit: search ? onSearchSubmit : null,
-          onClearSearch: search ? onClearSearch : null,
-        ),
-      ],
-    );
-  }
-}
-
-/// Search + Compose in one pill — compose sits trailing inside the capsule.
-class _SearchComposeCapsule extends StatelessWidget {
-  const _SearchComposeCapsule({
-    required this.onCompose,
-    this.searchController,
-    this.searchFocus,
-    this.onSearchQueryChanged,
-    this.onSearchSubmit,
-    this.onClearSearch,
-  });
-
-  final VoidCallback onCompose;
-  final TextEditingController? searchController;
-  final FocusNode? searchFocus;
-  final ValueChanged<String>? onSearchQueryChanged;
-  final VoidCallback? onSearchSubmit;
-  final VoidCallback? onClearSearch;
-
-  @override
-  Widget build(BuildContext context) {
-    final search =
-        searchController != null &&
-        searchFocus != null &&
-        onSearchQueryChanged != null &&
-        onSearchSubmit != null &&
-        onClearSearch != null;
-
-    if (!search) {
-      return Align(
-        alignment: Alignment.centerRight,
-        child: Tooltip(
+        const SizedBox(width: 8),
+        Tooltip(
           message: 'Compose (C)',
           child: Material(
             color: MutandeColors.stone800,
@@ -806,98 +729,7 @@ class _SearchComposeCapsule extends StatelessWidget {
             ),
           ),
         ),
-      );
-    }
-
-    return ListenableBuilder(
-      listenable: Listenable.merge([searchController!, searchFocus!]),
-      builder: (context, _) {
-        final focused = searchFocus!.hasFocus;
-        return DecoratedBox(
-          decoration: BoxDecoration(
-            color: MutandeColors.stone100,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: focused ? MutandeColors.stone800 : MutandeColors.stone200,
-              width: focused ? 1.5 : 1,
-            ),
-          ),
-          child: SizedBox(
-            height: 34,
-            child: Row(
-              children: [
-                const SizedBox(width: 10),
-                const Icon(
-                  Icons.search,
-                  size: 15,
-                  color: MutandeColors.stone400,
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: TextField(
-                    controller: searchController,
-                    focusNode: searchFocus,
-                    onChanged: onSearchQueryChanged,
-                    onSubmitted: (_) => onSearchSubmit?.call(),
-                    cursorColor: MutandeColors.stone800,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: MutandeColors.stone800,
-                    ),
-                    decoration: const InputDecoration(
-                      hintText: 'Search',
-                      isDense: true,
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      disabledBorder: InputBorder.none,
-                      contentPadding: EdgeInsets.symmetric(vertical: 8),
-                    ),
-                    inputFormatters: [
-                      FilteringTextInputFormatter.singleLineFormatter,
-                    ],
-                  ),
-                ),
-                if (searchController!.text.isNotEmpty)
-                  IconButton(
-                    tooltip: 'Clear',
-                    onPressed: onClearSearch,
-                    icon: const Icon(Icons.close, size: 14),
-                    color: MutandeColors.stone400,
-                    visualDensity: VisualDensity.compact,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(
-                      minWidth: 28,
-                      minHeight: 28,
-                    ),
-                  ),
-                Container(
-                  width: 1,
-                  height: 18,
-                  margin: const EdgeInsets.symmetric(horizontal: 2),
-                  color: MutandeColors.stone200,
-                ),
-                Tooltip(
-                  message: 'Compose (C)',
-                  child: InkWell(
-                    onTap: onCompose,
-                    borderRadius: BorderRadius.circular(14),
-                    child: const SizedBox(
-                      width: 32,
-                      height: 32,
-                      child: Icon(
-                        LucideIcons.squarePen,
-                        size: 15,
-                        color: MutandeColors.stone800,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 2),
-              ],
-            ),
-          ),
-        );
-      },
+      ],
     );
   }
 }

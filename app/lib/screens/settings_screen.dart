@@ -46,6 +46,9 @@ BoxDecoration _settingsCardDecoration({Color? borderColor, Color? fill}) {
   );
 }
 
+/// Where a titlebar shortcut should land inside Settings.
+enum SettingsOpenTarget { notifications, feedback }
+
 /// Plumbing + trust — pushed from the home gear (Stitch Settings hub).
 class SettingsScreen extends StatefulWidget {
   SettingsScreen({
@@ -62,6 +65,7 @@ class SettingsScreen extends StatefulWidget {
     this.onOpenThreads,
     this.onOpenAgents,
     this.onSignedOut,
+    this.openTo,
     HostLinkStore? hostLinkStore,
     NotificationPrefsStore? notificationPrefs,
     TransportPrefsStore? transportPrefs,
@@ -86,6 +90,8 @@ class SettingsScreen extends StatefulWidget {
   final VoidCallback? onOpenAgents;
   /// After local Auth0 logout — parent should leave Home for Sign in.
   final ValueChanged<DaemonStatusResult>? onSignedOut;
+  /// Scroll this section into view when the sheet opens.
+  final SettingsOpenTarget? openTo;
   final HostLinkStore hostLinkStore;
   final NotificationPrefsStore notificationPrefs;
   final TransportPrefsStore transportPrefs;
@@ -118,6 +124,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   TransportPrefs _transportPrefs = const TransportPrefs();
   List<AgentInfo> _agents = const [];
   bool _loadingTransport = false;
+  final _notificationsKey = GlobalKey();
+  final _feedbackKey = GlobalKey();
 
   @override
   void initState() {
@@ -130,6 +138,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _loadHostLinks();
     _loadNotifPrefs();
     _loadTransportPrefs();
+    if (widget.openTo != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToOpenTo());
+      });
+    }
+  }
+
+  void _scrollToOpenTo() {
+    if (!mounted) return;
+    final key = switch (widget.openTo) {
+      SettingsOpenTarget.notifications => _notificationsKey,
+      SettingsOpenTarget.feedback => _feedbackKey,
+      null => null,
+    };
+    final ctx = key?.currentContext;
+    if (ctx == null) return;
+    Scrollable.ensureVisible(
+      ctx,
+      alignment: 0.06,
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   Future<void> _refreshBundledCoreVersion() async {
@@ -569,6 +599,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             _section(
               context,
+              key: _notificationsKey,
               label: 'NOTIFICATIONS',
               child: _NotificationsCard(
                 prefs: _notifPrefs,
@@ -636,6 +667,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             _section(
               context,
+              key: _feedbackKey,
               label: 'FEEDBACK',
               child: _FeedbackCard(
                 daemon: widget.daemon,
@@ -650,11 +682,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _section(
     BuildContext context, {
+    Key? key,
     required String label,
     required Widget child,
     Widget? trailing,
   }) {
     return Padding(
+      key: key,
       padding: const EdgeInsets.only(bottom: _kSectionGap),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

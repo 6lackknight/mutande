@@ -101,6 +101,7 @@ All modules get tests. A good test exercises external behavior through the modul
 - Canvas view (schema stays extensible; not built).
 - Custom lane management beyond rename of the three defaults.
 - Paid gating (alpha ships Collab ungated; wiring may exist but off).
+- Using external contacts **in a collab** is ungated in alpha (Create lists approved paired externals in the same People picker). A **future paid/feature gate** comes before this is a general capability. Pairing stays on Contacts — Create does not invent a pairing flow.
 - Addressable collabs (`launch@acme`) — the Address Intelligence endgame, after the board is real.
 - Fork-collab as an alternative to downgrade consent.
 - History re-seal for late joiners; retroactive revocation.
@@ -112,3 +113,4 @@ All modules get tests. A good test exercises external behavior through the modul
 - Design review conducted over mutande itself: plan forwarded as a sealed blob to `@all`, ChatGPT and Claude replied on the thread, findings triaged and folded back (upvotes + nested decision replies on the same thread). Dogfood precedent worth repeating for future PRDs.
 - Claude's catch to keep visible for implementers: on an E2E collab, the brain is unwritable from hosted MCP by construction. This is a stated constraint, not a bug to fix.
 - Phasing (chrome → hub model → board UI → MCP/skill → Threads pills) keeps each step shippable; phase 1 has no hub dependency.
+- External-org collab participation: alpha may list approved externals on Create; do not ship a gate flag yet. Pairing remains a Contacts concern (`docs/EXTERNAL-CONTACTS.md`). Cross-org mail stays `app_envelope`.

@@ -13,7 +13,6 @@ import 'analytics_events.dart';
 import 'screens/collab_screen.dart';
 import 'screens/network_screen.dart';
 import 'screens/onboarding_flow_screen.dart';
-import 'screens/search_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/threads_screen.dart';
 import 'services/app_actions.dart';
@@ -29,8 +28,9 @@ import 'services/thread_list_cache_store.dart';
 import 'services/transport_prefs_store.dart';
 import 'theme/mutande_macos_theme.dart';
 import 'widgets/daemon_error_screen.dart';
+import 'widgets/home_chrome_pills.dart';
 import 'widgets/home_chrome_strip.dart';
-import 'widgets/home_search_field.dart';
+import 'widgets/search_dialog.dart';
 import 'widgets/thinking_orb.dart';
 import 'widgets/onboarding_stepper.dart';
 import 'widgets/welcome_splash.dart';
@@ -393,13 +393,20 @@ class _RootScreenState extends State<RootScreen> {
   }
 
   Future<void> _refreshStatus({bool bootstrap = false}) async {
+    // Already on Home: keep last-known UI. Pane errors (Collab, Threads)
+    // stay inline — don't eject to the courier splash.
+    final keepLastKnown = _status?.configured == true && _mailReady;
     setState(() {
-      _loading = true;
+      if (!keepLastKnown) {
+        _loading = true;
+        _mailReady = false;
+      }
       _statusError = null;
-      _mailReady = false;
       _loadingHint = bootstrap ? 'Starting' : null;
     });
-    AppActions.sessionReady.value = false;
+    if (!keepLastKnown) {
+      AppActions.sessionReady.value = false;
+    }
     _emitBootstrapPhase();
 
     Object? lastError;
@@ -409,7 +416,7 @@ class _RootScreenState extends State<RootScreen> {
     for (var attempt = 0; attempt < maxAttempts; attempt++) {
       try {
         final status = await _daemon.getStatus();
-        if (status.configured) {
+        if (status.configured && !keepLastKnown) {
           await _verifyMailReady(bootstrap: bootstrap);
         }
         if (!mounted) return;
@@ -457,11 +464,15 @@ class _RootScreenState extends State<RootScreen> {
     setState(() {
       _statusError = lastError.toString();
       _daemonReachable = health.connected;
-      _mailReady = false;
+      if (!keepLastKnown) {
+        _mailReady = false;
+      }
       _loading = false;
       _loadingHint = null;
     });
-    AppActions.sessionReady.value = false;
+    if (!keepLastKnown) {
+      AppActions.sessionReady.value = false;
+    }
     _emitBootstrapPhase();
   }
 
@@ -709,11 +720,12 @@ class _HomeScreenState extends State<HomeScreen> {
   VoidCallback? _reloadContacts;
   String? _composeRecipient;
   String? _openThreadId;
+  String? _openCollabId;
+  int _networkSegment = 0;
+  int _networkReset = 0;
   late final DaemonEventClient _inboxEvents;
 
-  bool _searchMode = false;
-  final _searchController = TextEditingController();
-  final _searchFocus = FocusNode();
+  bool _searchOpen = false;
   final List<String> _recentQueries = [];
 
   void _registerThreadsReload(VoidCallback? reload) {
@@ -736,7 +748,6 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _openThreadId = widget.initialThreadId;
-    _searchFocus.addListener(_onSearchFocusChanged);
     _inboxEvents = DaemonEventClient(
       httpBaseUrl: widget.daemon.httpBaseUrl,
       httpTokenPath: widget.daemon.httpTokenPath,
@@ -754,61 +765,14 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _openThreadId = next;
         _tab = 0;
-        if (_searchMode) _searchMode = false;
       });
     }
   }
 
   @override
   void dispose() {
-    _searchFocus.removeListener(_onSearchFocusChanged);
-    _searchFocus.dispose();
-    _searchController.dispose();
     unawaited(_inboxEvents.dispose());
     super.dispose();
-  }
-
-  void _onSearchFocusChanged() {
-    if (_searchFocus.hasFocus &&
-        _searchController.text.trim().isNotEmpty &&
-        !_searchMode) {
-      setState(() => _searchMode = true);
-    }
-  }
-
-  void _onSearchQueryChanged(String value) {
-    final active = value.trim().isNotEmpty;
-    setState(() {
-      _searchMode = active;
-    });
-    // Threads list search unmounts when SearchScreen opens — keep focus on the
-    // shared FocusNode after chrome/search surface remounts the field.
-    if (active) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        if (!_searchFocus.hasFocus) _searchFocus.requestFocus();
-      });
-    }
-  }
-
-  void _onSearchSubmit() {
-    final q = _searchController.text.trim();
-    if (q.isEmpty) return;
-    setState(() {
-      _searchMode = true;
-      _rememberQuery(q);
-    });
-  }
-
-  void _clearSearch() {
-    _searchController.clear();
-    setState(() => _searchMode = false);
-  }
-
-  void _exitSearch() {
-    if (!_searchMode) return;
-    _searchFocus.unfocus();
-    setState(() => _searchMode = false);
   }
 
   void _rememberQuery(String q) {
@@ -819,24 +783,35 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _pickRecent(String q) {
-    _searchController.text = q;
-    _searchController.selection = TextSelection.collapsed(offset: q.length);
-    setState(() {
-      _searchMode = true;
-      _rememberQuery(q);
-    });
-  }
-
-  void _openThreadFromSearch(String id) {
-    final q = _searchController.text.trim();
-    if (q.isNotEmpty) _rememberQuery(q);
-    setState(() {
-      _searchMode = false;
-      _tab = 0;
-      _openThreadId = id;
-    });
-    _searchFocus.unfocus();
+  Future<void> _openSearch() async {
+    if (_searchOpen) return;
+    _searchOpen = true;
+    try {
+      final hit = await showSearchDialog(
+        context: context,
+        daemon: widget.daemon,
+        myHandle: widget.status.handle,
+        recentQueries: List.unmodifiable(_recentQueries),
+        onRememberQuery: _rememberQuery,
+      );
+      if (!mounted || hit == null) return;
+      setState(() {
+        switch (hit.kind) {
+          case SearchHitKind.thread:
+            _tab = 0;
+            _openThreadId = hit.id;
+          case SearchHitKind.collab:
+            _tab = 1;
+            _openCollabId = hit.id;
+          case SearchHitKind.contact:
+            _tab = 2;
+            _networkSegment = 0;
+            _networkReset++;
+        }
+      });
+    } finally {
+      _searchOpen = false;
+    }
   }
 
   bool get _editableFocused {
@@ -851,19 +826,18 @@ class _HomeScreenState extends State<HomeScreen> {
 
   KeyEventResult _onHomeKey(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
-    if (event.logicalKey == LogicalKeyboardKey.escape && _searchMode) {
-      _exitSearch();
-      return KeyEventResult.handled;
-    }
+    if (_searchOpen) return KeyEventResult.ignored;
     final meta =
         HardwareKeyboard.instance.isMetaPressed ||
         HardwareKeyboard.instance.isControlPressed;
-    if (meta && event.logicalKey == LogicalKeyboardKey.keyF) {
-      _searchFocus.requestFocus();
+    if (meta &&
+        (event.logicalKey == LogicalKeyboardKey.keyF ||
+            event.logicalKey == LogicalKeyboardKey.keyK)) {
+      unawaited(_openSearch());
       return KeyEventResult.handled;
     }
     if (event.logicalKey == LogicalKeyboardKey.slash && !_editableFocused) {
-      _searchFocus.requestFocus();
+      unawaited(_openSearch());
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
@@ -879,7 +853,7 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  Future<void> _openSettings() async {
+  Future<void> _openSettings({SettingsOpenTarget? openTo}) async {
     await showMacosSheet<void>(
       context: context,
       barrierDismissible: true,
@@ -901,6 +875,7 @@ class _HomeScreenState extends State<HomeScreen> {
               hostLinkStore: widget.hostLinkStore,
               notificationPrefs: widget.notificationPrefs,
               transportPrefs: widget.transportPrefs,
+              openTo: openTo,
               onOpenThreads: () {
                 Navigator.of(sheetContext).pop();
                 _selectTab(0);
@@ -925,10 +900,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _selectTab(int i) {
     const tabs = ['threads', 'collab', 'network'];
     Analytics.track(AnalyticsEvent.tabSelect, {'tab': tabs[i]});
-    setState(() {
-      _tab = i;
-      if (_searchMode) _searchMode = false;
-    });
+    setState(() => _tab = i);
     if (i == 0) _reloadThreads?.call();
     if (i == 1) _reloadCollab?.call();
     if (i == 2) {
@@ -946,11 +918,6 @@ class _HomeScreenState extends State<HomeScreen> {
         onReloadReady: _registerThreadsReload,
         composeRecipient: _composeRecipient,
         notificationPrefs: widget.notificationPrefs,
-        searchController: _searchController,
-        searchFocus: _searchFocus,
-        onSearchQueryChanged: _onSearchQueryChanged,
-        onSearchSubmit: _onSearchSubmit,
-        onClearSearch: _clearSearch,
         onComposeRecipientHandled: () {
           if (_composeRecipient != null) {
             setState(() => _composeRecipient = null);
@@ -969,14 +936,22 @@ class _HomeScreenState extends State<HomeScreen> {
         daemon: widget.daemon,
         handle: widget.status.handle,
         onReloadReady: _registerCollabReload,
+        initialCollabId: _openCollabId,
+        onInitialCollabHandled: () {
+          if (_openCollabId != null) {
+            setState(() => _openCollabId = null);
+          }
+        },
       );
     }
     return NetworkPanel(
+      key: ValueKey(_networkReset),
       daemon: widget.daemon,
       handle: widget.status.handle,
       inviteWebUrl: widget.config.webAppUrl,
       appVersion: widget.appVersion,
       hostLinkStore: widget.hostLinkStore,
+      initialSegment: _networkSegment,
       onReloadPeople: _registerContactsReload,
       onReloadAgents: _registerAgentsReload,
       onViewThreads: () => _selectTab(0),
@@ -989,39 +964,44 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _contentBody() {
-    if (_searchMode) {
-      return SearchScreen(
-        daemon: widget.daemon,
-        query: _searchController.text,
-        recentQueries: List.unmodifiable(_recentQueries),
-        onPickRecent: _pickRecent,
-        onOpenThread: _openThreadFromSearch,
-        myHandle: widget.status.handle,
-      );
-    }
-    return _tabBody();
-  }
-
-  /// On Threads, search sits beside Compose. Elsewhere / in search mode, it
-  /// stays on the titlebar row so the field remains mounted.
-  bool get _searchInChrome => _searchMode || _tab != 0;
-
   Widget _tabStrip({bool showGlyph = false}) {
     return HomeChromeStrip(tab: _tab, onTab: _selectTab, showGlyph: showGlyph);
   }
 
-  Widget _titlebarSearch() {
-    return SizedBox(
-      width: 220,
-      height: 32,
-      child: HomeSearchField(
-        controller: _searchController,
-        focusNode: _searchFocus,
-        onChanged: _onSearchQueryChanged,
-        onSubmit: _onSearchSubmit,
-        onClear: _clearSearch,
-      ),
+  Widget _titlebarActions() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        HomeChromeIconButton(
+          key: const Key('home-search'),
+          icon: CupertinoIcons.search,
+          tooltip: 'Search',
+          onPressed: () => unawaited(_openSearch()),
+        ),
+        const SizedBox(width: HomeChrome.pillGap),
+        HomeChromeIconButton(
+          icon: CupertinoIcons.bell,
+          tooltip: 'Notifications',
+          onPressed: () =>
+              _openSettings(openTo: SettingsOpenTarget.notifications),
+        ),
+        const SizedBox(width: HomeChrome.pillGap),
+        HomeChromeIconCluster(
+          actions: [
+            HomeChromeIconAction(
+              icon: CupertinoIcons.question_circle,
+              tooltip: 'Support',
+              onPressed: () =>
+                  _openSettings(openTo: SettingsOpenTarget.feedback),
+            ),
+            HomeChromeIconAction(
+              icon: CupertinoIcons.settings,
+              tooltip: 'Settings',
+              onPressed: _openSettings,
+            ),
+          ],
+        ),
+      ],
     );
   }
 
@@ -1073,7 +1053,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: Row(
                         children: [
                           Padding(
-                            padding: const EdgeInsets.only(right: 12),
+                            padding: const EdgeInsets.only(
+                              left: HomeChrome.glyphLeading,
+                              right: 12,
+                            ),
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(7),
                               child: Image.asset(
@@ -1086,16 +1069,8 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                           _tabStrip(),
                           const Spacer(),
-                          if (_searchInChrome)
-                            Padding(
-                              padding: const EdgeInsets.only(right: 4),
-                              child: _titlebarSearch(),
-                            ),
-                          IconButton(
-                            tooltip: 'Settings',
-                            onPressed: _openSettings,
-                            icon: const Icon(Icons.settings_outlined, size: 18),
-                          ),
+                          _titlebarActions(),
+                          const SizedBox(width: 8),
                           Tooltip(
                             message: handle,
                             child: CircleAvatar(
@@ -1118,12 +1093,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   if (banner != null) banner,
                   Expanded(
                     child: Padding(
-                      padding: _searchMode
-                          ? EdgeInsets.zero
-                          : (_tab == 0 || _tab == 1
-                                ? const EdgeInsets.fromLTRB(0, 10, 0, 0)
-                                : const EdgeInsets.fromLTRB(16, 8, 16, 12)),
-                      child: _contentBody(),
+                      padding: _tab == 0 || _tab == 1
+                          ? const EdgeInsets.fromLTRB(0, 10, 0, 0)
+                          : const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                      child: _tabBody(),
                     ),
                   ),
                 ],
@@ -1137,22 +1110,39 @@ class _HomeScreenState extends State<HomeScreen> {
               backgroundColor: MutandeColors.stone100,
               toolBar: ToolBar(
                 alignment: Alignment.centerLeft,
-                padding: const EdgeInsets.fromLTRB(0, 4, 8, 4),
+                padding: const EdgeInsets.fromLTRB(0, 4, 12, 4),
                 automaticallyImplyLeading: false,
                 dividerColor: MacosColors.transparent,
                 title: _tabStrip(showGlyph: true),
-                titleWidth: 720,
+                titleWidth: 440,
                 actions: [
-                  if (_searchInChrome)
-                    CustomToolbarItem(
-                      inToolbarBuilder: (context) => _titlebarSearch(),
+                  CustomToolbarItem(
+                    inToolbarBuilder: (context) => _titlebarActions(),
+                    inOverflowedBuilder: (context) => Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ToolbarOverflowMenuItem(
+                          label: 'Search',
+                          onPressed: () => unawaited(_openSearch()),
+                        ),
+                        ToolbarOverflowMenuItem(
+                          label: 'Notifications',
+                          onPressed: () => _openSettings(
+                            openTo: SettingsOpenTarget.notifications,
+                          ),
+                        ),
+                        ToolbarOverflowMenuItem(
+                          label: 'Support',
+                          onPressed: () => _openSettings(
+                            openTo: SettingsOpenTarget.feedback,
+                          ),
+                        ),
+                        ToolbarOverflowMenuItem(
+                          label: 'Settings',
+                          onPressed: _openSettings,
+                        ),
+                      ],
                     ),
-                  ToolBarIconButton(
-                    label: 'Settings',
-                    icon: const MacosIcon(CupertinoIcons.settings),
-                    onPressed: _openSettings,
-                    showLabel: false,
-                    tooltipMessage: 'Settings',
                   ),
                 ],
               ),
@@ -1165,12 +1155,10 @@ class _HomeScreenState extends State<HomeScreen> {
                         if (banner != null) banner,
                         Expanded(
                           child: Padding(
-                            padding: (!_searchMode && (_tab == 0 || _tab == 1))
+                            padding: (_tab == 0 || _tab == 1)
                                 ? const EdgeInsets.fromLTRB(0, 10, 0, 0)
-                                : (!_searchMode
-                                      ? const EdgeInsets.fromLTRB(16, 8, 16, 12)
-                                      : EdgeInsets.zero),
-                            child: _contentBody(),
+                                : const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                            child: _tabBody(),
                           ),
                         ),
                       ],

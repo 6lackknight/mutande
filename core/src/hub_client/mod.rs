@@ -1267,6 +1267,50 @@ mod tests {
     }
 
     #[test]
+    fn collab_view_deserializes_hub_card_summaries() {
+        let json = r#"{
+            "id": "c1",
+            "org_id": "o1",
+            "name": "Launch",
+            "created_by": "u1",
+            "created_at": "2026-08-15T00:00:00Z",
+            "updated_at": "2026-08-15T00:00:00Z",
+            "encryption_mode": "e2e",
+            "lists": [{"id": "backlog", "name": "Backlog", "position": 0}],
+            "roster": [],
+            "memory_thread_id": "m1",
+            "card_count": 1,
+            "steerers": [{"user_id": "u1", "handle": "alice@acme"}],
+            "cards": [{
+                "id": "t1",
+                "lane_id": "backlog",
+                "lane_position": 1000,
+                "status": "open",
+                "from": "alice@acme",
+                "audience": "bob@acme",
+                "updated_at": "2026-08-15T00:00:00Z",
+                "your_status": "pending"
+            }],
+            "learnings": [{
+                "id": "l1",
+                "created_at": "2026-08-15T00:00:00Z",
+                "from_handle": "alice@acme",
+                "notes": "ship friday"
+            }]
+        }"#;
+        let collab: Collab = serde_json::from_str(json).unwrap();
+        assert_eq!(collab.cards.len(), 1);
+        assert_eq!(collab.cards[0].id, "t1");
+        assert_eq!(collab.cards[0].lane_id.as_deref(), Some("backlog"));
+        assert_eq!(collab.learnings.len(), 1);
+        assert_eq!(collab.learnings[0].created_at, "2026-08-15T00:00:00Z");
+        assert_eq!(
+            collab.learnings[0].from_handle.as_deref(),
+            Some("alice@acme")
+        );
+    }
+
+    #[test]
     fn thread_detail_deserializes_thread_and_messages() {
         let json = r#"{
             "thread": {

@@ -31,6 +31,10 @@ enum AgentTransport {
       };
 }
 
+/// Hosted MCP / app_envelope path. Sidecar and unknown are not web.
+bool isHostedWebTransport(AgentTransport? transport) =>
+    transport == AgentTransport.mcp;
+
 /// Hub-assigned trust tier — drives non-E2E compose warnings.
 enum TrustTier {
   org,

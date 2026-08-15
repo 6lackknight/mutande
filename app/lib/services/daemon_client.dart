@@ -1437,6 +1437,7 @@ class CollabDetail {
     required this.encryptionMode,
     required this.lists,
     this.roster = const [],
+    this.steererHandles = const [],
     this.cards = const [],
     this.learnings = const [],
     this.instructions,
@@ -1450,6 +1451,7 @@ class CollabDetail {
     final rosterRaw = map['roster'] as List<dynamic>? ?? const [];
     final cardsRaw = map['cards'] as List<dynamic>? ?? const [];
     final learnRaw = map['learnings'] as List<dynamic>? ?? const [];
+    final steerersRaw = map['steerers'] as List<dynamic>? ?? const [];
     final point = map['downgrade_point'] as Map<String, dynamic>?;
     return CollabDetail(
       id: map['id'] as String? ?? '',
@@ -1462,6 +1464,11 @@ class CollabDetail {
       roster: rosterRaw
           .map((e) => CollabRosterView.fromJson(e as Map<String, dynamic>? ?? {}))
           .toList(),
+      steererHandles: [
+        for (final e in steerersRaw)
+          if (e is Map && (e['handle'] as String?)?.trim().isNotEmpty == true)
+            (e['handle'] as String).trim().toLowerCase(),
+      ],
       cards: cardsRaw
           .map((e) => CollabCardView.fromJson(e as Map<String, dynamic>? ?? {}))
           .toList(),
@@ -1481,6 +1488,7 @@ class CollabDetail {
   final String encryptionMode;
   final List<CollabListView> lists;
   final List<CollabRosterView> roster;
+  final List<String> steererHandles;
   final List<CollabCardView> cards;
   final List<CollabLearningView> learnings;
   final String? instructions;

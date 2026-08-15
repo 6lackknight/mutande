@@ -52,6 +52,15 @@ DaemonClient _mockDaemon(
         }
         return _rpcOk(body['id'], {'collabs': []});
       }
+      if (method == 'list_contacts' || method == 'list_external_contacts') {
+        final override = await handler(request);
+        final overrideBody = jsonDecode(override.body) as Map<String, dynamic>;
+        if (overrideBody['result'] is Map &&
+            (overrideBody['result'] as Map).containsKey('contacts')) {
+          return override;
+        }
+        return _rpcOk(body['id'], {'contacts': []});
+      }
       return handler(request);
     }),
     httpToken: 'test-token',
@@ -188,6 +197,7 @@ void main() {
     expect(find.text('bob@acme'), findsOneWidget);
     expect(find.byTooltip('alice@acme'), findsOneWidget);
     expect(find.text('All'), findsWidgets);
+    expect(find.byTooltip('Search'), findsOneWidget);
     expect(find.textContaining('ACTION REQUIRED'), findsNothing);
   });
 
@@ -1388,6 +1398,10 @@ test('validateHandle and validateHubUrl', () {
   });
 
   testWidgets('collab tab shows empty create shell', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     final daemon = _mockDaemon((request) async {
       return _rpcOk(
         jsonDecode(request.body)['id'],
@@ -1416,6 +1430,113 @@ test('validateHandle and validateHubUrl', () {
     await tester.pumpAndSettle();
     expect(find.text('No collabs yet'), findsOneWidget);
     expect(find.text('Create'), findsWidgets);
+  });
+
+  testWidgets('collab list timeout stays on pane, not courier screen', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final daemon = _mockDaemon((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      if (body['method'] == 'list_collabs') {
+        throw TimeoutException('Future not completed');
+      }
+      return _rpcOk(body['id'], {
+        'ok': true,
+        'service': 'mutande-core',
+        'version': '0.0.0',
+      });
+    });
+    await tester.pumpWidget(
+      MutandeApp(
+        config: const AppConfig(hubUrl: 'http://localhost:8000'),
+        daemon: daemon,
+        firstRunStore: FirstRunStore.memory(
+          connectComplete: true,
+          pingComplete: true,
+          notificationsComplete: true,
+        ),
+        seedStatus: const DaemonStatusResult(
+          configured: true,
+          hubUrl: 'http://localhost:8000',
+          handle: 'alice@acme',
+        ),
+        welcomeDuration: Duration.zero,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Collab').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Courier still starting'), findsNothing);
+    expect(find.text("Couldn't load collabs"), findsOneWidget);
+    expect(find.text('Collab'), findsWidgets);
+    expect(find.text('Retry'), findsOneWidget);
+  });
+
+  testWidgets('create collab sheet opens with people and agent chips', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final daemon = _mockDaemon((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      final method = body['method'] as String?;
+      if (method == 'list_contacts') {
+        return _rpcOk(body['id'], {
+          'contacts': [
+            {'handle': 'bob@acme'},
+          ],
+        });
+      }
+      if (method == 'list_agents') {
+        return _rpcOk(body['id'], {
+          'agents': [
+            {'id': 'a1', 'slug': 'cursor', 'transport': 'sidecar'},
+          ],
+        });
+      }
+      return _rpcOk(body['id'], {
+        'ok': true,
+        'service': 'mutande-core',
+        'version': '0.0.0',
+      });
+    });
+    await tester.pumpWidget(
+      MutandeApp(
+        config: const AppConfig(hubUrl: 'http://localhost:8000'),
+        daemon: daemon,
+        firstRunStore: FirstRunStore.memory(
+          connectComplete: true,
+          pingComplete: true,
+          notificationsComplete: true,
+        ),
+        seedStatus: const DaemonStatusResult(
+          configured: true,
+          hubUrl: 'http://localhost:8000',
+          handle: 'alice@acme',
+        ),
+        welcomeDuration: Duration.zero,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Collab').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Create').first);
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+      if (find.text('PEOPLE').evaluate().isNotEmpty) break;
+    }
+    expect(find.text('Create collab'), findsOneWidget);
+    expect(find.text('PEOPLE'), findsOneWidget);
+    expect(find.text('AGENTS'), findsOneWidget);
+    expect(find.text('@cursor'), findsOneWidget);
+    expect(find.text('Roster (agent addresses)'), findsNothing);
   });
 
   testWidgets('network people segment shows contacts', (WidgetTester tester) async {

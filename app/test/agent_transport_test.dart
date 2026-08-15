@@ -26,6 +26,13 @@ void main() {
       expect(AgentTransport.sidecar.chipLabel, 'via sidecar');
       expect(AgentTransport.mcp.chipLabel, 'via web');
     });
+
+    test('isHostedWebTransport is mcp/web only', () {
+      expect(isHostedWebTransport(AgentTransport.mcp), isTrue);
+      expect(isHostedWebTransport(AgentTransport.tryParse('web')), isTrue);
+      expect(isHostedWebTransport(AgentTransport.sidecar), isFalse);
+      expect(isHostedWebTransport(null), isFalse);
+    });
   });
 
   group('AgentInfo.fromJson', () {
@@ -395,6 +402,23 @@ void main() {
       expect(find.text('via sidecar'), findsOneWidget);
       expect(find.text('via web'), findsOneWidget);
       expect(TransportChip.maybe(transport: null), isNull);
+      expect(TransportChip.webCaption(transport: null), isNull);
+      expect(
+        TransportChip.webCaption(transport: AgentTransport.sidecar),
+        isNull,
+      );
+    });
+
+    testWidgets('webCaption is web only', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: TransportChip.webCaption(transport: AgentTransport.mcp),
+          ),
+        ),
+      );
+      expect(find.text('web'), findsOneWidget);
+      expect(find.text('via web'), findsNothing);
     });
 
     testWidgets('compose non-E2E chip', (tester) async {

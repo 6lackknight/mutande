@@ -794,7 +794,10 @@ pub struct CollabSteerer {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CollabLearning {
     pub id: String,
-    pub at: String,
+    #[serde(default, alias = "at")]
+    pub created_at: String,
+    #[serde(default)]
+    pub from_handle: Option<String>,
     #[serde(default)]
     pub from_agent: Option<String>,
     #[serde(default)]
@@ -803,6 +806,32 @@ pub struct CollabLearning {
     pub notes: Option<String>,
     #[serde(default)]
     pub sealed: Option<bool>,
+}
+
+/// Hub board card — subset of thread meta (lane + identity). Not a full [ThreadMeta].
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct CollabCardSummary {
+    pub id: String,
+    #[serde(default)]
+    pub lane_id: Option<String>,
+    #[serde(default)]
+    pub lane_position: Option<f64>,
+    #[serde(default)]
+    pub assigned_to: Option<String>,
+    #[serde(default)]
+    pub watchers: Option<Vec<String>>,
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub from: Option<String>,
+    #[serde(default)]
+    pub audience: Option<String>,
+    #[serde(default)]
+    pub updated_at: Option<String>,
+    #[serde(default)]
+    pub your_status: Option<String>,
+    #[serde(default)]
+    pub last_subject: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -832,7 +861,7 @@ pub struct Collab {
     #[serde(default)]
     pub steerers: Vec<CollabSteerer>,
     #[serde(default)]
-    pub cards: Vec<ThreadMeta>,
+    pub cards: Vec<CollabCardSummary>,
     #[serde(default)]
     pub learnings: Vec<CollabLearning>,
 }

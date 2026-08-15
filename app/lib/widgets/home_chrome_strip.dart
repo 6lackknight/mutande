@@ -2,6 +2,22 @@ import 'package:flutter/cupertino.dart';
 
 import '../theme/mutande_macos_theme.dart';
 
+/// Titlebar pill metrics — outer track plus the selected thumb (Collab).
+/// Search and icon pills reuse [thumbHeight] / [thumbStadium].
+abstract final class HomeChrome {
+  static const height = 40.0;
+  static const inset = 3.0;
+  static const thumbHeight = height - inset * 2;
+  static const glyphLeading = 16.0;
+  static const pillGap = 8.0;
+  static const muteFill = MutandeColors.stone200;
+  static const muteForeground = MutandeColors.stone500;
+
+  static BorderRadius get stadium => BorderRadius.circular(height / 2);
+  static BorderRadius get thumbStadium =>
+      BorderRadius.circular(thumbHeight / 2);
+}
+
 /// Pinned home tabs: Threads · Collab · Network.
 ///
 /// Custom stadium segmented control in the titlebar — Flutter's
@@ -27,30 +43,35 @@ class HomeChromeStrip extends StatelessWidget {
     CupertinoIcons.person_2,
   ];
 
-  static const _height = 40.0;
-  static const _inset = 3.0;
-
   @override
   Widget build(BuildContext context) {
-    final thumbHeight = _height - _inset * 2;
+    const thumbHeight = HomeChrome.thumbHeight;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         if (showGlyph) ...[
           const Padding(
-            padding: EdgeInsets.only(right: 12),
+            padding: EdgeInsets.only(
+              left: HomeChrome.glyphLeading,
+              right: 12,
+            ),
             child: _AtIGlyph(),
           ),
         ],
         SizedBox(
-          height: _height,
+          height: HomeChrome.height,
           child: DecoratedBox(
             decoration: BoxDecoration(
               color: MutandeColors.stone200,
-              borderRadius: BorderRadius.circular(_height / 2),
+              borderRadius: HomeChrome.stadium,
             ),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(6, _inset, 6, _inset),
+              padding: const EdgeInsets.fromLTRB(
+                6,
+                HomeChrome.inset,
+                6,
+                HomeChrome.inset,
+              ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -106,7 +127,7 @@ class _HeaderThumb extends StatelessWidget {
             alignment: Alignment.center,
             decoration: BoxDecoration(
               color: selected ? MutandeColors.stone50 : const Color(0x00000000),
-              borderRadius: BorderRadius.circular(thumbHeight / 2),
+              borderRadius: HomeChrome.thumbStadium,
             ),
             child: child,
           ),
