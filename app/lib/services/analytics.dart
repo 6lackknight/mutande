@@ -41,6 +41,7 @@ class Analytics {
       _ready = true;
       if (_identifiedSub != null) {
         _client?.identify(_identifiedSub!);
+        _touchProfile();
       }
       for (final item in List<({String event, Map<String, dynamic>? props})>.from(
         _pending,
@@ -70,6 +71,19 @@ class Analytics {
     _identifiedSub = sub;
     if (!_ready) return;
     _client?.identify(sub);
+    _touchProfile();
+  }
+
+  static void _touchProfile() {
+    final client = _client;
+    if (client == null) return;
+    final people = client.getPeople();
+    people.set('last_surface', _platform);
+    people.set('auth_provider', 'auth0');
+    people.setOnce(
+      'first_seen_at',
+      DateTime.now().toUtc().toIso8601String(),
+    );
   }
 
   static void syncIdentityFromStatus(DaemonStatusResult? status) {

@@ -107,7 +107,16 @@ class InboxWatchService {
         }
 
         final needsYou = t.yourStatus == 'pending';
-        final agentSlug = _audienceAgentSlug(t.audience);
+        String? agentFromAwaiting;
+        for (final e in t.awaiting) {
+          if (e.actor != 'agent') continue;
+          final slug = _audienceAgentSlug(e.address);
+          if (slug != null) {
+            agentFromAwaiting = slug;
+            break;
+          }
+        }
+        final agentSlug = agentFromAwaiting ?? _audienceAgentSlug(t.audience);
         final isGroup = t.audience.trim() == '@all';
         final forAgent = prefs.mailForAgents &&
             (isGroup ||
@@ -146,7 +155,7 @@ class InboxWatchService {
   }
 
   String _sig(ThreadSummary t) =>
-      '${t.yourStatus}|${t.updatedAt}|${t.replyCount}';
+      '${t.yourStatus}|${t.awaiting.map((e) => '${e.actor}:${e.address}').join(',')}|${t.updatedAt}|${t.replyCount}';
 
   Future<void> _show(
     ThreadSummary t, {

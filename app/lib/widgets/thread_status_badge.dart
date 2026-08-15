@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../services/daemon_client.dart';
 import '../theme/mutande_macos_theme.dart';
 
 /// Coordination status for a thread inbox row / detail.
@@ -19,20 +20,45 @@ extension ThreadStatusKindX on ThreadStatusKind {
         ThreadStatusKind.closed => 'Closed',
       };
 
-  /// Derive from hub `status` + daemon `your_status`.
+  /// Derive from hub `status` + daemon `your_status` / `awaiting`.
   ///
-  /// On the Mac UI, daemon sets `pending` only for unanswered human decisions
-  /// (not agent-to-agent waiting).
+  /// Needs you = awaiting contains `{actor: human}` for [myHandle];
+  /// Waiting = awaiting non-empty otherwise. Legacy threads fall back to
+  /// `your_status` (daemon already maps human-only pending on Mac).
   static ThreadStatusKind resolve({
     required String status,
     String? yourStatus,
+    List<AwaitingEntry>? awaiting,
+    String? myHandle,
   }) {
-    // Closed wins over pending.
     if (status == 'closed') return ThreadStatusKind.closed;
+    if (awaiting != null && awaiting.isNotEmpty) {
+      final mine = _bareHandle(myHandle);
+      if (mine != null) {
+        final needsYou = awaiting.any(
+          (e) => e.actor == 'human' && _sameUser(e.address, mine),
+        );
+        return needsYou ? ThreadStatusKind.needsYou : ThreadStatusKind.waiting;
+      }
+    }
     if (yourStatus == 'pending') return ThreadStatusKind.needsYou;
     if (yourStatus == 'replied') return ThreadStatusKind.waiting;
     return ThreadStatusKind.open;
   }
+}
+
+String? _bareHandle(String? handle) {
+  final h = handle?.trim();
+  if (h == null || h.isEmpty) return null;
+  final slash = h.indexOf('/');
+  return (slash > 0 ? h.substring(0, slash) : h).toLowerCase();
+}
+
+bool _sameUser(String address, String bare) {
+  final a = address.trim().toLowerCase();
+  if (a == bare) return true;
+  if (a.startsWith('$bare/')) return true;
+  return false;
 }
 
 /// Quiet status badge — soft plate + ink, amber for pending.

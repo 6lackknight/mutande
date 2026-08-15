@@ -7,12 +7,15 @@ class DowngradeConsentBanner extends StatelessWidget {
   const DowngradeConsentBanner({
     super.key,
     required this.prompt,
+    this.detail,
     this.busy = false,
     this.onApprove,
     this.onDeny,
   });
 
   final String prompt;
+  /// Extra line under the prompt. Null hides it (task gates).
+  final String? detail;
   final bool busy;
   final VoidCallback? onApprove;
   final VoidCallback? onDeny;
@@ -40,15 +43,18 @@ class DowngradeConsentBanner extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 4),
-            Text(
-              'All sidecar participants must approve. This cannot be undone.',
-              style: TextStyle(
-                color: MutandeColors.stone500,
-                fontSize: 12,
-                height: 1.35,
+            if (detail != null) ...[
+              Text(
+                detail!,
+                style: TextStyle(
+                  color: MutandeColors.stone500,
+                  fontSize: 12,
+                  height: 1.35,
+                ),
               ),
-            ),
-            const SizedBox(height: 10),
+              const SizedBox(height: 10),
+            ] else
+              const SizedBox(height: 10),
             Row(
               children: [
                 TextButton(

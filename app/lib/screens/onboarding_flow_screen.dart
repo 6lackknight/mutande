@@ -15,11 +15,13 @@ import '../util/address_display.dart';
 import '../widgets/ai_host_icon.dart';
 import '../widgets/connect_host_flow.dart';
 import '../widgets/morphing_orb_button.dart';
-import '../widgets/onboarding_stepper.dart';
+import '../widgets/onboarding_address_rail.dart';
+import '../widgets/onboarding_chrome.dart';
 import '../widgets/thinking_orb.dart';
 import 'first_run_ping_wizard.dart';
 
-/// Guided 5-step onboarding (sign in → team → connect → notify → ping).
+/// Guided 4-step onboarding (sign in → team → connect → ping), told as the
+/// address assembling itself. Notifications are asked during the ping wait.
 class OnboardingFlowScreen extends StatefulWidget {
   const OnboardingFlowScreen({
     super.key,
@@ -47,6 +49,69 @@ class OnboardingFlowScreen extends StatefulWidget {
 }
 
 enum _TeamMode { setupChoose, setupCreate, setupJoin, roster }
+
+/// A member of the org, set in the same mono as the address above them.
+class _RosterRow extends StatelessWidget {
+  const _RosterRow({required this.address, this.isSelf = false});
+
+  final String address;
+  final bool isSelf;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          Text(
+            address,
+            style: TextStyle(
+              fontFamily: 'Menlo',
+              fontSize: 13,
+              color:
+                  isSelf ? MutandeColors.stone800 : MutandeColors.stone600,
+            ),
+          ),
+          if (isSelf) ...[
+            const SizedBox(width: OnboardingSpace.xs),
+            Container(
+              width: 5,
+              height: 5,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                color: MutandeColors.amber,
+              ),
+            ),
+            const SizedBox(width: 6),
+            const Text(
+              'you',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: MutandeColors.amber,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// One stop on the debug walkthrough.
+class _DebugFrame {
+  const _DebugFrame(
+    this.step, {
+    this.securing = false,
+    this.welcomeBack = false,
+    this.ping,
+  });
+
+  final OnboardingStep step;
+  final bool securing;
+  final bool welcomeBack;
+  final PingPreview? ping;
+}
 
 class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
   late OnboardingStep _step;
@@ -77,6 +142,12 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
   String? _connectHint;
   Timer? _connectPoll;
 
+  /// Last address segment — the agent slug, once one has registered.
+  String? _agentSlug;
+
+  /// Non-null once the debug walkthrough has been driven off the live flow.
+  int? _debugFrameIndex;
+
   @override
   void initState() {
     super.initState();
@@ -93,8 +164,26 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
     if (_step == OnboardingStep.connect) {
       unawaited(_loadHosts());
     }
+    if (_step == OnboardingStep.ping) {
+      unawaited(_loadAgentSlug());
+    }
     if (_status?.signedIn == true && _status?.configured != true) {
       unawaited(_refreshSignedInStatus());
+    }
+  }
+
+  /// Resuming at the ping step: recover the agent segment already earned.
+  Future<void> _loadAgentSlug() async {
+    try {
+      final agents = await widget.daemon.listAgents();
+      final slug = agents.agents
+          .map((a) => a.slug.toLowerCase())
+          .where((s) => s.isNotEmpty && s != 'default')
+          .firstOrNull;
+      if (!mounted || slug == null) return;
+      setState(() => _agentSlug = slug);
+    } catch (_) {
+      // Address just shows the agent slot empty.
     }
   }
 
@@ -132,24 +221,18 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
     super.dispose();
   }
 
-  String? _orgFromHandle(String? handle) {
-    if (handle == null || !handle.contains('@')) return null;
-    return handle.split('@').last;
-  }
-
-  Set<OnboardingStep> get _completedBefore {
-    final s = <OnboardingStep>{};
-    if (_status?.signedIn == true || _status?.configured == true) {
-      s.add(OnboardingStep.signIn);
+  /// The address as far as it has been assembled.
+  OnboardingAddress get _address {
+    final handle = _status?.handle;
+    if (handle != null && handle.contains('@')) {
+      return OnboardingAddress.fromHandle(handle, agent: _agentSlug);
     }
-    if (_status?.configured == true && _teamMode == _TeamMode.roster) {
-      s.add(OnboardingStep.team);
-    }
-    if (widget.firstRunStore.connectComplete) s.add(OnboardingStep.connect);
-    if (widget.firstRunStore.notificationsComplete) {
-      s.add(OnboardingStep.notifications);
-    }
-    return s;
+    // Signed in but no org yet — the name lands from the account email.
+    final email = _status?.email;
+    final local = (email != null && email.contains('@'))
+        ? email.split('@').first.toLowerCase()
+        : null;
+    return OnboardingAddress(name: local, agent: _agentSlug);
   }
 
   Future<void> _signIn() async {
@@ -319,9 +402,17 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
     }
   }
 
+  String _hostNames(List<AiHostPresence> hosts) {
+    final names = hosts.map((h) => AiHostIcon.displayName(h.slug)).toList();
+    if (names.length == 1) return names.first;
+    return '${names.sublist(0, names.length - 1).join(', ')} and ${names.last}';
+  }
+
   Future<void> _beginConnectHost(String host) async {
     if (!_hosts.any((h) => h.slug == host && h.installed)) {
-      _showNotDetectedSheet(host);
+      setState(() {
+        _error = '${AiHostIcon.displayName(host)} isn’t installed on this Mac.';
+      });
       return;
     }
     setState(() {
@@ -361,7 +452,8 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
           if (!mounted) return;
           setState(() {
             _connectWaiting = false;
-            _step = OnboardingStep.notifications;
+            _agentSlug = host.toLowerCase();
+            _step = OnboardingStep.ping;
           });
           return;
         }
@@ -377,64 +469,15 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
     });
   }
 
-  void _showNotDetectedSheet(String host) {
-    final label = AiHostIcon.displayName(host);
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: MutandeColors.stone50,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              '$label not detected',
-              style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: MutandeColors.stone800,
-                  ),
-            ),
-            const SizedBox(height: OnboardingSpace.xs),
-            Text(
-              'Install $label on this Mac first, then return here. '
-              'mutande won’t treat config folders alone as installed.',
-              style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(
-                    color: MutandeColors.stone500,
-                    height: 1.45,
-                  ),
-            ),
-            const SizedBox(height: OnboardingSpace.lg),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('OK'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _openNotificationSettings() async {
-    if (Platform.isMacOS) {
-      try {
-        await Process.run('open', [
-          'x-apple.systempreferences:com.apple.Notifications-Settings.extension',
-        ]);
-      } catch (_) {}
-    }
-  }
-
-  Future<void> _copyInviteLink() async {
+  /// Copies the invite page URL. It's a page, not a minted invite — the label
+  /// says so.
+  Future<void> _copyInvitePage() async {
     final base = widget.config.webAppUrl.replaceAll(RegExp(r'/+$'), '');
     final url = '$base/admin/invites';
     await Clipboard.setData(ClipboardData(text: url));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Copied invite link: $url')),
+      SnackBar(content: Text('Copied: $url')),
     );
   }
 
@@ -443,135 +486,134 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
     await Process.run('open', ['$base/admin/invites']);
   }
 
-  void _skipNotifications() {
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Skip notifications?'),
-        content: const Text(
-          'Without notifications, you’ll need to check Threads yourself. '
-          'Agents still deliver mail.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Go back'),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              unawaited(_finishNotifications(skipped: true));
-            },
-            child: const Text('Skip for now'),
-          ),
-        ],
-      ),
+  @override
+  Widget build(BuildContext context) {
+    final screen = _buildStep(context);
+    if (!widget.forceDebug) return screen;
+    // Debug walkthrough: every frame reachable without signing out or waiting
+    // for a real pong.
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.arrowLeft, alt: true): () =>
+            _stepDebugFrame(-1),
+        const SingleActivator(LogicalKeyboardKey.arrowRight, alt: true): () =>
+            _stepDebugFrame(1),
+      },
+      child: Focus(autofocus: true, child: screen),
     );
   }
 
-  Future<void> _finishNotifications({bool skipped = false}) async {
-    await widget.firstRunStore.markNotificationsComplete(skipped: skipped);
-    if (!mounted) return;
-    setState(() => _step = OnboardingStep.ping);
+  static const _debugFrames = <_DebugFrame>[
+    _DebugFrame(OnboardingStep.signIn),
+    _DebugFrame(OnboardingStep.signIn, securing: true),
+    _DebugFrame(OnboardingStep.signIn, welcomeBack: true),
+    _DebugFrame(OnboardingStep.team),
+    _DebugFrame(OnboardingStep.connect),
+    _DebugFrame(OnboardingStep.ping, ping: PingPreview.copy),
+    _DebugFrame(OnboardingStep.ping, ping: PingPreview.waiting),
+    _DebugFrame(OnboardingStep.ping, ping: PingPreview.delivered),
+    _DebugFrame(OnboardingStep.ping, ping: PingPreview.timeout),
+  ];
+
+  /// Where the live flow currently sits, so the first keypress moves relative
+  /// to what's on screen.
+  int get _debugFrameCursor {
+    final known = _debugFrameIndex;
+    if (known != null) return known;
+    final at = _debugFrames.indexWhere(
+      (f) =>
+          f.step == _step &&
+          f.securing == _securing &&
+          f.welcomeBack == _welcomeBack,
+    );
+    return at < 0 ? 0 : at;
   }
 
-  @override
-  Widget build(BuildContext context) {
+  void _stepDebugFrame(int delta) {
+    var next = _debugFrameCursor + delta;
+    next %= _debugFrames.length;
+    if (next < 0) next += _debugFrames.length;
+    final frame = _debugFrames[next];
+    setState(() {
+      _debugFrameIndex = next;
+      _step = frame.step;
+      _securing = frame.securing;
+      _welcomeBack = frame.welcomeBack;
+      _error = null;
+    });
+    if (frame.step == OnboardingStep.team) unawaited(_loadTeam());
+    if (frame.step == OnboardingStep.connect) unawaited(_loadHosts());
+  }
+
+  Widget _buildStep(BuildContext context) {
+    final frame = _debugFrameIndex;
+    final debugBanner = widget.forceDebug
+        ? 'Debug — onboarding preview · ⌥← ⌥→ to step'
+            '${frame == null ? '' : ' (${frame + 1}/${_debugFrames.length})'}'
+        : null;
+
     if (_securing) {
       return OnboardingShell(
         step: OnboardingStep.signIn,
-        centerContent: true,
-        contentMaxWidth: 420,
-        debugBanner: widget.forceDebug ? 'Debug — onboarding preview' : null,
+        address: _address,
+        debugBanner: debugBanner,
         child: _securingBody(),
       );
     }
     if (_welcomeBack) {
-      return _welcomeBackOverlay();
+      return _welcomeBackScreen(debugBanner);
     }
 
     switch (_step) {
       case OnboardingStep.signIn:
         return OnboardingShell(
           step: _step,
-          completedBefore: _completedBefore,
-          debugBanner: widget.forceDebug ? 'Debug — onboarding preview' : null,
+          address: _address,
+          debugBanner: debugBanner,
           child: _signInBody(),
         );
       case OnboardingStep.team:
         return OnboardingShell(
           step: _step,
-          completedBefore: _completedBefore,
-          debugBanner: widget.forceDebug ? 'Debug — onboarding preview' : null,
+          address: _address,
+          debugBanner: debugBanner,
           child: _teamBody(),
         );
       case OnboardingStep.connect:
         return OnboardingShell(
           step: _step,
-          completedBefore: _completedBefore,
-          debugBanner: widget.forceDebug ? 'Debug — onboarding preview' : null,
-          contentMaxWidth: 640,
+          address: _address,
+          debugBanner: debugBanner,
+          contentMaxWidth: 480,
           child: _connectBody(),
         );
-      case OnboardingStep.notifications:
-        return OnboardingShell(
-          step: _step,
-          completedBefore: _completedBefore,
-          debugBanner: widget.forceDebug ? 'Debug — onboarding preview' : null,
-          child: _notificationsBody(),
-        );
       case OnboardingStep.ping:
-        return OnboardingShell(
-          step: _step,
-          completedBefore: _completedBefore,
-          debugBanner: widget.forceDebug ? 'Debug — onboarding preview' : null,
-          child: FirstRunPingWizard(
-            daemon: widget.daemon,
-            firstRunStore: widget.firstRunStore,
-            embedded: true,
-            onComplete: (threadId) {
-              final status = _status;
-              if (status != null) {
-                widget.onComplete(status, threadId);
-              }
-            },
-          ),
+        return FirstRunPingWizard(
+          daemon: widget.daemon,
+          firstRunStore: widget.firstRunStore,
+          address: _address,
+          debugBanner: debugBanner,
+          preview: frame == null ? null : _debugFrames[frame].ping,
+          onComplete: (threadId) {
+            final status = _status;
+            if (status != null) {
+              widget.onComplete(status, threadId);
+            }
+          },
         );
     }
   }
 
-  Widget _welcomeBackOverlay() {
-    final handle = _status?.handle ?? '';
-    final org = _orgFromHandle(_status?.handle);
-    return Scaffold(
-      backgroundColor: MutandeColors.stone800,
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const MutandeOrb.standard(semanticLabel: 'Welcome back'),
-            const SizedBox(height: OnboardingSpace.lg),
-            Text(
-              handle.isNotEmpty ? 'Welcome back, $handle' : 'Welcome back',
-              style: OnboardingHeading.displayTitleStyle(
-                Theme.of(context),
-              ).copyWith(
-                color: MutandeColors.stone50,
-                fontSize: 34,
-              ),
-            ),
-            if (org != null) ...[
-              const SizedBox(height: OnboardingSpace.xs),
-              Text(
-                'You\'re on $org',
-                style: const TextStyle(
-                  color: MutandeColors.stone400,
-                  fontSize: 14,
-                ),
-              ),
-            ],
-          ],
-        ),
+  /// The one screen where the address is already whole — light, like the rest
+  /// of the flow. Only the splash is dark.
+  Widget _welcomeBackScreen(String? debugBanner) {
+    return OnboardingShell(
+      step: OnboardingStep.team,
+      address: _address,
+      debugBanner: debugBanner,
+      child: const OnboardingHeading(
+        variant: OnboardingHeadingVariant.display,
+        title: 'Welcome back.',
       ),
     );
   }
@@ -629,101 +671,30 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
       );
     }
     final handle = _status?.handle ?? '';
-    final org = _orgFromHandle(_status?.handle) ?? '';
     final humans =
         _contacts.where((c) => !c.isBroadcast && !c.isExternal).toList();
-    final solo = humans.length <= 1;
+    final peers = humans.where((c) => c.handle != handle).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // The marquee above already says who and where — the headline says
+        // what that's worth.
         OnboardingHeading(
           variant: OnboardingHeadingVariant.display,
-          title: 'Your team',
-          subtitle: handle.isNotEmpty ? '$handle on $org' : 'Your org members',
+          title: peers.isEmpty
+              ? 'You’re the only one here yet.'
+              : '${_countWord(peers.length, 'teammate')} can already reach you.',
         ),
         const SizedBox(height: OnboardingSpace.lg),
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: MutandeColors.stone200),
-          ),
-          padding: const EdgeInsets.symmetric(
-            horizontal: OnboardingSpace.md,
-            vertical: OnboardingSpace.sm,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (solo)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 6),
-                  child: Text(
-                    'You\'re the only one here yet.',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: MutandeColors.stone600,
-                        ),
-                  ),
-                )
-              else
-                ...humans.map(
-                  (c) => Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.person_outline,
-                          size: 18,
-                          color: MutandeColors.stone500,
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            formatMailAddress(c.handle, myHandle: handle),
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w500,
-                              color: MutandeColors.stone800,
-                            ),
-                          ),
-                        ),
-                        if (c.handle == handle)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: MutandeColors.amberSoft,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: const Text(
-                              'you',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: MutandeColors.amber,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-            ],
+        // Plain rows on the stone ground — no card nesting a card.
+        if (handle.isNotEmpty) _RosterRow(address: handle, isSelf: true),
+        ...peers.map(
+          (c) => _RosterRow(
+            address: formatMailAddress(c.handle, myHandle: handle),
           ),
         ),
         const SizedBox(height: OnboardingSpace.lg),
-        const Divider(color: MutandeColors.stone200, height: 1),
-        const SizedBox(height: OnboardingSpace.lg),
-        Text(
-          'Invite teammates',
-          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: MutandeColors.stone800,
-              ),
-        ),
-        const SizedBox(height: OnboardingSpace.xs),
         Text(
           'Teammates need mutande on Mac to receive agent mail.',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -732,7 +703,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
               ),
         ),
         OnboardingActions(
-          topSpacing: OnboardingSpace.sm,
+          topSpacing: OnboardingSpace.md,
           primary: FilledButton(
             onPressed: () {
               setState(() => _step = OnboardingStep.connect);
@@ -740,22 +711,41 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
             },
             child: const Text('Continue'),
           ),
-          secondary: OutlinedButton(
-            onPressed: _copyInviteLink,
-            child: const Text('Copy invite link'),
+          secondary: TextButton(
+            onPressed: _openInvitesWeb,
+            child: const Text('Invite on the web'),
           ),
           tertiary: TextButton(
-            onPressed: _openInvitesWeb,
-            child: const Text('Open invites on web'),
+            onPressed: _copyInvitePage,
+            child: const Text('Copy link'),
           ),
         ),
       ],
     );
   }
 
+  /// `One teammate` / `Two teammates` — reads better than a bare digit at the
+  /// start of a sentence.
+  static String _countWord(int n, String noun) {
+    const words = [
+      'Zero',
+      'One',
+      'Two',
+      'Three',
+      'Four',
+      'Five',
+      'Six',
+      'Seven',
+      'Eight',
+      'Nine',
+    ];
+    final count = n < words.length ? words[n] : '$n';
+    return '$count $noun${n == 1 ? '' : 's'}';
+  }
+
   Widget _teamSetupBody() {
     final title = switch (_teamMode) {
-      _TeamMode.setupChoose => 'Set up your team',
+      _TeamMode.setupChoose => 'Pick the org half of your address.',
       _TeamMode.setupCreate => 'Create a team',
       _ => 'Join with invite',
     };
@@ -765,9 +755,6 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
         OnboardingHeading(
           variant: OnboardingHeadingVariant.display,
           title: title,
-          subtitle: _teamMode == _TeamMode.setupChoose
-              ? 'Create a new team, or join one you\'ve been invited to.'
-              : null,
         ),
         const SizedBox(height: OnboardingSpace.lg),
         if (_teamMode == _TeamMode.setupChoose) ...[
@@ -777,7 +764,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
               onPressed: () => setState(() => _teamMode = _TeamMode.setupCreate),
               child: const Text('Create a team'),
             ),
-            secondary: OutlinedButton(
+            secondary: TextButton(
               onPressed: () => setState(() => _teamMode = _TeamMode.setupJoin),
               child: const Text('I have an invite'),
             ),
@@ -872,30 +859,53 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
       );
     }
 
+    // Hierarchy by detection state: what you can actually connect gets the
+    // weight, the rest is one quiet line.
+    final installed = _hosts.where((h) => h.installed).toList();
+    final missing = _hosts.where((h) => !h.installed).toList();
+    final linked =
+        installed.where((h) => h.linked && h.agentRegistered).toList();
+
+    // The goal, stated as the thing to do — and once it's done, said so.
+    final heading = linked.isEmpty
+        ? const OnboardingHeading(
+            variant: OnboardingHeadingVariant.display,
+            title: 'Pick a host to connect.',
+            subtitle: 'One is enough — mutande wires the relay, '
+                'then hands it the collaboration skill.',
+          )
+        : OnboardingHeading(
+            variant: OnboardingHeadingVariant.display,
+            title: '${_hostNames(linked)} '
+                '${linked.length == 1 ? 'is' : 'are'} ready to carry mail.',
+            subtitle:
+                'Continue to your first ping, or connect another host.',
+          );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const OnboardingHeading(
-          variant: OnboardingHeadingVariant.display,
-          title: 'Connect an AI host',
-          subtitle:
-              'Pick one host with the desktop app installed. MCP + skill in two steps.',
-        ),
+        heading,
         const SizedBox(height: OnboardingSpace.lg),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            for (var i = 0; i < _hosts.length; i++) ...[
-              if (i > 0) const SizedBox(width: OnboardingSpace.sm),
-              Expanded(
-                child: _HostTile(
-                  presence: _hosts[i],
-                  onTap: () => _beginConnectHost(_hosts[i].slug),
-                ),
-              ),
-            ],
-          ],
-        ),
+        for (final host in installed)
+          Padding(
+            padding: const EdgeInsets.only(bottom: OnboardingSpace.xs),
+            child: _HostTile(
+              presence: host,
+              onTap: () => _beginConnectHost(host.slug),
+            ),
+          ),
+        if (missing.isNotEmpty) ...[
+          const SizedBox(height: OnboardingSpace.sm),
+          Text(
+            '${_hostNames(missing)} '
+            '${missing.length == 1 ? 'isn\'t' : 'aren\'t'} installed on this Mac.',
+            style: const TextStyle(
+              fontSize: 12,
+              color: MutandeColors.stone400,
+            ),
+          ),
+        ],
         if (_error != null) ...[
           const SizedBox(height: OnboardingSpace.md),
           OnboardingErrorBanner(message: _error!),
@@ -907,61 +917,30 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
               onPressed: () => _beginConnectHost(_selectedHost!),
               child: const Text('Retry'),
             ),
+          )
+        else if (linked.isNotEmpty)
+          OnboardingActions(
+            topSpacing: OnboardingSpace.md,
+            primary: FilledButton(
+              onPressed: () => _continueWithLinkedHost(linked.first.slug),
+              child: const Text('Continue'),
+            ),
           ),
       ],
     );
   }
 
-  Widget _notificationsBody() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: MutandeColors.amberSoft,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(
-                Icons.notifications_outlined,
-                size: 22,
-                color: MutandeColors.amber,
-              ),
-            ),
-            const SizedBox(width: OnboardingSpace.md),
-            const Expanded(
-              child: OnboardingHeading(
-                variant: OnboardingHeadingVariant.display,
-                title: 'Allow notifications',
-                subtitle:
-                    'So mutande can tell you when an agent has new mail — even when '
-                    'you\'re in another app. Banners are metadata only, never message bodies.',
-              ),
-            ),
-          ],
-        ),
-        OnboardingActions(
-          primary: FilledButton(
-            onPressed: _openNotificationSettings,
-            child: const Text('Open Notification Settings'),
-          ),
-          secondary: OutlinedButton(
-            onPressed: () => _finishNotifications(),
-            child: const Text('I\'ve allowed notifications'),
-          ),
-          tertiary: TextButton(
-            onPressed: _skipNotifications,
-            child: const Text('Skip for now'),
-          ),
-        ),
-      ],
-    );
+  /// Forward path when a host is already wired in (returning users, replays,
+  /// or a second visit to this step) — the connect ceremony isn't re-run.
+  Future<void> _continueWithLinkedHost(String slug) async {
+    await widget.firstRunStore.markConnectComplete();
+    if (!mounted) return;
+    setState(() {
+      _agentSlug = slug.toLowerCase();
+      _step = OnboardingStep.ping;
+    });
   }
+
 }
 
 class _HostTile extends StatelessWidget {
@@ -972,7 +951,6 @@ class _HostTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final muted = !presence.installed;
     final badge = presence.primaryBadge;
     final linked = presence.linked && presence.agentRegistered;
     final label = AiHostIcon.displayName(presence.slug);
@@ -981,61 +959,71 @@ class _HostTile extends StatelessWidget {
       button: true,
       label: '$label, $badge',
       child: Material(
-        color: linked
-            ? MutandeColors.emeraldSoft
-            : muted
-                ? MutandeColors.stone100
-                : Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        color: linked ? MutandeColors.emeraldSoft : Colors.white,
+        borderRadius: BorderRadius.circular(14),
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(14),
           child: Ink(
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(14),
               border: Border.all(
                 color: linked
                     ? const Color(0xFF86EFAC)
                     : MutandeColors.stone200,
               ),
             ),
-            padding: const EdgeInsets.fromLTRB(12, 16, 12, 14),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+            child: Row(
               children: [
-                Opacity(
-                  opacity: muted ? 0.4 : 1,
-                  child: AiHostIcon(presence.slug, size: 36),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  label,
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                    letterSpacing: -0.1,
-                    color: muted
-                        ? MutandeColors.stone400
-                        : MutandeColors.stone800,
+                AiHostIcon(presence.slug, size: 44),
+                const SizedBox(width: OnboardingSpace.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 17,
+                          letterSpacing: -0.2,
+                          color: MutandeColors.stone800,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        badge,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: linked
+                              ? MutandeColors.emerald
+                              : MutandeColors.stone500,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  badge,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                    color: badge == 'Not detected'
-                        ? MutandeColors.stone400
-                        : badge == 'Connected'
-                            ? MutandeColors.emerald
-                            : MutandeColors.amber,
+                // The verb lives on the row that still needs it; done rows
+                // just say done.
+                if (linked)
+                  const Icon(
+                    Icons.check,
+                    size: 20,
+                    color: MutandeColors.emerald,
+                  )
+                else
+                  const Text(
+                    'Connect',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: MutandeColors.amber,
+                    ),
                   ),
-                ),
               ],
             ),
           ),

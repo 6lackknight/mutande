@@ -30,15 +30,20 @@ class FirstRunStore {
   bool _connectComplete = false;
   bool _pingComplete = false;
   bool _notificationsComplete = false;
+  bool _notificationsSkipped = false;
   bool _loaded = false;
 
   bool get connectComplete => _connectComplete;
   bool get pingComplete => _pingComplete;
   bool get notificationsComplete => _notificationsComplete;
 
-  /// True when all onboarding gates are satisfied.
-  bool get onboardingComplete =>
-      _connectComplete && _notificationsComplete && _pingComplete;
+  /// True when the banners ask was declined — support can tell a skip from a
+  /// grant.
+  bool get notificationsSkipped => _notificationsSkipped;
+
+  /// True when all onboarding gates are satisfied. Notifications ride along
+  /// with the ping step, so they don't gate on their own.
+  bool get onboardingComplete => _connectComplete && _pingComplete;
 
   File _resolveFile() {
     if (_file != null) return _file!;
@@ -66,6 +71,7 @@ class FirstRunStore {
           _connectComplete = raw['connect_complete'] == true;
           _pingComplete = raw['ping_complete'] == true;
           _notificationsComplete = raw['notifications_complete'] == true;
+          _notificationsSkipped = raw['notifications_skipped'] == true;
         }
       }
     } catch (e, st) {
@@ -90,6 +96,7 @@ class FirstRunStore {
       'connect_complete': _connectComplete,
       'ping_complete': _pingComplete,
       'notifications_complete': _notificationsComplete,
+      'notifications_skipped': _notificationsSkipped,
     };
     if (_memory != null) {
       _memory!
@@ -117,6 +124,7 @@ class FirstRunStore {
   Future<void> markNotificationsComplete({bool skipped = false}) async {
     await load();
     _notificationsComplete = true;
+    _notificationsSkipped = skipped;
     await _persist();
   }
 
@@ -125,6 +133,7 @@ class FirstRunStore {
     _connectComplete = false;
     _pingComplete = false;
     _notificationsComplete = false;
+    _notificationsSkipped = false;
     _loaded = true;
     await _persist();
   }

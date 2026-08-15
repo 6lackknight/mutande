@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,23 +9,37 @@ import '../services/analytics.dart';
 import '../services/daemon_client.dart';
 import '../services/first_run_store.dart';
 import '../theme/mutande_macos_theme.dart';
-import '../widgets/onboarding_stepper.dart';
+import '../widgets/onboarding_address_rail.dart';
+import '../widgets/onboarding_chrome.dart';
 import '../widgets/thinking_orb.dart';
 
-/// Copy-paste prompt for first thread ping; polls until a pong reply lands.
+/// Debug-only: pins the wizard to one state so the flow can be walked without
+/// a real pong.
+enum PingPreview { copy, waiting, delivered, timeout }
+
+/// Final onboarding step: copy the prompt, wait for the pong, take delivery.
+///
+/// The notification ask rides along with the wait — it's motivated there
+/// ("we'll tell you the moment it lands") and the arriving pong proves it works.
 class FirstRunPingWizard extends StatefulWidget {
   const FirstRunPingWizard({
     super.key,
     required this.daemon,
     required this.firstRunStore,
     required this.onComplete,
-    this.embedded = false,
+    this.address = const OnboardingAddress(),
+    this.debugBanner,
+    this.preview,
   });
 
   final DaemonClient daemon;
   final FirstRunStore firstRunStore;
   final ValueChanged<String?> onComplete;
-  final bool embedded;
+  final OnboardingAddress address;
+  final String? debugBanner;
+
+  /// Debug walkthrough: pin a state, skip polling, never auto-complete.
+  final PingPreview? preview;
 
   static const prompt = 'Use mutande to ping @all (thread)';
 
@@ -35,18 +50,38 @@ class FirstRunPingWizard extends StatefulWidget {
 enum _PingStep { copy, waiting, success, timeout }
 
 class _FirstRunPingWizardState extends State<FirstRunPingWizard> {
-  _PingStep _step = _PingStep.copy;
+  late _PingStep _step = _previewStep(widget.preview) ?? _PingStep.copy;
   Timer? _poll;
   DateTime? _waitStarted;
   String? _threadId;
   String? _error;
   bool _busy = false;
+  late bool _bannersAsked = widget.firstRunStore.notificationsComplete;
+  bool _bannersGranted = false;
 
   @override
   void dispose() {
     _poll?.cancel();
     super.dispose();
   }
+
+  @override
+  void didUpdateWidget(FirstRunPingWizard old) {
+    super.didUpdateWidget(old);
+    if (widget.preview == old.preview) return;
+    final pinned = _previewStep(widget.preview);
+    if (pinned == null) return;
+    _poll?.cancel();
+    setState(() => _step = pinned);
+  }
+
+  static _PingStep? _previewStep(PingPreview? preview) => switch (preview) {
+        null => null,
+        PingPreview.copy => _PingStep.copy,
+        PingPreview.waiting => _PingStep.waiting,
+        PingPreview.delivered => _PingStep.success,
+        PingPreview.timeout => _PingStep.timeout,
+      };
 
   Future<void> _copyPrompt() async {
     Analytics.track(AnalyticsEvent.pingCopy);
@@ -68,6 +103,7 @@ class _FirstRunPingWizardState extends State<FirstRunPingWizard> {
       _error = null;
       _busy = false;
     });
+    if (widget.preview != null) return;
     _poll = Timer.periodic(const Duration(seconds: 3), (_) => _tick());
     _tick();
   }
@@ -78,6 +114,7 @@ class _FirstRunPingWizardState extends State<FirstRunPingWizard> {
     try {
       final open = await widget.daemon.listThreads(filter: 'open');
       for (final summary in open) {
+        if (_isStale(summary)) continue;
         final detail = await widget.daemon.getThread(summary.id);
         if (_isThreadPingWithPong(detail)) {
           _poll?.cancel();
@@ -87,7 +124,8 @@ class _FirstRunPingWizardState extends State<FirstRunPingWizard> {
             _threadId = detail.id;
           });
           Analytics.track(AnalyticsEvent.pingSuccess);
-          await Future<void>.delayed(const Duration(milliseconds: 900));
+          // Let the delivery sweep land before handing over to Threads.
+          await Future<void>.delayed(const Duration(milliseconds: 1600));
           await widget.firstRunStore.markPingComplete();
           if (!mounted) return;
           widget.onComplete(_threadId);
@@ -110,6 +148,15 @@ class _FirstRunPingWizardState extends State<FirstRunPingWizard> {
     }
   }
 
+  /// Skips the detail fetch for threads that can't be this ping. Slack covers
+  /// a ping sent before the user pressed wait.
+  bool _isStale(ThreadSummary summary) {
+    final started = _waitStarted;
+    final updated = DateTime.tryParse(summary.updatedAt ?? '');
+    if (started == null || updated == null) return false;
+    return updated.isBefore(started.subtract(const Duration(minutes: 5)));
+  }
+
   bool _isThreadPingWithPong(ThreadDetailResult detail) {
     if (detail.messages.isEmpty) return false;
     final roots = detail.messages
@@ -128,48 +175,58 @@ class _FirstRunPingWizardState extends State<FirstRunPingWizard> {
     widget.onComplete(null);
   }
 
+  Future<void> _allowBanners() async {
+    if (Platform.isMacOS) {
+      try {
+        await Process.run('open', [
+          'x-apple.systempreferences:com.apple.Notifications-Settings.extension',
+        ]);
+      } catch (_) {}
+    }
+    await widget.firstRunStore.markNotificationsComplete();
+    if (!mounted) return;
+    setState(() {
+      _bannersAsked = true;
+      _bannersGranted = true;
+    });
+  }
+
+  Future<void> _declineBanners() async {
+    await widget.firstRunStore.markNotificationsComplete(skipped: true);
+    if (!mounted) return;
+    setState(() => _bannersAsked = true);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final body = switch (_step) {
-      _PingStep.copy => _CopyStep(
-          theme: theme,
-          embedded: widget.embedded,
-          onCopy: _copyPrompt,
-          onWaiting: _startWaiting,
-          onSkip: _skip,
-        ),
-      _PingStep.waiting => _WaitingStep(
-          theme: theme,
-          embedded: widget.embedded,
-          error: _error,
-          onSkip: _skip,
-        ),
-      _PingStep.success => _SuccessStep(theme: theme, embedded: widget.embedded),
-      _PingStep.timeout => _TimeoutStep(
-          theme: theme,
-          embedded: widget.embedded,
-          onRetry: () => setState(() => _step = _PingStep.copy),
-          onSkip: _skip,
-        ),
-    };
-
-    if (widget.embedded) {
-      return body;
-    }
-
-    return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 480),
-            child: Padding(
-              padding: const EdgeInsets.all(28),
-              child: body,
-            ),
+    return OnboardingShell(
+      step: OnboardingStep.ping,
+      address: widget.address,
+      delivered: _step == _PingStep.success,
+      debugBanner: widget.debugBanner,
+      child: switch (_step) {
+        _PingStep.copy => _CopyStep(
+            theme: theme,
+            agent: widget.address.agent,
+            onCopy: _copyPrompt,
+            onWaiting: _startWaiting,
+            onSkip: _skip,
           ),
-        ),
-      ),
+        _PingStep.waiting => _WaitingStep(
+            error: _error,
+            showBannerAsk: !_bannersAsked,
+            bannersGranted: _bannersGranted,
+            onAllowBanners: _allowBanners,
+            onDeclineBanners: _declineBanners,
+            onSkip: _skip,
+          ),
+        _PingStep.success => const _SuccessStep(),
+        _PingStep.timeout => _TimeoutStep(
+            onRetry: () => setState(() => _step = _PingStep.copy),
+            onSkip: _skip,
+          ),
+      },
     );
   }
 }
@@ -177,54 +234,31 @@ class _FirstRunPingWizardState extends State<FirstRunPingWizard> {
 class _CopyStep extends StatelessWidget {
   const _CopyStep({
     required this.theme,
-    required this.embedded,
+    required this.agent,
     required this.onCopy,
     required this.onWaiting,
     required this.onSkip,
   });
 
   final ThemeData theme;
-  final bool embedded;
+  final String? agent;
   final VoidCallback onCopy;
   final VoidCallback onWaiting;
   final VoidCallback onSkip;
 
   @override
   Widget build(BuildContext context) {
-    final align = embedded ? TextAlign.left : TextAlign.center;
     return Column(
-      mainAxisAlignment:
-          embedded ? MainAxisAlignment.start : MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (embedded)
-          const OnboardingHeading(
-            variant: OnboardingHeadingVariant.display,
-            title: 'Send your first ping',
-            subtitle:
-                'Paste this into your connected AI host. One host is enough — '
-                '@all reaches other agents when you add more.',
-          )
-        else ...[
-          Text(
-            'Send your first ping',
-            textAlign: align,
-            style: theme.textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.w700,
-              color: MutandeColors.stone800,
-            ),
-          ),
-          const SizedBox(height: OnboardingSpace.xs),
-          Text(
-            'Paste this into your connected AI host. One host is enough — @all reaches other agents when you add more.',
-            textAlign: align,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: MutandeColors.stone500,
-              height: 1.45,
-            ),
-          ),
-        ],
-        SizedBox(height: embedded ? OnboardingSpace.lg : 20),
+        OnboardingHeading(
+          variant: OnboardingHeadingVariant.display,
+          title: agent == null
+              ? 'Paste this into your connected host.'
+              : 'Paste this into $agent.',
+          subtitle: 'Your address takes it from there.',
+        ),
+        const SizedBox(height: OnboardingSpace.lg),
         Container(
           padding: const EdgeInsets.all(OnboardingSpace.md),
           decoration: BoxDecoration(
@@ -247,7 +281,7 @@ class _CopyStep extends StatelessWidget {
             icon: const Icon(Icons.copy, size: 18),
             label: const Text('Copy prompt'),
           ),
-          secondary: OutlinedButton(
+          secondary: TextButton(
             onPressed: onWaiting,
             child: const Text('I’ve pasted it — wait for pong'),
           ),
@@ -263,58 +297,53 @@ class _CopyStep extends StatelessWidget {
 
 class _WaitingStep extends StatelessWidget {
   const _WaitingStep({
-    required this.theme,
-    required this.embedded,
     required this.error,
+    required this.showBannerAsk,
+    required this.bannersGranted,
+    required this.onAllowBanners,
+    required this.onDeclineBanners,
     required this.onSkip,
   });
 
-  final ThemeData theme;
-  final bool embedded;
   final String? error;
+  final bool showBannerAsk;
+  final bool bannersGranted;
+  final VoidCallback onAllowBanners;
+  final VoidCallback onDeclineBanners;
   final VoidCallback onSkip;
 
   @override
   Widget build(BuildContext context) {
     return Column(
-      mainAxisAlignment:
-          embedded ? MainAxisAlignment.start : MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Center(
+        const Align(
+          alignment: Alignment.centerLeft,
           child: MutandeOrb.standard(semanticLabel: 'Waiting for pong'),
         ),
-        SizedBox(height: embedded ? OnboardingSpace.lg : 20),
-        if (embedded)
-          const OnboardingHeading(
-            variant: OnboardingHeadingVariant.display,
-            title: 'Waiting for pong…',
-            subtitle:
-                'Your agent should call ping, then reply on the thread. '
-                'This screen watches Threads.',
-          )
-        else ...[
-          Text(
-            'Waiting for pong…',
-            textAlign: TextAlign.center,
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-              color: MutandeColors.stone800,
-            ),
-          ),
-          const SizedBox(height: OnboardingSpace.xs),
-          Text(
-            'Your agent should call ping, then reply on the thread. This screen watches Threads.',
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: MutandeColors.stone500,
-              height: 1.4,
-            ),
-          ),
-        ],
+        const SizedBox(height: OnboardingSpace.lg),
+        const OnboardingHeading(
+          variant: OnboardingHeadingVariant.display,
+          title: 'Waiting for pong…',
+          subtitle:
+              'Your agent should call ping, then reply on the thread. This '
+              'screen watches Threads.',
+        ),
         if (error != null) ...[
           const SizedBox(height: OnboardingSpace.sm),
           OnboardingErrorBanner(message: error!),
+        ],
+        if (showBannerAsk) ...[
+          const SizedBox(height: OnboardingSpace.xl),
+          _BannerAsk(onAllow: onAllowBanners, onDecline: onDeclineBanners),
+        ] else if (bannersGranted) ...[
+          const SizedBox(height: OnboardingSpace.lg),
+          Text(
+            'Banners are on — the pong will announce itself.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: MutandeColors.stone500,
+                ),
+          ),
         ],
         OnboardingActions(
           topSpacing: OnboardingSpace.lg,
@@ -328,39 +357,74 @@ class _WaitingStep extends StatelessWidget {
   }
 }
 
-class _SuccessStep extends StatelessWidget {
-  const _SuccessStep({required this.theme, required this.embedded});
+/// The old Notify step, asked where the user is already waiting.
+class _BannerAsk extends StatelessWidget {
+  const _BannerAsk({required this.onAllow, required this.onDecline});
 
-  final ThemeData theme;
-  final bool embedded;
+  final VoidCallback onAllow;
+  final VoidCallback onDecline;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisAlignment:
-          embedded ? MainAxisAlignment.start : MainAxisAlignment.center,
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      decoration: BoxDecoration(
+        color: MutandeColors.amberSoft.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Banners on?',
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: MutandeColors.stone800,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'We’ll tell you the moment your agent replies — even if you’re in '
+            'another app. Metadata only, never message bodies.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: MutandeColors.stone600,
+              height: 1.45,
+            ),
+          ),
+          const SizedBox(height: OnboardingSpace.sm),
+          Row(
+            children: [
+              OutlinedButton(
+                onPressed: onAllow,
+                child: const Text('Turn on banners'),
+              ),
+              const SizedBox(width: OnboardingSpace.xs),
+              TextButton(
+                onPressed: onDecline,
+                child: const Text('Not now'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Delivery — the rail above is playing the amber sweep as this lands.
+class _SuccessStep extends StatelessWidget {
+  const _SuccessStep();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Icon(
-          Icons.check_circle_outline,
-          size: 48,
-          color: MutandeColors.emerald,
-        ),
-        const SizedBox(height: OnboardingSpace.md),
-        Text(
-          'Pong received',
-          textAlign: embedded ? TextAlign.left : TextAlign.center,
-          style: OnboardingHeading.displayTitleStyle(theme).copyWith(
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: OnboardingSpace.xs),
-        Text(
-          'Your first thread is live.',
-          textAlign: embedded ? TextAlign.left : TextAlign.center,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: MutandeColors.stone500,
-          ),
+        OnboardingHeading(
+          variant: OnboardingHeadingVariant.display,
+          title: 'received its first mail.',
+          subtitle: 'Threads is where it lands from here.',
         ),
       ],
     );
@@ -368,15 +432,8 @@ class _SuccessStep extends StatelessWidget {
 }
 
 class _TimeoutStep extends StatelessWidget {
-  const _TimeoutStep({
-    required this.theme,
-    required this.embedded,
-    required this.onRetry,
-    required this.onSkip,
-  });
+  const _TimeoutStep({required this.onRetry, required this.onSkip});
 
-  final ThemeData theme;
-  final bool embedded;
   final VoidCallback onRetry;
   final VoidCallback onSkip;
 
@@ -385,34 +442,13 @@ class _TimeoutStep extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (embedded)
-          const OnboardingHeading(
-            variant: OnboardingHeadingVariant.display,
-            title: 'Still waiting for a pong',
-            subtitle:
-                'Make sure your host ran ping and replied on the thread.',
-          )
-        else ...[
-          Text(
-            'Still waiting for a pong',
-            textAlign: TextAlign.center,
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-              color: MutandeColors.stone800,
-            ),
-          ),
-          const SizedBox(height: OnboardingSpace.sm),
-          Text(
-            'Make sure your host ran ping and replied on the thread.',
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: MutandeColors.stone500,
-              height: 1.4,
-            ),
-          ),
-        ],
+        const OnboardingHeading(
+          variant: OnboardingHeadingVariant.display,
+          title: 'Still waiting for a pong',
+          subtitle: 'Make sure your host ran ping and replied on the thread.',
+        ),
         OnboardingActions(
-          topSpacing: embedded ? OnboardingSpace.lg : 20,
+          topSpacing: OnboardingSpace.lg,
           primary: FilledButton(
             onPressed: onRetry,
             child: const Text('Retry'),
