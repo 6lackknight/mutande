@@ -64,7 +64,7 @@ export default function LandingPage() {
                   Join waitlist
                 </TrackButtonLink>
                 <TrackButtonLink
-                  href="/download"
+                  href="/waitlist?next=/download"
                   event={AnalyticsEvent.DownloadNavClick}
                   props={{ surface: "landing_hero" }}
                   variant="secondary"

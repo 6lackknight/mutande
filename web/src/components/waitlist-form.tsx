@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { WarpBackground } from "@/components/magicui/warp-background";
 import { Alert, Button, ButtonLink, Field, Input } from "@/components/ui";
@@ -77,8 +78,15 @@ function CheckboxGrid({
   );
 }
 
-export function WaitlistForm() {
-  const [email, setEmail] = useState("");
+export function WaitlistForm({
+  defaultEmail = "",
+  next,
+}: {
+  defaultEmail?: string;
+  next?: "/download" | null;
+}) {
+  const router = useRouter();
+  const [email, setEmail] = useState(defaultEmail);
   const [aiHosts, setAiHosts] = useState<string[]>([]);
   const [oses, setOses] = useState<string[]>([]);
   const [shareFrequency, setShareFrequency] = useState<string>(
@@ -129,10 +137,14 @@ export function WaitlistForm() {
       if (!res.ok) {
         throw new Error(data.error || "Could not join waitlist");
       }
+      if (next === "/download") {
+        router.replace("/download");
+        return;
+      }
       setDone(true);
+      setBusy(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
-    } finally {
       setBusy(false);
     }
   }
@@ -245,7 +257,13 @@ export function WaitlistForm() {
       {error ? <Alert tone="danger">{error}</Alert> : null}
 
       <Button type="submit" disabled={busy} className="w-full sm:w-auto">
-        {busy ? "Joining…" : "Join waitlist"}
+        {busy
+          ? next === "/download"
+            ? "Continuing…"
+            : "Joining…"
+          : next === "/download"
+            ? "Continue to download"
+            : "Join waitlist"}
       </Button>
     </form>
   );

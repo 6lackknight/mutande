@@ -13,6 +13,7 @@ import type {
   ThreadFilter,
   ThreadMeta,
   ToggleUpvoteResponse,
+  CollabView,
 } from "./types.ts";
 
 export interface HubMeResponse {
@@ -136,6 +137,9 @@ export class HubClient {
       app_envelope: AppEnvelopePayload;
       from_agent?: string;
       from_agent_id?: string;
+      collab_id?: string;
+      lane_id?: string;
+      assigned_to?: string;
     },
   ): Promise<CreateThreadResponse> {
     return this.request<CreateThreadResponse>("/v1/threads", accessToken, {
@@ -231,6 +235,49 @@ export class HubClient {
         method: "POST",
         body: JSON.stringify(body),
       },
+    );
+  }
+
+  listCollabs(accessToken: string): Promise<{ collabs: CollabView[] }> {
+    return this.request("/v1/collabs", accessToken);
+  }
+
+  getCollab(
+    accessToken: string,
+    collabId: string,
+  ): Promise<{ collab: CollabView }> {
+    return this.request(
+      `/v1/collabs/${encodeURIComponent(collabId)}`,
+      accessToken,
+    );
+  }
+
+  setLane(
+    accessToken: string,
+    collabId: string,
+    input: {
+      thread_id: string;
+      lane_id: string;
+      before_thread_id?: string;
+      after_thread_id?: string;
+    },
+  ): Promise<{ thread: ThreadMeta }> {
+    return this.request(
+      `/v1/collabs/${encodeURIComponent(collabId)}/lane`,
+      accessToken,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  }
+
+  addLearning(
+    accessToken: string,
+    collabId: string,
+    input: { notes: string; from_agent?: string; from_agent_id?: string },
+  ): Promise<{ message_id: string }> {
+    return this.request(
+      `/v1/collabs/${encodeURIComponent(collabId)}/learnings`,
+      accessToken,
+      { method: "POST", body: JSON.stringify(input) },
     );
   }
 }

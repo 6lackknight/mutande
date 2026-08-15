@@ -270,6 +270,7 @@ export async function listWebAgentThreads(
   accessToken: string,
   agentId: string,
   filter?: ThreadFilter,
+  collabId?: string,
 ): Promise<{
   threads: ReturnType<typeof presentThreadListItem>[];
   caught_up: boolean;
@@ -277,7 +278,10 @@ export async function listWebAgentThreads(
   // Default skill check: needs_action. Empty → stay quiet.
   const effective: ThreadFilter | undefined = filter ?? "needs_action";
   const { threads } = await hub.listThreads(accessToken, effective);
-  const mine = filterThreadsForWebAgent(threads, agentId);
+  let mine = filterThreadsForWebAgent(threads, agentId);
+  if (collabId) {
+    mine = mine.filter((t) => t.collab_id === collabId);
+  }
   const withSnippets = await Promise.all(
     mine.map((t) => enrichListSnippets(hub, accessToken, agentId, t)),
   );
@@ -374,6 +378,7 @@ export async function forwardDraftAsWebAgent(
   slug: string,
   recipient: string,
   bundle: Record<string, unknown>,
+  collabId?: string,
 ): Promise<CreateThreadResponse> {
   if ("envelope" in bundle && bundle.envelope != null) {
     throw new Error(E2E_REFUSAL);
@@ -382,6 +387,14 @@ export async function forwardDraftAsWebAgent(
   if (!to) {
     throw new Error("recipient is required");
   }
+  if (collabId) {
+    const { collab } = await hub.getCollab(accessToken, collabId);
+    if (collab.encryption_mode === "e2e") {
+      throw new Error(
+        "This collab is E2E — use the mutande Mac sidecar MCP to file cards.",
+      );
+    }
+  }
   const prepared = prepareBundleResources(bundle);
   try {
     const result = await hub.createThread(accessToken, {
@@ -389,6 +402,7 @@ export async function forwardDraftAsWebAgent(
       app_envelope: bundleToAppEnvelope(prepared),
       from_agent: slug,
       from_agent_id: agentId,
+      ...(collabId ? { collab_id: collabId } : {}),
     });
     const threadId = result?.thread?.id?.trim();
     const messageId = result?.message_id?.trim();

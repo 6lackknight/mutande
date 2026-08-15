@@ -265,6 +265,18 @@ export interface ThreadMeta {
    * `your_status` is pending iff the viewer’s user_id appears here.
    */
   awaiting?: HubAwaitingEntry[];
+  /** Collab board this thread belongs to (card = thread). */
+  collab_id?: string;
+  /** Board list. Independent of thread `status`. */
+  lane_id?: string;
+  /** Fractional order within the lane. */
+  lane_position?: number;
+  /** Durable work owner (display address). Distinct from next_turn. */
+  assigned_to?: string;
+  /** Visibility emphasis addresses — not an access boundary. */
+  watchers?: string[];
+  /** View-only: collab name when this is a card (not stored). */
+  collab_name?: string;
 }
 
 /** Hub mirror of E2E `next_turn` (user-scoped; actor distinguishes needs-you vs agent mail). */
@@ -562,6 +574,14 @@ export interface CreateThreadInput {
   from_agent_id?: string;
   /** Post-merge awaiting set computed by sender core (E2E answers stay sealed). */
   turns?: HubAwaitingEntry[];
+  /** When set, this thread is a collab card sealed to all steerers. */
+  collab_id?: string;
+  /** Board list; defaults to Backlog when `collab_id` is set. */
+  lane_id?: string;
+  /** Durable owner display address. */
+  assigned_to?: string;
+  /** Visibility emphasis addresses. */
+  watchers?: string[];
 }
 
 export interface ReplyInput {
@@ -804,3 +824,144 @@ export const ENTERPRISE_WARN_BANNER: EnterpriseWarnBanner = {
   trust_tier: "enterprise",
   message: "Enterprise agent — not E2E; provider may retain data",
 };
+
+// ── Collab (board of threads) ──────────────────────────────────────────────
+
+export type CollabEncryptionMode = ThreadEncryptionMode;
+
+export interface CollabDowngradePoint {
+  at: string;
+  approvers: string[];
+  cause_address: string;
+}
+
+export interface CollabSteererJoin {
+  user_id: string;
+  joined_at: string;
+}
+
+export interface CollabSteererRemoval {
+  user_id: string;
+  removed_at: string;
+}
+
+export interface CollabRosterEntry {
+  user_id: string;
+  agent_id: string;
+  /** Display address, e.g. alice@acme/claude. Never /default. */
+  address: string;
+  transport?: AgentTransport;
+}
+
+export interface CollabList {
+  id: string;
+  name: string;
+  position: number;
+}
+
+export interface CollabInstructionsSealed {
+  envelope_id: string;
+  updated_by: string;
+}
+
+export interface Collab {
+  id: string;
+  org_id: string;
+  name: string;
+  encryption_mode: CollabEncryptionMode;
+  downgrade_point?: CollabDowngradePoint;
+  steerer_user_ids: string[];
+  steerer_joins: CollabSteererJoin[];
+  steerer_removals?: CollabSteererRemoval[];
+  roster: CollabRosterEntry[];
+  lists: CollabList[];
+  instructions?: string;
+  instructions_sealed?: CollabInstructionsSealed;
+  memory_thread_id: string;
+  schema_version: 1;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateCollabInput {
+  name: string;
+  /** Human handles. Creator is always included. */
+  steerer_handles?: string[];
+  /** Agent display addresses (alice@acme/claude or @claude). Humans are auto-added as steerers. */
+  roster_addresses?: string[];
+  /** Plaintext standing context — app_envelope only. */
+  instructions?: string;
+  /** Sealed instructions ref — e2e only. */
+  instructions_sealed?: CollabInstructionsSealed;
+}
+
+export interface SetLaneInput {
+  thread_id: string;
+  lane_id: string;
+  /** Insert before this thread in the target lane. Omit to append. */
+  before_thread_id?: string;
+  /** Insert after this thread. Ignored when before_thread_id is set. */
+  after_thread_id?: string;
+}
+
+export interface AddLearningInput {
+  notes: string;
+  from_agent?: string;
+  from_agent_id?: string;
+  /** E2E collabs: sealed envelope for the memory-thread entry. */
+  envelope?: Envelope;
+}
+
+export interface UpdateCollabInstructionsInput {
+  instructions?: string;
+  instructions_sealed?: CollabInstructionsSealed;
+}
+
+export interface ApplyCollabDowngradeInput {
+  cause_address: string;
+  approvers: string[];
+}
+
+export interface AddSteererInput {
+  handle: string;
+}
+
+export interface RemoveSteererInput {
+  user_id: string;
+}
+
+export interface RenameCollabListInput {
+  lane_id: string;
+  name: string;
+}
+
+export interface CollabLearning {
+  id: string;
+  created_at: string;
+  from_handle: string;
+  /** Present for app_envelope collabs. E2E entries omit notes (daemon decrypts). */
+  notes?: string;
+  sealed?: boolean;
+}
+
+export interface CollabCardSummary {
+  id: string;
+  lane_id?: string;
+  lane_position?: number;
+  assigned_to?: string;
+  watchers?: string[];
+  status: "open" | "closed";
+  from: string;
+  audience: string;
+  updated_at: string;
+  your_status?: "pending" | "replied";
+}
+
+export interface CollabView extends Collab {
+  /** Derived — never stored. */
+  card_count: number;
+  cards: CollabCardSummary[];
+  learnings: CollabLearning[];
+  steerers: { user_id: string; handle: string }[];
+}

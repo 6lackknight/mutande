@@ -319,7 +319,7 @@ pub struct PendingTaskApproval {
 }
 
 /// Hub thread metadata plus locally opened (or failed) messages.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct OpenedThreadDetail {
     pub thread: ThreadMeta,
     pub messages: Vec<OpenedThreadMessage>,
@@ -727,7 +727,7 @@ impl DaemonState {
         self.cached_bare_handle.lock().unwrap().clone()
     }
 
-    fn hub_client(&self) -> Option<HubClient> {
+    pub(super) fn hub_client(&self) -> Option<HubClient> {
         self.hub.lock().unwrap().clone()
     }
 
@@ -1075,7 +1075,7 @@ impl DaemonState {
             .collect())
     }
 
-    fn from_agent_for_send(&self, override_slug: Option<&str>) -> Option<String> {
+    pub(super) fn from_agent_for_send(&self, override_slug: Option<&str>) -> Option<String> {
         self.resolve_send_agent_slug(override_slug)
     }
 
@@ -1441,12 +1441,11 @@ impl DaemonState {
                         Ok(detail) => {
                             apply_last_message_snippet(t, &detail);
                             if t.status == ThreadStatus::Open {
-                                let (awaiting, status) = self.resolve_awaiting_status(
+                                let (_awaiting, status) = self.resolve_awaiting_status(
                                     &detail,
                                     my_bare.as_deref(),
                                     None,
                                 );
-                                t.awaiting = Some(awaiting);
                                 t.your_status = Some(status);
                             }
                             enrich_cache.record(t);
@@ -1514,7 +1513,7 @@ impl DaemonState {
             };
             let default_slug = self.default_agent_slug().await;
             let default_slug = default_slug.as_deref().unwrap_or(slug);
-            let (awaiting, status) = if super::turn::thread_has_declared_turns(&detail) {
+            let (_awaiting, status) = if super::turn::thread_has_declared_turns(&detail) {
                 self.resolve_awaiting_status(&detail, my_bare.as_deref(), Some(slug))
             } else {
                 (
@@ -1522,15 +1521,13 @@ impl DaemonState {
                     agent_your_status(&detail.thread, &user_id, slug, default_slug),
                 )
             };
-            detail.thread.awaiting = Some(awaiting);
             detail.thread.your_status = Some(status);
         } else {
-            let (awaiting, status) = self.resolve_awaiting_status(
+            let (_awaiting, status) = self.resolve_awaiting_status(
                 &detail,
                 my_bare.as_deref(),
                 None,
             );
-            detail.thread.awaiting = Some(awaiting);
             detail.thread.your_status = Some(status);
         }
         self.apply_task_gate(&mut detail).await;
@@ -1686,6 +1683,8 @@ impl DaemonState {
             envelope: None,
             open_error: None,
             upvotes,
+            receipts: None,
+            task_pending_approval: None,
         }
     }
 
@@ -1712,6 +1711,7 @@ impl DaemonState {
             .is_some();
         let parent_message_id = msg.parent_message_id.clone();
         let upvotes = msg.upvotes.clone();
+        let receipts = msg.receipts.clone();
         let meta = |open_error: Option<String>| OpenedThreadMessage {
             id: msg.id.clone(),
             thread_id: msg.thread_id.clone(),
@@ -1724,6 +1724,8 @@ impl DaemonState {
             envelope: None,
             open_error,
             upvotes: upvotes.clone(),
+            receipts: receipts.clone(),
+            task_pending_approval: None,
         };
 
         let mut opened = match plain {
@@ -1742,6 +1744,8 @@ impl DaemonState {
                         envelope: None,
                         open_error: None,
                         upvotes: upvotes.clone(),
+                        receipts: receipts.clone(),
+                        task_pending_approval: None,
                     }
                 }
                 Err(_err) if is_blob => {
@@ -1761,6 +1765,8 @@ impl DaemonState {
                         envelope: None,
                         open_error: None,
                         upvotes: upvotes.clone(),
+                        receipts: receipts.clone(),
+                        task_pending_approval: None,
                     }
                 }
                 Err(err) => meta(Some(format!("decode bundle: {err}"))),
@@ -1827,6 +1833,7 @@ impl DaemonState {
         &self,
         recipient: &str,
         agent_slug: Option<&str>,
+        collab_id: Option<&str>,
     ) -> Result<ForwardThreadsResult> {
         let bundle = self.get_draft_plain();
         if bundle_is_empty(&bundle) {
@@ -1841,7 +1848,15 @@ impl DaemonState {
             let mut thread_ids = Vec::with_capacity(hub_tos.len());
             for to in &hub_tos {
                 let tid = self
-                    .create_hub_thread(&hub, to, &bundle, from_agent.as_deref())
+                    .create_hub_thread(
+                        &hub,
+                        to,
+                        &bundle,
+                        from_agent.as_deref(),
+                        collab_id,
+                        None,
+                        None,
+                    )
                     .await?;
                 thread_ids.push(tid);
             }
@@ -1876,26 +1891,78 @@ impl DaemonState {
     }
 
     /// Create a hub thread using E2E seal or app_envelope based on recipient transport.
-    async fn create_hub_thread(
+    /// When `collab_id` is set, wrap to every steerer device and inherit collab encryption_mode.
+    pub(super) async fn create_hub_thread(
         &self,
         hub: &crate::hub_client::HubClient,
         to: &str,
         bundle: &MutandeBundle,
         from_agent: Option<&str>,
+        collab_id: Option<&str>,
+        lane_id: Option<&str>,
+        assigned_to: Option<&str>,
     ) -> Result<String> {
         let turns = self.hub_turns_for_bundle(bundle).await;
         let turns_ref = turns.as_deref();
-        if self.recipient_needs_app_envelope(to, from_agent).await? {
+
+        let collab = if let Some(cid) = collab_id {
+            Some(hub.get_collab(cid).await?)
+        } else {
+            None
+        };
+        let collab_e2e = collab
+            .as_ref()
+            .map(|c| c.encryption_mode == "e2e")
+            .unwrap_or(false);
+        let use_app_envelope = if let Some(c) = collab.as_ref() {
+            c.encryption_mode == "app_envelope"
+        } else {
+            self.recipient_needs_app_envelope(to, from_agent).await?
+        };
+
+        if use_app_envelope {
             let payload = bundle_to_app_envelope(bundle)?;
-            let resp = hub
-                .create_thread_app_envelope(to, &payload, from_agent, turns_ref)
-                .await?;
+            let resp = if let Some(cid) = collab_id {
+                hub.create_thread_collab(
+                    to,
+                    None,
+                    Some(&payload),
+                    from_agent,
+                    turns_ref,
+                    cid,
+                    lane_id,
+                    assigned_to,
+                )
+                .await?
+            } else {
+                hub.create_thread_app_envelope(to, &payload, from_agent, turns_ref)
+                    .await?
+            };
             Ok(resp.thread.id)
         } else {
             let plain = serde_json::to_vec(bundle)?;
-            let seal_keys = self.resolve_recipient_pubkeys(to).await?;
+            let seal_keys = if collab_e2e {
+                self.collab_steerer_pubkeys(collab.as_ref().unwrap())
+                    .await?
+            } else {
+                self.resolve_recipient_pubkeys(to).await?
+            };
             let env = self.seal_inline_or_blob(&plain, &seal_keys).await?;
-            let resp = hub.create_thread(to, &env, from_agent, turns_ref).await?;
+            let resp = if let Some(cid) = collab_id {
+                hub.create_thread_collab(
+                    to,
+                    Some(&env),
+                    None,
+                    from_agent,
+                    turns_ref,
+                    cid,
+                    lane_id,
+                    assigned_to,
+                )
+                .await?
+            } else {
+                hub.create_thread(to, &env, from_agent, turns_ref).await?
+            };
             Ok(resp.thread.id)
         }
     }
@@ -1957,7 +2024,7 @@ impl DaemonState {
         }
     }
 
-    async fn agent_slug_is_mcp(&self, agent_slug: Option<&str>) -> Result<bool> {
+    pub(super) async fn agent_slug_is_mcp(&self, agent_slug: Option<&str>) -> Result<bool> {
         let Some(slug) = self.effective_agent_slug(agent_slug).await else {
             return Ok(false);
         };
@@ -2142,7 +2209,7 @@ impl DaemonState {
         })
     }
 
-    async fn seal_inline_or_blob(
+    pub(super) async fn seal_inline_or_blob(
         &self,
         plain: &[u8],
         recipients: &[DevicePubKey],
@@ -2324,7 +2391,7 @@ impl DaemonState {
             let mut thread_ids = Vec::with_capacity(hub_tos.len());
             for to in &hub_tos {
                 let tid = self
-                    .create_hub_thread(&hub, to, &bundle, from_agent.as_deref())
+                    .create_hub_thread(&hub, to, &bundle, from_agent.as_deref(), None, None, None)
                     .await?;
                 thread_ids.push(tid);
             }
@@ -2601,7 +2668,7 @@ impl DaemonState {
         Ok(())
     }
 
-    async fn hub_turns_for_bundle(
+    pub(super) async fn hub_turns_for_bundle(
         &self,
         bundle: &MutandeBundle,
     ) -> Option<Vec<crate::hub_client::HubAwaitingEntry>> {
@@ -2643,11 +2710,7 @@ impl DaemonState {
                 // @slug self-collab → own user
                 Some(my_id.clone())
             } else {
-                contacts
-                    .iter()
-                    .find(|c| strip_agent_suffix(&c.handle).eq_ignore_ascii_case(&bare))
-                    .and_then(|c| c.user_id.clone())
-                    .or_else(|| resolve(&bare))
+                resolve(&bare)
             };
             let Some(uid) = user_id else { continue };
             let actor = match e.actor {
@@ -2728,7 +2791,7 @@ impl DaemonState {
         }
     }
 
-    async fn my_bare_handle(&self) -> Result<String> {
+    pub(super) async fn my_bare_handle(&self) -> Result<String> {
         let hub = self.hub_client().context("hub not configured")?;
         let me = hub.me().await?;
         let bare = me
@@ -2856,7 +2919,7 @@ impl DaemonState {
         Ok(keys)
     }
 
-    async fn resolve_audience_pubkeys(&self, recipient: &str) -> Result<Vec<DevicePubKey>> {
+    pub(super) async fn resolve_audience_pubkeys(&self, recipient: &str) -> Result<Vec<DevicePubKey>> {
         let trimmed = recipient.trim();
         let parsed = parse_display_address(trimmed)?;
 
@@ -2942,7 +3005,7 @@ impl DaemonState {
         Ok(keys)
     }
 
-    async fn append_own_device_pubkeys(&self, keys: &mut Vec<DevicePubKey>) {
+    pub(super) async fn append_own_device_pubkeys(&self, keys: &mut Vec<DevicePubKey>) {
         match self.own_device_pubkeys().await {
             Ok(own) => {
                 for pk in own {
@@ -3291,7 +3354,7 @@ fn bundle_is_empty(bundle: &MutandeBundle) -> bool {
 }
 
 /// Map a MutandeBundle to hub app_envelope wire payload (never mixed with E2E envelope).
-fn bundle_to_app_envelope(
+pub(super) fn bundle_to_app_envelope(
     bundle: &MutandeBundle,
 ) -> Result<crate::hub_client::AppEnvelopePayload> {
     let payload = crate::hub_client::AppEnvelopePayload {
@@ -3863,6 +3926,8 @@ mod tests {
             kind: "question".into(),
             prompt: "hello?".into(),
             options: None,
+            title: None,
+            allow_multiple: None,
         });
         let plain = serde_json::to_vec(&state.get_draft_plain()).unwrap();
         let env = state.seal_to_self(&plain).unwrap();
@@ -3904,6 +3969,13 @@ mod tests {
                 last_from: None,
                 last_subject: None,
                 last_preview: None,
+                awaiting: None,
+                collab_id: None,
+                lane_id: None,
+                lane_position: None,
+                assigned_to: None,
+                watchers: None,
+                collab_name: None,
             },
             messages: vec![ThreadMessage {
                 id: "m1".into(),
@@ -3918,8 +3990,8 @@ mod tests {
                 sender_only: None,
                 parent_message_id: None,
                 upvotes: None,
+                receipts: None,
             }],
-        pending_downgrade: None,
         };
 
         let opened = state.open_thread_detail(detail);
@@ -3968,6 +4040,13 @@ mod tests {
                 last_from: None,
                 last_subject: None,
                 last_preview: None,
+                awaiting: None,
+                collab_id: None,
+                lane_id: None,
+                lane_position: None,
+                assigned_to: None,
+                watchers: None,
+                collab_name: None,
             },
             messages: vec![ThreadMessage {
                 id: "m-app".into(),
@@ -3984,7 +4063,9 @@ mod tests {
                 upvotes: None,
             }],
         
-        pending_downgrade: None,};
+        pending_downgrade: None,
+        pending_task_approvals: None,
+    };
         let opened = state.open_thread_detail(detail);
         let msg = &opened.messages[0];
         assert!(msg.open_error.is_none());
@@ -4073,6 +4154,13 @@ mod tests {
                 last_from: None,
                 last_subject: None,
                 last_preview: None,
+                awaiting: None,
+                collab_id: None,
+                lane_id: None,
+                lane_position: None,
+                assigned_to: None,
+                watchers: None,
+                collab_name: None,
             },
             messages: vec![ThreadMessage {
                 id: "m-fail".into(),
@@ -4087,8 +4175,8 @@ mod tests {
                 sender_only: None,
                 parent_message_id: None,
                 upvotes: None,
+                receipts: None,
             }],
-        pending_downgrade: None,
         };
 
         let opened = state.open_thread_detail(detail);
@@ -4143,6 +4231,13 @@ mod tests {
                 last_from: None,
                 last_subject: None,
                 last_preview: None,
+                awaiting: None,
+                collab_id: None,
+                lane_id: None,
+                lane_position: None,
+                assigned_to: None,
+                watchers: None,
+                collab_name: None,
             },
             messages: vec![ThreadMessage {
                 id: "m-bad".into(),
@@ -4159,7 +4254,9 @@ mod tests {
                 upvotes: None,
             }],
         
-        pending_downgrade: None,};
+        pending_downgrade: None,
+        pending_task_approvals: None,
+    };
         let opened = state.open_thread_detail(detail);
         let msg = &opened.messages[0];
         assert!(msg.bundle.is_none());
@@ -4338,6 +4435,13 @@ mod tests {
                 last_from: None,
                 last_subject: None,
                 last_preview: None,
+                awaiting: None,
+                collab_id: None,
+                lane_id: None,
+                lane_position: None,
+                assigned_to: None,
+                watchers: None,
+                collab_name: None,
             },
             messages: vec![ThreadMessage {
                 id: "m-blob".into(),
@@ -4352,8 +4456,8 @@ mod tests {
                 sender_only: None,
                 parent_message_id: None,
                 upvotes: None,
+                receipts: None,
             }],
-        pending_downgrade: None,
         };
         let opened = state.open_thread_detail(detail);
         let msg = &opened.messages[0];
@@ -4610,9 +4714,17 @@ mod tests {
                 last_from: None,
                 last_subject: None,
                 last_preview: None,
+                awaiting: None,
+                collab_id: None,
+                lane_id: None,
+                lane_position: None,
+                assigned_to: None,
+                watchers: None,
+                collab_name: None,
             },
             messages: vec![],
             pending_downgrade: None,
+        pending_task_approvals: None,
         };
 
         let keys = state.resolve_reply_recipients(&detail).await.unwrap();
@@ -4972,6 +5084,13 @@ mod tests {
                 last_from: None,
                 last_subject: None,
                 last_preview: None,
+                awaiting: None,
+                collab_id: None,
+                lane_id: None,
+                lane_position: None,
+                assigned_to: None,
+                watchers: None,
+                collab_name: None,
             },
             messages: vec![ThreadMessage {
                 id: "m-mat".into(),
@@ -4986,8 +5105,8 @@ mod tests {
                 sender_only: None,
                 parent_message_id: None,
                 upvotes: None,
+                receipts: None,
             }],
-        pending_downgrade: None,
         };
         let opened = state.open_thread_detail(detail);
         let bundle = opened.messages[0].bundle.as_ref().expect("bundle");
@@ -5031,6 +5150,13 @@ mod tests {
                 last_from: None,
                 last_subject: None,
                 last_preview: None,
+                awaiting: None,
+                collab_id: None,
+                lane_id: None,
+                lane_position: None,
+                assigned_to: None,
+                watchers: None,
+                collab_name: None,
             },
             messages: vec![ThreadMessage {
                 id: "m-raw".into(),
@@ -5047,7 +5173,9 @@ mod tests {
                 upvotes: None,
             }],
         
-        pending_downgrade: None,};
+        pending_downgrade: None,
+        pending_task_approvals: None,
+    };
         let opened = state.open_thread_detail(detail);
         let bundle = opened.messages[0].bundle.as_ref().expect("bundle");
         let path = bundle.resources[0].path.as_deref().expect("path");
@@ -5080,6 +5208,13 @@ mod tests {
                 last_from: None,
             last_subject: None,
             last_preview: None,
+            awaiting: None,
+            collab_id: None,
+            lane_id: None,
+            lane_position: None,
+            assigned_to: None,
+            watchers: None,
+            collab_name: None,
         };
         assert!(thread_visible_for_agent(&thread, "u-solo", "cursor", "cursor"));
         assert!(thread_visible_for_agent(&thread, "u-solo", "claude", "cursor"));
@@ -5111,6 +5246,13 @@ mod tests {
                 last_from: None,
             last_subject: None,
             last_preview: None,
+            awaiting: None,
+            collab_id: None,
+            lane_id: None,
+            lane_position: None,
+            assigned_to: None,
+            watchers: None,
+            collab_name: None,
         };
         assert!(thread_visible_for_agent(&thread, "u-alice", "cursor", "cursor"));
         assert!(!thread_visible_for_agent(
@@ -5145,6 +5287,13 @@ mod tests {
                 last_from: None,
             last_subject: None,
             last_preview: None,
+            awaiting: None,
+            collab_id: None,
+            lane_id: None,
+            lane_position: None,
+            assigned_to: None,
+            watchers: None,
+            collab_name: None,
         };
         assert_eq!(
             agent_your_status(&thread, "u-solo", "chatgpt", "cursor"),
@@ -5180,6 +5329,13 @@ mod tests {
                 last_from: None,
             last_subject: None,
             last_preview: None,
+            awaiting: None,
+            collab_id: None,
+            lane_id: None,
+            lane_position: None,
+            assigned_to: None,
+            watchers: None,
+            collab_name: None,
         };
         assert!(thread_visible_for_agent(&thread, "u-solo", "cursor", "cursor"));
         assert!(thread_visible_for_agent(&thread, "u-solo", "claude", "cursor"));
@@ -5224,6 +5380,13 @@ mod tests {
                 last_from: None,
             last_subject: None,
             last_preview: None,
+            awaiting: None,
+            collab_id: None,
+            lane_id: None,
+            lane_position: None,
+            assigned_to: None,
+            watchers: None,
+            collab_name: None,
         };
         assert!(thread_visible_for_agent(&thread, "u-bob", "cursor", "cursor"));
         assert!(!thread_visible_for_agent(&thread, "u-bob", "claude", "cursor"));
@@ -5841,6 +6004,13 @@ mod tests {
                 last_from: None,
                 last_subject: None,
                 last_preview: None,
+                awaiting: None,
+                collab_id: None,
+                lane_id: None,
+                lane_position: None,
+                assigned_to: None,
+                watchers: None,
+                collab_name: None,
             },
             messages: vec![ThreadMessage {
                 id: "m-health".into(),
@@ -5855,8 +6025,8 @@ mod tests {
                 sender_only: None,
                 parent_message_id: None,
                 upvotes: None,
+                receipts: None,
             }],
-        pending_downgrade: None,
         };
 
         Mock::given(method("GET"))
@@ -5906,6 +6076,13 @@ mod tests {
                 last_from: None,
             last_subject: None,
             last_preview: None,
+            awaiting: None,
+            collab_id: None,
+            lane_id: None,
+            lane_position: None,
+            assigned_to: None,
+            watchers: None,
+            collab_name: None,
         };
 
         // Agent-targeted question → not Needs you.
@@ -5925,15 +6102,21 @@ mod tests {
                         kind: "question".into(),
                         prompt: "agent work?".into(),
                         options: None,
+                        title: None,
+                        allow_multiple: None,
                     }],
                     ..Default::default()
                 }),
                 envelope: None,
                 open_error: None,
                 upvotes: None,
+                receipts: None,
+                task_pending_approval: None,
             }],
         
-        pending_downgrade: None,};
+        pending_downgrade: None,
+        pending_task_approvals: None,
+    };
         assert!(!thread_needs_human(&agent_q));
 
         // confirm_forward → Needs you even on agent-addressed thread.
@@ -5953,14 +6136,19 @@ mod tests {
                         kind: "confirm_forward".into(),
                         prompt: "Send this?".into(),
                         options: None,
+                        title: None,
+                        allow_multiple: None,
                     }],
                     ..Default::default()
                 }),
                 envelope: None,
                 open_error: None,
                 upvotes: None,
+                receipts: None,
+                task_pending_approval: None,
             }],
         pending_downgrade: None,
+        pending_task_approvals: None,
         };
         assert!(thread_needs_human(&confirm));
 
@@ -5983,15 +6171,21 @@ mod tests {
                         kind: "question".into(),
                         prompt: "Approve roadmap?".into(),
                         options: None,
+                        title: None,
+                        allow_multiple: None,
                     }],
                     ..Default::default()
                 }),
                 envelope: None,
                 open_error: None,
                 upvotes: None,
+                receipts: None,
+                task_pending_approval: None,
             }],
         
-        pending_downgrade: None,};
+        pending_downgrade: None,
+        pending_task_approvals: None,
+    };
         assert!(thread_needs_human(&human_q));
 
         // Answered confirm → not Needs you.
@@ -6011,13 +6205,17 @@ mod tests {
                             id: "c2".into(),
                             kind: "confirm_forward".into(),
                             prompt: "Send?".into(),
-                            options: None,
-                        }],
+                        options: None,
+                        title: None,
+                        allow_multiple: None,
+                    }],
                         ..Default::default()
                     }),
                     envelope: None,
                     open_error: None,
                     upvotes: None,
+                    receipts: None,
+                    task_pending_approval: None,
                 },
                 OpenedThreadMessage {
                     id: "m5".into(),
@@ -6037,10 +6235,14 @@ mod tests {
                     envelope: None,
                     open_error: None,
                     upvotes: None,
+                    receipts: None,
+                    task_pending_approval: None,
                 },
             ],
         
-        pending_downgrade: None,};
+        pending_downgrade: None,
+        pending_task_approvals: None,
+    };
         assert!(!thread_needs_human(&answered));
     }
 
@@ -6067,8 +6269,10 @@ mod tests {
                     id: "q1".into(),
                     kind: "question".into(),
                     prompt: "Ship it?".into(),
-                    options: None,
-                }],
+                        options: None,
+                        title: None,
+                        allow_multiple: None,
+                    }],
                 ..Default::default()
             }),
             Some("Ship it?".into())

@@ -146,6 +146,13 @@ mod tests {
                 last_from: None,
             last_subject: None,
             last_preview: None,
+            awaiting: None,
+            collab_id: None,
+            lane_id: None,
+            lane_position: None,
+            assigned_to: None,
+            watchers: None,
+            collab_name: None,
         };
         thread.last_preview = Some("hello".into());
         thread.your_status = Some(YourStatus::Pending);

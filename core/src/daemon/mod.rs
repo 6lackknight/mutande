@@ -12,6 +12,7 @@ mod install_skill;
 mod oauth;
 pub mod rpc;
 mod state;
+mod collab;
 mod thread_list_cache;
 mod turn;
 mod trusted_contacts;

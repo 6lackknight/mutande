@@ -55,6 +55,10 @@ Deno.test("tool list marks inbox tools implemented", () => {
   for (const t of [
     "list_agents",
     "list_contacts",
+    "list_collabs",
+    "get_collab",
+    "set_lane",
+    "add_learning",
     "forward_draft",
     "close_thread",
     "delete_thread",
@@ -905,4 +909,56 @@ Deno.test("unknown desktop-only tool refused", async () => {
   const result = res!.result as { content: Array<{ text: string }>; isError?: boolean };
   assertEquals(result.isError, true);
   assertEquals(result.content[0].text.includes("unknown tool"), true);
+});
+
+Deno.test("list_collabs returns hub boards", async () => {
+  const hub = new HubClient("http://hub.test");
+  hub.listCollabs = () =>
+    Promise.resolve({
+      collabs: [{
+        id: "c1",
+        name: "sprint",
+        encryption_mode: "app_envelope",
+        card_count: 0,
+      }],
+    });
+  const res = await handleMcpRequest(
+    {
+      jsonrpc: "2.0",
+      id: 21,
+      method: "tools/call",
+      params: { name: "list_collabs", arguments: {} },
+    },
+    { session: fakeSession, serverVersion: "0.1.0", hub },
+  );
+  const result = res!.result as { content: Array<{ text: string }>; isError?: boolean };
+  const body = JSON.parse(result.content[0].text);
+  assertEquals(body.collabs[0].id, "c1");
+});
+
+Deno.test("add_learning refuses e2e collab", async () => {
+  const hub = new HubClient("http://hub.test");
+  hub.getCollab = () =>
+    Promise.resolve({
+      collab: {
+        id: "c-e2e",
+        name: "sealed",
+        encryption_mode: "e2e",
+      },
+    });
+  const res = await handleMcpRequest(
+    {
+      jsonrpc: "2.0",
+      id: 22,
+      method: "tools/call",
+      params: {
+        name: "add_learning",
+        arguments: { collab_id: "c-e2e", notes: "secret" },
+      },
+    },
+    { session: fakeSession, serverVersion: "0.1.0", hub },
+  );
+  const result = res!.result as { content: Array<{ text: string }>; isError?: boolean };
+  assertEquals(result.isError, true);
+  assertEquals(result.content[0].text.includes("E2E"), true);
 });

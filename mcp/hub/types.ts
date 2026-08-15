@@ -38,6 +38,12 @@ export interface ThreadMeta {
   last_from?: string;
   last_subject?: string;
   last_preview?: string;
+  collab_id?: string;
+  lane_id?: string;
+  lane_position?: number;
+  assigned_to?: string;
+  watchers?: string[];
+  collab_name?: string;
 }
 
 export interface ThreadMessage {
@@ -90,6 +96,23 @@ export interface Contact {
   external_link_id?: string;
   linked_at?: string;
   thread_id?: string;
+}
+
+export interface CollabView {
+  id: string;
+  name: string;
+  encryption_mode: ThreadEncryptionMode;
+  card_count?: number;
+  instructions?: string;
+  lists?: Array<{ id: string; name: string; position: number }>;
+  cards?: ThreadMeta[];
+  learnings?: Array<{
+    id: string;
+    at: string;
+    notes?: string;
+    sealed?: boolean;
+  }>;
+  [key: string]: unknown;
 }
 
 export interface MessageUpvote {

@@ -62,7 +62,7 @@ export default function ChangelogPage() {
       <p className="mt-10 text-sm text-muted">
         Looking for installers?{" "}
         <a
-          href="/download"
+          href="/waitlist?next=/download"
           className="text-stone-800 underline underline-offset-2 transition hover:text-stone-900"
         >
           Try Alpha

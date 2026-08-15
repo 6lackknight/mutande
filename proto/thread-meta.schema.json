@@ -38,6 +38,29 @@
       "type": "string",
       "format": "uuid",
       "description": "Set when thread is billed enterprise mail (§7.2). Clients show the enterprise warn banner when present."
+    },
+    "collab_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "When set, this thread is a collab card. Board lane is independent of thread status."
+    },
+    "lane_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Board list this card sits in. Hub metadata like status — board renders without decrypting."
+    },
+    "lane_position": {
+      "type": "number",
+      "description": "Fractional ordering within the lane (midpoint inserts; server renumbers on gap exhaustion)."
+    },
+    "assigned_to": {
+      "type": "string",
+      "description": "Durable owner (display address, agent or human). Distinct from next_turn: owner of the work, not who acts next."
+    },
+    "watchers": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "CC addresses for visibility emphasis. Not an access boundary — steerers already read everything."
     }
   }
 }

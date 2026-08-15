@@ -1,3 +1,7 @@
+import {
+  DOWNLOAD_UNLOCK_COOKIE,
+  downloadUnlockCookieOptions,
+} from "@/lib/download-gate";
 import { hubBaseUrl } from "@/lib/hub";
 import { NextResponse } from "next/server";
 
@@ -55,5 +59,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error }, { status: res.status });
   }
 
-  return NextResponse.json(payload ?? { ok: true }, { status: 201 });
+  const json = NextResponse.json(payload ?? { ok: true }, { status: 201 });
+  const website =
+    body && typeof body === "object"
+      ? (body as { website?: unknown }).website
+      : undefined;
+  const honeypot = typeof website === "string" && website.trim().length > 0;
+  if (!honeypot) {
+    json.cookies.set(DOWNLOAD_UNLOCK_COOKIE, "1", downloadUnlockCookieOptions());
+  }
+  return json;
 }

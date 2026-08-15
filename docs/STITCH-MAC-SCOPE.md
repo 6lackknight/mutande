@@ -33,7 +33,7 @@ Produce a coherent, high-fidelity screen set for the Mac tray app so Flutter can
 
 Agent-to-agent encrypted mail for teams. Quiet courier. Hub is blind; plaintext stays on-device.
 
-Domain terms: **thread**, **bundle**, **handoff**, **org**, **handle** (`alice@acme`), **agent handle** (`alice@acme/claude`), **my-agents** (bare `@all`), **broadcast** (`@all@acme`), **self shorthand** (`@claude`).
+Domain terms: **thread**, **bundle**, **handoff**, **collab**, **org**, **handle** (`alice@acme`), **agent handle** (`alice@acme/claude`), **my-agents** (bare `@all`), **broadcast** (`@all@acme`), **self shorthand** (`@claude`).
 
 ### Addressing hierarchy (must be visible in UI)
 
@@ -118,7 +118,7 @@ Obvious desktop / tray mistakes. If a mock looks like any of these, redesign.
 | Custom window chrome that fights traffic lights | Standard macOS title bar |
 | Colored / glowing tray icon, animated tray glyph | Static `@i` plate; status lives in the menu text |
 | Assuming close = quit | Close **hides**; Quit only from tray |
-| System Settings dump as the home screen | Home = Threads + Agents (+ Contacts); Settings holds plumbing |
+| System Settings dump as the home screen | Home = Threads · Collab · Network; Settings holds plumbing |
 | Windows-style ribbon / oversized toolbar | Minimal AppBar + tabs |
 | Ignoring vibrancy / light-dark later | Design light first; don’t lock to pure white web cards |
 
@@ -146,7 +146,7 @@ Obvious desktop / tray mistakes. If a mock looks like any of these, redesign.
 
 | Antipattern | Prefer instead |
 |-------------|----------------|
-| Four+ equal tabs (Verify/Session as peers of Threads) | **Threads + Agents** (+ Contacts); rest in **Settings** |
+| Four+ equal tabs (Verify/Session as peers of Threads) | **Threads · Collab · Network**; rest in **Settings** |
 | Agents buried only under Settings | Agents stays a **main tab** (routing is core) |
 | Flat list of hosts with no default concept | Handle → default → sub-agents |
 | “New agent” in toolbar / FAB / Settings-only create | **Add** on the **empty node** under default |
@@ -215,15 +215,15 @@ Handle hints: `alice` or `alice@acme`. Slug: lowercase letters, numbers, hyphens
 
 Shared chrome: AppBar `mutande` + handle (or “Agent-to-agent mail”) + Settings affordance. Optional quiet cue **default · claude**. Soft **Retry status** banner if daemon blipped.
 
-**Tab bar — two primary, optional third:**
+**Tab bar — three pinned tabs (no + / close):**
 
 | Tab | Role | Required |
 |-----|------|----------|
 | **Threads** | Inbox / handoffs | Yes |
-| **Agents** | Handle → default → sub-agents (routing) | Yes |
-| **Contacts** | Org members + `@all@acme` for addressing | Optional v1 (prefer yes if space) |
+| **Collab** | Boards of threads (Backlog / Doing / Done) | Yes |
+| **Network** | People (contacts) · Agents (routing graph). Read-only in v1. | Yes |
 
-Do **not** put Verify or Session/Connect on the main tab bar.
+Do **not** put Verify, Session/Connect, or Contacts as peer home tabs. Contacts and Agents fold into **Network**.
 
 **Settings** (pushed screen or sheet — not a tab):
 
@@ -245,9 +245,9 @@ Tray may still expose **Connect AI hosts** as a shortcut; destination UI lives i
 13. **Detail** — message list (plaintext or “(no plaintext)”), reply field “Short note for their agent”, send. Closed threads: reply disabled. Show from/to as `alice@acme` or `alice@acme/claude` per addressing rules. Mute in overflow.  
 14. **List/detail loading & error** — panel orb; red inline errors.
 
-### F. Agents (routing — main tab)
+### F. Network — Agents (routing)
 
-**List UI with indent, not a node canvas.** Three levels: handle → default → (sub-agents + empty Add). No org-chart connectors.
+**List UI with indent, not a node canvas.** Three levels: handle → default → (sub-agents + empty Add). No org-chart connectors. Lives under **Network → Agents**.
 
 15. **Agents list (populated)** — indented rows; default badge; host chips; Connected / Idle; trailing **ghost row** under default with **Add**.  
 16. **Add sub-agent** — only via that empty node under default (pick/bind host, slug). Empty node stays for next add. No FAB / AppBar New.  
@@ -256,9 +256,9 @@ Tray may still expose **Connect AI hosts** as a shortcut; destination UI lives i
 19. **No agents yet** — CTA into Settings → AI hosts; after connect, land on Agents with default + empty Add. Copy: “Connect an AI host for your default agent, then Add under default for more.”  
 20. **Loading / error** — panel orb; inline errors.
 
-### G. Contacts (optional third main tab)
+### G. Network — People (contacts)
 
-Address book for send/broadcast — not Settings.
+Address book lives under **Network → People**, not a peer home tab.
 
 21. **Contacts list** — org members as `bob@acme` (and agent suffix only if useful); synthetic **`@all@acme`** row with caption that fan-out hits each *other* member’s **default** agent (not bare `@all` / `@slug`).  
 22. **Empty / loading** — “No teammates yet” + invite cue (web) if needed; panel orb.  
@@ -311,9 +311,9 @@ daemon:           Connected / up
 ## Priority order for Stitch
 
 1. Splash → Sign in → Choose → Create / Join  
-2. **Home chrome** (2–3 tabs + Settings gear) + Threads list / empty / detail  
-3. **Agents** (indented list + empty Add under default + set-default)  
-4. **Contacts** (members + `@all@org`) if in v1 pass  
+2. **Home chrome** (Threads · Collab · Network + Settings gear) + Threads list / empty / detail  
+3. **Collab** board (lists + cards + empty Create)  
+4. **Network** (People = contacts + `@all@org`; Agents = routing graph)  
 5. Settings hub + AI hosts + Verify (match / no match) + Daemon  
 6. Daemon unreachable + tray menu + menu-bar crop  
 7. Dark splash refinement  
@@ -323,7 +323,7 @@ daemon:           Connected / up
 ## Acceptance criteria
 
 - Looks like a **compact macOS tray utility**, not a SaaS marketing page or chat app.  
-- Main nav is **minimal**: Threads + Agents (+ Contacts); Verify / Connect / Daemon under **Settings**.  
+- Main nav is **minimal**: Threads · Collab · Network; Verify / Connect / Daemon under **Settings**.  
 - Brand: lowercase wordmark + MT assets from Vercel URLs above.  
 - Status colors convey open / pending / closed at a glance.  
 - **Agents** is an indented list (not a node graph): handle → **default** → sub-agents; add only via **Add** on the empty node under default; never display `…/default` as an address.  

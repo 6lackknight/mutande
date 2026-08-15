@@ -52,6 +52,15 @@ import type {
   Contact,
   CreateOrgInput,
   CreateThreadInput,
+  CreateCollabInput,
+  AddLearningInput,
+  AddSteererInput,
+  ApplyCollabDowngradeInput,
+  CollabView,
+  RemoveSteererInput,
+  RenameCollabListInput,
+  SetLaneInput,
+  UpdateCollabInstructionsInput,
   Device,
   DevicePlatform,
   Draft,
@@ -126,6 +135,26 @@ import {
 } from "./address.ts";
 import { EnterpriseStore } from "./enterprise.ts";
 import type { RegistryListing } from "./types.ts";
+import {
+  addLearning as addCollabLearning,
+  addSteerer as addCollabSteererFn,
+  applyCollabDowngrade as applyCollabDowngradeFn,
+  collabKey,
+  collabNameForThread,
+  collabThreadKey,
+  collabThreadsPrefix,
+  createCollab as createCollabFn,
+  getCollab as getCollabFn,
+  listCollabs as listCollabsFn,
+  orgCollabKey,
+  orgCollabsPrefix,
+  removeSteerer as removeCollabSteererFn,
+  renameList as renameCollabListFn,
+  resolveCollabCardCreate,
+  setLane as setCollabLane,
+  updateInstructions as updateCollabInstructionsFn,
+  type CollabKvCtx,
+} from "./collab.ts";
 
 function clipRequired(value: string, field: string, max: number): string {
   const trimmed = value?.trim() ?? "";
@@ -471,6 +500,15 @@ export class HubStore {
   private waitlistPrefix() {
     return ["waitlist"];
   }
+  private collabKey(id: string) { return collabKey(id); }
+  private orgCollabKey(orgId: string, id: string) { return orgCollabKey(orgId, id); }
+  private orgCollabsPrefix(orgId: string) { return orgCollabsPrefix(orgId); }
+  private collabThreadKey(collabId: string, threadId: string) {
+    return collabThreadKey(collabId, threadId);
+  }
+  private collabThreadsPrefix(collabId: string) {
+    return collabThreadsPrefix(collabId);
+  }
 
   assertEnvelopeSize(envelope: Envelope): void {
     const size = new TextEncoder().encode(JSON.stringify(envelope)).byteLength;
@@ -614,6 +652,96 @@ export class HubStore {
     auth: AuthContext,
   ): Promise<{ proposals: ThreadDowngradeProposal[] }> {
     return listPendingThreadDowngrades(this.downgradeCtx(), auth);
+  }
+
+  private collabCtx(): CollabKvCtx {
+    return {
+      kv: this.kv,
+      getUser: (id) => this.getUser(id),
+      getUserByHandle: (h) => this.getUserByHandle(h),
+      getAgent: (id) => this.getAgent(id),
+      resolveAgentForUser: (userId, slug) => this.resolveAgentForUser(userId, slug),
+      collabKey: (id) => this.collabKey(id),
+      orgCollabKey: (o, id) => this.orgCollabKey(o, id),
+      orgCollabsPrefix: (o) => this.orgCollabsPrefix(o),
+      collabThreadKey: (c, t) => this.collabThreadKey(c, t),
+      collabThreadsPrefix: (c) => this.collabThreadsPrefix(c),
+      threadKey: (id) => this.threadKey(id),
+      messageKey: (t, m) => this.messageKey(t, m),
+      messagesPrefix: (t) => this.messagesPrefix(t),
+      inboxKey: (u, t) => this.inboxKey(u, t),
+      appEnvelopeKey: (t, m) => this.appEnvelopeKey(t, m),
+      normalizeThread: (t) => this.normalizeThread(t),
+      nowIso,
+    };
+  }
+
+  async createCollab(auth: AuthContext, input: CreateCollabInput): Promise<CollabView> {
+    return createCollabFn(this.collabCtx(), auth, input);
+  }
+
+  async listCollabs(auth: AuthContext): Promise<{ collabs: CollabView[] }> {
+    return listCollabsFn(this.collabCtx(), auth);
+  }
+
+  async getCollab(auth: AuthContext, id: string): Promise<CollabView> {
+    return getCollabFn(this.collabCtx(), auth, id);
+  }
+
+  async setLane(
+    auth: AuthContext,
+    collabId: string,
+    input: SetLaneInput,
+  ): Promise<{ thread: ThreadMeta }> {
+    return setCollabLane(this.collabCtx(), auth, collabId, input);
+  }
+
+  async addLearning(
+    auth: AuthContext,
+    collabId: string,
+    input: AddLearningInput,
+  ): Promise<{ message_id: string }> {
+    return addCollabLearning(this.collabCtx(), auth, collabId, input);
+  }
+
+  async updateCollabInstructions(
+    auth: AuthContext,
+    collabId: string,
+    input: UpdateCollabInstructionsInput,
+  ): Promise<CollabView> {
+    return updateCollabInstructionsFn(this.collabCtx(), auth, collabId, input);
+  }
+
+  async applyCollabDowngrade(
+    auth: AuthContext,
+    collabId: string,
+    input: ApplyCollabDowngradeInput,
+  ): Promise<CollabView> {
+    return applyCollabDowngradeFn(this.collabCtx(), auth, collabId, input);
+  }
+
+  async addCollabSteerer(
+    auth: AuthContext,
+    collabId: string,
+    input: AddSteererInput,
+  ): Promise<CollabView> {
+    return addCollabSteererFn(this.collabCtx(), auth, collabId, input);
+  }
+
+  async removeCollabSteerer(
+    auth: AuthContext,
+    collabId: string,
+    input: RemoveSteererInput,
+  ): Promise<CollabView> {
+    return removeCollabSteererFn(this.collabCtx(), auth, collabId, input);
+  }
+
+  async renameCollabList(
+    auth: AuthContext,
+    collabId: string,
+    input: RenameCollabListInput,
+  ): Promise<CollabView> {
+    return renameCollabListFn(this.collabCtx(), auth, collabId, input);
   }
 
   /** @deprecated Prefer threadVisibleToOrg — kept for call-site clarity. */
@@ -1441,7 +1569,7 @@ export class HubStore {
         audienceAgentId = toAgent.id;
         audienceWirePath = formatWirePath(senderParts.orgSlug, senderParts.local, toAgent.slug);
         audienceAgent = toAgent;
-        if (fromAgent.id === toAgent.id) {
+        if (fromAgent.id === toAgent.id && !input.collab_id) {
           throw new HubError(
             `Cannot hand off to the same agent (${fromAgent.slug}). Send to a different agent address, e.g. @claude`,
             "invalid_recipient",
@@ -1495,7 +1623,7 @@ export class HubStore {
           audienceWirePath = formatWirePath(parsedTo.orgSlug, parsedTo.local, toAgent.slug);
           audienceAgent = toAgent;
 
-          if (recipient.id === auth.userId) {
+          if (recipient.id === auth.userId && !input.collab_id) {
             // Self-handoff: bare → default agent; /agent → that slot. Reject same-agent noops.
             if (fromAgent.id === toAgent.id) {
               throw new HubError(
@@ -1511,7 +1639,7 @@ export class HubStore {
       }
     }
 
-    const encryptionMode = resolveThreadEncryptionMode({
+    let encryptionMode = resolveThreadEncryptionMode({
       sender: fromAgent,
       audience: audienceAgent,
       extraParticipants,
@@ -1520,6 +1648,24 @@ export class HubStore {
         isEnterpriseAgentStub(audienceAgent) ||
         extraParticipants.some((a) => isEnterpriseAgentStub(a)),
     });
+
+    let collabCard: Awaited<ReturnType<typeof resolveCollabCardCreate>> | null =
+      null;
+    if (input.collab_id) {
+      collabCard = await resolveCollabCardCreate(
+        this.collabCtx(),
+        auth,
+        input.collab_id,
+        {
+          lane_id: input.lane_id,
+          assigned_to: input.assigned_to,
+          watchers: input.watchers,
+        },
+      );
+      encryptionMode = collabCard.encryptionMode;
+      recipientIds = [...collabCard.recipientIds];
+    }
+
     // Wire unit must match resolved mode — never mix stores (§4.2.1).
     if (encryptionMode === "e2e" && wireKind !== "e2e") {
       throw new HubError(
@@ -1586,6 +1732,17 @@ export class HubStore {
           ],
         }
         : {}),
+      ...(collabCard
+        ? {
+          collab_id: collabCard.collab.id,
+          lane_id: collabCard.lane_id,
+          lane_position: collabCard.lane_position,
+          assigned_to: collabCard.assigned_to,
+          watchers: collabCard.watchers,
+          participant_user_ids: collabCard.recipientIds,
+          participant_count: collabCard.recipientIds.length,
+        }
+        : {}),
       created_at: ts,
       updated_at: ts,
     };
@@ -1633,6 +1790,13 @@ export class HubStore {
         enterpriseDebit.apply(tx);
       }
 
+      if (collabCard) {
+        tx.set(
+          this.collabThreadKey(collabCard.collab.id, threadId),
+          threadId,
+        );
+      }
+
       // Self-collab (own agent / bare @all / sole-member @all@org): recipientIds
       // includes the sender. One inbox key per user — keep Waiting (replied) and
       // role=recipient so own agents can still reply. Do not clobber to pending.
@@ -1675,6 +1839,9 @@ export class HubStore {
       const enriched: ThreadMeta = {
         ...thread,
         your_status: this.effectiveYourStatus(auth, thread, inbox),
+        collab_name: thread.collab_id
+          ? await collabNameForThread(this.collabCtx(), thread.collab_id)
+          : undefined,
       };
 
       if (filter === "needs_action") {
@@ -1737,6 +1904,9 @@ export class HubStore {
       thread: {
         ...thread,
         your_status: this.effectiveYourStatus(auth, thread, inbox),
+        collab_name: thread.collab_id
+          ? await collabNameForThread(this.collabCtx(), thread.collab_id)
+          : undefined,
       },
       messages: enriched,
       ...(pending ? { pending_downgrade: pending } : {}),

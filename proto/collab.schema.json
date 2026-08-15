@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mutande.app/schemas/collab/v1",
+  "title": "Collab",
+  "description": "Hub-visible collab container. Cards are threads carrying collab_id; card bodies, learnings, and e2e instructions stay sealed.",
+  "type": "object",
+  "required": [
+    "id", "org_id", "name", "encryption_mode",
+    "steerer_user_ids", "roster", "lists",
+    "memory_thread_id", "created_at", "updated_at"
+  ],
+  "properties": {
+    "id": { "type": "string", "format": "uuid" },
+    "org_id": { "type": "string", "format": "uuid" },
+    "name": { "type": "string", "maxLength": 120 },
+
+    "encryption_mode": {
+      "type": "string",
+      "enum": ["e2e", "app_envelope"],
+      "description": "Fixed at creation from participants' transports; cards inherit. Flipped only via downgrade consent."
+    },
+    "downgrade_point": {
+      "type": "object",
+      "description": "Set when an e2e collab flipped to app_envelope. Cards/messages before this stay sealed.",
+      "required": ["at", "approvers", "cause_address"],
+      "properties": {
+        "at": { "type": "string", "format": "date-time" },
+        "approvers": {
+          "type": "array",
+          "items": { "type": "string", "format": "uuid" },
+          "description": "Steerer user_ids who consented."
+        },
+        "cause_address": {
+          "type": "string",
+          "description": "Display address of the hosted/web participant that made E2E unavailable (for creator-facing copy)."
+        }
+      }
+    },
+
+    "steerer_user_ids": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "format": "uuid" },
+      "description": "Human members. Crypto boundary: every card is sealed to all steerers' devices. Superset of roster humans."
+    },
+    "steerer_joins": {
+      "type": "array",
+      "description": "Join points for forward-only reads by late steerers.",
+      "items": {
+        "type": "object",
+        "required": ["user_id", "joined_at"],
+        "properties": {
+          "user_id": { "type": "string", "format": "uuid" },
+          "joined_at": { "type": "string", "format": "date-time" }
+        }
+      }
+    },
+    "steerer_removals": {
+      "type": "array",
+      "description": "Forward-only removal events. Wraps stop from this point; history is not re-sealed.",
+      "items": {
+        "type": "object",
+        "required": ["user_id", "removed_at"],
+        "properties": {
+          "user_id": { "type": "string", "format": "uuid" },
+          "removed_at": { "type": "string", "format": "date-time" }
+        }
+      }
+    },
+
+    "roster": {
+      "type": "array",
+      "description": "Agents working this collab. Invariant: entry.user_id must be in steerer_user_ids (adding an agent auto-adds its human).",
+      "items": {
+        "type": "object",
+        "required": ["user_id", "agent_id", "address"],
+        "properties": {
+          "user_id": { "type": "string", "format": "uuid" },
+          "agent_id": { "type": "string", "format": "uuid" },
+          "address": {
+            "type": "string",
+            "description": "Display address, e.g. alice@acme/claude. Never /default."
+          },
+          "transport": { "type": "string", "enum": ["sidecar", "mcp"] }
+        }
+      }
+    },
+
+    "lists": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Board lanes. Defaults: Backlog, Doing, Done.",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "position"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string", "maxLength": 60 },
+          "position": { "type": "number" }
+        }
+      }
+    },
+
+    "instructions": {
+      "type": "string",
+      "description": "Standing context, human-edited. Plaintext here ONLY when encryption_mode=app_envelope; e2e collabs set instructions_sealed instead."
+    },
+    "instructions_sealed": {
+      "type": "object",
+      "description": "e2e collabs: instructions as a wrapped envelope ref (sealed to steerer devices, like a draft).",
+      "properties": {
+        "envelope_id": { "type": "string", "format": "uuid" },
+        "updated_by": { "type": "string", "format": "uuid" }
+      }
+    },
+
+    "memory_thread_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Pinned memory thread created with the collab. Entries are ordinary sealed bundles (kind=learning); steerers curate."
+    },
+
+    "schema_version": { "type": "integer", "const": 1 },
+    "created_by": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Creator = brain steward in v1: only this side may add_learning."
+    },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" }
+  }
+}

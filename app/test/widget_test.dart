@@ -9,6 +9,7 @@ import 'package:http/testing.dart';
 import 'package:app/app.dart';
 import 'package:app/config/app_config.dart';
 import 'package:app/screens/agents_screen.dart';
+import 'package:app/screens/collab_screen.dart';
 import 'package:app/screens/first_run_ping_wizard.dart';
 import 'package:app/services/daemon_client.dart';
 import 'package:app/services/first_run_store.dart';
@@ -41,6 +42,15 @@ DaemonClient _mockDaemon(
           return override;
         }
         return _rpcOk(body['id'], {'threads': []});
+      }
+      if (method == 'list_collabs') {
+        final override = await handler(request);
+        final overrideBody = jsonDecode(override.body) as Map<String, dynamic>;
+        if (overrideBody['result'] is Map &&
+            (overrideBody['result'] as Map).containsKey('collabs')) {
+          return override;
+        }
+        return _rpcOk(body['id'], {'collabs': []});
       }
       return handler(request);
     }),
@@ -96,16 +106,29 @@ http.Response _rpcOk(Object? id, Map<String, dynamic> result) {
 Future<void> _tapGraphAgent(WidgetTester tester, String slug) async {
   for (var i = 0; i < 40; i++) {
     await tester.pump(const Duration(milliseconds: 100));
-    if (find.text(slug).evaluate().isNotEmpty) break;
+    if (find.text(slug).hitTestable().evaluate().isNotEmpty) break;
   }
-  final node = find.text(slug);
+  final node = find.text(slug).hitTestable();
   expect(node, findsWidgets);
   await tester.ensureVisible(node.last);
   await tester.tap(node.last);
   await tester.pumpAndSettle();
 }
 
-Future<void> _openNetworkTab(WidgetTester tester) async {
+Future<void> _openNetworkAgents(WidgetTester tester) async {
+  tester.view.physicalSize = const Size(1280, 800);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+  final network = find.text('Network');
+  expect(network, findsWidgets);
+  await tester.tap(network.first);
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const Key('network-agents')));
+  await tester.pumpAndSettle();
+}
+
+Future<void> _openNetworkPeople(WidgetTester tester) async {
   final network = find.text('Network');
   expect(network, findsWidgets);
   await tester.tap(network.first);
@@ -160,8 +183,8 @@ void main() {
 
     expect(find.bySemanticsLabel('mutande'), findsOneWidget);
     expect(find.text('Threads'), findsWidgets);
+    expect(find.text('Collab'), findsWidgets);
     expect(find.text('Network'), findsWidgets);
-    expect(find.text('Contacts'), findsOneWidget);
     expect(find.text('bob@acme'), findsOneWidget);
     expect(find.byTooltip('alice@acme'), findsOneWidget);
     expect(find.text('All'), findsWidgets);
@@ -412,7 +435,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await _openNetworkTab(tester);
+    await _openNetworkAgents(tester);
 
     await tester.tap(find.byIcon(Icons.add).last);
     await tester.pumpAndSettle();
@@ -905,7 +928,7 @@ test('validateHandle and validateHubUrl', () {
     );
     await tester.pumpAndSettle();
 
-    await _openNetworkTab(tester);
+    await _openNetworkAgents(tester);
 
     await _tapGraphAgent(tester, 'claude');
 
@@ -1001,7 +1024,7 @@ test('validateHandle and validateHubUrl', () {
       ),
     );
     await tester.pumpAndSettle();
-    await _openNetworkTab(tester);
+    await _openNetworkAgents(tester);
     await _tapGraphAgent(tester, 'claude');
 
     expect(find.text('Connect host'), findsOneWidget);
@@ -1077,7 +1100,7 @@ test('validateHandle and validateHubUrl', () {
       ),
     );
     await tester.pumpAndSettle();
-    await _openNetworkTab(tester);
+    await _openNetworkAgents(tester);
     await _tapGraphAgent(tester, 'claude');
 
     expect(find.text('View threads'), findsOneWidget);
@@ -1138,9 +1161,8 @@ test('validateHandle and validateHubUrl', () {
       ),
     );
     await tester.pumpAndSettle();
-    await _openNetworkTab(tester);
-    await tester.tap(find.text('cursor').first);
-    await tester.pumpAndSettle();
+    await _openNetworkAgents(tester);
+    await _tapGraphAgent(tester, 'cursor');
 
     expect(find.text('alice@acme'), findsWidgets);
     expect(find.text('alice@acme/cursor'), findsNothing);
@@ -1186,7 +1208,7 @@ test('validateHandle and validateHubUrl', () {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Contacts'));
+    await _openNetworkPeople(tester);
     await tester.pumpAndSettle();
 
     expect(find.text('Your handle'), findsOneWidget);
@@ -1239,7 +1261,7 @@ test('validateHandle and validateHubUrl', () {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Contacts'));
+    await _openNetworkPeople(tester);
     await tester.pumpAndSettle();
 
     expect(find.text('Bob Builder'), findsOneWidget);
@@ -1363,5 +1385,83 @@ test('validateHandle and validateHubUrl', () {
 
     expect(firstRun.pingComplete, isTrue);
     expect(find.text('Threads'), findsWidgets);
+  });
+
+  testWidgets('collab tab shows empty create shell', (WidgetTester tester) async {
+    final daemon = _mockDaemon((request) async {
+      return _rpcOk(
+        jsonDecode(request.body)['id'],
+        {'ok': true, 'service': 'mutande-core', 'version': '0.0.0'},
+      );
+    });
+    await tester.pumpWidget(
+      MutandeApp(
+        config: const AppConfig(hubUrl: 'http://localhost:8000'),
+        daemon: daemon,
+        firstRunStore: FirstRunStore.memory(
+          connectComplete: true,
+          pingComplete: true,
+          notificationsComplete: true,
+        ),
+        seedStatus: const DaemonStatusResult(
+          configured: true,
+          hubUrl: 'http://localhost:8000',
+          handle: 'alice@acme',
+        ),
+        welcomeDuration: Duration.zero,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Collab').first);
+    await tester.pumpAndSettle();
+    expect(find.text('No collabs yet'), findsOneWidget);
+    expect(find.text('Create'), findsWidgets);
+  });
+
+  testWidgets('network people segment shows contacts', (WidgetTester tester) async {
+    final daemon = _mockDaemon((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      final method = body['method'] as String?;
+      if (method == 'list_contacts') {
+        return _rpcOk(body['id'], {
+          'contacts': [
+            {'handle': '@all@acme', 'pubkey': null, 'devices': []},
+          ],
+        });
+      }
+      return _rpcOk(body['id'], {'ok': true});
+    });
+    await tester.pumpWidget(
+      MutandeApp(
+        config: const AppConfig(hubUrl: 'http://localhost:8000'),
+        daemon: daemon,
+        seedStatus: const DaemonStatusResult(
+          configured: true,
+          hubUrl: 'http://localhost:8000',
+          handle: 'alice@acme',
+        ),
+        welcomeDuration: Duration.zero,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _openNetworkPeople(tester);
+    expect(find.text('People'), findsWidgets);
+    expect(find.text('Agents'), findsWidgets);
+    expect(find.text('Your handle'), findsOneWidget);
+  });
+
+  test('collab encryption copy names the cause, never insecure', () {
+    expect(
+      collabEncryptionCopy(e2e: true),
+      contains('sealed to steerer devices'),
+    );
+    final copy = collabEncryptionCopy(
+      e2e: false,
+      causeAddress: 'tawanda@acme/chatgpt',
+    );
+    expect(copy.toLowerCase().contains('insecure'), isFalse);
+    expect(copy, contains("E2E isn't available"));
+    expect(copy, contains('tawanda@acme/chatgpt'));
+    expect(copy, contains('reads mail through the hub'));
   });
 }

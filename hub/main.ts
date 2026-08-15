@@ -15,6 +15,7 @@ import { createOnboardingRoutes } from "./routes/onboarding.ts";
 import { createOrgRoutes } from "./routes/orgs.ts";
 import { createRegistryRoutes } from "./routes/registry.ts";
 import { createThreadRoutes } from "./routes/threads.ts";
+import { createCollabRoutes } from "./routes/collabs.ts";
 import { assertR2ConfiguredForDeploy } from "./store/r2.ts";
 import {
   initHubSentry,
@@ -46,6 +47,7 @@ export async function createApp(
   app.route("/v1/registry", createRegistryRoutes(store));
   app.route("/v1/contacts", createContactRoutes(store));
   app.route("/v1/threads", createThreadRoutes(store));
+  app.route("/v1/collabs", createCollabRoutes(store));
   app.route("/v1/drafts", createDraftRoutes(store));
   app.route("/v1/blobs", createBlobRoutes(store));
   app.route("/v1/feedback", createFeedbackRoutes(store));

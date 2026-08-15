@@ -4,7 +4,7 @@ Plan for a fourth Mac home tab (**Hub**) that installs approved agent skills fro
 
 ## Decisions
 
-- Tab label: **Hub** — Threads · Agents · Contacts · Hub.
+- Tab label: **Hub** — skills catalog (not a home tab). Home is Threads · Collab · Network.
 - Skills live in public **mutande-ai**; the Mac app pulls an approved catalog from that repo (no third-party marketplace).
 - The bundled **mutande** collaboration skill stays installed in the existing MCP → skill connect flow. Hub is for **optional add-ons**.
 - Background listen uses **host automation** (Cursor hooks / scheduled agent), not an in-chat timer poll. Cold OS banners remain the Mac app’s job.

@@ -10,8 +10,8 @@ import 'package:window_manager/window_manager.dart';
 
 import 'config/app_config.dart';
 import 'analytics_events.dart';
-import 'screens/agents_screen.dart';
-import 'screens/contacts_screen.dart';
+import 'screens/collab_screen.dart';
+import 'screens/network_screen.dart';
 import 'screens/onboarding_flow_screen.dart';
 import 'screens/search_screen.dart';
 import 'screens/settings_screen.dart';
@@ -30,6 +30,7 @@ import 'services/transport_prefs_store.dart';
 import 'theme/mutande_macos_theme.dart';
 import 'widgets/daemon_error_screen.dart';
 import 'widgets/home_chrome_strip.dart';
+import 'widgets/home_search_field.dart';
 import 'widgets/thinking_orb.dart';
 import 'widgets/onboarding_stepper.dart';
 import 'widgets/welcome_splash.dart';
@@ -143,9 +144,7 @@ class _MutandeAppState extends State<MutandeApp> {
         DefaultWidgetsLocalizations.delegate,
       ],
       builder: (context, child) {
-        return mutandeThemeBridge(
-          child: child ?? const SizedBox.shrink(),
-        );
+        return mutandeThemeBridge(child: child ?? const SizedBox.shrink());
       },
       home: home,
     );
@@ -203,8 +202,10 @@ class _RootScreenState extends State<RootScreen> {
   String? _loadingHint;
   DaemonStatusResult? _status;
   String? _statusError;
+
   /// Hub-backed mail path verified (`list_threads`) — gates Home after configure.
   bool _mailReady = false;
+
   /// Set after a failed [getStatus] via local `health` ping (tray uses the same).
   bool _daemonReachable = false;
 
@@ -230,8 +231,7 @@ class _RootScreenState extends State<RootScreen> {
   }
 
   bool _needsOnboardingFlow() {
-    final connectDone =
-        _firstRunStore.connectComplete || _hasLinkedHost;
+    final connectDone = _firstRunStore.connectComplete || _hasLinkedHost;
     if (!connectDone) return true;
     if (!_notificationsGateDone()) return true;
     if (_firstRunStore.connectComplete && !_firstRunStore.pingComplete) {
@@ -262,7 +262,8 @@ class _RootScreenState extends State<RootScreen> {
     _notificationPrefs = NotificationPrefsStore();
     _transportPrefs = TransportPrefsStore(daemon: _daemon);
     // Widget tests that seed status skip the gate unless they inject a store.
-    _firstRunStore = widget.firstRunStore ??
+    _firstRunStore =
+        widget.firstRunStore ??
         (widget.seedStatus != null
             ? FirstRunStore.memory(
                 connectComplete: true,
@@ -353,10 +354,7 @@ class _RootScreenState extends State<RootScreen> {
   void _ensureInboxWatch() {
     if (_inboxWatch != null) return;
     if (widget.seedStatus != null) return; // tests
-    _inboxWatch = InboxWatchService(
-      daemon: _daemon,
-      prefs: _notificationPrefs,
-    );
+    _inboxWatch = InboxWatchService(daemon: _daemon, prefs: _notificationPrefs);
     unawaited(_inboxWatch!.start());
   }
 
@@ -368,8 +366,9 @@ class _RootScreenState extends State<RootScreen> {
       }
     }
 
-    final maxAttempts =
-        bootstrap ? (widget.startupRetryAttempts + 1).clamp(1, 999) : 1;
+    final maxAttempts = bootstrap
+        ? (widget.startupRetryAttempts + 1).clamp(1, 999)
+        : 1;
     Object? lastError;
     for (var attempt = 0; attempt < maxAttempts; attempt++) {
       try {
@@ -377,9 +376,8 @@ class _RootScreenState extends State<RootScreen> {
         return;
       } catch (e) {
         lastError = e;
-        final canRetry = bootstrap &&
-            attempt < maxAttempts - 1 &&
-            isLikelyStartingError(e);
+        final canRetry =
+            bootstrap && attempt < maxAttempts - 1 && isLikelyStartingError(e);
         if (!canRetry) break;
         if (mounted) {
           setState(() {
@@ -405,8 +403,9 @@ class _RootScreenState extends State<RootScreen> {
     _emitBootstrapPhase();
 
     Object? lastError;
-    final maxAttempts =
-        bootstrap ? (widget.startupRetryAttempts + 1).clamp(1, 999) : 1;
+    final maxAttempts = bootstrap
+        ? (widget.startupRetryAttempts + 1).clamp(1, 999)
+        : 1;
     for (var attempt = 0; attempt < maxAttempts; attempt++) {
       try {
         final status = await _daemon.getStatus();
@@ -432,13 +431,13 @@ class _RootScreenState extends State<RootScreen> {
         return;
       } catch (e) {
         lastError = e;
-        final canRetry = bootstrap &&
-            attempt < maxAttempts - 1 &&
-            isLikelyStartingError(e);
+        final canRetry =
+            bootstrap && attempt < maxAttempts - 1 && isLikelyStartingError(e);
         if (!canRetry) break;
         if (mounted) {
           setState(() {
-            _loadingHint = isLocalCourierTransportFailure(e.toString().toLowerCase())
+            _loadingHint =
+                isLocalCourierTransportFailure(e.toString().toLowerCase())
                 ? 'Waiting for Keychain'
                 : 'Waiting for mail';
           });
@@ -579,8 +578,8 @@ class _RootScreenState extends State<RootScreen> {
                 Text(
                   _loadingHint!,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: const Color(0xFF78716C),
-                      ),
+                    color: const Color(0xFF78716C),
+                  ),
                 ),
               ],
             ],
@@ -596,8 +595,9 @@ class _RootScreenState extends State<RootScreen> {
         endpoint: _daemon.httpBaseUrl,
         daemonReachable: _daemonReachable,
         onRetry: _refreshStatus,
-        onRestartCourier:
-            widget.onRestartCourier != null ? _restartCourier : null,
+        onRestartCourier: widget.onRestartCourier != null
+            ? _restartCourier
+            : null,
       );
     }
 
@@ -608,9 +608,7 @@ class _RootScreenState extends State<RootScreen> {
 
     if (!_firstRunReady) {
       return const Scaffold(
-        body: Center(
-          child: MutandeOrb.standard(semanticLabel: 'Loading…'),
-        ),
+        body: Center(child: MutandeOrb.standard(semanticLabel: 'Loading…')),
       );
     }
 
@@ -704,8 +702,9 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   bool _checking = false;
   DaemonHealthResult? _health;
-  int _tab = 0; // 0 threads · 1 agents · 2 contacts
+  int _tab = 0; // 0 threads · 1 collab · 2 network
   VoidCallback? _reloadThreads;
+  VoidCallback? _reloadCollab;
   VoidCallback? _reloadAgents;
   VoidCallback? _reloadContacts;
   String? _composeRecipient;
@@ -719,6 +718,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _registerThreadsReload(VoidCallback? reload) {
     _reloadThreads = reload;
+  }
+
+  void _registerCollabReload(VoidCallback? reload) {
+    _reloadCollab = reload;
   }
 
   void _registerAgentsReload(VoidCallback? reload) {
@@ -852,7 +855,8 @@ class _HomeScreenState extends State<HomeScreen> {
       _exitSearch();
       return KeyEventResult.handled;
     }
-    final meta = HardwareKeyboard.instance.isMetaPressed ||
+    final meta =
+        HardwareKeyboard.instance.isMetaPressed ||
         HardwareKeyboard.instance.isControlPressed;
     if (meta && event.logicalKey == LogicalKeyboardKey.keyF) {
       _searchFocus.requestFocus();
@@ -903,7 +907,7 @@ class _HomeScreenState extends State<HomeScreen> {
               },
               onOpenAgents: () {
                 Navigator.of(sheetContext).pop();
-                _selectTab(1);
+                _selectTab(2);
               },
               onSignedOut: widget.onSignedOut == null
                   ? null
@@ -919,15 +923,18 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _selectTab(int i) {
-    const tabs = ['threads', 'network', 'contacts'];
+    const tabs = ['threads', 'collab', 'network'];
     Analytics.track(AnalyticsEvent.tabSelect, {'tab': tabs[i]});
     setState(() {
       _tab = i;
       if (_searchMode) _searchMode = false;
     });
     if (i == 0) _reloadThreads?.call();
-    if (i == 1) _reloadAgents?.call();
-    if (i == 2) _reloadContacts?.call();
+    if (i == 1) _reloadCollab?.call();
+    if (i == 2) {
+      _reloadContacts?.call();
+      _reloadAgents?.call();
+    }
   }
 
   Widget _tabBody() {
@@ -958,26 +965,21 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
     if (_tab == 1) {
-      return AgentsPanel(
+      return CollabPanel(
         daemon: widget.daemon,
         handle: widget.status.handle,
-        appVersion: widget.appVersion,
-        hostLinkStore: widget.hostLinkStore,
-        onReloadReady: _registerAgentsReload,
-        onViewThreads: () => _selectTab(0),
-        onStartThread: (handle) {
-          setState(() {
-            _tab = 0;
-            _composeRecipient = handle;
-          });
-        },
+        onReloadReady: _registerCollabReload,
       );
     }
-    return ContactsPanel(
+    return NetworkPanel(
       daemon: widget.daemon,
       handle: widget.status.handle,
       inviteWebUrl: widget.config.webAppUrl,
-      onReloadReady: _registerContactsReload,
+      appVersion: widget.appVersion,
+      hostLinkStore: widget.hostLinkStore,
+      onReloadPeople: _registerContactsReload,
+      onReloadAgents: _registerAgentsReload,
+      onViewThreads: () => _selectTab(0),
       onStartThread: (handle) {
         setState(() {
           _tab = 0;
@@ -1001,19 +1003,25 @@ class _HomeScreenState extends State<HomeScreen> {
     return _tabBody();
   }
 
-  Widget _chromeStrip() {
-    // On Threads, search sits beside Compose (Penpot). Elsewhere / in search
-    // mode, keep the field in the chrome strip so it stays mounted.
-    final searchInChrome = _searchMode || _tab != 0;
-    return HomeChromeStrip(
-      tab: _tab,
-      onTab: _selectTab,
-      searchController: _searchController,
-      searchFocus: _searchFocus,
-      onQueryChanged: _onSearchQueryChanged,
-      onSearchSubmit: _onSearchSubmit,
-      onClearSearch: _clearSearch,
-      showSearch: searchInChrome,
+  /// On Threads, search sits beside Compose. Elsewhere / in search mode, it
+  /// stays on the titlebar row so the field remains mounted.
+  bool get _searchInChrome => _searchMode || _tab != 0;
+
+  Widget _tabStrip({bool showGlyph = false}) {
+    return HomeChromeStrip(tab: _tab, onTab: _selectTab, showGlyph: showGlyph);
+  }
+
+  Widget _titlebarSearch() {
+    return SizedBox(
+      width: 220,
+      height: 32,
+      child: HomeSearchField(
+        controller: _searchController,
+        focusNode: _searchFocus,
+        onChanged: _onSearchQueryChanged,
+        onSubmit: _onSearchSubmit,
+        onClear: _clearSearch,
+      ),
     );
   }
 
@@ -1058,60 +1066,63 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 10, 12, 4),
-                    child: Row(
-                      children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(7),
-                          child: Image.asset(
-                            'assets/tray_icon.png',
-                            width: 28,
-                            height: 28,
-                            semanticLabel: 'mutande',
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        const Text(
-                          'mutande',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 16,
-                          ),
-                        ),
-                        const Spacer(),
-                        IconButton(
-                          tooltip: 'Settings',
-                          onPressed: _openSettings,
-                          icon: const Icon(Icons.settings_outlined, size: 18),
-                        ),
-                        Tooltip(
-                          message: handle,
-                          child: CircleAvatar(
-                            radius: 12,
-                            backgroundColor: MutandeColors.stone200,
-                            child: Text(
-                              initial,
-                              style: const TextStyle(
-                                color: MutandeColors.stone600,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 11,
+                  ColoredBox(
+                    color: MutandeColors.stone100,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 6, 8, 6),
+                      child: Row(
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(7),
+                              child: Image.asset(
+                                'assets/tray_icon.png',
+                                width: 28,
+                                height: 28,
+                                semanticLabel: 'mutande',
                               ),
                             ),
                           ),
-                        ),
-                      ],
+                          _tabStrip(),
+                          const Spacer(),
+                          if (_searchInChrome)
+                            Padding(
+                              padding: const EdgeInsets.only(right: 4),
+                              child: _titlebarSearch(),
+                            ),
+                          IconButton(
+                            tooltip: 'Settings',
+                            onPressed: _openSettings,
+                            icon: const Icon(Icons.settings_outlined, size: 18),
+                          ),
+                          Tooltip(
+                            message: handle,
+                            child: CircleAvatar(
+                              radius: 12,
+                              backgroundColor: MutandeColors.stone200,
+                              child: Text(
+                                initial,
+                                style: const TextStyle(
+                                  color: MutandeColors.stone600,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                  _chromeStrip(),
                   if (banner != null) banner,
                   Expanded(
                     child: Padding(
                       padding: _searchMode
                           ? EdgeInsets.zero
-                          : (_tab == 0
-                              ? const EdgeInsets.fromLTRB(0, 4, 0, 0)
-                              : const EdgeInsets.fromLTRB(16, 8, 16, 12)),
+                          : (_tab == 0 || _tab == 1
+                                ? const EdgeInsets.fromLTRB(0, 4, 0, 0)
+                                : const EdgeInsets.fromLTRB(16, 8, 16, 12)),
                       child: _contentBody(),
                     ),
                   ),
@@ -1125,29 +1136,17 @@ class _HomeScreenState extends State<HomeScreen> {
             child: MacosScaffold(
               backgroundColor: MutandeColors.stone100,
               toolBar: ToolBar(
-                title: Row(
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(6),
-                      child: Image.asset(
-                        'assets/tray_icon.png',
-                        width: 22,
-                        height: 22,
-                        semanticLabel: 'mutande',
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'mutande',
-                      style: MacosTheme.of(context).typography.headline.copyWith(
-                            color: MutandeColors.stone800,
-                            fontWeight: FontWeight.w600,
-                          ),
-                    ),
-                  ],
-                ),
-                titleWidth: 140,
+                alignment: Alignment.centerLeft,
+                padding: const EdgeInsets.fromLTRB(0, 4, 8, 4),
+                automaticallyImplyLeading: false,
+                dividerColor: MacosColors.transparent,
+                title: _tabStrip(showGlyph: true),
+                titleWidth: 380,
                 actions: [
+                  if (_searchInChrome)
+                    CustomToolbarItem(
+                      inToolbarBuilder: (context) => _titlebarSearch(),
+                    ),
                   ToolBarIconButton(
                     label: 'Settings',
                     icon: const MacosIcon(CupertinoIcons.settings),
@@ -1164,14 +1163,13 @@ class _HomeScreenState extends State<HomeScreen> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         if (banner != null) banner,
-                        _chromeStrip(),
                         Expanded(
                           child: Padding(
-                            padding: (!_searchMode && _tab == 0)
+                            padding: (!_searchMode && (_tab == 0 || _tab == 1))
                                 ? const EdgeInsets.fromLTRB(0, 4, 0, 0)
                                 : (!_searchMode
-                                    ? const EdgeInsets.fromLTRB(16, 8, 16, 12)
-                                    : EdgeInsets.zero),
+                                      ? const EdgeInsets.fromLTRB(16, 8, 16, 12)
+                                      : EdgeInsets.zero),
                             child: _contentBody(),
                           ),
                         ),
@@ -1183,10 +1181,6 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           );
 
-    return Focus(
-      autofocus: true,
-      onKeyEvent: _onHomeKey,
-      child: shell,
-    );
+    return Focus(autofocus: true, onKeyEvent: _onHomeKey, child: shell);
   }
 }

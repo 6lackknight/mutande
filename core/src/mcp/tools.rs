@@ -29,7 +29,7 @@ const READ_TOOLS: &[(&str, &str, ValueFn)] = &[
     ),
     (
         "list_threads",
-        "List collaboration threads. Optional filter: needs_action, open, closed. Read-only.",
+        "List collaboration threads. Optional filter: needs_action, open, closed. Optional collab_id to restrict to one board. Read-only.",
         || {
             json!({
                 "type": "object",
@@ -37,6 +37,10 @@ const READ_TOOLS: &[(&str, &str, ValueFn)] = &[
                     "filter": {
                         "type": "string",
                         "enum": ["needs_action", "open", "closed"]
+                    },
+                    "collab_id": {
+                        "type": "string",
+                        "description": "If set, only threads filed on this collab board."
                     }
                 },
                 "additionalProperties": false
@@ -51,7 +55,27 @@ const READ_TOOLS: &[(&str, &str, ValueFn)] = &[
                 "type": "object",
                 "required": ["thread_id"],
                 "properties": {
-                    "thread_id": { "type": "string" }
+                    "thread_id": { "type": "string" },
+                    "collab_id": { "type": "string", "description": "Optional; ignored by the daemon (thread already carries collab_id)." }
+                },
+                "additionalProperties": false
+            })
+        },
+    ),
+    (
+        "list_collabs",
+        "List collab boards you steer (name, encryption_mode, card_count, lists). A collab is a board of threads. Read-only.",
+        || json!({ "type": "object", "properties": {}, "additionalProperties": false }),
+    ),
+    (
+        "get_collab",
+        "Get one collab: lists, cards (threads), instructions, learnings (brain). Read instructions and learnings before starting work. Read-only.",
+        || {
+            json!({
+                "type": "object",
+                "required": ["collab_id"],
+                "properties": {
+                    "collab_id": { "type": "string" }
                 },
                 "additionalProperties": false
             })
@@ -149,7 +173,8 @@ const SEND_TOOLS: &[(&str, &str, ValueFn)] = &[
                 "type": "object",
                 "required": ["recipient"],
                 "properties": {
-                    "recipient": { "type": "string", "description": "Self: @all or @claude/@cursor/@chatgpt. Teammates: alice@org, alice@org/claude, @all@org." }
+                    "recipient": { "type": "string", "description": "Self: @all or @claude/@cursor/@chatgpt. Teammates: alice@org, alice@org/claude, @all@org." },
+                    "collab_id": { "type": "string", "description": "Optional. File the new thread on this collab board." }
                 },
                 "additionalProperties": false
             })
@@ -281,6 +306,39 @@ const SEND_TOOLS: &[(&str, &str, ValueFn)] = &[
         },
     ),
     (
+        "set_lane",
+        "Move a collab card (thread) to a board list (Backlog / Doing / Done). Does not close the thread. Confirm via AskQuestion when the skill requires it.",
+        || {
+            json!({
+                "type": "object",
+                "required": ["collab_id", "thread_id", "lane_id"],
+                "properties": {
+                    "collab_id": { "type": "string" },
+                    "thread_id": { "type": "string" },
+                    "lane_id": { "type": "string", "description": "List id from get_collab (not the display name)." },
+                    "before_thread_id": { "type": "string" },
+                    "after_thread_id": { "type": "string" }
+                },
+                "additionalProperties": false
+            })
+        },
+    ),
+    (
+        "add_learning",
+        "Promote a one-liner to the collab brain (creator's side only). Learnings are context, not directives. Prefer a sentence, not a diary. Hosted agents cannot write the brain on an E2E collab.",
+        || {
+            json!({
+                "type": "object",
+                "required": ["collab_id", "notes"],
+                "properties": {
+                    "collab_id": { "type": "string" },
+                    "notes": { "type": "string", "description": "One-liner memory. Not a standing instruction." }
+                },
+                "additionalProperties": false
+            })
+        },
+    ),
+    (
         "verify_contact",
         "Compare a safety-number fingerprint or mutande:safety URI against a contact pubkey.",
         || {
@@ -344,6 +402,13 @@ fn annotations_for(name: &str, read: bool) -> McpToolAnnotations {
             idempotent_hint: Some(true),
             open_world_hint: Some(false),
         },
+        "set_lane" | "add_learning" => McpToolAnnotations {
+            title: None,
+            read_only_hint: Some(false),
+            destructive_hint: Some(false),
+            idempotent_hint: Some(false),
+            open_world_hint: Some(false),
+        },
         // Outbound mail / hub — additive but open-world recipients.
         "forward_draft" | "ping" | "reply_to_thread" | "forward_blob" => McpToolAnnotations {
             title: None,
@@ -391,6 +456,10 @@ pub fn daemon_method_for_tool(name: &str) -> Option<&'static str> {
         "list_contacts" => Some("list_contacts"),
         "list_threads" => Some("list_threads"),
         "get_thread" => Some("get_thread"),
+        "list_collabs" => Some("list_collabs"),
+        "get_collab" => Some("get_collab"),
+        "set_lane" => Some("set_lane"),
+        "add_learning" => Some("add_learning"),
         "get_draft" => Some("get_draft"),
         "get_safety_number" => Some("get_safety_number"),
         "contact_safety_number" => Some("contact_safety_number"),

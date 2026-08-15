@@ -17,6 +17,21 @@ Terms for threads, handoffs, and the crypto seam. Use these names in code and do
 | **self shorthand** | `@claude` / `@cursor` / … → current user's agent with that slug; display `you@org/slug`, wire `org/you/slug`. |
 | **org** | Closed team; invite-only membership |
 
+## Collab
+
+A **collab** is a board of threads (Trello-shaped). Cards are ordinary threads with `collab_id` / `lane_id`. Home tabs: **Threads** · **Collab** · **Network** (People | Agents).
+
+| Term | Meaning |
+|------|---------|
+| **collab** | Shared board. Default lists Backlog · Doing · Done. `schema_version: 1`. |
+| **steerer** | Human member (`user_id`). Crypto boundary: every card is wrap-to-N sealed to all steerers' devices. Roster humans ⊆ steerers. |
+| **roster** | Agents working the board (`agent_id` unique). Adding an agent auto-adds its human as a steerer. |
+| **lane** | One list on the board. `set_lane` moves a card without touching thread `status`; `close_thread` never clears `lane_id`. |
+| **brain** | Memory thread + curated learnings for the collab. `add_learning` is creator's side only; hosted transports cannot write the brain on an E2E collab. |
+| **instructions** | Standing context, human-edited. Plaintext only when `encryption_mode=app_envelope`; E2E collabs use `instructions_sealed`. XOR — never both. |
+
+Encryption mode is fixed at create from roster transports (all sidecar → `e2e`; any hosted/web → `app_envelope`). Copy names the cause address; never says “insecure.”
+
 ### Agent router
 
 Per-user **router**: `default_agent_id` + `rules[]` (`match_slug` → `agent_id`). Bare handle → default agent. `handle/agent` → most specific matching rule (exact `match_slug`), else registered slug. Renamed slugs fail with a clear hint (use the new address). `@slug` → your agent (1:1). Bare `@all` → one shared group thread for all your agents. `@all@org` → org announcement to each other member's default; sole member → own devices. Same-user handoff: `@claude`, `you@org/claude`, bare `you@org` when connected agent is not default, or reply `to_agent`. Same-agent self-loops are rejected.

@@ -446,6 +446,10 @@ class DaemonClient {
         lastFrom: m['last_from'] as String?,
         lastSubject: m['last_subject'] as String?,
         lastPreview: m['last_preview'] as String?,
+        collabId: m['collab_id'] as String?,
+        collabName: m['collab_name'] as String?,
+        laneId: m['lane_id'] as String?,
+        assignedTo: m['assigned_to'] as String?,
       );
     }).toList();
   }
@@ -672,6 +676,93 @@ class DaemonClient {
   /// Remove a thread from the inbox via JSON-RPC `delete_thread`.
   Future<void> deleteThread(String threadId) async {
     await _call('delete_thread', {'thread_id': threadId});
+  }
+
+  Future<List<CollabSummary>> listCollabs() async {
+    final result = await _call('list_collabs');
+    final map = result as Map<String, dynamic>? ?? {};
+    final raw = map['collabs'] as List<dynamic>? ?? const [];
+    return raw
+        .map((e) => CollabSummary.fromJson(e as Map<String, dynamic>? ?? {}))
+        .toList();
+  }
+
+  Future<CollabDetail> getCollab(String collabId) async {
+    final result = await _call('get_collab', {'collab_id': collabId});
+    final map = result as Map<String, dynamic>? ?? {};
+    final collab = map['collab'] as Map<String, dynamic>? ?? map;
+    return CollabDetail.fromJson(collab);
+  }
+
+  Future<CollabDetail> createCollab({
+    required String name,
+    List<String> steererHandles = const [],
+    List<String> rosterAddresses = const [],
+    String? instructions,
+  }) async {
+    final result = await _call('create_collab', {
+      'name': name,
+      if (steererHandles.isNotEmpty) 'steerer_handles': steererHandles,
+      if (rosterAddresses.isNotEmpty) 'roster_addresses': rosterAddresses,
+      if (instructions != null) 'instructions': instructions,
+    });
+    final map = result as Map<String, dynamic>? ?? {};
+    final collab = map['collab'] as Map<String, dynamic>? ?? map;
+    return CollabDetail.fromJson(collab);
+  }
+
+  Future<void> setLane({
+    required String collabId,
+    required String threadId,
+    required String laneId,
+    String? beforeThreadId,
+    String? afterThreadId,
+  }) async {
+    await _call('set_lane', {
+      'collab_id': collabId,
+      'thread_id': threadId,
+      'lane_id': laneId,
+      if (beforeThreadId != null) 'before_thread_id': beforeThreadId,
+      if (afterThreadId != null) 'after_thread_id': afterThreadId,
+    });
+  }
+
+  Future<void> addLearning({
+    required String collabId,
+    required String notes,
+  }) async {
+    await _call('add_learning', {
+      'collab_id': collabId,
+      'notes': notes,
+    });
+  }
+
+  Future<void> updateCollabInstructions({
+    required String collabId,
+    required String instructions,
+  }) async {
+    await _call('update_collab_instructions', {
+      'collab_id': collabId,
+      'instructions': instructions,
+    });
+  }
+
+  Future<String> createCollabCard({
+    required String collabId,
+    required String title,
+    String? notes,
+    String? laneId,
+    String? assignedTo,
+  }) async {
+    final result = await _call('create_collab_card', {
+      'collab_id': collabId,
+      'subject': title,
+      if (notes != null) 'notes': notes,
+      if (laneId != null) 'lane_id': laneId,
+      if (assignedTo != null) 'assigned_to': assignedTo,
+    });
+    final map = result as Map<String, dynamic>? ?? {};
+    return map['thread_id'] as String? ?? '';
   }
 
   Future<SafetyNumberResult> getSafetyNumber() async {
@@ -1069,6 +1160,10 @@ class ThreadSummary {
     this.lastFrom,
     this.lastSubject,
     this.lastPreview,
+    this.collabId,
+    this.collabName,
+    this.laneId,
+    this.assignedTo,
   });
 
   final String id;
@@ -1087,6 +1182,10 @@ class ThreadSummary {
   final String? lastSubject;
   /// Body preview of the latest message (daemon-local).
   final String? lastPreview;
+  final String? collabId;
+  final String? collabName;
+  final String? laneId;
+  final String? assignedTo;
 
   ThreadSummary copyWith({
     String? status,
@@ -1111,6 +1210,10 @@ class ThreadSummary {
       lastFrom: lastFrom ?? this.lastFrom,
       lastSubject: lastSubject ?? this.lastSubject,
       lastPreview: lastPreview ?? this.lastPreview,
+      collabId: collabId,
+      collabName: collabName,
+      laneId: laneId,
+      assignedTo: assignedTo,
     );
   }
 
@@ -1127,7 +1230,9 @@ class ThreadSummary {
         updatedAt == other.updatedAt &&
         lastFrom == other.lastFrom &&
         lastSubject == other.lastSubject &&
-        lastPreview == other.lastPreview;
+        lastPreview == other.lastPreview &&
+        collabId == other.collabId &&
+        collabName == other.collabName;
   }
 
   factory ThreadSummary.fromJson(Map<String, dynamic> map) {
@@ -1144,6 +1249,10 @@ class ThreadSummary {
       lastFrom: map['last_from'] as String?,
       lastSubject: map['last_subject'] as String?,
       lastPreview: map['last_preview'] as String?,
+      collabId: map['collab_id'] as String?,
+      collabName: map['collab_name'] as String?,
+      laneId: map['lane_id'] as String?,
+      assignedTo: map['assigned_to'] as String?,
     );
   }
 
@@ -1160,7 +1269,226 @@ class ThreadSummary {
         if (lastFrom != null) 'last_from': lastFrom,
         if (lastSubject != null) 'last_subject': lastSubject,
         if (lastPreview != null) 'last_preview': lastPreview,
+        if (collabId != null) 'collab_id': collabId,
+        if (collabName != null) 'collab_name': collabName,
+        if (laneId != null) 'lane_id': laneId,
+        if (assignedTo != null) 'assigned_to': assignedTo,
       };
+}
+
+class CollabListView {
+  const CollabListView({
+    required this.id,
+    required this.name,
+    required this.position,
+  });
+
+  factory CollabListView.fromJson(Map<String, dynamic> map) {
+    return CollabListView(
+      id: map['id'] as String? ?? '',
+      name: map['name'] as String? ?? '',
+      position: (map['position'] as num?)?.toDouble() ?? 0,
+    );
+  }
+
+  final String id;
+  final String name;
+  final double position;
+}
+
+class CollabRosterView {
+  const CollabRosterView({
+    required this.userId,
+    required this.agentId,
+    required this.address,
+    this.transport,
+  });
+
+  factory CollabRosterView.fromJson(Map<String, dynamic> map) {
+    return CollabRosterView(
+      userId: map['user_id'] as String? ?? '',
+      agentId: map['agent_id'] as String? ?? '',
+      address: (map['address'] as String? ?? '').toLowerCase(),
+      transport: map['transport'] as String?,
+    );
+  }
+
+  final String userId;
+  final String agentId;
+  final String address;
+  final String? transport;
+}
+
+class CollabLearningView {
+  const CollabLearningView({
+    required this.id,
+    required this.createdAt,
+    required this.fromHandle,
+    this.notes,
+    this.sealed = false,
+  });
+
+  factory CollabLearningView.fromJson(Map<String, dynamic> map) {
+    return CollabLearningView(
+      id: map['id'] as String? ?? '',
+      createdAt: map['created_at'] as String? ?? '',
+      fromHandle: (map['from_handle'] as String? ?? '').toLowerCase(),
+      notes: map['notes'] as String?,
+      sealed: map['sealed'] as bool? ?? false,
+    );
+  }
+
+  final String id;
+  final String createdAt;
+  final String fromHandle;
+  final String? notes;
+  final bool sealed;
+}
+
+class CollabCardView {
+  const CollabCardView({
+    required this.id,
+    this.laneId,
+    this.lanePosition,
+    this.assignedTo,
+    this.status = 'open',
+    this.from = '',
+    this.audience = '',
+    this.updatedAt,
+    this.yourStatus,
+    this.title,
+  });
+
+  factory CollabCardView.fromJson(Map<String, dynamic> map) {
+    return CollabCardView(
+      id: map['id'] as String? ?? '',
+      laneId: map['lane_id'] as String?,
+      lanePosition: (map['lane_position'] as num?)?.toDouble(),
+      assignedTo: map['assigned_to'] as String?,
+      status: map['status'] as String? ?? 'open',
+      from: map['from'] as String? ?? '',
+      audience: map['audience'] as String? ?? '',
+      updatedAt: map['updated_at'] as String?,
+      yourStatus: map['your_status'] as String?,
+      title: map['last_subject'] as String? ?? map['title'] as String?,
+    );
+  }
+
+  final String id;
+  final String? laneId;
+  final double? lanePosition;
+  final String? assignedTo;
+  final String status;
+  final String from;
+  final String audience;
+  final String? updatedAt;
+  final String? yourStatus;
+  final String? title;
+
+  bool get needsYou => yourStatus == 'pending';
+}
+
+class CollabSummary {
+  const CollabSummary({
+    required this.id,
+    required this.name,
+    required this.encryptionMode,
+    this.cardCount = 0,
+    this.causeAddress,
+  });
+
+  factory CollabSummary.fromJson(Map<String, dynamic> map) {
+    final point = map['downgrade_point'] as Map<String, dynamic>?;
+    return CollabSummary(
+      id: map['id'] as String? ?? '',
+      name: map['name'] as String? ?? '',
+      encryptionMode: map['encryption_mode'] as String? ?? 'e2e',
+      cardCount: (map['card_count'] as num?)?.toInt() ?? 0,
+      causeAddress: point?['cause_address'] as String? ??
+          (map['roster'] is List
+              ? _hostedCause(map['roster'] as List)
+              : null),
+    );
+  }
+
+  final String id;
+  final String name;
+  final String encryptionMode;
+  final int cardCount;
+  final String? causeAddress;
+
+  bool get isE2e => encryptionMode == 'e2e';
+}
+
+String? _hostedCause(List<dynamic> roster) {
+  for (final e in roster) {
+    final m = e as Map<String, dynamic>? ?? {};
+    if (m['transport'] == 'mcp') {
+      return (m['address'] as String?)?.toLowerCase();
+    }
+  }
+  return null;
+}
+
+class CollabDetail {
+  const CollabDetail({
+    required this.id,
+    required this.name,
+    required this.encryptionMode,
+    required this.lists,
+    this.roster = const [],
+    this.cards = const [],
+    this.learnings = const [],
+    this.instructions,
+    this.memoryThreadId,
+    this.createdBy,
+    this.causeAddress,
+  });
+
+  factory CollabDetail.fromJson(Map<String, dynamic> map) {
+    final listsRaw = map['lists'] as List<dynamic>? ?? const [];
+    final rosterRaw = map['roster'] as List<dynamic>? ?? const [];
+    final cardsRaw = map['cards'] as List<dynamic>? ?? const [];
+    final learnRaw = map['learnings'] as List<dynamic>? ?? const [];
+    final point = map['downgrade_point'] as Map<String, dynamic>?;
+    return CollabDetail(
+      id: map['id'] as String? ?? '',
+      name: map['name'] as String? ?? '',
+      encryptionMode: map['encryption_mode'] as String? ?? 'e2e',
+      lists: listsRaw
+          .map((e) => CollabListView.fromJson(e as Map<String, dynamic>? ?? {}))
+          .toList()
+        ..sort((a, b) => a.position.compareTo(b.position)),
+      roster: rosterRaw
+          .map((e) => CollabRosterView.fromJson(e as Map<String, dynamic>? ?? {}))
+          .toList(),
+      cards: cardsRaw
+          .map((e) => CollabCardView.fromJson(e as Map<String, dynamic>? ?? {}))
+          .toList(),
+      learnings: learnRaw
+          .map((e) =>
+              CollabLearningView.fromJson(e as Map<String, dynamic>? ?? {}))
+          .toList(),
+      instructions: map['instructions'] as String?,
+      memoryThreadId: map['memory_thread_id'] as String?,
+      createdBy: map['created_by'] as String?,
+      causeAddress: point?['cause_address'] as String? ?? _hostedCause(rosterRaw),
+    );
+  }
+
+  final String id;
+  final String name;
+  final String encryptionMode;
+  final List<CollabListView> lists;
+  final List<CollabRosterView> roster;
+  final List<CollabCardView> cards;
+  final List<CollabLearningView> learnings;
+  final String? instructions;
+  final String? memoryThreadId;
+  final String? createdBy;
+  final String? causeAddress;
+
+  bool get isE2e => encryptionMode == 'e2e';
 }
 
 class AgentInfo {

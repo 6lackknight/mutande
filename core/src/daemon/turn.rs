@@ -399,10 +399,11 @@ pub fn apply_awaiting_to_thread_meta(
     my_bare: Option<&str>,
     agent_slug: Option<&str>,
 ) {
-    thread.awaiting = Some(awaiting.clone());
-    if let Some(bare) = my_bare {
-        thread.your_status = Some(your_status_from_awaiting(&awaiting, bare, agent_slug));
-    }
+    thread.your_status = if let Some(bare) = my_bare {
+        Some(your_status_from_awaiting(&awaiting, bare, agent_slug))
+    } else {
+        thread.your_status.clone()
+    };
 }
 
 /// Synthetic human-decision for task gate (daemon-local; not necessarily in bundle).
@@ -460,6 +461,12 @@ mod tests {
                 last_subject: None,
                 last_preview: None,
                 awaiting: None,
+                collab_id: None,
+                lane_id: None,
+                lane_position: None,
+                assigned_to: None,
+                watchers: None,
+                collab_name: None,
             },
             messages: vec![],
             pending_downgrade: None,

@@ -216,7 +216,10 @@ mod tests {
     #[test]
     fn tool_definitions_include_send_and_read() {
         let defs = tool_definitions();
-        assert!(defs.iter().any(|t| t.name == "list_threads"));
+        assert!(defs.iter().any(|t| t.name == "list_collabs"));
+        assert!(defs.iter().any(|t| t.name == "get_collab"));
+        assert!(defs.iter().any(|t| t.name == "set_lane"));
+        assert!(defs.iter().any(|t| t.name == "add_learning"));
         assert!(defs.iter().any(|t| t.name == "forward_draft"));
         assert!(defs.iter().any(|t| t.name == "forward_blob"));
         assert!(defs.iter().any(|t| t.name == "close_thread"));

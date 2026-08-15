@@ -11,6 +11,12 @@ import {
   replyAsWebAgent,
   upvoteMessageAsWebAgent,
 } from "../hub/inbox.ts";
+import {
+  addLearningAsWebAgent,
+  getCollabAsUser,
+  listCollabsAsUser,
+  setLaneAsUser,
+} from "../hub/collabs.ts";
 import type { ThreadFilter } from "../hub/types.ts";
 import type { McpSession } from "../session/bind.ts";
 import { toolDefinitions, IMPLEMENTED_TOOLS } from "./tools.ts";
@@ -237,6 +243,7 @@ async function callTool(
       ctx.session.accessToken,
       ctx.session.agent.id,
       filter,
+      typeof args.collab_id === "string" ? args.collab_id : undefined,
     );
     // Skill pattern: empty / caught up → quiet payload.
     // needs_action omits threads you already sent (your_status=replied) —
@@ -321,6 +328,69 @@ async function callTool(
     return toolTextResult(JSON.stringify(result, null, 2));
   }
 
+  if (name === "list_collabs") {
+    const result = await listCollabsAsUser(ctx.hub, ctx.session.accessToken);
+    return toolTextResult(JSON.stringify(result, null, 2));
+  }
+
+  if (name === "get_collab") {
+    const collabId = requireString(args, "collab_id");
+    if (!collabId) {
+      return toolTextResult("collab_id is required", true);
+    }
+    const collab = await getCollabAsUser(
+      ctx.hub,
+      ctx.session.accessToken,
+      collabId,
+    );
+    return toolTextResult(JSON.stringify({ collab }, null, 2));
+  }
+
+  if (name === "set_lane") {
+    const collabId = requireString(args, "collab_id");
+    const threadId = requireString(args, "thread_id");
+    const laneId = requireString(args, "lane_id");
+    if (!collabId || !threadId || !laneId) {
+      return toolTextResult("collab_id, thread_id, and lane_id are required", true);
+    }
+    const result = await setLaneAsUser(
+      ctx.hub,
+      ctx.session.accessToken,
+      collabId,
+      {
+        thread_id: threadId,
+        lane_id: laneId,
+        before_thread_id: requireString(args, "before_thread_id") || undefined,
+        after_thread_id: requireString(args, "after_thread_id") || undefined,
+      },
+    );
+    return toolTextResult(JSON.stringify(result, null, 2));
+  }
+
+  if (name === "add_learning") {
+    const collabId = requireString(args, "collab_id");
+    const notes = requireString(args, "notes");
+    if (!collabId || !notes) {
+      return toolTextResult("collab_id and notes are required", true);
+    }
+    try {
+      const result = await addLearningAsWebAgent(
+        ctx.hub,
+        ctx.session.accessToken,
+        collabId,
+        notes,
+        ctx.session.slug,
+        ctx.session.agent.id,
+      );
+      return toolTextResult(JSON.stringify(result, null, 2));
+    } catch (e) {
+      return toolTextResult(
+        e instanceof Error ? e.message : "add_learning failed",
+        true,
+      );
+    }
+  }
+
   if (name === "forward_draft") {
     const recipient =
       requireString(args, "recipient") || requireString(args, "to");
@@ -363,6 +433,7 @@ async function callTool(
       ctx.session.slug,
       recipient,
       bundle,
+      requireString(args, "collab_id") || undefined,
     );
     const threadId = result.thread?.id;
     const messageId = result.message_id;

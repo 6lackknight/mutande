@@ -143,7 +143,7 @@ function SiteNav() {
         Docs
       </a>
       <TrackLink
-        href="/download"
+        href="/waitlist?next=/download"
         event={AnalyticsEvent.DownloadNavClick}
         props={{ surface: "site_nav" }}
         className={navLinkClass}

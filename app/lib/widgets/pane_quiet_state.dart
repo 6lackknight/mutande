@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/mutande_macos_theme.dart';
 
-/// Calm empty / error state for Threads · Agents · Contacts panes.
+/// Calm empty / error state for Threads · Collab · Network panes.
 ///
 /// Title + short body; optional Retry. Never a place for raw exceptions.
 class PaneQuietState extends StatelessWidget {

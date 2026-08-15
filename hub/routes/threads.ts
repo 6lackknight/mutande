@@ -21,6 +21,10 @@ export function createThreadRoutes(store: HubStore) {
       from_agent?: string;
       from_agent_id?: string;
       turns?: { user_id: string; actor: "agent" | "human" }[];
+      collab_id?: string;
+      lane_id?: string;
+      assigned_to?: string;
+      watchers?: string[];
     }>();
     const result = await store.createThread(c.get("auth"), body);
     return c.json(result, 201);

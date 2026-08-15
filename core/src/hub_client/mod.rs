@@ -525,6 +525,9 @@ impl HubClient {
             app_envelope: None,
             from_agent,
             turns,
+            collab_id: None,
+            lane_id: None,
+            assigned_to: None,
         };
         self.post_json("/v1/threads", &body, true).await
     }
@@ -543,6 +546,9 @@ impl HubClient {
             app_envelope: Some(app_envelope),
             from_agent,
             turns,
+            collab_id: None,
+            lane_id: None,
+            assigned_to: None,
         };
         self.post_json("/v1/threads", &body, true).await
     }
@@ -633,6 +639,126 @@ impl HubClient {
             true,
         )
         .await
+    }
+
+    pub async fn create_thread_collab(
+        &self,
+        to: &str,
+        envelope: Option<&Envelope>,
+        app_envelope: Option<&AppEnvelopePayload>,
+        from_agent: Option<&str>,
+        turns: Option<&[HubAwaitingEntry]>,
+        collab_id: &str,
+        lane_id: Option<&str>,
+        assigned_to: Option<&str>,
+    ) -> Result<CreateThreadResponse> {
+        let body = CreateThreadRequest {
+            to,
+            envelope,
+            app_envelope,
+            from_agent,
+            turns,
+            collab_id: Some(collab_id),
+            lane_id,
+            assigned_to,
+        };
+        self.post_json("/v1/threads", &body, true).await
+    }
+
+    pub async fn list_collabs(&self) -> Result<Vec<Collab>> {
+        let resp: ListCollabsResponse = self.get_json("/v1/collabs").await?;
+        Ok(resp.collabs)
+    }
+
+    pub async fn get_collab(&self, collab_id: &str) -> Result<Collab> {
+        let resp: CollabResponse = self
+            .get_json(&format!("/v1/collabs/{collab_id}"))
+            .await?;
+        Ok(resp.collab)
+    }
+
+    pub async fn create_collab(
+        &self,
+        name: &str,
+        steerer_handles: &[String],
+        roster_addresses: &[String],
+        instructions: Option<&str>,
+    ) -> Result<Collab> {
+        let steerer_ref = if steerer_handles.is_empty() {
+            None
+        } else {
+            Some(steerer_handles)
+        };
+        let roster_ref = if roster_addresses.is_empty() {
+            None
+        } else {
+            Some(roster_addresses)
+        };
+        let body = CreateCollabRequest {
+            name,
+            steerer_handles: steerer_ref,
+            roster_addresses: roster_ref,
+            instructions,
+        };
+        let resp: CollabResponse = self.post_json("/v1/collabs", &body, true).await?;
+        Ok(resp.collab)
+    }
+
+    pub async fn set_lane(
+        &self,
+        collab_id: &str,
+        thread_id: &str,
+        lane_id: &str,
+        before_thread_id: Option<&str>,
+        after_thread_id: Option<&str>,
+    ) -> Result<ThreadMeta> {
+        let body = SetLaneRequest {
+            thread_id,
+            lane_id,
+            before_thread_id,
+            after_thread_id,
+        };
+        let resp: serde_json::Value = self
+            .post_json(&format!("/v1/collabs/{collab_id}/lane"), &body, true)
+            .await?;
+        if let Some(thread) = resp.get("thread") {
+            Ok(serde_json::from_value(thread.clone())?)
+        } else {
+            serde_json::from_value(resp).context("set_lane response")
+        }
+    }
+
+    pub async fn add_learning(
+        &self,
+        collab_id: &str,
+        notes: Option<&str>,
+        from_agent: Option<&str>,
+        envelope: Option<&Envelope>,
+    ) -> Result<serde_json::Value> {
+        let body = AddLearningRequest {
+            notes,
+            from_agent,
+            from_agent_id: None,
+            envelope,
+        };
+        self.post_json(&format!("/v1/collabs/{collab_id}/learnings"), &body, true)
+            .await
+    }
+
+    pub async fn update_collab_instructions(
+        &self,
+        collab_id: &str,
+        instructions: Option<&str>,
+    ) -> Result<Collab> {
+        let body = UpdateInstructionsRequest { instructions };
+        let resp: CollabResponse = self
+            .post_json(
+                &format!("/v1/collabs/{collab_id}/instructions"),
+                &body,
+                true,
+            )
+            .await?;
+        Ok(resp.collab)
     }
 
     pub async fn close_thread(&self, thread_id: &str) -> Result<ThreadMeta> {
@@ -1097,10 +1223,15 @@ mod tests {
             envelope: Some(&env),
             app_envelope: None,
             from_agent: None,
+            turns: None,
+            collab_id: None,
+            lane_id: None,
+            assigned_to: None,
         };
         let json = serde_json::to_value(&req).unwrap();
         assert_eq!(json["to"], "bob@acme");
         assert!(json.get("recipient").is_none());
+        assert!(json.get("collab_id").is_none());
         assert_eq!(json["envelope"]["version"], 1);
         assert!(json["envelope"]["content_nonce"].is_array());
     }
@@ -1114,6 +1245,7 @@ mod tests {
             from_agent: None,
             to_agent: None,
             parent_message_id: None,
+            turns: None,
         };
         let json = serde_json::to_value(&req).unwrap();
         assert!(json["envelope"]["wraps"].is_array());
@@ -1406,7 +1538,7 @@ mod tests {
 
         let client = HubClient::new(HubConfig::new(server.uri(), "test-at")).unwrap();
         let created = client
-            .create_thread("bob@acme", &envelope, None)
+            .create_thread("bob@acme", &envelope, None, None)
             .await
             .unwrap();
         assert_eq!(created.thread.id, thread_id);
@@ -1439,6 +1571,7 @@ mod tests {
                 sender_only: None,
                 parent_message_id: None,
                 upvotes: None,
+                receipts: None,
             }],
         pending_downgrade: None,
         };

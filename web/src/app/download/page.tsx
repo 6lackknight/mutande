@@ -1,7 +1,9 @@
+import { redirect } from "next/navigation";
 import { SiteHeader } from "@/components/site-header";
 import { PageTitle, Shell } from "@/components/ui";
 import { DownloadPlatformPicker } from "@/components/download-platform-picker";
 import { CHANGELOG, LATEST_CHANGELOG } from "@/lib/changelog";
+import { hasDownloadUnlock } from "@/lib/download-gate";
 import {
   MAC_DMG_LABEL,
   MAC_DMG_URL_ARM64,
@@ -16,7 +18,11 @@ import {
 
 export const metadata = { title: "Try Alpha" };
 
-export default function DownloadPage() {
+export default async function DownloadPage() {
+  if (!(await hasDownloadUnlock())) {
+    redirect("/waitlist?next=/download");
+  }
+
   return (
     <Shell wide>
       <SiteHeader />

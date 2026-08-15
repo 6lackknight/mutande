@@ -31,7 +31,7 @@ pub enum InboxRole {
 }
 
 /// Hub-visible thread metadata (never includes plaintext content).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ThreadMeta {
     pub id: String,
     pub kind: ThreadKind,
@@ -73,6 +73,18 @@ pub struct ThreadMeta {
     /// Hub mirror of post-merge awaiting holders (`{user_id, actor}`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub awaiting: Option<Vec<HubAwaitingEntry>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub collab_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lane_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lane_position: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assigned_to: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub watchers: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub collab_name: Option<String>,
 }
 
 /// Hub-stored awaiting holder (blind courier mirror of E2E `next_turn`).
@@ -272,7 +284,7 @@ pub struct PendingPairRequests {
     pub outgoing: Vec<PairRequest>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ApprovePairResponse {
     pub contact: Contact,
     pub thread: ThreadMeta,
@@ -528,7 +540,7 @@ pub struct Auth0TokenResponse {
     pub token_type: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ThreadListResponse {
     pub threads: Vec<ThreadMeta>,
 }
@@ -563,13 +575,13 @@ pub struct ThreadDowngradeProposal {
     pub divider_message_id: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ProposeDowngradeResponse {
     pub proposal: ThreadDowngradeProposal,
     pub prompt: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ApproveDowngradeResponse {
     pub proposal: ThreadDowngradeProposal,
     pub thread: ThreadMeta,
@@ -580,7 +592,7 @@ pub struct PendingDowngradeProposals {
     pub proposals: Vec<ThreadDowngradeProposal>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ThreadDetail {
     pub thread: ThreadMeta,
     pub messages: Vec<ThreadMessage>,
@@ -639,6 +651,12 @@ pub struct CreateThreadRequest<'a> {
     /// Post-merge awaiting mirror computed by sender core.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub turns: Option<&'a [HubAwaitingEntry]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub collab_id: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lane_id: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assigned_to: Option<&'a str>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -658,13 +676,13 @@ pub struct ReplyRequest<'a> {
     pub turns: Option<&'a [HubAwaitingEntry]>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CreateThreadResponse {
     pub thread: ThreadMeta,
     pub message_id: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CloseThreadResponse {
     pub thread: ThreadMeta,
 }
@@ -748,4 +766,122 @@ pub fn pubkey_from_hub_string(s: &str) -> Option<DevicePubKey> {
     let mut arr = [0u8; 32];
     arr.copy_from_slice(&bytes);
     Some(DevicePubKey(arr))
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CollabLane {
+    pub id: String,
+    pub name: String,
+    pub position: i64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CollabRosterEntry {
+    #[serde(default)]
+    pub user_id: String,
+    pub agent_id: String,
+    pub address: String,
+    #[serde(default)]
+    pub transport: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CollabSteerer {
+    pub user_id: String,
+    pub handle: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CollabLearning {
+    pub id: String,
+    pub at: String,
+    #[serde(default)]
+    pub from_agent: Option<String>,
+    #[serde(default)]
+    pub from_agent_id: Option<String>,
+    #[serde(default)]
+    pub notes: Option<String>,
+    #[serde(default)]
+    pub sealed: Option<bool>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Collab {
+    pub id: String,
+    pub org_id: String,
+    pub name: String,
+    pub created_by: String,
+    pub created_at: String,
+    #[serde(default)]
+    pub updated_at: String,
+    #[serde(default)]
+    pub schema_version: i64,
+    pub encryption_mode: String,
+    #[serde(default)]
+    pub instructions: Option<String>,
+    #[serde(default)]
+    pub lists: Vec<CollabLane>,
+    #[serde(default)]
+    pub roster: Vec<CollabRosterEntry>,
+    #[serde(default)]
+    pub memory_thread_id: String,
+    #[serde(default)]
+    pub downgrade_point: Option<serde_json::Value>,
+    #[serde(default)]
+    pub card_count: u64,
+    #[serde(default)]
+    pub steerers: Vec<CollabSteerer>,
+    #[serde(default)]
+    pub cards: Vec<ThreadMeta>,
+    #[serde(default)]
+    pub learnings: Vec<CollabLearning>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ListCollabsResponse {
+    pub collabs: Vec<Collab>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct CollabResponse {
+    pub collab: Collab,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct CreateCollabRequest<'a> {
+    pub name: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub steerer_handles: Option<&'a [String]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub roster_addresses: Option<&'a [String]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instructions: Option<&'a str>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct SetLaneRequest<'a> {
+    pub thread_id: &'a str,
+    pub lane_id: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub before_thread_id: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub after_thread_id: Option<&'a str>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct AddLearningRequest<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from_agent: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from_agent_id: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub envelope: Option<&'a Envelope>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct UpdateInstructionsRequest<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instructions: Option<&'a str>,
 }

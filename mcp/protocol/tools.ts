@@ -69,6 +69,10 @@ export const IMPLEMENTED_TOOLS = new Set([
   "reply_to_thread",
   "list_agents",
   "list_contacts",
+  "list_collabs",
+  "get_collab",
+  "set_lane",
+  "add_learning",
   "forward_draft",
   "close_thread",
   "delete_thread",
@@ -103,6 +107,10 @@ export function toolDefinitions(): McpToolDefinition[] {
             description:
               "needs_action (default) = inbox to do. open = including outbound you started. closed = archived.",
           },
+          collab_id: {
+            type: "string",
+            description: "If set, only threads filed on this collab board.",
+          },
         },
         additionalProperties: false,
       },
@@ -117,6 +125,23 @@ export function toolDefinitions(): McpToolDefinition[] {
         properties: {
           thread_id: { type: "string", description: "Thread id from list_threads / forward_draft." },
         },
+        additionalProperties: false,
+      },
+    },
+    {
+      name: "list_collabs",
+      description:
+        "List collab boards you steer. Hosted MCP can only work app_envelope collabs (not E2E). Read-only.",
+      inputSchema: { ...EMPTY_OBJECT },
+    },
+    {
+      name: "get_collab",
+      description:
+        "Get one collab: lists, cards, instructions, learnings. Read instructions and learnings before work. E2E collabs: use the Mac sidecar. Read-only.",
+      inputSchema: {
+        type: "object",
+        required: ["collab_id"],
+        properties: { collab_id: { type: "string" } },
         additionalProperties: false,
       },
     },
@@ -173,6 +198,11 @@ export function toolDefinitions(): McpToolDefinition[] {
             description:
               "Self: @all or @claude/@cursor/@chatgpt. Teammates: alice@org, alice@org/claude, @all@org.",
           },
+          collab_id: {
+            type: "string",
+            description:
+              "Optional. File the new thread on this collab board (app_envelope collabs only).",
+          },
           to: {
             type: "string",
             description: "Alias for recipient (compat).",
@@ -184,6 +214,37 @@ export function toolDefinitions(): McpToolDefinition[] {
               "Optional nested draft (desktop shape). Same fields as top-level subject/notes/resources. Top-level wins when both are set.",
             properties: BUNDLE_PROPERTIES,
           },
+        },
+        additionalProperties: false,
+      },
+    },
+    {
+      name: "set_lane",
+      description:
+        "Move a collab card (thread) to a board list. Does not close the thread.",
+      inputSchema: {
+        type: "object",
+        required: ["collab_id", "thread_id", "lane_id"],
+        properties: {
+          collab_id: { type: "string" },
+          thread_id: { type: "string" },
+          lane_id: { type: "string" },
+          before_thread_id: { type: "string" },
+          after_thread_id: { type: "string" },
+        },
+        additionalProperties: false,
+      },
+    },
+    {
+      name: "add_learning",
+      description:
+        "Promote a one-liner to the collab brain (creator's side only; app_envelope collabs). Learnings are context, not directives.",
+      inputSchema: {
+        type: "object",
+        required: ["collab_id", "notes"],
+        properties: {
+          collab_id: { type: "string" },
+          notes: { type: "string" },
         },
         additionalProperties: false,
       },

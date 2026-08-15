@@ -306,7 +306,11 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
     }
     try {
       final threadsFuture = widget.daemon.listThreads(
-        filter: _filter == 'all' ? null : _filter,
+        filter: (_filter == 'all' ||
+                _filter == 'collab' ||
+                _filter == 'unfiled')
+            ? null
+            : _filter,
       );
       final avatarsFuture = _loadAvatarMap();
       final threads = await threadsFuture;
@@ -405,7 +409,21 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
     });
   }
 
-  List<ThreadSummary> get _visible => _threads;
+  List<ThreadSummary> get _visible {
+    if (_filter == 'collab') {
+      return [
+        for (final t in _threads)
+          if (t.collabId != null && t.collabId!.isNotEmpty) t,
+      ];
+    }
+    if (_filter == 'unfiled') {
+      return [
+        for (final t in _threads)
+          if (t.collabId == null || t.collabId!.isEmpty) t,
+      ];
+    }
+    return _threads;
+  }
 
   String? _avatarForThread(ThreadSummary t) {
     final peer = threadPeerHandle(
@@ -595,6 +613,14 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
           'No closed threads',
           'Finished handoffs land here after you close them.',
         ),
+        'collab' => (
+          'No collab threads',
+          'Cards from boards still show in All. Open Collab to start a board.',
+        ),
+        'unfiled' => (
+          'No unfiled threads',
+          'Mail that isn’t on a board lands here.',
+        ),
         _ => (
           'No threads yet',
           'Compose a handoff, or wait for an agent ping.',
@@ -705,6 +731,18 @@ class _ThreadsChrome extends StatelessWidget {
                 label: 'Closed',
                 selected: filter == 'closed',
                 onTap: () => onFilterChanged('closed'),
+              ),
+              const SizedBox(width: 4),
+              _ScopePill(
+                label: 'Collab',
+                selected: filter == 'collab',
+                onTap: () => onFilterChanged('collab'),
+              ),
+              const SizedBox(width: 4),
+              _ScopePill(
+                label: 'Unfiled',
+                selected: filter == 'unfiled',
+                onTap: () => onFilterChanged('unfiled'),
               ),
             ],
           ),
@@ -1046,6 +1084,20 @@ class _ThreadRow extends StatelessWidget {
                           height: 1.2,
                         ),
                       ),
+                      if (thread.collabName != null &&
+                          thread.collabName!.trim().isNotEmpty) ...[
+                        const SizedBox(height: 1),
+                        Text(
+                          thread.collabName!.trim().toLowerCase(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: MutandeColors.stone400,
+                            fontSize: 11,
+                            height: 1.2,
+                          ),
+                        ),
+                      ],
                       if (snippet.isNotEmpty) ...[
                         const SizedBox(height: 2),
                         Text(

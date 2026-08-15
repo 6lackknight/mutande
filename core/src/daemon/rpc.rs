@@ -231,6 +231,14 @@ async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Resu
                 .and_then(|v| serde_json::from_value(v.clone()).ok());
             let agent_slug = optional_str(&params, "agent_slug");
             let threads = state.list_threads(filter, agent_slug.as_deref()).await?;
+            let threads = if let Some(cid) = optional_str(&params, "collab_id") {
+                threads
+                    .into_iter()
+                    .filter(|t| t.collab_id.as_deref() == Some(cid.as_str()))
+                    .collect()
+            } else {
+                threads
+            };
             Ok(serde_json::to_value(serde_json::json!({ "threads": threads }))?)
         }
         "get_thread" => {
@@ -240,6 +248,86 @@ async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Resu
                 .get_thread(&thread_id, agent_slug.as_deref())
                 .await?;
             Ok(serde_json::to_value(detail)?)
+        }
+        "list_collabs" => {
+            let collabs = state.list_collabs().await?;
+            Ok(serde_json::to_value(serde_json::json!({ "collabs": collabs }))?)
+        }
+        "get_collab" => {
+            let collab_id = param_str(&params, "collab_id")?;
+            let collab = state.get_collab(&collab_id).await?;
+            Ok(serde_json::to_value(serde_json::json!({ "collab": collab }))?)
+        }
+        "create_collab" => {
+            let name = param_str(&params, "name")?;
+            let steerer_handles = optional_str_vec(&params, "steerer_handles");
+            let roster_addresses = optional_str_vec(&params, "roster_addresses");
+            let instructions = optional_str(&params, "instructions");
+            let collab = state
+                .create_collab(
+                    &name,
+                    &steerer_handles,
+                    &roster_addresses,
+                    instructions.as_deref(),
+                )
+                .await?;
+            Ok(serde_json::to_value(serde_json::json!({ "collab": collab }))?)
+        }
+        "set_lane" => {
+            let collab_id = param_str(&params, "collab_id")?;
+            let thread_id = param_str(&params, "thread_id")?;
+            let lane_id = param_str(&params, "lane_id")?;
+            let before_thread_id = optional_str(&params, "before_thread_id");
+            let after_thread_id = optional_str(&params, "after_thread_id");
+            let thread = state
+                .set_lane(
+                    &collab_id,
+                    &thread_id,
+                    &lane_id,
+                    before_thread_id.as_deref(),
+                    after_thread_id.as_deref(),
+                )
+                .await?;
+            Ok(serde_json::to_value(serde_json::json!({ "thread": thread }))?)
+        }
+        "add_learning" => {
+            let collab_id = param_str(&params, "collab_id")?;
+            let notes = param_str(&params, "notes")?;
+            let from_agent = optional_str(&params, "from_agent")
+                .or_else(|| optional_str(&params, "agent_slug"));
+            let result = state
+                .add_learning(&collab_id, &notes, from_agent.as_deref())
+                .await?;
+            Ok(result)
+        }
+        "update_collab_instructions" => {
+            let collab_id = param_str(&params, "collab_id")?;
+            let instructions = param_str(&params, "instructions")?;
+            let collab = state
+                .update_collab_instructions(&collab_id, &instructions)
+                .await?;
+            Ok(serde_json::to_value(serde_json::json!({ "collab": collab }))?)
+        }
+        "create_collab_card" => {
+            let collab_id = param_str(&params, "collab_id")?;
+            let subject = optional_str(&params, "subject")
+                .or_else(|| optional_str(&params, "title"))
+                .ok_or_else(|| anyhow::anyhow!("missing param: subject"))?;
+            let notes = optional_str(&params, "notes");
+            let lane_id = optional_str(&params, "lane_id");
+            let assigned_to = optional_str(&params, "assigned_to");
+            let agent_slug = optional_str(&params, "agent_slug");
+            let thread_id = state
+                .create_collab_card(
+                    &collab_id,
+                    &subject,
+                    notes.as_deref(),
+                    lane_id.as_deref(),
+                    assigned_to.as_deref(),
+                    agent_slug.as_deref(),
+                )
+                .await?;
+            Ok(serde_json::json!({ "thread_id": thread_id }))
         }
         "get_draft" => {
             let _ = state.sync_draft_from_hub().await;
@@ -261,11 +349,12 @@ async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Resu
         "forward_draft" => {
             let recipient = param_str(&params, "recipient")?;
             let agent_slug = optional_str(&params, "agent_slug");
+            let collab_id = optional_str(&params, "collab_id");
             if let Some(notes) = optional_str(&params, "notes") {
                 state.set_draft_notes(&notes);
             }
             let result = state
-                .forward_draft(&recipient, agent_slug.as_deref())
+                .forward_draft(&recipient, agent_slug.as_deref(), collab_id.as_deref())
                 .await?;
             let thread_id = result
                 .thread_ids
@@ -589,6 +678,21 @@ fn optional_str(params: &Value, key: &str) -> Option<String> {
         .map(str::to_string)
 }
 
+fn optional_str_vec(params: &Value, key: &str) -> Vec<String> {
+    params
+        .get(key)
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -607,6 +711,24 @@ mod tests {
         assert!(resp.error.is_none());
         let result = resp.result.unwrap();
         assert_eq!(result["ok"], true);
+    }
+
+    #[tokio::test]
+    async fn list_collabs_requires_login() {
+        let state = Arc::new(DaemonState::new_in_memory_for_test().unwrap());
+        let req = JsonRpcRequest {
+            jsonrpc: Some("2.0".into()),
+            id: Some(serde_json::json!(1)),
+            method: "list_collabs".into(),
+            params: serde_json::json!({}),
+        };
+        let resp = handle_request(&state, req).await;
+        let err = resp.error.expect("unsigned list_collabs should fail");
+        assert!(
+            err.message.contains("signed in") || err.message.contains("auth_login"),
+            "got: {}",
+            err.message
+        );
     }
 
     #[tokio::test]
