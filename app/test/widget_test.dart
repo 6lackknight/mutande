@@ -243,12 +243,14 @@ void main() {
     );
     for (var i = 0; i < 40; i++) {
       await tester.pump(const Duration(milliseconds: 100));
-      if (find.text('Courier still starting').evaluate().isNotEmpty) break;
+      if (find.text('Hub is taking too long').evaluate().isNotEmpty) break;
     }
 
-    expect(find.text('Courier still starting'), findsOneWidget);
-    expect(find.textContaining('courier may still be starting'), findsOneWidget);
+    expect(find.text('Hub is taking too long'), findsOneWidget);
+    expect(find.text('Sign in again'), findsNothing);
+    expect(find.text('Sign in'), findsOneWidget);
     expect(find.text('Retry'), findsOneWidget);
+    expect(find.text('Restart courier'), findsNothing);
     expect(find.text('Threads'), findsNothing);
   });
 
@@ -536,8 +538,7 @@ void main() {
     );
     await tester.pump(); // splash dismisses after bootstrap post-frame
 
-    expect(find.text('mutande'), findsOneWidget);
-    expect(find.text('Sign in'), findsWidgets);
+    expect(find.text('Step 1 of 4 — Sign in'), findsOneWidget);
     expect(find.text('Sign in with Auth0'), findsOneWidget);
   });
 
@@ -567,7 +568,7 @@ void main() {
     );
     await tester.pump(); // post-frame org re-check
 
-    expect(find.text('Set up your team'), findsOneWidget);
+    expect(find.text('Pick the org half of your address.'), findsOneWidget);
     expect(find.text('Create a team'), findsOneWidget);
     expect(find.text('I have an invite'), findsOneWidget);
   });
@@ -711,9 +712,156 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Courier still starting'), findsOneWidget);
+    expect(find.text('Hub is taking too long'), findsOneWidget);
+    expect(find.text('Courier still starting'), findsNothing);
     expect(find.text('Waiting for Keychain'), findsNothing);
+    expect(find.text('Sign in'), findsOneWidget);
     expect(find.text('Retry'), findsOneWidget);
+    expect(find.text('Restart courier'), findsNothing);
+  });
+
+  testWidgets('hub 401 shows sign in not courier starting', (
+    WidgetTester tester,
+  ) async {
+    final daemon = _mockDaemon((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      final method = body['method'] as String?;
+      if (method == 'health') {
+        return _rpcOk(body['id'], {
+          'ok': true,
+          'service': 'mutande-core',
+          'version': '0.0.0',
+        });
+      }
+      throw Exception('GET /v1/me for status: hub error 401 Unauthorized');
+    });
+
+    await tester.pumpWidget(
+      MutandeApp(
+        config: const AppConfig(hubUrl: 'http://localhost:8000'),
+        daemon: daemon,
+        welcomeDuration: Duration.zero,
+        startupRetryAttempts: 0,
+        onRestartCourier: () async => null,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Sign in again'), findsOneWidget);
+    expect(find.text('Courier still starting'), findsNothing);
+    expect(find.text('Sign in'), findsOneWidget);
+    expect(find.text('Retry'), findsOneWidget);
+    expect(find.text('Restart courier'), findsNothing);
+    expect(find.text('Create a team'), findsNothing);
+  });
+
+  testWidgets('error screen Sign in recovers a hub 401', (
+    WidgetTester tester,
+  ) async {
+    var signedIn = false;
+    final daemon = _mockDaemon((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      final method = body['method'] as String?;
+      if (method == 'health') {
+        return _rpcOk(body['id'], {
+          'ok': true,
+          'service': 'mutande-core',
+          'version': '0.0.0',
+        });
+      }
+      if (method == 'auth_login') {
+        signedIn = true;
+        return _rpcOk(body['id'], {
+          'configured': true,
+          'signed_in': true,
+          'needs_onboarding': false,
+          'handle': 'alice@acme',
+          'hub_url': 'http://localhost:8000',
+        });
+      }
+      if (!signedIn) {
+        throw Exception('GET /v1/me for status: hub error 401 Unauthorized');
+      }
+      if (method == 'list_threads') {
+        return _rpcOk(body['id'], {'threads': []});
+      }
+      return _rpcOk(body['id'], {
+        'configured': true,
+        'signed_in': true,
+        'needs_onboarding': false,
+        'handle': 'alice@acme',
+        'hub_url': 'http://localhost:8000',
+      });
+    });
+
+    await tester.pumpWidget(
+      MutandeApp(
+        config: const AppConfig(hubUrl: 'http://localhost:8000'),
+        daemon: daemon,
+        firstRunStore: FirstRunStore.memory(
+          connectComplete: true,
+          pingComplete: true,
+          notificationsComplete: true,
+        ),
+        hostLinkStore: HostLinkStore.memory(),
+        welcomeDuration: Duration.zero,
+        startupRetryAttempts: 0,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Sign in again'), findsOneWidget);
+
+    await tester.tap(find.text('Sign in'));
+    for (var i = 0; i < 40; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+      if (find.text('Threads').evaluate().isNotEmpty) break;
+    }
+
+    expect(find.text('Sign in again'), findsNothing);
+    expect(find.text('Threads'), findsWidgets);
+  });
+
+  testWidgets('error screen Sign in failure shows banner and stays', (
+    WidgetTester tester,
+  ) async {
+    final daemon = _mockDaemon((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      final method = body['method'] as String?;
+      if (method == 'health') {
+        return _rpcOk(body['id'], {
+          'ok': true,
+          'service': 'mutande-core',
+          'version': '0.0.0',
+        });
+      }
+      if (method == 'auth_login') {
+        throw Exception('hub error 401: expired');
+      }
+      throw Exception('GET /v1/me for status: hub error 401 Unauthorized');
+    });
+
+    await tester.pumpWidget(
+      MutandeApp(
+        config: const AppConfig(hubUrl: 'http://localhost:8000'),
+        daemon: daemon,
+        welcomeDuration: Duration.zero,
+        startupRetryAttempts: 0,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Sign in'));
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+      if (find.textContaining('Sign-in was rejected').evaluate().isNotEmpty) {
+        break;
+      }
+    }
+
+    expect(find.textContaining('Sign-in was rejected'), findsOneWidget);
+    expect(find.text('Sign in again'), findsOneWidget);
+    expect(find.text('Sign in'), findsOneWidget);
+    expect(find.text('Create a team'), findsNothing);
   });
 
 test('validateHandle and validateHubUrl', () {
@@ -785,6 +933,33 @@ test('validateHandle and validateHubUrl', () {
     expect(
       friendlyDaemonError('hub error 401: expired'),
       allOf(contains('Sign-in'), isNot(contains('local mutande daemon'))),
+    );
+  });
+
+  test('friendlyDaemonError 404 is not a sign-in prompt', () {
+    expect(
+      friendlyDaemonError(
+        'hub error 404 Not Found: {"error":"not_found"}',
+        what: 'Create collab',
+      ),
+      allOf(
+        contains("doesn't support collab"),
+        isNot(contains('signed in')),
+      ),
+    );
+    expect(
+      friendlyDaemonError(
+        'hub error 404 Not Found: {"error":"not_found","message":"User not found"}',
+        what: 'Create collab',
+      ),
+      allOf(
+        contains('Retry'),
+        isNot(contains('signed in')),
+      ),
+    );
+    expect(
+      friendlyDaemonError('method not found: create_collab', what: 'Create collab'),
+      contains("doesn't support collab"),
     );
   });
 
@@ -1221,7 +1396,8 @@ test('validateHandle and validateHubUrl', () {
     await _openNetworkPeople(tester);
     await tester.pumpAndSettle();
 
-    expect(find.text('Your handle'), findsOneWidget);
+    expect(find.text('you'), findsOneWidget);
+    expect(find.text('Alice'), findsOneWidget);
     expect(find.text('alice@acme'), findsWidgets);
     expect(find.text('@all@acme'), findsOneWidget);
     expect(find.text('Broadcast to each member’s default agent'), findsOneWidget);
@@ -1242,6 +1418,12 @@ test('validateHandle and validateHubUrl', () {
         return _rpcOk(body['id'], {
           'contacts': [
             {'handle': '@all@acme', 'pubkey': null, 'devices': []},
+            {
+              'handle': 'alice@acme',
+              'kind': 'org',
+              'display_name': 'Alice Acme',
+              'devices': [],
+            },
             {
               'handle': 'bob@acme',
               'kind': 'org',
@@ -1274,6 +1456,8 @@ test('validateHandle and validateHubUrl', () {
     await _openNetworkPeople(tester);
     await tester.pumpAndSettle();
 
+    expect(find.text('Alice Acme'), findsOneWidget);
+    expect(find.text('you'), findsOneWidget);
     expect(find.text('Bob Builder'), findsOneWidget);
     expect(find.text('bob@acme'), findsOneWidget);
     expect(find.text('You’re the only member of acme'), findsNothing);
@@ -1318,12 +1502,20 @@ test('validateHandle and validateHubUrl', () {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Your team'), findsWidgets);
+    expect(find.text('Step 2 of 4 — Your team'), findsOneWidget);
     await tester.tap(find.text('Continue'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Connect an AI host'), findsOneWidget);
+    expect(find.text('Step 3 of 4 — Connect a host'), findsOneWidget);
+    expect(find.text('Pick a host to connect.'), findsOneWidget);
+    // The verb rides on the row that still needs it.
+    expect(find.text('Connect'), findsOneWidget);
     expect(find.text('Installed'), findsOneWidget);
+    // Undetected hosts collapse to one line instead of dead tiles.
+    expect(
+      find.textContaining('installed on this Mac'),
+      findsOneWidget,
+    );
     expect(find.text('Threads'), findsNothing);
   });
 
@@ -1356,7 +1548,7 @@ test('validateHandle and validateHubUrl', () {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Send your first ping'), findsOneWidget);
+    expect(find.text('Paste this into your connected host.'), findsOneWidget);
     expect(find.text(FirstRunPingWizard.prompt), findsOneWidget);
     expect(find.text('Skip for now'), findsOneWidget);
   });
@@ -1389,6 +1581,8 @@ test('validateHandle and validateHubUrl', () {
         welcomeDuration: Duration.zero,
       ),
     );
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Skip for now'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Skip for now'));
     await tester.pumpAndSettle();
@@ -1471,6 +1665,7 @@ test('validateHandle and validateHubUrl', () {
     await tester.tap(find.text('Collab').first);
     await tester.pumpAndSettle();
 
+    expect(find.text('Hub is taking too long'), findsNothing);
     expect(find.text('Courier still starting'), findsNothing);
     expect(find.text("Couldn't load collabs"), findsOneWidget);
     expect(find.text('Collab'), findsWidgets);
@@ -1568,7 +1763,7 @@ test('validateHandle and validateHubUrl', () {
     await _openNetworkPeople(tester);
     expect(find.text('People'), findsWidgets);
     expect(find.text('Agents'), findsWidgets);
-    expect(find.text('Your handle'), findsOneWidget);
+    expect(find.text('you'), findsOneWidget);
   });
 
   test('collab encryption copy names the cause, never insecure', () {

@@ -7,7 +7,9 @@ import '../analytics_events.dart';
 import '../services/analytics.dart';
 import '../services/daemon_client.dart';
 import '../services/host_link_store.dart';
+import '../theme/mutande_macos_theme.dart';
 import 'ai_host_icon.dart';
+import 'onboarding_chrome.dart';
 import 'thinking_orb.dart';
 
 /// Outcome of the 2-step MCP → skill connect flow.
@@ -44,8 +46,7 @@ Future<ConnectHostFlowResult?> showConnectHostFlow({
   Rect? morphOrigin,
   bool fullScreen = false,
 }) {
-  final reduceMotion =
-      MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+  final reduceMotion = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
   final dialog = _ConnectHostFlowDialog(
     daemon: daemon,
     hostLinkStore: hostLinkStore,
@@ -291,7 +292,8 @@ class _ConnectHostFlowDialogState extends State<_ConnectHostFlowDialog>
     if (status == SkillLinkStatus.skipped ||
         status == SkillLinkStatus.installed ||
         status == SkillLinkStatus.needsSetup) {
-      final prev = (await widget.hostLinkStore.load())[widget.host.toLowerCase()];
+      final prev = (await widget.hostLinkStore
+          .load())[widget.host.toLowerCase()];
       await widget.hostLinkStore.recordSkill(
         host: widget.host,
         status: status,
@@ -322,7 +324,10 @@ class _ConnectHostFlowDialogState extends State<_ConnectHostFlowDialog>
     await Clipboard.setData(ClipboardData(text: path));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Copied'), duration: Duration(milliseconds: 800)),
+      const SnackBar(
+        content: Text('Copied'),
+        duration: Duration(milliseconds: 800),
+      ),
     );
   }
 
@@ -331,133 +336,137 @@ class _ConnectHostFlowDialogState extends State<_ConnectHostFlowDialog>
       await Process.run('open', ['-R', path]);
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not reveal $path')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not reveal $path')));
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final label = AiHostIcon.displayName(widget.host);
-    final showSkillActions = _step == _Step.skill &&
+    final showSkillActions =
+        _step == _Step.skill &&
         !_busy &&
         (_skillStatus == SkillLinkStatus.needsSetup ||
             (_skill?.isManual ?? false));
 
-    final content = SingleChildScrollView(
-      padding: EdgeInsets.fromLTRB(
-        widget.embedded ? 32 : 28,
-        widget.embedded ? 24 : 28,
-        widget.embedded ? 32 : 28,
-        widget.embedded ? 32 : 24,
+    final body = AnimatedSwitcher(
+      duration: Duration(milliseconds: _reduceMotion ? 0 : 220),
+      child: KeyedSubtree(
+        key: ValueKey('${_step}_$_busy$_error$_skillStatus'),
+        child: _body(label, showSkillActions),
       ),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: widget.embedded ? 720 : 420,
-          maxHeight: widget.embedded ? double.infinity : 560,
+    );
+
+    final letterhead = _ConnectLetterhead(
+      host: widget.host,
+      label: label,
+      step: _step,
+      useIconHero: widget.useIconHero,
+    );
+
+    if (widget.embedded) {
+      return ColoredBox(
+        color: MutandeColors.stone50,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                OnboardingSpace.xl,
+                OnboardingSpace.xl + OnboardingSpace.titlebar,
+                OnboardingSpace.xl,
+                OnboardingSpace.lg,
+              ),
+              child: letterhead,
+            ),
+            const Divider(
+              height: 1,
+              thickness: 1,
+              color: MutandeColors.stone200,
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(
+                  OnboardingSpace.xl,
+                  OnboardingSpace.xxl,
+                  OnboardingSpace.xl,
+                  OnboardingSpace.xl,
+                ),
+                child: Align(
+                  alignment: Alignment.topLeft,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 420),
+                    child: body,
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
+      );
+    }
+
+    return Dialog(
+      backgroundColor: MutandeColors.stone50,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420, maxHeight: 560),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Center(
-              child: widget.useIconHero
-                  ? Hero(
-                      tag: connectHostIconHeroTag(widget.host),
-                      child: Material(
-                        type: MaterialType.transparency,
-                        child: AiHostIcon(widget.host, size: 48),
-                      ),
-                    )
-                  : AiHostIcon(widget.host, size: 48),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Connect $label',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w700,
-                color: const Color(0xFF292524),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                OnboardingSpace.lg,
+                OnboardingSpace.lg,
+                OnboardingSpace.lg,
+                OnboardingSpace.md,
               ),
+              child: letterhead,
             ),
-            const SizedBox(height: 16),
-            _StepRail(
-              step: _step,
-              mcpDone: _step == _Step.skill ||
-                  _step == _Step.done ||
-                  (_step == _Step.mcp && !_busy && _error == null),
-              skillDone: _skillStatus == SkillLinkStatus.installed ||
-                  _step == _Step.done,
+            const Divider(
+              height: 1,
+              thickness: 1,
+              color: MutandeColors.stone200,
             ),
-            const SizedBox(height: 24),
-            AnimatedSwitcher(
-              duration: Duration(milliseconds: _reduceMotion ? 0 : 220),
-              child: KeyedSubtree(
-                key: ValueKey('${_step}_$_busy$_error$_skillStatus'),
-                child: _body(theme, label, showSkillActions),
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(
+                  OnboardingSpace.lg,
+                  OnboardingSpace.lg,
+                  OnboardingSpace.lg,
+                  OnboardingSpace.lg,
+                ),
+                child: body,
               ),
             ),
           ],
         ),
       ),
     );
-
-    if (widget.embedded) {
-      return content;
-    }
-
-    return Dialog(
-      backgroundColor: const Color(0xFFFAFAF9),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 420, maxHeight: 560),
-        child: content,
-      ),
-    );
   }
 
-  Widget _body(ThemeData theme, String label, bool showSkillActions) {
+  Widget _body(String label, bool showSkillActions) {
     if (_step == _Step.done) {
-      return Column(
-        key: const ValueKey('done'),
-        children: [
-          Icon(Icons.check_circle_outline, size: 40, color: const Color(0xFF166534)),
-          const SizedBox(height: 12),
-          Text(
-            'Relay linked',
-            textAlign: TextAlign.center,
-            style: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w600,
-              color: const Color(0xFF292524),
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            '$label will check mutande mail on new chats.',
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: const Color(0xFF78716C),
-            ),
-          ),
-        ],
+      return OnboardingHeading(
+        variant: OnboardingHeadingVariant.display,
+        title: '$label will check mutande mail on new chats.',
       );
     }
 
     if (_busy) {
       return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const MutandeOrb.standard(semanticLabel: 'Working…'),
-          const SizedBox(height: 16),
-          Text(
-            _step == _Step.mcp
-                ? 'Linking the relay…'
-                : 'Placing the collaboration skill…',
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: const Color(0xFF57534E),
-            ),
+          const SizedBox(height: OnboardingSpace.lg),
+          OnboardingHeading(
+            variant: OnboardingHeadingVariant.display,
+            title: _step == _Step.mcp
+                ? 'Writing the relay…'
+                : 'Placing the skill…',
           ),
         ],
       );
@@ -465,259 +474,253 @@ class _ConnectHostFlowDialogState extends State<_ConnectHostFlowDialog>
 
     if (_step == _Step.mcp && _error != null) {
       return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            _error!,
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: const Color(0xFF991B1B),
-            ),
+          const OnboardingHeading(
+            variant: OnboardingHeadingVariant.display,
+            title: 'The relay didn’t write.',
           ),
+          const SizedBox(height: OnboardingSpace.md),
+          OnboardingErrorBanner(message: _error!),
           if (_mcpHint != null) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: OnboardingSpace.sm),
             Text(
               _mcpHint!,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: const Color(0xFF78716C),
+              style: const TextStyle(
+                color: MutandeColors.stone500,
+                fontSize: 13,
+                height: 1.4,
               ),
             ),
           ],
-          const SizedBox(height: 16),
-          FilledButton(
-            onPressed: _runMcp,
-            child: const Text('Retry'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
+          OnboardingActions(
+            primary: FilledButton(
+              onPressed: _runMcp,
+              child: const Text('Retry'),
+            ),
+            secondary: TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
           ),
         ],
       );
     }
 
     if (_step == _Step.mcp) {
-      return Column(
-        children: [
-          _SoftCheck(controller: _checkCtrl, reduceMotion: _reduceMotion),
-          const SizedBox(height: 12),
-          Text(
-            'MCP linked.',
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-              color: const Color(0xFF166534),
-            ),
-          ),
-          if (_mcpHint != null) ...[
-            const SizedBox(height: 8),
-            Text(
-              _mcpHint!,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: const Color(0xFFA8A29E),
-              ),
-            ),
-          ],
-        ],
+      return OnboardingHeading(
+        variant: OnboardingHeadingVariant.display,
+        title: 'The relay is written.',
+        subtitle: _mcpHint,
       );
     }
 
-    // Skill step
     if (_skillStatus == SkillLinkStatus.installed) {
+      final zip = _skill?.zipPath;
       return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SoftCheck(controller: _checkCtrl, reduceMotion: _reduceMotion),
-          const SizedBox(height: 12),
-          Text(
-            'Skill ready.',
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-              color: const Color(0xFF166534),
-            ),
+          OnboardingHeading(
+            variant: OnboardingHeadingVariant.display,
+            title: 'The skill is in place.',
+            subtitle: _skill?.hint ??
+                'This host will check mutande mail when you start a chat. '
+                    'If you’re caught up, it stays quiet.',
           ),
-          const SizedBox(height: 8),
-          Text(
-            'This host will check mutande mail when you start a chat. '
-            'If you’re caught up, it stays quiet.',
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: const Color(0xFF78716C),
+          OnboardingActions(
+            primary: FilledButton(
+              onPressed: () => _finish(SkillLinkStatus.installed),
+              child: const Text('Continue'),
             ),
-          ),
-          const SizedBox(height: 20),
-          FilledButton(
-            onPressed: () => _finish(SkillLinkStatus.installed),
-            child: const Text('Continue'),
+            secondary: zip == null
+                ? null
+                : TextButton(
+                    onPressed: () => _reveal(zip),
+                    child: const Text('Reveal ZIP'),
+                  ),
+            tertiary: zip == null
+                ? null
+                : TextButton(
+                    onPressed: () => _copyPath(zip),
+                    child: const Text('Copy ZIP path'),
+                  ),
           ),
         ],
       );
     }
 
-    // needs setup / manual
     final zip = _skill?.zipPath;
     final path = _skill?.path;
-    final hint = _skill?.hint ??
+    final hint =
+        _skill?.hint ??
         'Couldn’t place the skill automatically. Nothing’s broken — Retry or place it yourself.';
+    final copyStyle = Theme.of(context).textTheme.bodyLarge?.copyWith(
+      color: MutandeColors.stone600,
+      height: 1.45,
+      fontSize: 15,
+    );
+
+    final fileLinks = <Widget>[
+      if (zip != null) ...[
+        _skillLink(label: 'Reveal ZIP', onPressed: () => _reveal(zip)),
+        _skillLink(label: 'Copy ZIP path', onPressed: () => _copyPath(zip)),
+      ] else if (path != null) ...[
+        _skillLink(label: 'Copy path', onPressed: () => _copyPath(path)),
+        _skillLink(
+          label: 'Reveal in Finder',
+          onPressed: () => _reveal(path.split(';').first.trim()),
+        ),
+      ],
+    ];
+    final flowLinks = <Widget>[
+      _skillLink(label: 'Retry install', onPressed: _runSkill),
+      _skillLink(
+        label: 'Skip for now',
+        onPressed: () => _finish(SkillLinkStatus.skipped),
+      ),
+    ];
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        const OnboardingHeading(
+          variant: OnboardingHeadingVariant.display,
+          title: 'Place the skill yourself.',
+        ),
+        const SizedBox(height: OnboardingSpace.sm),
         Text(
           'This skill teaches the host to check mutande mail when you start a chat. '
           'If you’re caught up, it stays quiet.',
-          textAlign: TextAlign.center,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: const Color(0xFF57534E),
-          ),
+          style: copyStyle,
         ),
-        const SizedBox(height: 12),
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: const Color(0xFFF5F5F4),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Text(
-            hint,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: const Color(0xFF44403C),
-              height: 1.4,
+        const SizedBox(height: OnboardingSpace.sm),
+        Text(hint, style: copyStyle),
+        OnboardingActions(
+          topSpacing: OnboardingSpace.xxl,
+          primary: FilledButton(
+            onPressed: () => _finish(SkillLinkStatus.needsSetup),
+            child: Text(
+              showSkillActions && (_skill?.isManual ?? false)
+                  ? 'I’ve added the skill'
+                  : 'Continue',
             ),
           ),
         ),
-        if (zip != null || path != null) ...[
-          const SizedBox(height: 12),
-          if (zip != null)
-            OutlinedButton.icon(
-              onPressed: () => _reveal(zip),
-              icon: const Icon(Icons.folder_open, size: 18),
-              label: const Text('Reveal ZIP'),
-            ),
-          if (zip != null) ...[
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: () => _copyPath(zip),
-              icon: const Icon(Icons.copy, size: 18),
-              label: const Text('Copy ZIP path'),
-            ),
+        const SizedBox(height: OnboardingSpace.lg),
+        _SkillLinkRows(
+          rows: [
+            if (fileLinks.isNotEmpty) fileLinks,
+            flowLinks,
           ],
-          if (path != null && zip == null) ...[
-            OutlinedButton.icon(
-              onPressed: () => _copyPath(path),
-              icon: const Icon(Icons.copy, size: 18),
-              label: const Text('Copy path'),
-            ),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: () => _reveal(path.split(';').first.trim()),
-              icon: const Icon(Icons.folder_open, size: 18),
-              label: const Text('Reveal in Finder'),
-            ),
-          ],
-        ],
-        const SizedBox(height: 12),
-        OutlinedButton(
-          onPressed: _runSkill,
-          child: const Text('Retry install'),
-        ),
-        const SizedBox(height: 8),
-        FilledButton(
-          onPressed: () => _finish(SkillLinkStatus.needsSetup),
-          child: Text(
-            showSkillActions && (_skill?.isManual ?? false)
-                ? 'I’ve added the skill'
-                : 'Continue',
-          ),
-        ),
-        TextButton(
-          onPressed: () => _finish(SkillLinkStatus.skipped),
-          child: const Text('Skip for now'),
         ),
       ],
     );
   }
-}
 
-class _StepRail extends StatelessWidget {
-  const _StepRail({
-    required this.step,
-    required this.mcpDone,
-    required this.skillDone,
-  });
-
-  final _Step step;
-  final bool mcpDone;
-  final bool skillDone;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        _StepChip(
-          label: '1 MCP',
-          active: step == _Step.mcp,
-          done: mcpDone,
+  Widget _skillLink({
+    required String label,
+    required VoidCallback onPressed,
+  }) {
+    return TextButton(
+      onPressed: onPressed,
+      style: TextButton.styleFrom(
+        foregroundColor: MutandeColors.bronze,
+        disabledForegroundColor: MutandeColors.stone400,
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        minimumSize: const Size(0, 32),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        visualDensity: VisualDensity.compact,
+        textStyle: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+          letterSpacing: -0.1,
         ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: Container(
-            width: 16,
-            height: 1,
-            color: const Color(0xFFD6D3D1),
-          ),
-        ),
-        _StepChip(
-          label: '2 Skill',
-          active: step == _Step.skill || step == _Step.done,
-          done: skillDone,
-        ),
-      ],
+      ).copyWith(
+        overlayColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.pressed)) {
+            return MutandeColors.bronze.withValues(alpha: 0.16);
+          }
+          if (states.contains(WidgetState.hovered) ||
+              states.contains(WidgetState.focused)) {
+            return MutandeColors.bronze.withValues(alpha: 0.08);
+          }
+          return null;
+        }),
+      ),
+      child: Text(label),
     );
   }
 }
 
-class _StepChip extends StatelessWidget {
-  const _StepChip({
+/// Same letterhead grammar as the address rail: a Menlo name, then
+/// `Step N of 2 — {MCP|Skill}`. No green chips — the headline below says done.
+class _ConnectLetterhead extends StatelessWidget {
+  const _ConnectLetterhead({
+    required this.host,
     required this.label,
-    required this.active,
-    required this.done,
+    required this.step,
+    required this.useIconHero,
   });
 
+  final String host;
   final String label;
-  final bool active;
-  final bool done;
+  final _Step step;
+  final bool useIconHero;
 
   @override
   Widget build(BuildContext context) {
-    final color = done
-        ? const Color(0xFF166534)
-        : active
-            ? const Color(0xFF292524)
-            : const Color(0xFFA8A29E);
-    return Row(
+    const iconSize = 28.0;
+    final icon = AiHostIcon(host, size: iconSize);
+    final caption = step == _Step.done
+        ? 'Done'
+        : 'Step ${step == _Step.skill ? 2 : 1} of 2 — '
+            '${step == _Step.skill ? 'Skill' : 'MCP'}';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (done)
-          const Icon(Icons.check, size: 14, color: Color(0xFF166534))
-        else
-          Container(
-            width: 6,
-            height: 6,
-            decoration: BoxDecoration(
-              color: active ? const Color(0xFF292524) : const Color(0xFFD6D3D1),
-              shape: BoxShape.circle,
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            useIconHero
+                ? Hero(
+                    tag: connectHostIconHeroTag(host),
+                    child: Material(
+                      type: MaterialType.transparency,
+                      child: icon,
+                    ),
+                  )
+                : icon,
+            const SizedBox(width: OnboardingSpace.sm),
+            Flexible(
+              child: Text(
+                label.toLowerCase(),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontFamily: 'Menlo',
+                  fontSize: 22,
+                  height: 1.1,
+                  letterSpacing: -0.4,
+                  color: MutandeColors.stone800,
+                ),
+              ),
             ),
-          ),
-        const SizedBox(width: 6),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: active || done ? FontWeight.w600 : FontWeight.w500,
-            color: color,
+          ],
+        ),
+        const SizedBox(height: OnboardingSpace.xs),
+        Padding(
+          // Sit the step under the name, not the mark.
+          padding: const EdgeInsets.only(left: iconSize + OnboardingSpace.sm),
+          child: Text(
+            caption,
+            style: const TextStyle(
+              color: MutandeColors.stone500,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              letterSpacing: 0.4,
+            ),
           ),
         ),
       ],
@@ -725,20 +728,30 @@ class _StepChip extends StatelessWidget {
   }
 }
 
-class _SoftCheck extends StatelessWidget {
-  const _SoftCheck({required this.controller, required this.reduceMotion});
+/// Two even rows of quiet text links — ZIP helpers, then flow controls.
+class _SkillLinkRows extends StatelessWidget {
+  const _SkillLinkRows({required this.rows});
 
-  final AnimationController controller;
-  final bool reduceMotion;
+  final List<List<Widget>> rows;
 
   @override
   Widget build(BuildContext context) {
-    if (reduceMotion) {
-      return const Icon(Icons.check_circle, size: 36, color: Color(0xFF166534));
-    }
-    return ScaleTransition(
-      scale: CurvedAnimation(parent: controller, curve: Curves.easeOutCubic),
-      child: const Icon(Icons.check_circle, size: 36, color: Color(0xFF166534)),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var i = 0; i < rows.length; i++)
+          Padding(
+            padding: EdgeInsets.only(
+              bottom: i == rows.length - 1 ? 0 : OnboardingSpace.xs,
+            ),
+            child: Wrap(
+              spacing: OnboardingSpace.lg,
+              runSpacing: 0,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: rows[i],
+            ),
+          ),
+      ],
     );
   }
 }

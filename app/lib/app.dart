@@ -32,7 +32,7 @@ import 'widgets/home_chrome_pills.dart';
 import 'widgets/home_chrome_strip.dart';
 import 'widgets/search_dialog.dart';
 import 'widgets/thinking_orb.dart';
-import 'widgets/onboarding_stepper.dart';
+import 'widgets/onboarding_chrome.dart';
 import 'widgets/welcome_splash.dart';
 
 /// Back-compat alias for content Material theme.
@@ -223,17 +223,16 @@ class _RootScreenState extends State<RootScreen> {
   bool get _forceOnboardingActive =>
       !_inWidgetTest && kDebugMode && _forceOnboardingFlag;
 
-  bool _notificationsGateDone() {
-    if (_firstRunStore.notificationsComplete) return true;
-    // Grandfather users who finished ping before the notifications step shipped.
-    if (_firstRunStore.pingComplete && !_forceOnboardingActive) return true;
-    return false;
-  }
+  /// Debug replay: hold the flow open on launch even when this Mac is fully
+  /// set up. Cleared once the run finishes or is skipped, so the rest of the
+  /// session can reach home.
+  bool _forceOnboardingPending = false;
 
+  // Notifications are asked during the ping wait, so they never gate the flow.
   bool _needsOnboardingFlow() {
+    if (_forceOnboardingPending) return true;
     final connectDone = _firstRunStore.connectComplete || _hasLinkedHost;
     if (!connectDone) return true;
-    if (!_notificationsGateDone()) return true;
     if (_firstRunStore.connectComplete && !_firstRunStore.pingComplete) {
       return true;
     }
@@ -246,7 +245,6 @@ class _RootScreenState extends State<RootScreen> {
     if (!(_firstRunStore.connectComplete || _hasLinkedHost)) {
       return OnboardingStep.team;
     }
-    if (!_notificationsGateDone()) return OnboardingStep.notifications;
     if (_firstRunStore.connectComplete && !_firstRunStore.pingComplete) {
       return OnboardingStep.ping;
     }
@@ -286,6 +284,7 @@ class _RootScreenState extends State<RootScreen> {
     if (_forceOnboardingActive &&
         widget.firstRunStore == null &&
         widget.seedStatus == null) {
+      _forceOnboardingPending = true;
       unawaited(_firstRunStore.resetForDebug());
     }
     AppActions.sessionReady.value = false;
@@ -353,7 +352,7 @@ class _RootScreenState extends State<RootScreen> {
 
   void _ensureInboxWatch() {
     if (_inboxWatch != null) return;
-    if (widget.seedStatus != null) return; // tests
+    if (widget.seedStatus != null || _inWidgetTest) return;
     _inboxWatch = InboxWatchService(daemon: _daemon, prefs: _notificationPrefs);
     unawaited(_inboxWatch!.start());
   }
@@ -438,6 +437,7 @@ class _RootScreenState extends State<RootScreen> {
         return;
       } catch (e) {
         lastError = e;
+        // Hub 401 / /v1/me / timeout are not sidecar boot — don't wait 15 retries.
         final canRetry =
             bootstrap && attempt < maxAttempts - 1 && isLikelyStartingError(e);
         if (!canRetry) break;
@@ -502,6 +502,45 @@ class _RootScreenState extends State<RootScreen> {
       return;
     }
     await _refreshStatus(bootstrap: true);
+  }
+
+  Future<DaemonStatusResult> _authSignIn() async {
+    Analytics.track(AnalyticsEvent.signInClick);
+    try {
+      final status = await _daemon.authLogin(
+        hubUrl: widget.config.hubUrl,
+        auth0Domain: widget.config.auth0Domain,
+        auth0ClientId: widget.config.auth0NativeClientId,
+        auth0Audience: widget.config.auth0Audience,
+      );
+      Analytics.track(
+        AnalyticsEvent.signInSuccess,
+        status.configured ? null : {'needs_org': true},
+      );
+      return status;
+    } catch (e) {
+      Analytics.track(AnalyticsEvent.signInFailure, {'reason': 'auth_error'});
+      rethrow;
+    }
+  }
+
+  Future<void> _onSignedInFromError(DaemonStatusResult status) async {
+    Analytics.syncIdentityFromStatus(status);
+    if (!mounted) return;
+    setState(() {
+      _status = status;
+      _statusError = null;
+    });
+    if (status.configured) {
+      await _refreshStatus();
+      return;
+    }
+    setState(() {
+      _mailReady = true;
+      _loading = false;
+    });
+    AppActions.sessionReady.value = true;
+    _emitBootstrapPhase();
   }
 
   void _onOnboarded(DaemonStatusResult status) {
@@ -605,10 +644,13 @@ class _RootScreenState extends State<RootScreen> {
         error: _statusError!,
         endpoint: _daemon.httpBaseUrl,
         daemonReachable: _daemonReachable,
+        lastKnownHandle: _status?.handle,
         onRetry: _refreshStatus,
         onRestartCourier: widget.onRestartCourier != null
             ? _restartCourier
             : null,
+        onSignIn: _daemonReachable ? _authSignIn : null,
+        onSignedIn: _onSignedInFromError,
       );
     }
 
@@ -633,6 +675,7 @@ class _RootScreenState extends State<RootScreen> {
         forceDebug: _forceOnboardingActive,
         initialStep: _onboardingStartStep(configured),
         onComplete: (updated, threadId) {
+          setState(() => _forceOnboardingPending = false);
           _onOnboarded(updated);
           if (threadId != null) {
             setState(() => _openThreadId = threadId);
@@ -1091,14 +1134,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   if (banner != null) banner,
-                  Expanded(
-                    child: Padding(
-                      padding: _tab == 0 || _tab == 1
-                          ? const EdgeInsets.fromLTRB(0, 10, 0, 0)
-                          : const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                      child: _tabBody(),
-                    ),
-                  ),
+                  Expanded(child: HomeChromeBody(child: _tabBody())),
                 ],
               ),
             ),
@@ -1153,14 +1189,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         if (banner != null) banner,
-                        Expanded(
-                          child: Padding(
-                            padding: (_tab == 0 || _tab == 1)
-                                ? const EdgeInsets.fromLTRB(0, 10, 0, 0)
-                                : const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                            child: _tabBody(),
-                          ),
-                        ),
+                        Expanded(child: HomeChromeBody(child: _tabBody())),
                       ],
                     );
                   },

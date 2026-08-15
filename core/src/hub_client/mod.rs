@@ -665,9 +665,8 @@ impl HubClient {
         self.post_json("/v1/threads", &body, true).await
     }
 
-    pub async fn list_collabs(&self) -> Result<Vec<Collab>> {
-        let resp: ListCollabsResponse = self.get_json("/v1/collabs").await?;
-        Ok(resp.collabs)
+    pub async fn list_collabs(&self) -> Result<ListCollabsResponse> {
+        self.get_json("/v1/collabs").await
     }
 
     pub async fn get_collab(&self, collab_id: &str) -> Result<Collab> {
@@ -1304,10 +1303,36 @@ mod tests {
         assert_eq!(collab.cards[0].lane_id.as_deref(), Some("backlog"));
         assert_eq!(collab.learnings.len(), 1);
         assert_eq!(collab.learnings[0].created_at, "2026-08-15T00:00:00Z");
-        assert_eq!(
-            collab.learnings[0].from_handle.as_deref(),
-            Some("alice@acme")
-        );
+        assert_eq!(collab.learnings[0].from_handle.as_deref(), Some("alice@acme"));
+    }
+
+    #[test]
+    fn list_collabs_response_deserializes_portfolio() {
+        let json = r#"{
+            "collabs": [{
+                "id": "c1",
+                "org_id": "o1",
+                "name": "Launch",
+                "created_by": "u1",
+                "created_at": "2026-08-15T00:00:00Z",
+                "updated_at": "2026-08-15T00:00:00Z",
+                "encryption_mode": "e2e",
+                "card_count": 2,
+                "open": 1,
+                "doing": 1,
+                "needs_you": 1
+            }],
+            "portfolio": {
+                "activity": [{"date": "2026-08-15", "count": 2}],
+                "lane_totals": {"backlog": 0, "doing": 1, "done": 0},
+                "totals": {"collabs": 1, "open": 1, "doing": 1, "needs_you": 1}
+            }
+        }"#;
+        let resp: ListCollabsResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.collabs.len(), 1);
+        assert_eq!(resp.collabs[0].open, 1);
+        assert_eq!(resp.portfolio.totals.needs_you, 1);
+        assert_eq!(resp.portfolio.activity[0].date, "2026-08-15");
     }
 
     #[test]

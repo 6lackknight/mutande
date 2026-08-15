@@ -2,9 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../services/daemon_client.dart';
 import '../theme/mutande_macos_theme.dart';
+import '../widgets/collab/collab_activity_calendar.dart';
+import '../widgets/collab/collab_lane_donut.dart';
+import '../widgets/collab/collab_metric_row.dart';
+import '../widgets/collab/collab_projects_table.dart';
 import '../widgets/create_collab_sheet.dart';
 import '../widgets/pane_quiet_state.dart';
-import '../widgets/thinking_orb.dart';
+import '../widgets/thread_skeletons.dart';
 import 'threads_screen.dart';
 
 export '../widgets/create_collab_sheet.dart'
@@ -35,6 +39,7 @@ class _CollabPanelState extends State<CollabPanel> {
   bool _loading = true;
   String? _error;
   List<CollabSummary> _collabs = const [];
+  CollabPortfolio _portfolio = const CollabPortfolio();
   String? _openId;
 
   @override
@@ -75,10 +80,11 @@ class _CollabPanelState extends State<CollabPanel> {
       _error = null;
     });
     try {
-      final list = await widget.daemon.listCollabs();
+      final listed = await widget.daemon.listCollabs();
       if (!mounted) return;
       setState(() {
-        _collabs = list;
+        _collabs = listed.collabs;
+        _portfolio = listed.portfolio;
         _loading = false;
         _error = null;
       });
@@ -118,7 +124,7 @@ class _CollabPanelState extends State<CollabPanel> {
     }
 
     if (_loading) {
-      return Center(child: MutandeOrb.standard(size: ThinkingOrbSize.panel));
+      return const CollabHomeSkeleton();
     }
 
     if (_error != null && _collabs.isEmpty) {
@@ -140,56 +146,71 @@ class _CollabPanelState extends State<CollabPanel> {
       );
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (_error != null)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: PaneInlineError(message: _error!, onRetry: _reload),
-          ),
-        Align(
-          alignment: Alignment.centerRight,
-          child: TextButton.icon(
-            onPressed: _create,
-            icon: const Icon(Icons.add, size: 16),
-            label: const Text('Create'),
-          ),
-        ),
-        Expanded(
-          child: ListView.separated(
-            itemCount: _collabs.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 6),
-            itemBuilder: (context, i) {
-              final c = _collabs[i];
-              return Material(
-                color: MutandeColors.stone50,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  side: const BorderSide(color: MutandeColors.stone200),
-                ),
-                child: ListTile(
-                  title: Text(
-                    c.name,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: MutandeColors.stone800,
-                    ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: PaneInlineError(message: _error!, onRetry: _reload),
+            ),
+          Expanded(
+            child: CustomScrollView(
+              slivers: [
+                SliverToBoxAdapter(
+                  child: CollabMetricRow(
+                    totals: _portfolio.totals,
+                    onCreate: _create,
                   ),
-                  subtitle: Text(
-                    '${c.cardCount} ${c.cardCount == 1 ? 'card' : 'cards'} · ${c.isE2e ? 'e2e' : 'app envelope'}',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: MutandeColors.stone500,
-                    ),
-                  ),
-                  onTap: () => setState(() => _openId = c.id),
                 ),
-              );
-            },
+                const SliverToBoxAdapter(child: SizedBox(height: 12)),
+                SliverToBoxAdapter(child: _chartsRow()),
+                const SliverToBoxAdapter(child: SizedBox(height: 12)),
+                SliverToBoxAdapter(
+                  child: CollabProjectsTable(
+                    collabs: _collabs,
+                    onOpen: (c) => setState(() => _openId = c.id),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
+    );
+  }
+
+  Widget _chartsRow() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final calendar = CollabActivityCalendar(
+          key: const Key('collab-activity-calendar'),
+          activity: _portfolio.activity,
+        );
+        final donut = CollabLaneDonut(
+          key: const Key('collab-lane-donut'),
+          lanes: _portfolio.laneTotals,
+        );
+        if (constraints.maxWidth < 720) {
+          return Column(
+            children: [
+              calendar,
+              const SizedBox(height: 12),
+              donut,
+            ],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(flex: 3, child: calendar),
+            const SizedBox(width: 12),
+            Expanded(flex: 2, child: donut),
+          ],
+        );
+      },
     );
   }
 }
@@ -324,7 +345,7 @@ class _CollabBoardState extends State<_CollabBoard> {
     }
 
     if (_loading && _collab == null) {
-      return Center(child: MutandeOrb.standard(size: ThinkingOrbSize.panel));
+      return const CollabBoardSkeleton();
     }
     final collab = _collab;
     if (collab == null) {
@@ -335,66 +356,75 @@ class _CollabBoardState extends State<_CollabBoard> {
       );
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          children: [
-            IconButton(
-              tooltip: 'Boards',
-              onPressed: widget.onBack,
-              icon: const Icon(Icons.arrow_back, size: 18),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              IconButton(
+                tooltip: 'Boards',
+                onPressed: widget.onBack,
+                icon: const Icon(Icons.arrow_back, size: 18),
+              ),
+              Expanded(
+                child: Text(
+                  collab.name,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 16,
+                    color: MutandeColors.stone800,
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: () => setState(() => _brainOpen = !_brainOpen),
+                child: Text(_brainOpen ? 'Board' : 'Brain'),
+              ),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+            child: Text(
+              collabEncryptionCopy(
+                e2e: collab.isE2e,
+                causeAddress: collab.causeAddress,
+              ),
+              style: const TextStyle(
+                fontSize: 12,
+                color: MutandeColors.stone500,
+              ),
             ),
-            Expanded(
+          ),
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Text(
-                collab.name,
+                _error!,
                 style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 16,
-                  color: MutandeColors.stone800,
+                  color: MutandeColors.bronze,
+                  fontSize: 12,
                 ),
               ),
             ),
-            TextButton(
-              onPressed: () => setState(() => _brainOpen = !_brainOpen),
-              child: Text(_brainOpen ? 'Board' : 'Brain'),
-            ),
-          ],
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-          child: Text(
-            collabEncryptionCopy(
-              e2e: collab.isE2e,
-              causeAddress: collab.causeAddress,
-            ),
-            style: const TextStyle(fontSize: 12, color: MutandeColors.stone500),
+          Expanded(
+            child: _brainOpen
+                ? _BrainPanel(
+                    daemon: widget.daemon,
+                    collab: collab,
+                    handle: widget.handle,
+                    onChanged: _reload,
+                  )
+                : _Kanban(
+                    collab: collab,
+                    onOpen: (id) => setState(() => _openCardId = id),
+                    onNewCard: _newCard,
+                    onDrop: _drop,
+                  ),
           ),
-        ),
-        if (_error != null)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Text(
-              _error!,
-              style: const TextStyle(color: MutandeColors.bronze, fontSize: 12),
-            ),
-          ),
-        Expanded(
-          child: _brainOpen
-              ? _BrainPanel(
-                  daemon: widget.daemon,
-                  collab: collab,
-                  handle: widget.handle,
-                  onChanged: _reload,
-                )
-              : _Kanban(
-                  collab: collab,
-                  onOpen: (id) => setState(() => _openCardId = id),
-                  onNewCard: _newCard,
-                  onDrop: _drop,
-                ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

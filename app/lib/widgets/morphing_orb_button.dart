@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/mutande_macos_theme.dart';
+import 'home_chrome_buttons.dart';
 import 'thinking_orb.dart';
 
 /// Primary control that morphs into the thinking orb while [loading].
@@ -18,14 +19,13 @@ class MorphingOrbButton extends StatelessWidget {
   final VoidCallback? onPressed;
   final String loadingLabel;
 
-  static const double _restH = 48;
+  static const double _restH = HomeChromeButtons.height;
   static const double _orb = 64; // ThinkingOrbSize.panel
 
   @override
   Widget build(BuildContext context) {
     final reduce = MediaQuery.disableAnimationsOf(context);
-    final duration =
-        reduce ? Duration.zero : const Duration(milliseconds: 340);
+    final duration = reduce ? Duration.zero : const Duration(milliseconds: 340);
     const curve = Curves.easeOutCubic;
 
     return LayoutBuilder(
@@ -50,9 +50,11 @@ class MorphingOrbButton extends StatelessWidget {
                   color: loading
                       ? Colors.transparent
                       : (onPressed == null
-                          ? MutandeColors.stone200
-                          : MutandeColors.stone800),
-                  borderRadius: BorderRadius.circular(loading ? _orb / 2 : 12),
+                            ? MutandeColors.stone200
+                            : MutandeColors.stone800),
+                  borderRadius: loading
+                      ? BorderRadius.circular(_orb / 2)
+                      : HomeChromeButtons.radius,
                 ),
                 clipBehavior: Clip.antiAlias,
                 child: AnimatedSwitcher(
@@ -62,10 +64,7 @@ class MorphingOrbButton extends StatelessWidget {
                   layoutBuilder: (current, previous) {
                     return Stack(
                       alignment: Alignment.center,
-                      children: [
-                        ...previous,
-                        ?current,
-                      ],
+                      children: [...previous, ?current],
                     );
                   },
                   transitionBuilder: (child, anim) {
@@ -90,7 +89,7 @@ class MorphingOrbButton extends StatelessWidget {
                             color: Colors.transparent,
                             child: InkWell(
                               onTap: onPressed,
-                              borderRadius: BorderRadius.circular(12),
+                              borderRadius: HomeChromeButtons.radius,
                               child: SizedBox(
                                 width: fullW,
                                 height: _restH,
@@ -102,7 +101,7 @@ class MorphingOrbButton extends StatelessWidget {
                                           ? MutandeColors.stone500
                                           : MutandeColors.stone50,
                                       fontWeight: FontWeight.w600,
-                                      fontSize: 15,
+                                      fontSize: 16,
                                       letterSpacing: -0.1,
                                     ),
                                   ),

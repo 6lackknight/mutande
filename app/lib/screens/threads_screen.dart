@@ -18,11 +18,12 @@ import '../util/thread_peer.dart';
 import '../widgets/ai_host_icon.dart';
 import '../widgets/contact_avatar.dart';
 import '../widgets/pane_quiet_state.dart';
-import '../widgets/thinking_orb.dart';
+import '../widgets/thread_skeletons.dart';
 import '../widgets/thread_status_badge.dart';
 import '../widgets/downgrade_consent_banner.dart';
 import '../widgets/enterprise_warn_banner.dart';
 import '../widgets/transport_chip.dart';
+import '../widgets/home_chrome_strip.dart';
 import '../widgets/thread_relay_reading.dart';
 import '../widgets/thread_inspector_sidebar.dart';
 
@@ -492,20 +493,23 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
 
   @override
   Widget build(BuildContext context) {
-    final listPane = Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _ThreadsChrome(
+    final listPane = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+          child: _ThreadsChrome(
             filter: _filter,
             onFilterChanged: _onFilterChanged,
             needsYouCount: _needsYouCount,
             onCompose: () => setState(() => _composeOpen = true),
           ),
-          if (_composeOpen) ...[
-            const SizedBox(height: 12),
-            _ComposePanel(
+        ),
+        if (_composeOpen) ...[
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 0, 12, 0),
+            child: _ComposePanel(
               daemon: widget.daemon,
               myHandle: widget.myHandle,
               initialRecipient: _composePrefillRecipient,
@@ -521,11 +525,16 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
                 _composePrefillRecipient = null;
               }),
             ),
-          ],
-          const SizedBox(height: 8),
-          Expanded(child: _buildListPane(context)),
+          ),
         ],
-      ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(0, 0, 0, 12),
+            child: _buildListPane(context),
+          ),
+        ),
+      ],
     );
 
     final reading = _openId == null
@@ -538,6 +547,7 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
             embedded: true,
             muted: _mutedIds.contains(_openId),
             onMuteToggle: () => _toggleMute(_openId!),
+            notificationPrefs: widget.notificationPrefs,
             onBack: () => setState(() => _openId = null),
             onListChanged: () => unawaited(_reload(silent: true)),
             onThreadClosed: _applyClosedLocally,
@@ -556,16 +566,17 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
           divider: _splitDivider(0),
           child: listPane,
         ),
-        ResizableChild(size: const ResizableSize.expand(), child: reading),
+        ResizableChild(
+          size: const ResizableSize.expand(),
+          child: HomeChromeRaised(child: reading),
+        ),
       ],
     );
   }
 
   Widget _buildListPane(BuildContext context) {
     if (_loading) {
-      return const Center(
-        child: MutandeOrb.standard(semanticLabel: 'Loading threads…'),
-      );
+      return const ThreadListSkeleton();
     }
     if (_error != null) {
       return PaneQuietState(
@@ -1499,7 +1510,7 @@ class _ComposePanelState extends State<_ComposePanel> {
 }
 
 class ThreadDetailPanel extends StatefulWidget {
-  const ThreadDetailPanel({
+  ThreadDetailPanel({
     super.key,
     required this.daemon,
     required this.threadId,
@@ -1511,7 +1522,8 @@ class ThreadDetailPanel extends StatefulWidget {
     this.onGone,
     this.muted = false,
     this.onMuteToggle,
-  });
+    NotificationPrefsStore? notificationPrefs,
+  }) : notificationPrefs = notificationPrefs ?? NotificationPrefsStore();
 
   final DaemonClient daemon;
   final String threadId;
@@ -1532,6 +1544,7 @@ class ThreadDetailPanel extends StatefulWidget {
 
   final bool muted;
   final VoidCallback? onMuteToggle;
+  final NotificationPrefsStore notificationPrefs;
 
   @override
   State<ThreadDetailPanel> createState() => _ThreadDetailPanelState();
@@ -1549,6 +1562,7 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
   String? _upvotingMessageId;
   bool _downgradeBusy = false;
   int? _hotDivider;
+  bool _inspectorVisible = true;
 
   ResizableDivider _splitDivider(int id) {
     final hot = _hotDivider == id;
@@ -1666,6 +1680,7 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
   @override
   void initState() {
     super.initState();
+    _loadInspectorPref();
     _load();
   }
 
@@ -1688,6 +1703,20 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
 
   /// Quiet refresh when the list row fingerprint for this thread changes.
   void softRefresh() => unawaited(_load(silent: true));
+
+  Future<void> _loadInspectorPref() async {
+    final prefs = await widget.notificationPrefs.load();
+    if (!mounted) return;
+    setState(() => _inspectorVisible = prefs.threadInspectorVisible);
+  }
+
+  Future<void> _toggleInspector() async {
+    final next = !_inspectorVisible;
+    setState(() => _inspectorVisible = next);
+    await widget.notificationPrefs.update(
+      (p) => p.copyWith(threadInspectorVisible: next),
+    );
+  }
 
   Future<void> _load({bool silent = false}) async {
     if (silent) {
@@ -1846,11 +1875,7 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
             ],
           ),
         if (_loading)
-          const Expanded(
-            child: Center(
-              child: MutandeOrb.standard(semanticLabel: 'Loading thread…'),
-            ),
-          )
+          const Expanded(child: ThreadReadingSkeleton())
         else if (_detail == null)
           Expanded(
             child: PaneQuietState(
@@ -1885,6 +1910,8 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
               onClose: _detail!.status == 'closed' ? null : _closeThread,
               onDelete: _deleteThread,
               onMuteToggle: widget.onMuteToggle,
+              inspectorVisible: _inspectorVisible,
+              onInspectorToggle: widget.embedded ? _toggleInspector : null,
               leading: [
                 if (_detail!.isEnterpriseThread) const EnterpriseWarnBanner(),
                 if (_detail!.pendingDowngrade?.isPending == true)
@@ -1908,7 +1935,7 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
 
     if (!widget.embedded) return pane;
 
-    if (_loading || _detail == null) {
+    if (_loading || _detail == null || !_inspectorVisible) {
       return Padding(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
         child: pane,

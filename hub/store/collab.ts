@@ -29,9 +29,11 @@ import type {
   ApplyCollabDowngradeInput,
   AuthContext,
   Collab,
+  CollabCardStats,
   CollabCardSummary,
   CollabLearning,
   CollabList,
+  CollabPortfolio,
   CollabRosterEntry,
   CollabView,
   CreateCollabInput,
@@ -410,20 +412,164 @@ export async function createCollab(
   return viewCollab(ctx, auth, collab);
 }
 
+export function laneBucket(
+  collab: Collab,
+  laneId?: string,
+): "backlog" | "doing" | "done" {
+  if (!laneId) return "backlog";
+  const list = collab.lists.find((l) => l.id === laneId);
+  if (!list) return "backlog";
+  const name = list.name.trim().toLowerCase();
+  if (name === "doing") return "doing";
+  if (name === "done") return "done";
+  if (name === "backlog") return "backlog";
+  const sorted = [...collab.lists].sort((a, b) => a.position - b.position);
+  const idx = sorted.findIndex((l) => l.id === laneId);
+  if (idx <= 0) return "backlog";
+  if (idx === sorted.length - 1) return "done";
+  return "doing";
+}
+
+function utcDateKey(iso: string): string | null {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0, 10);
+}
+
+export function last84ActivityDays(
+  counts: Map<string, number>,
+  now = new Date(),
+): { date: string; count: number }[] {
+  const out: { date: string; count: number }[] = [];
+  const todayUtc = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate(),
+  );
+  for (let i = 83; i >= 0; i--) {
+    const key = new Date(todayUtc - i * 86_400_000).toISOString().slice(0, 10);
+    out.push({ date: key, count: counts.get(key) ?? 0 });
+  }
+  return out;
+}
+
+function emptyPortfolio(collabCount = 0): CollabPortfolio {
+  return {
+    activity: last84ActivityDays(new Map()),
+    lane_totals: { backlog: 0, doing: 0, done: 0 },
+    totals: { collabs: collabCount, open: 0, doing: 0, needs_you: 0 },
+  };
+}
+
+async function summarizeCollabCards(
+  ctx: CollabKvCtx,
+  auth: AuthContext,
+  collab: Collab,
+): Promise<CollabCardStats & { activity: Map<string, number> }> {
+  const stats: CollabCardStats & { activity: Map<string, number> } = {
+    card_count: 0,
+    open: 0,
+    closed: 0,
+    backlog: 0,
+    doing: 0,
+    done: 0,
+    needs_you: 0,
+    activity: new Map(),
+  };
+  const iter = ctx.kv.list<string>({
+    prefix: ctx.collabThreadsPrefix(collab.id),
+  });
+  for await (const entry of iter) {
+    const threadRes = await ctx.kv.get<ThreadMeta>(ctx.threadKey(entry.value));
+    const thread = threadRes.value ? ctx.normalizeThread(threadRes.value) : null;
+    if (!thread) continue;
+    stats.card_count += 1;
+    const isOpen = thread.status === "open";
+    if (isOpen) stats.open += 1;
+    else stats.closed += 1;
+    if (isOpen) {
+      stats[laneBucket(collab, thread.lane_id)] += 1;
+    }
+    if (isOpen) {
+      const inbox = await ctx.kv.get<InboxEntry>(
+        ctx.inboxKey(auth.userId, thread.id),
+      );
+      if (inbox.value?.your_status === "pending") stats.needs_you += 1;
+    }
+    if (
+      !stats.last_updated_at ||
+      thread.updated_at > stats.last_updated_at
+    ) {
+      stats.last_updated_at = thread.updated_at;
+    }
+    const day = utcDateKey(thread.updated_at);
+    if (day) {
+      stats.activity.set(day, (stats.activity.get(day) ?? 0) + 1);
+    }
+  }
+  return stats;
+}
+
 export async function listCollabs(
   ctx: CollabKvCtx,
   auth: AuthContext,
-): Promise<{ collabs: CollabView[] }> {
+): Promise<{ collabs: CollabView[]; portfolio: CollabPortfolio }> {
   const collabs: CollabView[] = [];
+  const activity = new Map<string, number>();
+  const laneTotals = { backlog: 0, doing: 0, done: 0 };
+  let open = 0;
+  let doing = 0;
+  let needsYou = 0;
   const iter = ctx.kv.list<string>({ prefix: ctx.orgCollabsPrefix(auth.orgId) });
   for await (const entry of iter) {
     const collab = await loadCollab(ctx, entry.value);
     if (!collab) continue;
     if (!isCollabSteerer(collab, auth.userId)) continue;
-    collabs.push(await viewCollab(ctx, auth, collab, { cards: false }));
+    const stats = await summarizeCollabCards(ctx, auth, collab);
+    for (const [date, count] of stats.activity) {
+      activity.set(date, (activity.get(date) ?? 0) + count);
+    }
+    open += stats.open;
+    doing += stats.doing;
+    needsYou += stats.needs_you;
+    laneTotals.backlog += stats.backlog;
+    laneTotals.doing += stats.doing;
+    laneTotals.done += stats.done;
+    const steerers = await Promise.all(
+      collab.steerer_user_ids.map(async (user_id) => ({
+        user_id,
+        handle: await steererHandle(ctx, user_id),
+      })),
+    );
+    collabs.push({
+      ...collab,
+      card_count: stats.card_count,
+      open: stats.open,
+      doing: stats.doing,
+      needs_you: stats.needs_you,
+      last_card_updated_at: stats.last_updated_at,
+      cards: [],
+      learnings: [],
+      steerers,
+    });
   }
   collabs.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
-  return { collabs };
+  if (collabs.length === 0) {
+    return { collabs, portfolio: emptyPortfolio(0) };
+  }
+  return {
+    collabs,
+    portfolio: {
+      activity: last84ActivityDays(activity),
+      lane_totals: laneTotals,
+      totals: {
+        collabs: collabs.length,
+        open,
+        doing,
+        needs_you: needsYou,
+      },
+    },
+  };
 }
 
 export async function getCollab(

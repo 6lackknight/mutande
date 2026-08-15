@@ -250,8 +250,8 @@ async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Resu
             Ok(serde_json::to_value(detail)?)
         }
         "list_collabs" => {
-            let collabs = state.list_collabs().await?;
-            Ok(serde_json::to_value(serde_json::json!({ "collabs": collabs }))?)
+            let listed = state.list_collabs().await?;
+            Ok(serde_json::to_value(listed)?)
         }
         "get_collab" => {
             let collab_id = param_str(&params, "collab_id")?;

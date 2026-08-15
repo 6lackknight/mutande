@@ -859,6 +859,14 @@ pub struct Collab {
     #[serde(default)]
     pub card_count: u64,
     #[serde(default)]
+    pub open: u64,
+    #[serde(default)]
+    pub doing: u64,
+    #[serde(default)]
+    pub needs_you: u64,
+    #[serde(default)]
+    pub last_card_updated_at: Option<String>,
+    #[serde(default)]
     pub steerers: Vec<CollabSteerer>,
     #[serde(default)]
     pub cards: Vec<CollabCardSummary>,
@@ -867,8 +875,49 @@ pub struct Collab {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct CollabActivityDay {
+    pub date: String,
+    #[serde(default)]
+    pub count: u64,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct CollabLaneTotals {
+    #[serde(default)]
+    pub backlog: u64,
+    #[serde(default)]
+    pub doing: u64,
+    #[serde(default)]
+    pub done: u64,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct CollabPortfolioTotals {
+    #[serde(default)]
+    pub collabs: u64,
+    #[serde(default)]
+    pub open: u64,
+    #[serde(default)]
+    pub doing: u64,
+    #[serde(default)]
+    pub needs_you: u64,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct CollabPortfolio {
+    #[serde(default)]
+    pub activity: Vec<CollabActivityDay>,
+    #[serde(default)]
+    pub lane_totals: CollabLaneTotals,
+    #[serde(default)]
+    pub totals: CollabPortfolioTotals,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ListCollabsResponse {
     pub collabs: Vec<Collab>,
+    #[serde(default)]
+    pub portfolio: CollabPortfolio,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

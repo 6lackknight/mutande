@@ -1,4 +1,5 @@
-//! Install the mutande agent skill into Cursor / ChatGPT paths, or stage a Claude ZIP.
+//! Install the mutande agent skill into Cursor / ChatGPT / Claude Code paths,
+//! and stage a Claude Desktop ZIP.
 
 use std::fs;
 use std::io::Write;
@@ -16,7 +17,9 @@ use super::user_home_dir;
 /// Bundled skill body (repo `skill/SKILL.md`).
 const SKILL_MD: &str = include_str!("../../../skill/SKILL.md");
 
-const CLAUDE_HINT: &str = "Claude keeps skills in your account. Save the ZIP, then in Claude open Customize → Skills → Upload, turn the skill on, and enable code execution under Capabilities.";
+const CLAUDE_CODE_HINT: &str = "Claude Code will load this on the next chat. Claude Desktop still needs the ZIP — Customize → Skills → Upload, then enable code execution under Capabilities.";
+
+const CLAUDE_DESKTOP_HINT: &str = "Claude Desktop keeps skills in your account. Save the ZIP, then in Claude open Customize → Skills → Upload, turn the skill on, and enable code execution under Capabilities.";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -59,7 +62,7 @@ pub fn install_skill(host: &str, home_override: Option<&Path>) -> Result<Install
             ],
             "Restart ChatGPT Desktop (or open a new chat) so it picks up the mutande skill.",
         ),
-        Host::Claude => install_claude_zip(&home),
+        Host::Claude => install_claude(&home),
     }
 }
 
@@ -102,18 +105,33 @@ fn write_skill_file(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn install_claude_zip(home: &Path) -> Result<InstallSkillResult> {
+fn install_claude(home: &Path) -> Result<InstallSkillResult> {
+    let code_path = home.join(".claude/skills/mutande/SKILL.md");
+    let code_ok = write_skill_file(&code_path).is_ok();
+
     let dir = home.join(".mutande/skills");
     fs::create_dir_all(&dir).with_context(|| format!("create {}", dir.display()))?;
     let zip_path = dir.join("mutande-claude.zip");
     write_claude_skill_zip(&zip_path)?;
+    let zip = zip_path.display().to_string();
+
+    if code_ok {
+        return Ok(InstallSkillResult {
+            host: "claude".into(),
+            ok: true,
+            mode: SkillInstallMode::Auto,
+            path: Some(code_path.display().to_string()),
+            zip_path: Some(zip),
+            hint: Some(CLAUDE_CODE_HINT.into()),
+        });
+    }
     Ok(InstallSkillResult {
         host: "claude".into(),
-        ok: false, // manual — not auto-installed into Claude account
+        ok: false,
         mode: SkillInstallMode::Manual,
-        path: None,
-        zip_path: Some(zip_path.display().to_string()),
-        hint: Some(CLAUDE_HINT.into()),
+        path: Some(code_path.display().to_string()),
+        zip_path: Some(zip),
+        hint: Some(CLAUDE_DESKTOP_HINT.into()),
     })
 }
 
@@ -159,12 +177,15 @@ mod tests {
     }
 
     #[test]
-    fn claude_stages_zip_manual() {
+    fn claude_writes_code_skill_and_stages_zip() {
         let dir = tempdir().unwrap();
         let home = dir.path();
         let r = install_skill("claude", Some(home)).unwrap();
-        assert!(!r.ok);
-        assert_eq!(r.mode, SkillInstallMode::Manual);
+        assert!(r.ok);
+        assert_eq!(r.mode, SkillInstallMode::Auto);
+        let code = home.join(".claude/skills/mutande/SKILL.md");
+        assert!(code.exists());
+        assert!(fs::read_to_string(&code).unwrap().contains("name: mutande"));
         let zip_path = PathBuf::from(r.zip_path.as_ref().unwrap());
         assert!(zip_path.exists());
         let f = fs::File::open(&zip_path).unwrap();
@@ -182,6 +203,7 @@ mod tests {
             .unwrap();
         let desc_val = desc.trim_start_matches("description:").trim();
         assert!(desc_val.chars().count() <= 200, "desc too long: {}", desc_val.len());
+        assert!(r.hint.as_ref().unwrap().contains("Claude Code"));
         assert!(r.hint.as_ref().unwrap().contains("Customize → Skills"));
     }
 

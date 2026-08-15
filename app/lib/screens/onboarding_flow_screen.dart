@@ -14,9 +14,12 @@ import '../theme/mutande_macos_theme.dart';
 import '../util/address_display.dart';
 import '../widgets/ai_host_icon.dart';
 import '../widgets/connect_host_flow.dart';
+import '../widgets/contact_avatar.dart';
+import '../widgets/home_chrome_strip.dart';
 import '../widgets/morphing_orb_button.dart';
 import '../widgets/onboarding_address_rail.dart';
 import '../widgets/onboarding_chrome.dart';
+import '../widgets/person_identity_row.dart';
 import '../widgets/thinking_orb.dart';
 import 'first_run_ping_wizard.dart';
 
@@ -39,7 +42,8 @@ class OnboardingFlowScreen extends StatefulWidget {
   final DaemonClient daemon;
   final FirstRunStore firstRunStore;
   final HostLinkStore hostLinkStore;
-  final void Function(DaemonStatusResult status, String? openThreadId) onComplete;
+  final void Function(DaemonStatusResult status, String? openThreadId)
+  onComplete;
   final DaemonStatusResult? initialStatus;
   final bool forceDebug;
   final OnboardingStep? initialStep;
@@ -50,48 +54,76 @@ class OnboardingFlowScreen extends StatefulWidget {
 
 enum _TeamMode { setupChoose, setupCreate, setupJoin, roster }
 
-/// A member of the org, set in the same mono as the address above them.
+/// Org member on the team roster: avatar, name, lowercase handle.
 class _RosterRow extends StatelessWidget {
-  const _RosterRow({required this.address, this.isSelf = false});
+  const _RosterRow({
+    required this.handle,
+    this.displayName,
+    this.avatarUrl,
+    this.isSelf = false,
+  });
 
-  final String address;
+  final String handle;
+  final String? displayName;
+  final String? avatarUrl;
   final bool isSelf;
 
   @override
   Widget build(BuildContext context) {
+    final title = personDisplayTitle(displayName: displayName, handle: handle);
+    final address = formatMailAddress(handle);
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.only(bottom: OnboardingSpace.sm),
       child: Row(
         children: [
-          Text(
-            address,
-            style: TextStyle(
-              fontFamily: 'Menlo',
-              fontSize: 13,
-              color:
-                  isSelf ? MutandeColors.stone800 : MutandeColors.stone600,
+          PersonAvatar(
+            size: 32,
+            url: avatarUrl,
+            initials: personInitials(title),
+            seed: handle,
+            isSelf: isSelf,
+          ),
+          const SizedBox(width: OnboardingSpace.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: MutandeColors.stone800,
+                          height: 1.2,
+                        ),
+                      ),
+                    ),
+                    if (isSelf) ...[
+                      const SizedBox(width: OnboardingSpace.xs),
+                      PersonIdentityRow.statusPill(label: 'you'),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  address,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontFamily: 'Menlo',
+                    fontSize: 12,
+                    color: MutandeColors.stone500,
+                    height: 1.2,
+                  ),
+                ),
+              ],
             ),
           ),
-          if (isSelf) ...[
-            const SizedBox(width: OnboardingSpace.xs),
-            Container(
-              width: 5,
-              height: 5,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                color: MutandeColors.amber,
-              ),
-            ),
-            const SizedBox(width: 6),
-            const Text(
-              'you',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: MutandeColors.amber,
-              ),
-            ),
-          ],
         ],
       ),
     );
@@ -136,7 +168,10 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
 
   // Connect
   List<AiHostPresence> _hosts = const [];
+  List<AgentInfo> _agents = const [];
+  String? _defaultAgentId;
   bool _hostsLoading = false;
+  bool _settingDefault = false;
   String? _selectedHost;
   bool _connectWaiting = false;
   String? _connectHint;
@@ -379,18 +414,21 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
       final registered = agents.agents.map((a) => a.slug.toLowerCase()).toSet();
       if (!mounted) return;
       setState(() {
-        _hosts = detections
-            .map(
-              (d) => AiHostPresence(
-                slug: d.host,
-                installed: d.installed,
-                configPresent: d.configPresent,
-                linked: links[d.host]?.ok ?? false,
-                agentRegistered: registered.contains(d.host),
-              ),
-            )
-            .toList()
-          ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+        _agents = agents.agents;
+        _defaultAgentId = agents.defaultAgentId;
+        _hosts =
+            detections
+                .map(
+                  (d) => AiHostPresence(
+                    slug: d.host,
+                    installed: d.installed,
+                    configPresent: d.configPresent,
+                    linked: links[d.host]?.ok ?? false,
+                    agentRegistered: registered.contains(d.host),
+                  ),
+                )
+                .toList()
+              ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
         _hostsLoading = false;
       });
     } catch (e) {
@@ -406,6 +444,47 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
     final names = hosts.map((h) => AiHostIcon.displayName(h.slug)).toList();
     if (names.length == 1) return names.first;
     return '${names.sublist(0, names.length - 1).join(', ')} and ${names.last}';
+  }
+
+  AgentInfo? _agentForHost(String slug) {
+    final key = slug.toLowerCase();
+    for (final a in _agents) {
+      if (a.slug.toLowerCase() == key) return a;
+    }
+    return null;
+  }
+
+  bool _isDefaultHost(String slug) {
+    final id = _defaultAgentId;
+    if (id == null || id.isEmpty) return false;
+    return _agentForHost(slug)?.id == id;
+  }
+
+  Future<void> _setDefaultHost(String slug) async {
+    final agent = _agentForHost(slug);
+    if (agent == null) {
+      setState(() {
+        _error =
+            'Connect ${AiHostIcon.displayName(slug)} before setting Default.';
+      });
+      return;
+    }
+    setState(() {
+      _settingDefault = true;
+      _error = null;
+    });
+    try {
+      await widget.daemon.setDefaultAgent(agent.id);
+      if (!mounted) return;
+      await _loadHosts();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = friendlyDaemonError(e, what: 'Default');
+      });
+    } finally {
+      if (mounted) setState(() => _settingDefault = false);
+    }
   }
 
   Future<void> _beginConnectHost(String host) async {
@@ -447,7 +526,9 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
     while (DateTime.now().isBefore(deadline)) {
       try {
         final agents = await widget.daemon.listAgents();
-        if (agents.agents.any((a) => a.slug.toLowerCase() == host.toLowerCase())) {
+        if (agents.agents.any(
+          (a) => a.slug.toLowerCase() == host.toLowerCase(),
+        )) {
           await widget.firstRunStore.markConnectComplete();
           if (!mounted) return;
           setState(() {
@@ -476,9 +557,9 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
     final url = '$base/admin/invites';
     await Clipboard.setData(ClipboardData(text: url));
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Copied: $url')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('Copied: $url')));
   }
 
   Future<void> _openInvitesWeb() async {
@@ -549,7 +630,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
     final frame = _debugFrameIndex;
     final debugBanner = widget.forceDebug
         ? 'Debug — onboarding preview · ⌥← ⌥→ to step'
-            '${frame == null ? '' : ' (${frame + 1}/${_debugFrames.length})'}'
+              '${frame == null ? '' : ' (${frame + 1}/${_debugFrames.length})'}'
         : null;
 
     if (_securing) {
@@ -671,9 +752,20 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
       );
     }
     final handle = _status?.handle ?? '';
-    final humans =
-        _contacts.where((c) => !c.isBroadcast && !c.isExternal).toList();
-    final peers = humans.where((c) => c.handle != handle).toList();
+    final humans = _contacts
+        .where((c) => !c.isBroadcast && !c.isExternal)
+        .toList();
+    final handleLower = handle.toLowerCase();
+    ContactView? self;
+    for (final c in humans) {
+      if (c.handle.toLowerCase() == handleLower) {
+        self = c;
+        break;
+      }
+    }
+    final peers = humans
+        .where((c) => c.handle.toLowerCase() != handleLower)
+        .toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -688,19 +780,27 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
         ),
         const SizedBox(height: OnboardingSpace.lg),
         // Plain rows on the stone ground — no card nesting a card.
-        if (handle.isNotEmpty) _RosterRow(address: handle, isSelf: true),
+        if (handle.isNotEmpty)
+          _RosterRow(
+            handle: handle,
+            displayName: self?.displayName,
+            avatarUrl: self?.avatarUrl,
+            isSelf: true,
+          ),
         ...peers.map(
           (c) => _RosterRow(
-            address: formatMailAddress(c.handle, myHandle: handle),
+            handle: c.handle,
+            displayName: c.displayName,
+            avatarUrl: c.avatarUrl,
           ),
         ),
         const SizedBox(height: OnboardingSpace.lg),
         Text(
           'Teammates need mutande on Mac to receive agent mail.',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: MutandeColors.stone500,
-                height: 1.4,
-              ),
+            color: MutandeColors.stone500,
+            height: 1.4,
+          ),
         ),
         OnboardingActions(
           topSpacing: OnboardingSpace.md,
@@ -761,7 +861,8 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
           OnboardingActions(
             topSpacing: 0,
             primary: FilledButton(
-              onPressed: () => setState(() => _teamMode = _TeamMode.setupCreate),
+              onPressed: () =>
+                  setState(() => _teamMode = _TeamMode.setupCreate),
               child: const Text('Create a team'),
             ),
             secondary: TextButton(
@@ -798,7 +899,8 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
               child: Text(_submitting ? 'Creating…' : 'Create team'),
             ),
             tertiary: TextButton(
-              onPressed: () => setState(() => _teamMode = _TeamMode.setupChoose),
+              onPressed: () =>
+                  setState(() => _teamMode = _TeamMode.setupChoose),
               child: const Text('Back'),
             ),
           ),
@@ -822,7 +924,8 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
               child: Text(_submitting ? 'Joining…' : 'Join team'),
             ),
             tertiary: TextButton(
-              onPressed: () => setState(() => _teamMode = _TeamMode.setupChoose),
+              onPressed: () =>
+                  setState(() => _teamMode = _TeamMode.setupChoose),
               child: const Text('Back'),
             ),
           ),
@@ -863,23 +966,25 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
     // weight, the rest is one quiet line.
     final installed = _hosts.where((h) => h.installed).toList();
     final missing = _hosts.where((h) => !h.installed).toList();
-    final linked =
-        installed.where((h) => h.linked && h.agentRegistered).toList();
+    final linked = installed
+        .where((h) => h.linked && h.agentRegistered)
+        .toList();
 
     // The goal, stated as the thing to do — and once it's done, said so.
     final heading = linked.isEmpty
         ? const OnboardingHeading(
             variant: OnboardingHeadingVariant.display,
             title: 'Pick a host to connect.',
-            subtitle: 'One is enough — mutande wires the relay, '
+            subtitle:
+                'One is enough — mutande wires the relay, '
                 'then hands it the collaboration skill.',
           )
         : OnboardingHeading(
             variant: OnboardingHeadingVariant.display,
-            title: '${_hostNames(linked)} '
+            title:
+                '${_hostNames(linked)} '
                 '${linked.length == 1 ? 'is' : 'are'} ready to carry mail.',
-            subtitle:
-                'Continue to your first ping, or connect another host.',
+            subtitle: 'Continue to your first ping, or connect another host.',
           );
 
     return Column(
@@ -892,18 +997,29 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
             padding: const EdgeInsets.only(bottom: OnboardingSpace.xs),
             child: _HostTile(
               presence: host,
+              isDefault: _isDefaultHost(host.slug),
+              settingDefault: _settingDefault,
               onTap: () => _beginConnectHost(host.slug),
+              onSetDefault: host.linked && host.agentRegistered
+                  ? () => _setDefaultHost(host.slug)
+                  : null,
             ),
           ),
+        if (linked.isNotEmpty) ...[
+          const SizedBox(height: OnboardingSpace.sm),
+          Text(
+            _defaultAgentId == null
+                ? 'Set Default so mail to your address goes to one host.'
+                : 'Mail to your address goes to Default.',
+            style: const TextStyle(fontSize: 12, color: MutandeColors.stone400),
+          ),
+        ],
         if (missing.isNotEmpty) ...[
           const SizedBox(height: OnboardingSpace.sm),
           Text(
             '${_hostNames(missing)} '
             '${missing.length == 1 ? 'isn\'t' : 'aren\'t'} installed on this Mac.',
-            style: const TextStyle(
-              fontSize: 12,
-              color: MutandeColors.stone400,
-            ),
+            style: const TextStyle(fontSize: 12, color: MutandeColors.stone400),
           ),
         ],
         if (_error != null) ...[
@@ -940,26 +1056,38 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
       _step = OnboardingStep.ping;
     });
   }
-
 }
 
 class _HostTile extends StatelessWidget {
-  const _HostTile({required this.presence, required this.onTap});
+  const _HostTile({
+    required this.presence,
+    required this.onTap,
+    this.isDefault = false,
+    this.settingDefault = false,
+    this.onSetDefault,
+  });
 
   final AiHostPresence presence;
   final VoidCallback onTap;
+  final bool isDefault;
+  final bool settingDefault;
+  final VoidCallback? onSetDefault;
 
   @override
   Widget build(BuildContext context) {
-    final badge = presence.primaryBadge;
     final linked = presence.linked && presence.agentRegistered;
     final label = AiHostIcon.displayName(presence.slug);
+    final badge = isDefault ? 'Default' : presence.primaryBadge;
 
     return Semantics(
       button: true,
       label: '$label, $badge',
       child: Material(
-        color: linked ? MutandeColors.emeraldSoft : Colors.white,
+        color: isDefault
+            ? MutandeColors.stone50
+            : linked
+            ? MutandeColors.emeraldSoft
+            : Colors.white,
         borderRadius: BorderRadius.circular(14),
         child: InkWell(
           onTap: onTap,
@@ -968,7 +1096,9 @@ class _HostTile extends StatelessWidget {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(14),
               border: Border.all(
-                color: linked
+                color: isDefault
+                    ? MutandeColors.stone800
+                    : linked
                     ? const Color(0xFF86EFAC)
                     : MutandeColors.stone200,
               ),
@@ -999,7 +1129,9 @@ class _HostTile extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w500,
-                          color: linked
+                          color: isDefault
+                              ? MutandeColors.stone800
+                              : linked
                               ? MutandeColors.emerald
                               : MutandeColors.stone500,
                         ),
@@ -1007,15 +1139,46 @@ class _HostTile extends StatelessWidget {
                     ],
                   ),
                 ),
-                // The verb lives on the row that still needs it; done rows
-                // just say done.
-                if (linked)
+                if (linked) ...[
                   const Icon(
                     Icons.check,
                     size: 20,
                     color: MutandeColors.emerald,
-                  )
-                else
+                  ),
+                  const SizedBox(width: 10),
+                  if (isDefault)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: MutandeColors.stone800,
+                        borderRadius: HomeChrome.thumbStadium,
+                      ),
+                      child: const Text(
+                        'Default',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: MutandeColors.stone50,
+                        ),
+                      ),
+                    )
+                  else if (onSetDefault != null)
+                    TextButton(
+                      onPressed: settingDefault ? null : onSetDefault,
+                      style: TextButton.styleFrom(
+                        foregroundColor: MutandeColors.stone800,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        minimumSize: const Size(0, 32),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: Text(
+                        settingDefault ? 'Setting…' : 'Set as default',
+                      ),
+                    ),
+                ] else
                   const Text(
                     'Connect',
                     style: TextStyle(

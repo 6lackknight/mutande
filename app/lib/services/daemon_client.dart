@@ -405,6 +405,26 @@ class DaemonClient {
     });
   }
 
+  Future<void> approveTask({
+    required String threadId,
+    required String messageId,
+  }) async {
+    await _call('approve_task', {
+      'thread_id': threadId,
+      'message_id': messageId,
+    });
+  }
+
+  Future<void> denyTask({
+    required String threadId,
+    required String messageId,
+  }) async {
+    await _call('deny_task', {
+      'thread_id': threadId,
+      'message_id': messageId,
+    });
+  }
+
   /// Pilot / product feedback → hub `POST /v1/feedback`.
   Future<void> submitFeedback({
     required String message,
@@ -439,6 +459,7 @@ class DaemonClient {
         from: m['from'] as String? ?? '',
         audience: m['audience'] as String? ?? '',
         yourStatus: m['your_status'] as String?,
+        awaiting: AwaitingEntry.listFrom(m['awaiting']),
         replyCount: (m['reply_count'] as num?)?.toInt() ?? 0,
         agentBadge: _agentBadgeFromThread(m),
         // Hub `updated_at` advances on latest message activity.
@@ -461,6 +482,8 @@ class DaemonClient {
     final thread = map['thread'] as Map<String, dynamic>? ?? {};
     final messagesRaw = map['messages'] as List<dynamic>? ?? const [];
     final pendingRaw = map['pending_downgrade'] as Map<String, dynamic>?;
+    final taskApprovalsRaw =
+        map['pending_task_approvals'] as List<dynamic>? ?? const [];
     return ThreadDetailResult(
       id: thread['id'] as String? ?? threadId,
       kind: thread['kind'] as String? ?? '',
@@ -468,10 +491,17 @@ class DaemonClient {
       from: thread['from'] as String? ?? '',
       audience: thread['audience'] as String? ?? '',
       yourStatus: thread['your_status'] as String?,
+      awaiting: AwaitingEntry.listFrom(thread['awaiting']),
       enterpriseListingId: thread['enterprise_listing_id'] as String?,
       pendingDowngrade: pendingRaw == null
           ? null
           : ThreadDowngradeProposalView.fromJson(pendingRaw),
+      pendingTaskApprovals: taskApprovalsRaw
+          .whereType<Map>()
+          .map((e) => PendingTaskApprovalView.fromJson(
+                Map<String, dynamic>.from(e),
+              ))
+          .toList(),
       messages: messagesRaw.map((e) {
         final m = e as Map<String, dynamic>;
         final bundle = m['bundle'] as Map<String, dynamic>?;
@@ -678,13 +708,20 @@ class DaemonClient {
     await _call('delete_thread', {'thread_id': threadId});
   }
 
-  Future<List<CollabSummary>> listCollabs() async {
+  Future<CollabListResult> listCollabs() async {
     final result = await _call('list_collabs');
     final map = result as Map<String, dynamic>? ?? {};
     final raw = map['collabs'] as List<dynamic>? ?? const [];
-    return raw
+    final collabs = raw
         .map((e) => CollabSummary.fromJson(e as Map<String, dynamic>? ?? {}))
         .toList();
+    return CollabListResult(
+      collabs: collabs,
+      portfolio: CollabPortfolio.fromJson(
+        map['portfolio'] as Map<String, dynamic>?,
+        collabs,
+      ),
+    );
   }
 
   Future<CollabDetail> getCollab(String collabId) async {
@@ -1154,6 +1191,7 @@ class ThreadSummary {
     required this.from,
     required this.audience,
     this.yourStatus,
+    this.awaiting = const [],
     this.replyCount = 0,
     this.agentBadge,
     this.updatedAt,
@@ -1172,6 +1210,7 @@ class ThreadSummary {
   final String from;
   final String audience;
   final String? yourStatus;
+  final List<AwaitingEntry> awaiting;
   final int replyCount;
   final String? agentBadge;
   /// ISO timestamp of latest thread activity (last message).
@@ -1190,6 +1229,7 @@ class ThreadSummary {
   ThreadSummary copyWith({
     String? status,
     String? yourStatus,
+    List<AwaitingEntry>? awaiting,
     int? replyCount,
     String? agentBadge,
     String? updatedAt,
@@ -1204,6 +1244,7 @@ class ThreadSummary {
       from: from,
       audience: audience,
       yourStatus: yourStatus ?? this.yourStatus,
+      awaiting: awaiting ?? this.awaiting,
       replyCount: replyCount ?? this.replyCount,
       agentBadge: agentBadge ?? this.agentBadge,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -1225,6 +1266,7 @@ class ThreadSummary {
         from == other.from &&
         audience == other.audience &&
         yourStatus == other.yourStatus &&
+        _sameAwaiting(awaiting, other.awaiting) &&
         replyCount == other.replyCount &&
         agentBadge == other.agentBadge &&
         updatedAt == other.updatedAt &&
@@ -1243,6 +1285,7 @@ class ThreadSummary {
       from: map['from'] as String? ?? '',
       audience: map['audience'] as String? ?? '',
       yourStatus: map['your_status'] as String?,
+      awaiting: AwaitingEntry.listFrom(map['awaiting']),
       replyCount: (map['reply_count'] as num?)?.toInt() ?? 0,
       agentBadge: map['agent_badge'] as String?,
       updatedAt: map['updated_at'] as String?,
@@ -1263,6 +1306,8 @@ class ThreadSummary {
         'from': from,
         'audience': audience,
         if (yourStatus != null) 'your_status': yourStatus,
+        if (awaiting.isNotEmpty)
+          'awaiting': awaiting.map((e) => e.toJson()).toList(),
         'reply_count': replyCount,
         if (agentBadge != null) 'agent_badge': agentBadge,
         if (updatedAt != null) 'updated_at': updatedAt,
@@ -1394,6 +1439,10 @@ class CollabSummary {
     required this.name,
     required this.encryptionMode,
     this.cardCount = 0,
+    this.openCount = 0,
+    this.doingCount = 0,
+    this.needsYouCount = 0,
+    this.updatedAt,
     this.causeAddress,
   });
 
@@ -1404,6 +1453,11 @@ class CollabSummary {
       name: map['name'] as String? ?? '',
       encryptionMode: map['encryption_mode'] as String? ?? 'e2e',
       cardCount: (map['card_count'] as num?)?.toInt() ?? 0,
+      openCount: (map['open'] as num?)?.toInt() ?? 0,
+      doingCount: (map['doing'] as num?)?.toInt() ?? 0,
+      needsYouCount: (map['needs_you'] as num?)?.toInt() ?? 0,
+      updatedAt: map['last_card_updated_at'] as String? ??
+          map['updated_at'] as String?,
       causeAddress: point?['cause_address'] as String? ??
           (map['roster'] is List
               ? _hostedCause(map['roster'] as List)
@@ -1415,9 +1469,127 @@ class CollabSummary {
   final String name;
   final String encryptionMode;
   final int cardCount;
+  final int openCount;
+  final int doingCount;
+  final int needsYouCount;
+  final String? updatedAt;
   final String? causeAddress;
 
   bool get isE2e => encryptionMode == 'e2e';
+  bool get isActive => openCount > 0;
+}
+
+class CollabActivityDay {
+  const CollabActivityDay({required this.date, required this.count});
+
+  factory CollabActivityDay.fromJson(Map<String, dynamic> map) {
+    return CollabActivityDay(
+      date: map['date'] as String? ?? '',
+      count: (map['count'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  final String date;
+  final int count;
+}
+
+class CollabLaneTotals {
+  const CollabLaneTotals({
+    this.backlog = 0,
+    this.doing = 0,
+    this.done = 0,
+  });
+
+  factory CollabLaneTotals.fromJson(Map<String, dynamic>? map) {
+    if (map == null) return const CollabLaneTotals();
+    return CollabLaneTotals(
+      backlog: (map['backlog'] as num?)?.toInt() ?? 0,
+      doing: (map['doing'] as num?)?.toInt() ?? 0,
+      done: (map['done'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  final int backlog;
+  final int doing;
+  final int done;
+
+  int get open => backlog + doing + done;
+}
+
+class CollabPortfolioTotals {
+  const CollabPortfolioTotals({
+    this.collabs = 0,
+    this.open = 0,
+    this.doing = 0,
+    this.needsYou = 0,
+  });
+
+  factory CollabPortfolioTotals.fromJson(Map<String, dynamic>? map) {
+    if (map == null) return const CollabPortfolioTotals();
+    return CollabPortfolioTotals(
+      collabs: (map['collabs'] as num?)?.toInt() ?? 0,
+      open: (map['open'] as num?)?.toInt() ?? 0,
+      doing: (map['doing'] as num?)?.toInt() ?? 0,
+      needsYou: (map['needs_you'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  final int collabs;
+  final int open;
+  final int doing;
+  final int needsYou;
+}
+
+class CollabPortfolio {
+  const CollabPortfolio({
+    this.activity = const [],
+    this.laneTotals = const CollabLaneTotals(),
+    this.totals = const CollabPortfolioTotals(),
+  });
+
+  factory CollabPortfolio.fromJson(
+    Map<String, dynamic>? map,
+    List<CollabSummary> collabs,
+  ) {
+    if (map == null) {
+      return CollabPortfolio(
+        totals: CollabPortfolioTotals(
+          collabs: collabs.length,
+          open: collabs.fold(0, (s, c) => s + c.openCount),
+          doing: collabs.fold(0, (s, c) => s + c.doingCount),
+          needsYou: collabs.fold(0, (s, c) => s + c.needsYouCount),
+        ),
+      );
+    }
+    final activityRaw = map['activity'] as List<dynamic>? ?? const [];
+    return CollabPortfolio(
+      activity: activityRaw
+          .map(
+            (e) => CollabActivityDay.fromJson(e as Map<String, dynamic>? ?? {}),
+          )
+          .toList(),
+      laneTotals: CollabLaneTotals.fromJson(
+        map['lane_totals'] as Map<String, dynamic>?,
+      ),
+      totals: CollabPortfolioTotals.fromJson(
+        map['totals'] as Map<String, dynamic>?,
+      ),
+    );
+  }
+
+  final List<CollabActivityDay> activity;
+  final CollabLaneTotals laneTotals;
+  final CollabPortfolioTotals totals;
+}
+
+class CollabListResult {
+  const CollabListResult({
+    required this.collabs,
+    required this.portfolio,
+  });
+
+  final List<CollabSummary> collabs;
+  final CollabPortfolio portfolio;
 }
 
 String? _hostedCause(List<dynamic> roster) {
@@ -1497,6 +1669,42 @@ class CollabDetail {
   final String? causeAddress;
 
   bool get isE2e => encryptionMode == 'e2e';
+}
+
+bool _sameAwaiting(List<AwaitingEntry> a, List<AwaitingEntry> b) {
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i].address != b[i].address || a[i].actor != b[i].actor) return false;
+  }
+  return true;
+}
+
+class AwaitingEntry {
+  const AwaitingEntry({required this.address, required this.actor});
+
+  final String address;
+  final String actor;
+
+  factory AwaitingEntry.fromJson(Map<String, dynamic> map) {
+    return AwaitingEntry(
+      address: (map['address'] as String? ?? '').trim(),
+      actor: (map['actor'] as String? ?? 'agent').trim().toLowerCase(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'address': address,
+        'actor': actor,
+      };
+
+  static List<AwaitingEntry> listFrom(Object? raw) {
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map>()
+        .map((e) => AwaitingEntry.fromJson(Map<String, dynamic>.from(e)))
+        .where((e) => e.address.isNotEmpty)
+        .toList();
+  }
 }
 
 class AgentInfo {
@@ -1786,6 +1994,32 @@ class ThreadDowngradeProposalView {
   bool get isPending => status == 'pending';
 }
 
+class PendingTaskApprovalView {
+  const PendingTaskApprovalView({
+    required this.messageId,
+    required this.fromHandle,
+    required this.objective,
+    required this.prompt,
+  });
+
+  factory PendingTaskApprovalView.fromJson(Map<String, dynamic> map) {
+    final decision = map['decision'] as Map<String, dynamic>? ?? const {};
+    return PendingTaskApprovalView(
+      messageId: map['message_id'] as String? ?? '',
+      fromHandle: map['from_handle'] as String? ?? '',
+      objective: map['objective'] as String? ?? '',
+      prompt: decision['prompt'] as String? ??
+          map['objective'] as String? ??
+          'Allow this agent task?',
+    );
+  }
+
+  final String messageId;
+  final String fromHandle;
+  final String objective;
+  final String prompt;
+}
+
 class ThreadDetailResult {
   const ThreadDetailResult({
     required this.id,
@@ -1794,8 +2028,10 @@ class ThreadDetailResult {
     required this.from,
     this.audience = '',
     this.yourStatus,
+    this.awaiting = const [],
     this.enterpriseListingId,
     this.pendingDowngrade,
+    this.pendingTaskApprovals = const [],
     required this.messages,
   });
 
@@ -1805,12 +2041,16 @@ class ThreadDetailResult {
   final String from;
   final String audience;
   final String? yourStatus;
+  final List<AwaitingEntry> awaiting;
 
   /// Hub billing flag — when set, show enterprise warn banner (§7.2).
   final String? enterpriseListingId;
 
   /// L5 pending unanimous downgrade consent (§6.5).
   final ThreadDowngradeProposalView? pendingDowngrade;
+
+  /// Task gates for non-pre-trusted senders (HumanDecision-style).
+  final List<PendingTaskApprovalView> pendingTaskApprovals;
 
   final List<ThreadMessageView> messages;
 
@@ -2266,18 +2506,22 @@ String friendlyDaemonError(Object error, {String what = 'That'}) {
   }
   final lower = msg.toLowerCase();
   if (lower.contains('timeout') || lower.contains('timed out')) {
-    return '$what took too long. The courier may still be starting — try again.';
+    return '$what took too long. Try again in a moment.';
   }
   if (isLocalCourierTransportFailure(lower)) {
     return "Can't reach the local mutande daemon. Open Settings and tap Check daemon.";
   }
-  if (lower.contains('401') ||
-      lower.contains('unauthorized') ||
-      lower.contains('hub error 401')) {
+  if (isHubAuthFailure(lower)) {
     return 'Sign-in expired or was rejected. Open Settings and sign in again.';
   }
+  if (isHubUnimplemented(lower)) {
+    if (what.toLowerCase().contains('collab')) {
+      return "This hub doesn't support collab yet.";
+    }
+    return "Couldn't load $what. This isn't available on the hub yet.";
+  }
   if (lower.contains('404') || lower.contains('not found')) {
-    return "Couldn't load $what. Check you're signed in, then retry.";
+    return "Couldn't load $what. Retry.";
   }
   if (lower.contains('500') ||
       lower.contains('502') ||

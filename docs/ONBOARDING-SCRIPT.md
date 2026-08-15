@@ -146,39 +146,34 @@ Each installed host is a full-width row — icon, name, status. Rows still to be
 
 ### Connect {Host}
 
-Full-screen overlay. Rail: **1 MCP** · **2 Skill**
+Full-screen overlay in the same letterhead as the four steps — no address marquee (the agent segment lands after registration). Menlo host name + `Step 1 of 2 — MCP` / `Step 2 of 2 — Skill`, then the hairline. Same 420px column, display heading, one 260px primary.
 
-Working: Linking the relay…
+Working: **Writing the relay…** / **Placing the skill…** (orb, left)
 
-Success: **MCP linked.** + host hint
+Success: **The relay is written.** + host hint (MCP only in the hint)
 
 - Cursor: Reload MCP in Cursor (or restart Cursor) so it loads the new config.
 - Claude / ChatGPT: Quit and reopen {Host} so it loads the new MCP config.
 
-Fail: error · **Retry** · **Cancel**
+Fail: **The relay didn’t write.** · error · **Retry** · *Cancel*
 
 Then skill:
 
-Working: Placing the collaboration skill…
-
-Auto-ok: **Skill ready.**
+Auto-ok: **The skill is in place.**
 
 This host will check mutande mail when you start a chat. If you’re caught up, it stays quiet.
 
 - **Continue**
 
-Manual (Claude ZIP etc.):
+Claude Code writes `~/.claude/skills/mutande/SKILL.md` and treats the skill as in place. Desktop still gets the ZIP — success copy says so, with *Reveal ZIP* · *Copy ZIP path*.
 
-This skill teaches the host to check mutande mail when you start a chat. If you’re caught up, it stays quiet.
+Manual (write failed / ZIP only): **Place the skill yourself.** + daemon hint
 
-+ daemon hint card
-
-- **Reveal ZIP** / **Copy ZIP path** (or path)
-- **Retry install**
 - **I’ve added the skill** / **Continue**
-- **Skip for now**
+- *Reveal ZIP* · *Copy ZIP path* (or path)
+- *Retry install* · *Skip for now*
 
-First-host beat: **Relay linked** — {Host} will check mutande mail on new chats.
+First-host beat: **{Host} will check mutande mail on new chats.**
 
 ### Waiting for registration
 

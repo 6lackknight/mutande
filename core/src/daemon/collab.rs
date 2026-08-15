@@ -4,12 +4,12 @@ use anyhow::{Context, Result, bail};
 use serde_json::Value;
 
 use crate::crypto::DevicePubKey;
-use crate::hub_client::Collab;
+use crate::hub_client::{Collab, ListCollabsResponse};
 
 use super::state::{DaemonState, MutandeBundle};
 
 impl DaemonState {
-    pub async fn list_collabs(&self) -> Result<Vec<Collab>> {
+    pub async fn list_collabs(&self) -> Result<ListCollabsResponse> {
         let hub = self
             .hub_client()
             .context("not signed in — call auth_login first")?;

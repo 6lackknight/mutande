@@ -56,6 +56,7 @@ import type {
   AddLearningInput,
   AddSteererInput,
   ApplyCollabDowngradeInput,
+  CollabPortfolio,
   CollabView,
   RemoveSteererInput,
   RenameCollabListInput,
@@ -680,7 +681,9 @@ export class HubStore {
     return createCollabFn(this.collabCtx(), auth, input);
   }
 
-  async listCollabs(auth: AuthContext): Promise<{ collabs: CollabView[] }> {
+  async listCollabs(
+    auth: AuthContext,
+  ): Promise<{ collabs: CollabView[]; portfolio: CollabPortfolio }> {
     return listCollabsFn(this.collabCtx(), auth);
   }
 

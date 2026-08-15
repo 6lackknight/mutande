@@ -185,7 +185,8 @@ class _AgentsPanelState extends State<AgentsPanel> {
     final taken = <String>{};
     for (final a in agents) {
       if (a.id == forAgent.id) continue;
-      final sameTransportConflict = forAgent.transport == null ||
+      final sameTransportConflict =
+          forAgent.transport == null ||
           a.transport == null ||
           a.transport == forAgent.transport;
       if (sameTransportConflict) {
@@ -322,9 +323,9 @@ class _AgentsPanelState extends State<AgentsPanel> {
       if (!mounted) return;
       await _loadHostLinks();
       if (result == null || !result.mcpOk) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not connect $host.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Could not connect $host.')));
         return;
       }
       await _reload();
@@ -398,34 +399,37 @@ class _AgentsPanelState extends State<AgentsPanel> {
           Expanded(
             child: switch (_zoom) {
               _NetworkZoom.me => _AgentsGraph(
-                  handle: handle,
-                  primary: primary,
-                  subs: subs,
-                  selectedId: _selectedAgentId ?? primary?.id,
-                  onSelect: (a, isPrimary) {
-                    setState(() => _selectedAgentId = a.id);
-                    _openInspector(a, isPrimary: isPrimary);
-                  },
-                  onAdd: _onAdd,
-                ),
-              _NetworkZoom.org => _directoryError != null &&
-                      _orgPeople().length <= 1
-                  ? PaneQuietState(
-                      title: "Couldn't load org",
-                      body: friendlyAgentsError(_directoryError!),
-                      onRetry: _reload,
-                      icon: Icons.cloud_off_outlined,
-                    )
-                  : _orgGraph(handle),
+                handle: handle,
+                primary: primary,
+                subs: subs,
+                selectedId: _selectedAgentId ?? primary?.id,
+                onSelect: (a, isPrimary) {
+                  setState(() => _selectedAgentId = a.id);
+                  _openInspector(a, isPrimary: isPrimary);
+                },
+                onAdd: _onAdd,
+              ),
+              _NetworkZoom.org =>
+                _directoryError != null && _orgPeople().length <= 1
+                    ? PaneQuietState(
+                        title: "Couldn't load org",
+                        body: friendlyAgentsError(_directoryError!),
+                        onRetry: _reload,
+                        icon: Icons.cloud_off_outlined,
+                      )
+                    : _orgGraph(handle),
               _NetworkZoom.external => _peopleGraph(
-                  hubLabel: 'you',
-                  hubCaption: formatMailAddress(handle),
-                  people: _externalOrgPeople(),
-                  onSelect: _onSelectExternalOrg,
-                ),
+                hubLabel: 'you',
+                hubCaption: formatMailAddress(handle),
+                people: _externalOrgPeople(),
+                onSelect: _onSelectExternalOrg,
+              ),
             },
           ),
-        _AgentsFooter(count: _footerCount(agents.length), version: widget.appVersion),
+        _AgentsFooter(
+          count: _footerCount(agents.length),
+          version: widget.appVersion,
+        ),
       ],
     );
   }
@@ -608,9 +612,7 @@ class _AgentsPanelState extends State<AgentsPanel> {
 
   PeerInspectData _inspectData(_OrbitPerson p) {
     final handles = p.members == null || p.members!.isEmpty
-        ? [
-            if ((p.caption ?? p.id).trim().isNotEmpty) p.caption ?? p.id,
-          ]
+        ? [if ((p.caption ?? p.id).trim().isNotEmpty) p.caption ?? p.id]
         : [
             for (final m in p.members!)
               if (m.handle.trim().isNotEmpty) formatMailAddress(m.handle),
@@ -620,7 +622,8 @@ class _AgentsPanelState extends State<AgentsPanel> {
     final platforms = <String>{
       for (final c in members)
         for (final d in c.devices)
-          if ((d.platform ?? '').trim().isNotEmpty) d.platform!.trim().toLowerCase(),
+          if ((d.platform ?? '').trim().isNotEmpty)
+            d.platform!.trim().toLowerCase(),
     };
     final deviceCount = members.fold<int>(0, (n, c) => n + c.devices.length);
     final hasPubkey = members.any(
@@ -634,15 +637,16 @@ class _AgentsPanelState extends State<AgentsPanel> {
     } else {
       final h = handles.isNotEmpty ? handles.first : p.id;
       final at = h.lastIndexOf('@');
-      if (at >= 0 && at < h.length - 1) orgSlug = h.substring(at + 1).toLowerCase();
+      if (at >= 0 && at < h.length - 1)
+        orgSlug = h.substring(at + 1).toLowerCase();
     }
     final kindLabel = p.isSelf
         ? 'you'
         : (p.members != null && p.members!.length > 1)
-            ? 'org'
-            : members.any((c) => c.isExternal)
-                ? 'external'
-                : 'teammate';
+        ? 'org'
+        : members.any((c) => c.isExternal)
+        ? 'external'
+        : 'teammate';
     String? linkedAt;
     for (final c in members) {
       final at = c.linkedAt?.trim();
@@ -711,11 +715,11 @@ class _ZoomToggle extends StatelessWidget {
           child: Text(
             label,
             style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: selected
-                      ? const Color(0xFF292524)
-                      : const Color(0xFF78716C),
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                ),
+              color: selected
+                  ? const Color(0xFF292524)
+                  : const Color(0xFF78716C),
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+            ),
           ),
         ),
       );
@@ -815,122 +819,116 @@ class _PeopleOrbitGraphState extends State<_PeopleOrbitGraph>
   Widget build(BuildContext context) {
     final people = widget.people;
     final reduce = MediaQuery.disableAnimationsOf(context);
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
-      child: ColoredBox(
-        color: const Color(0xFFF5F5F4),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final size = Size(constraints.maxWidth, constraints.maxHeight);
-            final center = Offset(size.width * 0.48, size.height * 0.48);
-            final orbitR = (math.min(size.width, size.height) * 0.32)
-                .clamp(120.0, 190.0);
-            final n = math.max(people.length, 1);
-            final selectedIndex = widget.selectedId == null
-                ? -1
-                : people.indexWhere((p) => p.id == widget.selectedId);
-            final graphReady = _enter.value > 0.9;
-            final hubSize = widget.hubLabel.length > 8 ? 11.0 : 14.0;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final size = Size(constraints.maxWidth, constraints.maxHeight);
+        final center = Offset(size.width * 0.48, size.height * 0.48);
+        final orbitR = (math.min(size.width, size.height) * 0.32).clamp(
+          120.0,
+          190.0,
+        );
+        final n = math.max(people.length, 1);
+        final selectedIndex = widget.selectedId == null
+            ? -1
+            : people.indexWhere((p) => p.id == widget.selectedId);
+        final graphReady = _enter.value > 0.9;
+        final hubSize = widget.hubLabel.length > 8 ? 11.0 : 14.0;
 
-            return AnimatedBuilder(
-              animation: _enter,
-              builder: (context, _) {
-                final t = _enter.value;
-                final hubT = _easeUnit(t, 0.00, 0.36);
-                final labelT = _easeUnit(t, 0.10, 0.48);
-                return Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    CustomPaint(
-                      size: size,
-                      painter: _ConcentricOrbitPainter(
-                        center: center,
-                        orbitR: orbitR,
-                        agentCount: people.length,
-                        emphasizeIndex: selectedIndex,
-                        progress: t,
-                      ),
-                    ),
-                    Positioned(
-                      left: center.dx - 44,
-                      top: center.dy - 44,
-                      width: 88,
-                      child: Column(
-                        children: [
-                          Opacity(
-                            opacity: hubT,
-                            child: Transform.scale(
-                              scale: reduce ? 1 : 0.88 + 0.12 * hubT,
-                              child: GestureDetector(
-                                onTap: widget.onHubTap,
-                                child: Container(
-                                  width: 88,
-                                  height: 88,
-                                  alignment: Alignment.center,
-                                  decoration: const BoxDecoration(
-                                    color: Color(0xFF292524),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Text(
-                                    widget.hubLabel,
-                                    textAlign: TextAlign.center,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      color: const Color(0xFFFAFAF9),
-                                      fontSize: hubSize,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
+        return AnimatedBuilder(
+          animation: _enter,
+          builder: (context, _) {
+            final t = _enter.value;
+            final hubT = _easeUnit(t, 0.00, 0.36);
+            final labelT = _easeUnit(t, 0.10, 0.48);
+            return Stack(
+              clipBehavior: Clip.none,
+              children: [
+                CustomPaint(
+                  size: size,
+                  painter: _ConcentricOrbitPainter(
+                    center: center,
+                    orbitR: orbitR,
+                    agentCount: people.length,
+                    emphasizeIndex: selectedIndex,
+                    progress: t,
+                  ),
+                ),
+                Positioned(
+                  left: center.dx - 44,
+                  top: center.dy - 44,
+                  width: 88,
+                  child: Column(
+                    children: [
+                      Opacity(
+                        opacity: hubT,
+                        child: Transform.scale(
+                          scale: reduce ? 1 : 0.88 + 0.12 * hubT,
+                          child: GestureDetector(
+                            onTap: widget.onHubTap,
+                            child: Container(
+                              width: 88,
+                              height: 88,
+                              alignment: Alignment.center,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFF292524),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Text(
+                                widget.hubLabel,
+                                textAlign: TextAlign.center,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: const Color(0xFFFAFAF9),
+                                  fontSize: hubSize,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
                             ),
                           ),
-                          if (widget.hubCaption != null) ...[
-                            const SizedBox(height: 8),
-                            Opacity(
-                              opacity: labelT,
-                              child: Text(
-                                widget.hubCaption!,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  color: Color(0xFF78716C),
-                                ),
-                              ),
+                        ),
+                      ),
+                      if (widget.hubCaption != null) ...[
+                        const SizedBox(height: 8),
+                        Opacity(
+                          opacity: labelT,
+                          child: Text(
+                            widget.hubCaption!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Color(0xFF78716C),
                             ),
-                          ],
-                        ],
-                      ),
-                    ),
-                    for (var i = 0; i < people.length; i++)
-                      _OrbitDiscNode(
-                        key: ValueKey(people[i].id),
-                        angle: -math.pi / 2 + (2 * math.pi * i / n),
-                        center: center,
-                        orbitR: orbitR,
-                        selected: people[i].id == widget.selectedId,
-                        reduceMotion: reduce,
-                        appearDelay: graphReady
-                            ? Duration.zero
-                            : Duration(
-                                milliseconds: 180 + math.min(i * 70, 280),
-                              ),
-                        label: people[i].label,
-                        ink: true,
-                        agentSlugs: people[i].agentSlugs,
-                        mark: _personMark(people[i]),
-                        onSelect: () => widget.onSelect(people[i]),
-                      ),
-                  ],
-                );
-              },
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                for (var i = 0; i < people.length; i++)
+                  _OrbitDiscNode(
+                    key: ValueKey(people[i].id),
+                    angle: -math.pi / 2 + (2 * math.pi * i / n),
+                    center: center,
+                    orbitR: orbitR,
+                    selected: people[i].id == widget.selectedId,
+                    reduceMotion: reduce,
+                    appearDelay: graphReady
+                        ? Duration.zero
+                        : Duration(milliseconds: 180 + math.min(i * 70, 280)),
+                    label: people[i].label,
+                    ink: true,
+                    agentSlugs: people[i].agentSlugs,
+                    mark: _personMark(people[i]),
+                    onSelect: () => widget.onSelect(people[i]),
+                  ),
+              ],
             );
           },
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -1001,10 +999,7 @@ class _AgentsGraphState extends State<_AgentsGraph>
     with SingleTickerProviderStateMixin {
   late final AnimationController _enter;
 
-  List<AgentInfo> get _orbitAgents => [
-        ?widget.primary,
-        ...widget.subs,
-      ];
+  List<AgentInfo> get _orbitAgents => [?widget.primary, ...widget.subs];
 
   @override
   void initState() {
@@ -1033,143 +1028,138 @@ class _AgentsGraphState extends State<_AgentsGraph>
   Widget build(BuildContext context) {
     final agents = _orbitAgents;
     final reduce = MediaQuery.disableAnimationsOf(context);
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
-      child: ColoredBox(
-        color: const Color(0xFFF5F5F4),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final size = Size(constraints.maxWidth, constraints.maxHeight);
-            final center = Offset(size.width * 0.48, size.height * 0.48);
-            final orbitR = (math.min(size.width, size.height) * 0.32)
-                .clamp(120.0, 190.0);
-            final n = math.max(agents.length, 1);
-            final selectedIndex = widget.selectedId == null
-                ? -1
-                : agents.indexWhere((a) => a.id == widget.selectedId);
-            final emphasize = selectedIndex >= 0
-                ? selectedIndex
-                : (widget.primary == null
-                    ? -1
-                    : agents.indexWhere((a) => a.id == widget.primary!.id));
-            final graphReady = _enter.value > 0.9;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final size = Size(constraints.maxWidth, constraints.maxHeight);
+        final center = Offset(size.width * 0.48, size.height * 0.48);
+        final orbitR = (math.min(size.width, size.height) * 0.32).clamp(
+          120.0,
+          190.0,
+        );
+        final n = math.max(agents.length, 1);
+        final selectedIndex = widget.selectedId == null
+            ? -1
+            : agents.indexWhere((a) => a.id == widget.selectedId);
+        final emphasize = selectedIndex >= 0
+            ? selectedIndex
+            : (widget.primary == null
+                  ? -1
+                  : agents.indexWhere((a) => a.id == widget.primary!.id));
+        final graphReady = _enter.value > 0.9;
 
-            return AnimatedBuilder(
-              animation: _enter,
-              builder: (context, _) {
-                final t = _enter.value;
-                final hubT = _easeUnit(t, 0.00, 0.36);
-                final labelT = _easeUnit(t, 0.10, 0.48);
-                final addT = _easeUnit(t, 0.52, 0.82);
-                return Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    CustomPaint(
-                      size: size,
-                      painter: _ConcentricOrbitPainter(
-                        center: center,
-                        orbitR: orbitR,
-                        agentCount: agents.length,
-                        emphasizeIndex: emphasize,
-                        progress: t,
-                      ),
-                    ),
-                    Positioned(
-                      left: center.dx - 44,
-                      top: center.dy - 44,
-                      width: 88,
-                      child: Column(
-                        children: [
-                          Opacity(
-                            opacity: hubT,
-                            child: Transform.scale(
-                              scale: reduce ? 1 : 0.88 + 0.12 * hubT,
-                              child: Container(
-                                width: 88,
-                                height: 88,
-                                alignment: Alignment.center,
-                                decoration: const BoxDecoration(
-                                  color: Color(0xFF292524),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Text(
-                                  'you',
-                                  style: TextStyle(
-                                    color: Color(0xFFFAFAF9),
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
+        return AnimatedBuilder(
+          animation: _enter,
+          builder: (context, _) {
+            final t = _enter.value;
+            final hubT = _easeUnit(t, 0.00, 0.36);
+            final labelT = _easeUnit(t, 0.10, 0.48);
+            final addT = _easeUnit(t, 0.52, 0.82);
+            return Stack(
+              clipBehavior: Clip.none,
+              children: [
+                CustomPaint(
+                  size: size,
+                  painter: _ConcentricOrbitPainter(
+                    center: center,
+                    orbitR: orbitR,
+                    agentCount: agents.length,
+                    emphasizeIndex: emphasize,
+                    progress: t,
+                  ),
+                ),
+                Positioned(
+                  left: center.dx - 44,
+                  top: center.dy - 44,
+                  width: 88,
+                  child: Column(
+                    children: [
+                      Opacity(
+                        opacity: hubT,
+                        child: Transform.scale(
+                          scale: reduce ? 1 : 0.88 + 0.12 * hubT,
+                          child: Container(
+                            width: 88,
+                            height: 88,
+                            alignment: Alignment.center,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF292524),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Text(
+                              'you',
+                              style: TextStyle(
+                                color: Color(0xFFFAFAF9),
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ),
-                          const SizedBox(height: 8),
-                          Opacity(
-                            opacity: labelT,
-                            child: Text(
-                              formatMailAddress(widget.handle),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                fontSize: 11,
-                                color: Color(0xFF78716C),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    for (var i = 0; i < agents.length; i++)
-                      _OrbitDiscNode(
-                        key: ValueKey(agents[i].id),
-                        angle: -math.pi / 2 + (2 * math.pi * i / n),
-                        center: center,
-                        orbitR: orbitR,
-                        selected: agents[i].id == widget.selectedId ||
-                            (widget.selectedId == null &&
-                                widget.primary != null &&
-                                agents[i].id == widget.primary!.id),
-                        reduceMotion: reduce,
-                        appearDelay: graphReady
-                            ? Duration.zero
-                            : Duration(
-                                milliseconds: 180 + math.min(i * 70, 280),
-                              ),
-                        label: agents[i].slug.trim().toLowerCase(),
-                        mark: AiHostIcon(
-                          agents[i].slug.trim().toLowerCase(),
-                          size: 28,
-                          showPlate: false,
-                        ),
-                        onSelect: () => widget.onSelect(
-                          agents[i],
-                          widget.primary != null &&
-                              agents[i].id == widget.primary!.id,
                         ),
                       ),
-                    Positioned(
-                      right: 16,
-                      bottom: 16,
-                      child: Opacity(
-                        opacity: addT,
-                        child: TextButton.icon(
-                          onPressed: widget.onAdd,
-                          icon: const Icon(Icons.add, size: 16),
-                          label: const Text('Add'),
-                          style: TextButton.styleFrom(
-                            foregroundColor: const Color(0xFF57534E),
+                      const SizedBox(height: 8),
+                      Opacity(
+                        opacity: labelT,
+                        child: Text(
+                          formatMailAddress(widget.handle),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFF78716C),
                           ),
                         ),
                       ),
+                    ],
+                  ),
+                ),
+                for (var i = 0; i < agents.length; i++)
+                  _OrbitDiscNode(
+                    key: ValueKey(agents[i].id),
+                    angle: -math.pi / 2 + (2 * math.pi * i / n),
+                    center: center,
+                    orbitR: orbitR,
+                    selected:
+                        agents[i].id == widget.selectedId ||
+                        (widget.selectedId == null &&
+                            widget.primary != null &&
+                            agents[i].id == widget.primary!.id),
+                    reduceMotion: reduce,
+                    appearDelay: graphReady
+                        ? Duration.zero
+                        : Duration(milliseconds: 180 + math.min(i * 70, 280)),
+                    label: agents[i].slug.trim().toLowerCase(),
+                    mark: AiHostIcon(
+                      agents[i].slug.trim().toLowerCase(),
+                      size: 28,
+                      showPlate: false,
                     ),
-                  ],
-                );
-              },
+                    onSelect: () => widget.onSelect(
+                      agents[i],
+                      widget.primary != null &&
+                          agents[i].id == widget.primary!.id,
+                    ),
+                  ),
+                Positioned(
+                  right: 16,
+                  bottom: 16,
+                  child: Opacity(
+                    opacity: addT,
+                    child: TextButton.icon(
+                      onPressed: widget.onAdd,
+                      icon: const Icon(Icons.add, size: 16),
+                      label: const Text('Add'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFF57534E),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             );
           },
-        ),
-      ),
+        );
+      },
     );
   }
 }
@@ -1249,10 +1239,10 @@ class _OrbitDiscNodeState extends State<_OrbitDiscNode>
     final hoverScale = widget.reduceMotion
         ? 1.0
         : _press
-            ? 0.96
-            : _hover
-                ? 1.05
-                : 1.0;
+        ? 0.96
+        : _hover
+        ? 1.05
+        : 1.0;
     final ink = widget.ink;
     final ticks = widget.agentSlugs.take(4).toList();
     final extra = widget.agentSlugs.length - ticks.length;
@@ -1327,18 +1317,19 @@ class _OrbitDiscNodeState extends State<_OrbitDiscNode>
                               border: Border.all(
                                 color: widget.selected
                                     ? (ink
-                                        ? const Color(0xFFFAFAF9)
-                                        : const Color(0xFF292524))
+                                          ? const Color(0xFFFAFAF9)
+                                          : const Color(0xFF292524))
                                     : (ink
-                                        ? const Color(0xFF292524)
-                                        : const Color(0xFFA8A29E)),
+                                          ? const Color(0xFF292524)
+                                          : const Color(0xFFA8A29E)),
                                 width: widget.selected ? 2 : (ink ? 0 : 1),
                               ),
                               boxShadow: widget.selected
                                   ? [
                                       BoxShadow(
-                                        color: const Color(0xFF166534)
-                                            .withValues(alpha: 0.22),
+                                        color: const Color(
+                                          0xFF166534,
+                                        ).withValues(alpha: 0.22),
                                         blurRadius: 14,
                                         spreadRadius: 2,
                                       ),
@@ -1372,8 +1363,9 @@ class _OrbitDiscNodeState extends State<_OrbitDiscNode>
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 12,
-                      fontWeight:
-                          widget.selected ? FontWeight.w600 : FontWeight.w500,
+                      fontWeight: widget.selected
+                          ? FontWeight.w600
+                          : FontWeight.w500,
                       color: const Color(0xFF57534E),
                     ),
                   ),
@@ -1396,7 +1388,8 @@ class _OrbitDiscNodeState extends State<_OrbitDiscNode>
     final tickAng = widget.angle + t * spread;
     const r = 34.0;
     return Positioned(
-      left: (widget.ink ? 140.0 : 112.0) / 2 + math.cos(tickAng) * r - _tick / 2,
+      left:
+          (widget.ink ? 140.0 : 112.0) / 2 + math.cos(tickAng) * r - _tick / 2,
       top: _disc / 2 + math.sin(tickAng) * r - _tick / 2,
       child: child,
     );
@@ -1612,15 +1605,12 @@ class _AgentInspectorState extends State<_AgentInspector> {
 
   // Bare handle for default; never show /default. Subs: alice@acme/<slug>.
   String get _display => formatMailAddress(
-        widget.isPrimary
-            ? widget.handle
-            : '${widget.handle}/${widget.agent.slug}',
-      );
+    widget.isPrimary ? widget.handle : '${widget.handle}/${widget.agent.slug}',
+  );
 
   String get _host => agentHostLabel(widget.agent.slug);
 
-  String get _statusLabel =>
-      HostLinkStatusBadge.resolve(widget.link).$1;
+  String get _statusLabel => HostLinkStatusBadge.resolve(widget.link).$1;
 
   Future<void> _onRename() async {
     if (_busy) return;
@@ -1667,9 +1657,7 @@ class _AgentInspectorState extends State<_AgentInspector> {
       if (!mounted) return;
       setState(() {
         _connecting = false;
-        _actionError = e is StateError
-            ? e.message
-            : friendlyAgentsError(e);
+        _actionError = e is StateError ? e.message : friendlyAgentsError(e);
         _retryAction = _onConnect;
       });
     }
@@ -1829,10 +1817,7 @@ class _AgentInspectorState extends State<_AgentInspector> {
                         lastSeen: widget.agent.lastSeen,
                       ),
                     ),
-                  const _InspectorField(
-                    label: 'Trust',
-                    value: 'org · E2E',
-                  ),
+                  const _InspectorField(label: 'Trust', value: 'org · E2E'),
                   if (_linked) ...[
                     if ((widget.link?.path ?? '').trim().isNotEmpty)
                       _InspectorField(
@@ -1846,9 +1831,9 @@ class _AgentInspectorState extends State<_AgentInspector> {
                             ? widget.link!.note!.trim()
                             : 'Quit and reopen $_host so it loads the mutande MCP tools.',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: const Color(0xFF78716C),
-                              height: 1.35,
-                            ),
+                          color: const Color(0xFF78716C),
+                          height: 1.35,
+                        ),
                       ),
                     ),
                   ],
@@ -1940,9 +1925,7 @@ class _AgentInspectorState extends State<_AgentInspector> {
                                 semanticLabel: 'Setting default…',
                               )
                             : Text(
-                                widget.isPrimary
-                                    ? 'Default'
-                                    : 'Set as default',
+                                widget.isPrimary ? 'Default' : 'Set as default',
                               ),
                       ),
                     ),
@@ -2095,10 +2078,7 @@ class _RenameSlugDialogState extends State<_RenameSlugDialog> {
             foregroundColor: Colors.white,
           ),
           child: _saving
-              ? const MutandeOrb.loading(
-                  semanticLabel: 'Saving…',
-                  dark: true,
-                )
+              ? const MutandeOrb.loading(semanticLabel: 'Saving…', dark: true)
               : const Text('Save'),
         ),
       ],

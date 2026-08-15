@@ -24,6 +24,23 @@ class AiHostIcon extends StatelessWidget {
   static const _plate = Color(0xFFE7E5E4);
   static const _plateBorder = Color(0xFFD6D3D1);
 
+  /// Product plates: Cursor is a black mark, Claude a white one.
+  static Color _fillFor(String slug) {
+    return switch (slug) {
+      'cursor' => const Color(0xFF000000),
+      'claude' => const Color(0xFFFFFFFF),
+      _ => _plate,
+    };
+  }
+
+  static Color _borderFor(String slug) {
+    return switch (slug) {
+      'cursor' => const Color(0xFF000000),
+      'claude' => _plateBorder,
+      _ => _plateBorder,
+    };
+  }
+
   static const _assets = {
     'cursor': 'assets/hosts/cursor.png',
     'claude': 'assets/hosts/claude.png',
@@ -94,9 +111,9 @@ class AiHostIcon extends StatelessWidget {
       height: size,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: _plate,
+        color: _fillFor(slug),
         borderRadius: BorderRadius.circular(size * 0.28),
-        border: Border.all(color: _plateBorder, width: 1),
+        border: Border.all(color: _borderFor(slug), width: 1),
       ),
       child: mark,
     );

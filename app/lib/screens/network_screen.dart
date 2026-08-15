@@ -52,50 +52,53 @@ class _NetworkPanelState extends State<NetworkPanel> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-          child: Row(
-            children: [
-              _SegmentPill(
-                key: const Key('network-people'),
-                label: 'People',
-                selected: _segment == 0,
-                onTap: () => setState(() => _segment = 0),
-              ),
-              const SizedBox(width: 4),
-              _SegmentPill(
-                key: const Key('network-agents'),
-                label: 'Agents',
-                selected: _segment == 1,
-                onTap: () => setState(() => _segment = 1),
-              ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: _segment == 0
-              ? ContactsPanel(
-                  daemon: widget.daemon,
-                  handle: widget.handle,
-                  inviteWebUrl:
-                      widget.inviteWebUrl ?? AppConfig.defaultWebAppUrl,
-                  onReloadReady: widget.onReloadPeople,
-                  onStartThread: widget.onStartThread,
-                )
-              : AgentsPanel(
-                  daemon: widget.daemon,
-                  handle: widget.handle,
-                  appVersion: widget.appVersion,
-                  hostLinkStore: widget.hostLinkStore,
-                  onReloadReady: widget.onReloadAgents,
-                  onViewThreads: widget.onViewThreads,
-                  onStartThread: widget.onStartThread,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Row(
+              children: [
+                _SegmentPill(
+                  key: const Key('network-people'),
+                  label: 'People',
+                  selected: _segment == 0,
+                  onTap: () => setState(() => _segment = 0),
                 ),
-        ),
-      ],
+                const SizedBox(width: 4),
+                _SegmentPill(
+                  key: const Key('network-agents'),
+                  label: 'Agents',
+                  selected: _segment == 1,
+                  onTap: () => setState(() => _segment = 1),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: _segment == 0
+                ? ContactsPanel(
+                    daemon: widget.daemon,
+                    handle: widget.handle,
+                    inviteWebUrl:
+                        widget.inviteWebUrl ?? AppConfig.defaultWebAppUrl,
+                    onReloadReady: widget.onReloadPeople,
+                    onStartThread: widget.onStartThread,
+                  )
+                : AgentsPanel(
+                    daemon: widget.daemon,
+                    handle: widget.handle,
+                    appVersion: widget.appVersion,
+                    hostLinkStore: widget.hostLinkStore,
+                    onReloadReady: widget.onReloadAgents,
+                    onViewThreads: widget.onViewThreads,
+                    onStartThread: widget.onStartThread,
+                  ),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -5,6 +5,7 @@ import {
   DEFAULT_LIST_NAMES,
   insertLanePosition,
   laneGapExhausted,
+  last84ActivityDays,
   LANE_MIN_GAP,
   rebalancePositions,
 } from "./collab.ts";
@@ -75,6 +76,16 @@ Deno.test("lane midpoint insert and rebalance helpers", () => {
   assertEquals(laneGapExhausted(1, 1 + LANE_MIN_GAP / 2), true);
   assertEquals(laneGapExhausted(0, 1024), false);
   assertEquals(rebalancePositions(3), [1024, 2048, 3072]);
+});
+
+Deno.test("last84ActivityDays fills UTC window", () => {
+  const now = new Date("2026-08-15T18:00:00Z");
+  const days = last84ActivityDays(new Map([["2026-08-15", 3]]), now);
+  assertEquals(days.length, 84);
+  assertEquals(days[0].date, "2026-05-24");
+  assertEquals(days[83].date, "2026-08-15");
+  assertEquals(days[83].count, 3);
+  assertEquals(days[82].count, 0);
 });
 
 Deno.test("create collab derives e2e from sidecar roster", async () => {
@@ -424,6 +435,62 @@ Deno.test("card_count is derived from indexed threads", async () => {
     const got = await store.getCollab(aliceAuth, collab.id);
     assertEquals(got.card_count, 2);
     assertEquals(got.cards.length, 2);
-    assertEquals("card_count" in (await store.listCollabs(aliceAuth)).collabs[0], true);
+    const listed = await store.listCollabs(aliceAuth);
+    assertEquals(listed.collabs[0].card_count, 2);
+    assertEquals(listed.collabs[0].open, 2);
+    assertEquals(listed.portfolio.totals.open, 2);
+    assertEquals(listed.portfolio.activity.length, 84);
+  });
+});
+
+Deno.test("list collabs portfolio buckets lanes, needs-you, and activity", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth, bobAuth } = await setupOrg(store);
+    const collab = await store.createCollab(aliceAuth, {
+      name: "Dash",
+      steerer_handles: ["bob@acme"],
+      roster_addresses: ["@cursor"],
+    });
+    const doing = collab.lists[1];
+    const done = collab.lists[2];
+    await store.createThread(aliceAuth, {
+      to: "bob@acme",
+      envelope: sampleEnvelope("backlog"),
+      collab_id: collab.id,
+    });
+    await store.createThread(aliceAuth, {
+      to: "alice@acme",
+      envelope: sampleEnvelope("doing"),
+      collab_id: collab.id,
+      lane_id: doing.id,
+    });
+    const closed = await store.createThread(aliceAuth, {
+      to: "alice@acme",
+      envelope: sampleEnvelope("done"),
+      collab_id: collab.id,
+      lane_id: done.id,
+    });
+    await store.closeThread(aliceAuth, closed.thread.id);
+
+    const aliceList = await store.listCollabs(aliceAuth);
+    assertEquals(aliceList.collabs.length, 1);
+    assertEquals(aliceList.collabs[0].card_count, 3);
+    assertEquals(aliceList.collabs[0].open, 2);
+    assertEquals(aliceList.collabs[0].doing, 1);
+    assertEquals(aliceList.portfolio.totals.collabs, 1);
+    assertEquals(aliceList.portfolio.totals.open, 2);
+    assertEquals(aliceList.portfolio.totals.doing, 1);
+    assertEquals(aliceList.portfolio.lane_totals.backlog, 1);
+    assertEquals(aliceList.portfolio.lane_totals.doing, 1);
+    assertEquals(aliceList.portfolio.lane_totals.done, 0);
+    const today = new Date().toISOString().slice(0, 10);
+    const day = aliceList.portfolio.activity.find((d) => d.date === today);
+    assertEquals(day?.count, 3);
+    assertEquals(aliceList.collabs[0].cards.length, 0);
+
+    const bobList = await store.listCollabs(bobAuth);
+    assertEquals(bobList.collabs[0].needs_you, 2);
+    assertEquals(bobList.portfolio.totals.needs_you, 2);
+    assertEquals(aliceList.collabs[0].needs_you ?? 0, 0);
   });
 });

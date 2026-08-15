@@ -1,18 +1,14 @@
 import 'package:flutter/material.dart';
 
 import '../theme/mutande_macos_theme.dart';
+import 'home_chrome_buttons.dart';
 import 'onboarding_address_rail.dart';
 
 /// Onboarding steps, one per segment of the address plus its first delivery.
 ///
 /// Notifications used to be a step of its own; it now rides along with the
 /// ping wait, where the arriving pong proves the permission works.
-enum OnboardingStep {
-  signIn,
-  team,
-  connect,
-  ping,
-}
+enum OnboardingStep { signIn, team, connect, ping }
 
 extension OnboardingStepLabels on OnboardingStep {
   String get label {
@@ -39,6 +35,11 @@ abstract final class OnboardingSpace {
   static const md = 16.0;
   static const lg = 24.0;
   static const xl = 32.0;
+  static const xxl = 48.0;
+
+  /// Compact Mac titlebar height. Extra top inset when letterhead sits under
+  /// overlay traffic lights (transparent titlebar, full-size content view).
+  static const titlebar = 28.0;
 }
 
 /// Shared onboarding chrome: the address marquee over a narrow content column.
@@ -109,7 +110,11 @@ class OnboardingShell extends StatelessWidget {
             ),
             // Letterhead rule — full bleed, so the address reads as stationery
             // and the empty right side has a job.
-            const Divider(height: 1, thickness: 1, color: MutandeColors.stone200),
+            const Divider(
+              height: 1,
+              thickness: 1,
+              color: MutandeColors.stone200,
+            ),
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(
@@ -119,8 +124,9 @@ class OnboardingShell extends StatelessWidget {
                   OnboardingSpace.xl,
                 ),
                 child: Align(
-                  alignment:
-                      centerContent ? Alignment.topCenter : Alignment.topLeft,
+                  alignment: centerContent
+                      ? Alignment.topCenter
+                      : Alignment.topLeft,
                   child: ConstrainedBox(
                     constraints: BoxConstraints(maxWidth: contentMaxWidth),
                     child: child,
@@ -198,11 +204,7 @@ class OnboardingHeading extends StatelessWidget {
             ),
           ),
         ),
-      Text(
-        title,
-        textAlign: textAlign,
-        style: titleStyle,
-      ),
+      Text(title, textAlign: textAlign, style: titleStyle),
       if (subtitle != null)
         Padding(
           padding: EdgeInsets.only(
@@ -234,7 +236,8 @@ class OnboardingHeading extends StatelessWidget {
         ),
     ];
 
-    final staggered = variant == OnboardingHeadingVariant.display &&
+    final staggered =
+        variant == OnboardingHeadingVariant.display &&
         !MediaQuery.disableAnimationsOf(context);
 
     return Column(
@@ -310,9 +313,9 @@ class OnboardingErrorBanner extends StatelessWidget {
       child: Text(
         message,
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: const Color(0xFF991B1B),
-              height: 1.35,
-            ),
+          color: const Color(0xFF991B1B),
+          height: 1.35,
+        ),
       ),
     );
   }
@@ -348,7 +351,10 @@ class OnboardingActions extends StatelessWidget {
       children: [
         SizedBox(height: topSpacing),
         if (primary != null)
-          SizedBox(width: primaryWidth, child: primary),
+          SizedBox(
+            width: primaryWidth,
+            child: HomeChromeButtons.theme(child: primary!),
+          ),
         if (links.isNotEmpty)
           Padding(
             padding: EdgeInsets.only(top: primary == null ? 0 : 6),

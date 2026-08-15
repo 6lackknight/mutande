@@ -3,6 +3,7 @@ import 'package:macos_ui/macos_ui.dart';
 
 import '../models/agent_transport.dart';
 import '../services/daemon_client.dart';
+import '../services/daemon_errors.dart';
 import '../theme/mutande_macos_theme.dart';
 import '../util/address_display.dart';
 import 'ai_host_icon.dart';
@@ -107,44 +108,15 @@ bool collabInstructionsVisible({
 /// Local-part of `alice@acme` → `alice`.
 String collabHandleLocalPart(String handle) {
   final h = (bareCollabHandle(handle) ?? handle.trim()).toLowerCase();
-  final at = h.indexOf('@');
-  if (at <= 0) return h;
-  return h.substring(0, at);
+  return handleLocalPart(h);
 }
 
 /// Title line: display name, else handle local-part.
-String collabPersonTitle({String? displayName, required String handle}) {
-  final n = displayName?.trim();
-  if (n != null && n.isNotEmpty) return n;
-  return collabHandleLocalPart(handle);
-}
+String collabPersonTitle({String? displayName, required String handle}) =>
+    personDisplayTitle(displayName: displayName, handle: handle);
 
 /// Initials from a display name (`Tawanda Brandon` → `TB`) or local-part (`tawanda` → `TA`).
-String collabPersonInitials(String title) {
-  final parts = title
-      .trim()
-      .split(RegExp(r'\s+'))
-      .where((w) => w.isNotEmpty)
-      .toList();
-  String letter(String w) {
-    for (final r in w.runes) {
-      final ch = String.fromCharCode(r);
-      if (RegExp(r'[A-Za-z0-9]').hasMatch(ch)) return ch.toUpperCase();
-    }
-    return '';
-  }
-
-  if (parts.length >= 2) {
-    final a = letter(parts[0]);
-    final b = letter(parts[1]);
-    if (a.isNotEmpty && b.isNotEmpty) return '$a$b';
-    if (a.isNotEmpty) return a;
-  }
-  final cleaned = title.replaceAll(RegExp(r'[^A-Za-z0-9]'), '');
-  if (cleaned.isEmpty) return '?';
-  if (cleaned.length == 1) return cleaned.toUpperCase();
-  return cleaned.substring(0, 2).toUpperCase();
-}
+String collabPersonInitials(String title) => personInitials(title);
 
 /// One picker row per agent_id; same owner+slug sidecar+web → one web chip.
 List<CollabPickerAgent> collapseCollabAgents(Iterable<CollabPickerAgent> raw) {
@@ -221,17 +193,28 @@ class CreateCollabSheet extends StatefulWidget {
 class _PersonOpt {
   const _PersonOpt({
     required this.handle,
+    this.listHandle,
     this.displayName,
     this.avatarUrl,
     this.isSelf = false,
     this.isExternal = false,
   });
 
+  /// Lowercase identity (`alice@acme`).
   final String handle;
+
+  /// Hub casing for `list_agents?handle=` — prod 404s on a lowercased handle.
+  final String? listHandle;
   final String? displayName;
   final String? avatarUrl;
   final bool isSelf;
   final bool isExternal;
+
+  String get rpcHandle {
+    final raw = listHandle?.trim();
+    if (raw != null && raw.isNotEmpty) return raw;
+    return handle;
+  }
 }
 
 class CollabPickerAgent {
@@ -259,6 +242,7 @@ class _CreateCollabSheetState extends State<CreateCollabSheet> {
   bool _loading = true;
   String? _error;
   String? _pickerError;
+  bool _needsSignIn = false;
   String? _cause;
   bool _e2e = true;
   bool _externalCause = false;
@@ -288,26 +272,43 @@ class _CreateCollabSheetState extends State<CreateCollabSheet> {
     super.dispose();
   }
 
-  Future<AgentListResult> _agentsFor({String? handle}) async {
+  Future<(AgentListResult, Object?)> _agentsFor({String? handle}) async {
     try {
-      return await widget.daemon.listAgents(handle: handle);
-    } catch (_) {
-      return const AgentListResult(agents: []);
+      return (await widget.daemon.listAgents(handle: handle), null);
+    } catch (e) {
+      return (const AgentListResult(agents: []), e);
     }
   }
 
+  String _loadErrorCopy(Object e, {required String what}) {
+    final lower = e.toString().toLowerCase();
+    if (isHubAuthFailure(lower)) {
+      return friendlyDaemonError(e, what: what);
+    }
+    if (isHubUnimplemented(lower) ||
+        lower.contains('404') ||
+        lower.contains('not found')) {
+      return "Couldn't load $what. Retry.";
+    }
+    return friendlyDaemonError(e, what: what);
+  }
+
   Future<void> _loadPickers() async {
+    final keepForm =
+        !_loading || _people.isNotEmpty || _name.text.trim().isNotEmpty;
     setState(() {
-      _loading = true;
+      if (!keepForm) _loading = true;
       _pickerError = null;
+      _needsSignIn = false;
     });
+    Object? contactsErr;
+    Object? ownAgentsErr;
     try {
       List<ContactView> contacts = const [];
-      var contactsFailed = false;
       try {
         contacts = await widget.daemon.listContacts();
-      } catch (_) {
-        contactsFailed = true;
+      } catch (e) {
+        contactsErr = e;
       }
       // Alpha lists approved externals in this same People row
       // (docs/COLLAB-PRD.md). Using them in a collab is ungated for now;
@@ -323,6 +324,7 @@ class _CreateCollabSheetState extends State<CreateCollabSheet> {
       final me = _me;
       String? selfName;
       String? selfAvatar;
+      String? selfListHandle = widget.handle?.trim();
       final people = <_PersonOpt>[];
       final seen = <String>{};
       for (final c in contacts) {
@@ -332,11 +334,13 @@ class _CreateCollabSheetState extends State<CreateCollabSheet> {
         if (h == me) {
           selfName = c.displayName;
           selfAvatar = c.avatarUrl;
+          selfListHandle = c.handle.trim();
           continue;
         }
         seen.add(h);
         people.add(_PersonOpt(
           handle: h,
+          listHandle: c.handle.trim(),
           displayName: c.displayName,
           avatarUrl: c.avatarUrl,
           isExternal: c.isExternal,
@@ -349,6 +353,7 @@ class _CreateCollabSheetState extends State<CreateCollabSheet> {
         seen.add(h);
         people.add(_PersonOpt(
           handle: h,
+          listHandle: c.handle.trim(),
           displayName: c.displayName,
           avatarUrl: c.avatarUrl,
           isExternal: true,
@@ -359,6 +364,7 @@ class _CreateCollabSheetState extends State<CreateCollabSheet> {
           0,
           _PersonOpt(
             handle: me,
+            listHandle: selfListHandle,
             displayName: selfName,
             avatarUrl: selfAvatar,
             isSelf: true,
@@ -368,7 +374,8 @@ class _CreateCollabSheetState extends State<CreateCollabSheet> {
 
       final agents = <CollabPickerAgent>[];
       if (me != null) {
-        final own = await _agentsFor();
+        final (own, err) = await _agentsFor();
+        ownAgentsErr = err;
         for (final a in own.agents) {
           final opt = _ownAgent(me, a);
           if (opt != null) agents.add(opt);
@@ -377,7 +384,10 @@ class _CreateCollabSheetState extends State<CreateCollabSheet> {
 
       final others = people.where((p) => !p.isSelf).toList();
       final teammateLists = await Future.wait(
-        others.map((p) async => (p.handle, await _agentsFor(handle: p.handle))),
+        others.map((p) async {
+          final (list, _) = await _agentsFor(handle: p.rpcHandle);
+          return (p.handle, list);
+        }),
       );
       for (final (handle, list) in teammateLists) {
         for (final a in list.agents) {
@@ -387,21 +397,33 @@ class _CreateCollabSheetState extends State<CreateCollabSheet> {
       }
 
       if (!mounted) return;
+      final contactsFailed = contactsErr != null;
+      final onlySelf = people.length <= (me == null ? 0 : 1);
+      String? pickerError;
+      var needsSignIn = false;
+      if (contactsFailed && onlySelf) {
+        pickerError = _loadErrorCopy(contactsErr, what: 'people');
+        needsSignIn = isHubAuthFailure(contactsErr.toString().toLowerCase());
+      } else if (ownAgentsErr != null && agents.isEmpty) {
+        pickerError = _loadErrorCopy(ownAgentsErr, what: 'agents');
+        needsSignIn = isHubAuthFailure(ownAgentsErr.toString().toLowerCase());
+      }
       setState(() {
         _people = people;
         _agents = collapseCollabAgents(agents);
         if (me != null) _steerers.add(me);
         _loading = false;
-        _pickerError = contactsFailed && people.length <= (me == null ? 0 : 1)
-            ? 'Couldn’t load people. Retry.'
-            : null;
+        _pickerError = pickerError;
+        _needsSignIn = needsSignIn;
         _syncEncryption();
       });
     } catch (e) {
       if (!mounted) return;
+      final lower = e.toString().toLowerCase();
       setState(() {
         _loading = false;
-        _pickerError = friendlyDaemonError(e, what: 'Roster');
+        _pickerError = _loadErrorCopy(e, what: 'people');
+        _needsSignIn = isHubAuthFailure(lower);
       });
     }
   }
@@ -495,6 +517,7 @@ class _CreateCollabSheetState extends State<CreateCollabSheet> {
     setState(() {
       _busy = true;
       _error = null;
+      _needsSignIn = false;
     });
     try {
       final instructions = _instructions.text.trim();
@@ -508,9 +531,15 @@ class _CreateCollabSheetState extends State<CreateCollabSheet> {
       Navigator.of(context).pop(created);
     } catch (e) {
       if (!mounted) return;
+      final lower = e.toString().toLowerCase();
       setState(() {
         _busy = false;
-        _error = friendlyDaemonError(e, what: 'Create collab');
+        _needsSignIn = isHubAuthFailure(lower);
+        if (isHubUnimplemented(lower)) {
+          _error = "This hub doesn't support collab yet.";
+        } else {
+          _error = friendlyDaemonError(e, what: 'Create collab');
+        }
       });
     }
   }
@@ -622,26 +651,6 @@ class _CreateCollabSheetState extends State<CreateCollabSheet> {
                               ),
                           ],
                         ),
-                        if (_pickerError != null) ...[
-                          const SizedBox(height: 10),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  _pickerError!,
-                                  style: const TextStyle(
-                                    color: MutandeColors.bronze,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ),
-                              TextButton(
-                                onPressed: _busy ? null : _loadPickers,
-                                child: const Text('Retry'),
-                              ),
-                            ],
-                          ),
-                        ],
                         const SizedBox(height: 16),
                         Text(
                           collabEncryptionCopy(
@@ -668,28 +677,48 @@ class _CreateCollabSheetState extends State<CreateCollabSheet> {
                             ),
                           ),
                         ],
-                        if (_error != null) ...[
-                          const SizedBox(height: 12),
-                          Text(
-                            _error!,
-                            style: const TextStyle(
-                              color: MutandeColors.bronze,
-                              fontSize: 12,
-                              height: 1.35,
-                            ),
-                          ),
-                        ],
                       ],
                     ),
             ),
             const SizedBox(height: 12),
-            Row(
-              children: [
-                TextButton(
-                  onPressed: _busy ? null : () => Navigator.of(context).pop(),
-                  child: const Text('Cancel'),
+            if (_error != null || _pickerError != null) ...[
+              Text(
+                _error ?? _pickerError!,
+                style: const TextStyle(
+                  color: MutandeColors.bronze,
+                  fontSize: 12,
+                  height: 1.35,
                 ),
-                const Spacer(),
+              ),
+              const SizedBox(height: 8),
+            ],
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextButton(
+                      onPressed:
+                          _busy ? null : () => Navigator.of(context).pop(),
+                      child: const Text('Cancel'),
+                    ),
+                    if (_pickerError != null)
+                      TextButton(
+                        onPressed: _busy ? null : _loadPickers,
+                        child: const Text('Retry'),
+                      ),
+                    if (_needsSignIn)
+                      TextButton(
+                        onPressed:
+                            _busy ? null : () => Navigator.of(context).pop(),
+                        child: const Text('Sign in'),
+                      ),
+                  ],
+                ),
                 _CreateButton(busy: _busy, onPressed: _submit),
               ],
             ),

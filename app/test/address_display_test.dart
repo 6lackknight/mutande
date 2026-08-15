@@ -41,4 +41,30 @@ void main() {
       );
     });
   });
+
+  group('personDisplayTitle', () {
+    test('prefers hub display_name', () {
+      expect(
+        personDisplayTitle(
+          displayName: 'Tawanda Brandon',
+          handle: 'tawanda@tbhco',
+        ),
+        'Tawanda Brandon',
+      );
+    });
+
+    test('falls back to handle local-part', () {
+      expect(personDisplayTitle(handle: 'Orinea@tbhco'), 'Orinea');
+      expect(personDisplayTitle(displayName: '  ', handle: 'bob@acme'), 'Bob');
+      expect(
+        personDisplayTitle(handle: 'tawanda.brandon@tbhco'),
+        'Tawanda Brandon',
+      );
+    });
+
+    test('initials from name or local-part', () {
+      expect(personInitials('Tawanda Brandon'), 'TB');
+      expect(personInitials('tawanda'), 'TA');
+    });
+  });
 }

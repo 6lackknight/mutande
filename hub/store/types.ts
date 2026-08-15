@@ -958,9 +958,44 @@ export interface CollabCardSummary {
   your_status?: "pending" | "replied";
 }
 
+/** Derived card tallies — never stored. */
+export interface CollabCardStats {
+  card_count: number;
+  open: number;
+  closed: number;
+  backlog: number;
+  doing: number;
+  done: number;
+  needs_you: number;
+  last_updated_at?: string;
+}
+
+export interface CollabPortfolioActivityDay {
+  date: string;
+  count: number;
+}
+
+export interface CollabPortfolio {
+  activity: CollabPortfolioActivityDay[];
+  lane_totals: { backlog: number; doing: number; done: number };
+  totals: {
+    collabs: number;
+    open: number;
+    doing: number;
+    needs_you: number;
+  };
+}
+
 export interface CollabView extends Collab {
   /** Derived — never stored. */
   card_count: number;
+  /** Open cards. Present on list_collabs; optional on get. */
+  open?: number;
+  /** Open cards in Doing. */
+  doing?: number;
+  /** Open cards awaiting this viewer. */
+  needs_you?: number;
+  last_card_updated_at?: string;
   cards: CollabCardSummary[];
   learnings: CollabLearning[];
   steerers: { user_id: string; handle: string }[];

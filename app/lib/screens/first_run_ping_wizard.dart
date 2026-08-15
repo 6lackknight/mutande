@@ -76,12 +76,12 @@ class _FirstRunPingWizardState extends State<FirstRunPingWizard> {
   }
 
   static _PingStep? _previewStep(PingPreview? preview) => switch (preview) {
-        null => null,
-        PingPreview.copy => _PingStep.copy,
-        PingPreview.waiting => _PingStep.waiting,
-        PingPreview.delivered => _PingStep.success,
-        PingPreview.timeout => _PingStep.timeout,
-      };
+    null => null,
+    PingPreview.copy => _PingStep.copy,
+    PingPreview.waiting => _PingStep.waiting,
+    PingPreview.delivered => _PingStep.success,
+    PingPreview.timeout => _PingStep.timeout,
+  };
 
   Future<void> _copyPrompt() async {
     Analytics.track(AnalyticsEvent.pingCopy);
@@ -207,25 +207,25 @@ class _FirstRunPingWizardState extends State<FirstRunPingWizard> {
       debugBanner: widget.debugBanner,
       child: switch (_step) {
         _PingStep.copy => _CopyStep(
-            theme: theme,
-            agent: widget.address.agent,
-            onCopy: _copyPrompt,
-            onWaiting: _startWaiting,
-            onSkip: _skip,
-          ),
+          theme: theme,
+          agent: widget.address.agent,
+          onCopy: _copyPrompt,
+          onWaiting: _startWaiting,
+          onSkip: _skip,
+        ),
         _PingStep.waiting => _WaitingStep(
-            error: _error,
-            showBannerAsk: !_bannersAsked,
-            bannersGranted: _bannersGranted,
-            onAllowBanners: _allowBanners,
-            onDeclineBanners: _declineBanners,
-            onSkip: _skip,
-          ),
+          error: _error,
+          showBannerAsk: !_bannersAsked,
+          bannersGranted: _bannersGranted,
+          onAllowBanners: _allowBanners,
+          onDeclineBanners: _declineBanners,
+          onSkip: _skip,
+        ),
         _PingStep.success => const _SuccessStep(),
         _PingStep.timeout => _TimeoutStep(
-            onRetry: () => setState(() => _step = _PingStep.copy),
-            onSkip: _skip,
-          ),
+          onRetry: () => setState(() => _step = _PingStep.copy),
+          onSkip: _skip,
+        ),
       },
     );
   }
@@ -340,9 +340,9 @@ class _WaitingStep extends StatelessWidget {
           const SizedBox(height: OnboardingSpace.lg),
           Text(
             'Banners are on — the pong will announce itself.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: MutandeColors.stone500,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: MutandeColors.stone500),
           ),
         ],
         OnboardingActions(
@@ -400,10 +400,7 @@ class _BannerAsk extends StatelessWidget {
                 child: const Text('Turn on banners'),
               ),
               const SizedBox(width: OnboardingSpace.xs),
-              TextButton(
-                onPressed: onDecline,
-                child: const Text('Not now'),
-              ),
+              TextButton(onPressed: onDecline, child: const Text('Not now')),
             ],
           ),
         ],
@@ -449,10 +446,7 @@ class _TimeoutStep extends StatelessWidget {
         ),
         OnboardingActions(
           topSpacing: OnboardingSpace.lg,
-          primary: FilledButton(
-            onPressed: onRetry,
-            child: const Text('Retry'),
-          ),
+          primary: FilledButton(onPressed: onRetry, child: const Text('Retry')),
           tertiary: TextButton(
             onPressed: onSkip,
             child: const Text('Skip for now'),

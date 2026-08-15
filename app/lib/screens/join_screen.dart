@@ -7,6 +7,7 @@ import '../config/app_config.dart';
 import '../services/analytics.dart';
 import '../services/daemon_client.dart';
 import '../theme/mutande_macos_theme.dart';
+import '../widgets/home_chrome_buttons.dart';
 import '../widgets/morphing_orb_button.dart';
 
 enum _OnboardStep { signIn, choose, createTeam, joinInvite }
@@ -187,7 +188,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       if (_looksAlreadyOnboarded(e)) {
         try {
           await _finishIfConfigured();
-          Analytics.track(AnalyticsEvent.createTeamSuccess, {'already_onboarded': true});
+          Analytics.track(AnalyticsEvent.createTeamSuccess, {
+            'already_onboarded': true,
+          });
           return;
         } catch (_) {}
       }
@@ -195,7 +198,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         _submitting = false;
         _error = _friendlyError(e, what: 'Create team');
       });
-      Analytics.track(AnalyticsEvent.createTeamFailure, {'reason': 'create_error'});
+      Analytics.track(AnalyticsEvent.createTeamFailure, {
+        'reason': 'create_error',
+      });
     }
   }
 
@@ -230,7 +235,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       if (_looksAlreadyOnboarded(e)) {
         try {
           await _finishIfConfigured();
-          Analytics.track(AnalyticsEvent.joinInviteSuccess, {'already_onboarded': true});
+          Analytics.track(AnalyticsEvent.joinInviteSuccess, {
+            'already_onboarded': true,
+          });
           return;
         } catch (_) {}
       }
@@ -238,7 +245,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         _submitting = false;
         _error = _friendlyError(e, what: 'Join');
       });
-      Analytics.track(AnalyticsEvent.joinInviteFailure, {'reason': 'join_error'});
+      Analytics.track(AnalyticsEvent.joinInviteFailure, {
+        'reason': 'join_error',
+      });
     }
   }
 
@@ -365,17 +374,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     }
   }
 
-  ButtonStyle get _secondaryStyle => OutlinedButton.styleFrom(
-    foregroundColor: MutandeColors.stone800,
-    side: const BorderSide(color: MutandeColors.stone200),
-    minimumSize: const Size.fromHeight(48),
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    textStyle: const TextStyle(
-      fontWeight: FontWeight.w600,
-      fontSize: 15,
-      letterSpacing: -0.1,
-    ),
-  );
+  ButtonStyle get _secondaryStyle => HomeChromeButtons.outlined;
 
   Widget _ghostLink({required String label, required VoidCallback? onPressed}) {
     return TextButton(
@@ -409,9 +408,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             onPressed: _submitting
                 ? null
                 : () => setState(() {
-                      _error = null;
-                      _step = _OnboardStep.createTeam;
-                    }),
+                    _error = null;
+                    _step = _OnboardStep.createTeam;
+                  }),
           ),
           const SizedBox(height: 10),
           SizedBox(
@@ -479,9 +478,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             onPressed: _submitting
                 ? null
                 : () => setState(() {
-                      _error = null;
-                      _step = _OnboardStep.choose;
-                    }),
+                    _error = null;
+                    _step = _OnboardStep.choose;
+                  }),
           ),
         ];
       case _OnboardStep.joinInvite:

@@ -17,6 +17,7 @@ class NotificationPrefs {
       'claude': true,
       'chatgpt': true,
     },
+    this.threadInspectorVisible = true,
   });
 
   factory NotificationPrefs.fromJson(Map<String, dynamic> map) {
@@ -45,6 +46,7 @@ class NotificationPrefs {
       needsYou: map['needs_you'] != false,
       mutedThreadIds: muted,
       agentSlugsEnabled: agents,
+      threadInspectorVisible: map['thread_inspector_visible'] != false,
     );
   }
 
@@ -53,6 +55,7 @@ class NotificationPrefs {
   final bool needsYou;
   final Set<String> mutedThreadIds;
   final Map<String, bool> agentSlugsEnabled;
+  final bool threadInspectorVisible;
 
   bool isAgentEnabled(String slug) =>
       agentSlugsEnabled[slug.toLowerCase()] ?? true;
@@ -65,6 +68,7 @@ class NotificationPrefs {
     bool? needsYou,
     Set<String>? mutedThreadIds,
     Map<String, bool>? agentSlugsEnabled,
+    bool? threadInspectorVisible,
   }) {
     return NotificationPrefs(
       enabled: enabled ?? this.enabled,
@@ -72,22 +76,25 @@ class NotificationPrefs {
       needsYou: needsYou ?? this.needsYou,
       mutedThreadIds: mutedThreadIds ?? this.mutedThreadIds,
       agentSlugsEnabled: agentSlugsEnabled ?? this.agentSlugsEnabled,
+      threadInspectorVisible:
+          threadInspectorVisible ?? this.threadInspectorVisible,
     );
   }
 
   Map<String, dynamic> toJson() => {
-        'enabled': enabled,
-        'mail_for_agents': mailForAgents,
-        'needs_you': needsYou,
-        'muted_thread_ids': mutedThreadIds.toList()..sort(),
-        'agent_slugs_enabled': agentSlugsEnabled,
-      };
+    'enabled': enabled,
+    'mail_for_agents': mailForAgents,
+    'needs_you': needsYou,
+    'muted_thread_ids': mutedThreadIds.toList()..sort(),
+    'agent_slugs_enabled': agentSlugsEnabled,
+    'thread_inspector_visible': threadInspectorVisible,
+  };
 }
 
 class NotificationPrefsStore {
   NotificationPrefsStore({File? file, NotificationPrefs? memory})
-      : _file = file,
-        _memory = memory;
+    : _file = file,
+      _memory = memory;
 
   factory NotificationPrefsStore.memory([NotificationPrefs? prefs]) =>
       NotificationPrefsStore(memory: prefs ?? const NotificationPrefs());

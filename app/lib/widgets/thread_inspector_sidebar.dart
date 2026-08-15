@@ -9,7 +9,11 @@ import '../util/clock_format.dart';
 import 'ai_host_icon.dart';
 
 class ThreadInspectorSidebar extends StatelessWidget {
-  const ThreadInspectorSidebar({super.key, required this.detail, this.myHandle});
+  const ThreadInspectorSidebar({
+    super.key,
+    required this.detail,
+    this.myHandle,
+  });
 
   final ThreadDetailResult detail;
   final String? myHandle;
@@ -31,63 +35,67 @@ class ThreadInspectorSidebar extends StatelessWidget {
     }
     final participants = _participants(detail);
 
-    return DecoratedBox(
-      decoration: const BoxDecoration(color: MutandeColors.stone50),
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 16),
-        children: [
-          Text(
-            'THREAD',
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: MutandeColors.stone400,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.6,
-            ),
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 16),
+      children: [
+        Text(
+          'THREAD',
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: MutandeColors.stone400,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.6,
           ),
-          const SizedBox(height: 12),
-          if (kind != null) _Fact(label: 'Kind', value: kind),
+        ),
+        const SizedBox(height: 12),
+        if (kind != null) _Fact(label: 'Kind', value: kind),
+        _Fact(
+          label: 'Status',
+          value: detail.status == 'closed' ? 'Closed' : 'Open',
+        ),
+        if (first != null)
           _Fact(
-            label: 'Status',
-            value: detail.status == 'closed' ? 'Closed' : 'Open',
+            label: 'Started',
+            value: formatRelativeTime(first.toIso8601String()),
           ),
-          if (first != null)
-            _Fact(
-              label: 'Started',
-              value: formatRelativeTime(first.toIso8601String()),
-            ),
-          if (last != null)
-            _Fact(
-              label: 'Latest',
-              value: formatRelativeTime(last.toIso8601String()),
-            ),
-          _Fact(label: 'Messages', value: '${detail.messages.length}'),
-          if (files > 0) _Fact(label: 'Files', value: '$files'),
-          if (upvotes > 0) _Fact(label: 'Upvotes', value: '$upvotes'),
-          const SizedBox(height: 8),
-          _CopyId(id: detail.id),
-          const SizedBox(height: 18),
-          Text(
-            'PEOPLE',
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: MutandeColors.stone400,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.6,
-            ),
+        if (last != null)
+          _Fact(
+            label: 'Latest',
+            value: formatRelativeTime(last.toIso8601String()),
           ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              for (final p in participants)
-                _PersonChip(
-                  handle: p,
-                  label: formatMailAddress(p, myHandle: myHandle),
-                ),
-            ],
+        _Fact(label: 'Messages', value: '${detail.messages.length}'),
+        if (files > 0) _Fact(label: 'Files', value: '$files'),
+        if (upvotes > 0) _Fact(label: 'Upvotes', value: '$upvotes'),
+        const SizedBox(height: 8),
+        _CopyId(id: detail.id),
+        const SizedBox(height: 18),
+        Text(
+          'PEOPLE',
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: MutandeColors.stone400,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.6,
           ),
-        ],
-      ),
+        ),
+        const SizedBox(height: 8),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            return Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final p in participants)
+                  ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: constraints.maxWidth),
+                    child: _PersonChip(
+                      handle: p,
+                      label: formatMailAddress(p, myHandle: myHandle),
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+      ],
     );
   }
 }
@@ -116,6 +124,8 @@ class _Fact extends StatelessWidget {
           const SizedBox(height: 2),
           Text(
             value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: MutandeColors.stone800,
               fontSize: 13,
@@ -140,9 +150,9 @@ class _CopyId extends StatelessWidget {
       onTap: () async {
         await Clipboard.setData(ClipboardData(text: id));
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Thread id copied')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('Thread id copied')));
         }
       },
       borderRadius: BorderRadius.circular(6),
@@ -153,6 +163,8 @@ class _CopyId extends StatelessWidget {
             Expanded(
               child: Text(
                 short,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   color: MutandeColors.stone500,
                   fontSize: 11,
@@ -188,12 +200,16 @@ class _PersonChip extends StatelessWidget {
         children: [
           _Mark(handle: handle, label: label, size: 16),
           const SizedBox(width: 6),
-          Text(
-            label,
-            style: const TextStyle(
-              color: MutandeColors.stone800,
-              fontSize: 11.5,
-              fontWeight: FontWeight.w600,
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: MutandeColors.stone800,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],

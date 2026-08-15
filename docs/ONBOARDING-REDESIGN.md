@@ -81,7 +81,7 @@ Address: `alice@acme/‗‗‗‗`, agent slot active.
 
 Three equal host tiles are the identical-card-grid anti-pattern, and two of them are usually dead. Replace with hierarchy by detection state: **installed hosts get a large primary tile**, and anything not detected collapses into one quiet line — `Claude and ChatGPT aren't installed on this Mac` — rather than three tiles competing at equal weight.
 
-Metaphor discipline in the sub-flow: it currently says "Linking the relay…" → "MCP linked." → "Relay linked", which is three names for one thing. Pick relay for everything the user reads, and let MCP appear only in the technical hint ("Reload MCP in Cursor so it loads the new config").
+Connect {Host} overlay uses the same letterhead as the four steps (Menlo host name, `Step N of 2`, hairline) — not a centered icon + green checks. User-facing copy says *relay* and *skill*; MCP appears only in the technical hint.
 
 `/cursor` lands when the agent registers.
 

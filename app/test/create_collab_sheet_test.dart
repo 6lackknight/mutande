@@ -18,6 +18,18 @@ http.Response _rpcOk(Object? id, Object result) {
   );
 }
 
+http.Response _rpcErr(Object? id, String message, {int code = -32000}) {
+  return http.Response(
+    jsonEncode({
+      'jsonrpc': '2.0',
+      'id': id,
+      'error': {'code': code, 'message': message},
+    }),
+    200,
+    headers: {'content-type': 'application/json'},
+  );
+}
+
 DaemonClient _mockDaemon(
   FutureOr<http.Response> Function(http.Request) handler,
 ) {
@@ -81,7 +93,7 @@ void main() {
       collabPersonTitle(displayName: 'Tawanda Brandon', handle: 'tawanda@tbhco'),
       'Tawanda Brandon',
     );
-    expect(collabPersonTitle(handle: 'alice@acme'), 'alice');
+    expect(collabPersonTitle(handle: 'alice@acme'), 'Alice');
     expect(collabPersonInitials('Tawanda Brandon'), 'TB');
     expect(collabPersonInitials('tawanda'), 'TA');
   });
@@ -240,7 +252,7 @@ void main() {
     expect(find.text('PEOPLE'), findsOneWidget);
     expect(find.text('AGENTS'), findsOneWidget);
     expect(find.text('alice@acme'), findsOneWidget);
-    expect(find.text('alice'), findsOneWidget);
+    expect(find.text('Alice'), findsOneWidget);
     expect(find.text('Bob Builder'), findsOneWidget);
     expect(find.text('bob@acme'), findsOneWidget);
     expect(find.text('@cursor'), findsOneWidget);
@@ -580,5 +592,189 @@ void main() {
     expect(find.text('Board'), findsOneWidget);
     expect(find.text('@cursor'), findsOneWidget);
     expect(find.text('Create'), findsOneWidget);
+  });
+
+  testWidgets('teammate list_agents 404 still shows people; no sign-in copy', (
+    tester,
+  ) async {
+    String? agentsHandle;
+    final daemon = _mockDaemon((request) async {
+      final body = _rpc(request);
+      final method = body['method'] as String?;
+      if (method == 'list_contacts') {
+        return _rpcOk(body['id'], {
+          'contacts': [
+            {'handle': 'Orinea@tbhco', 'display_name': 'Orinea'},
+            {'handle': 'bob@acme', 'display_name': 'Bob Builder'},
+          ],
+        });
+      }
+      if (method == 'list_external_contacts') {
+        return _rpcErr(
+          body['id'],
+          'hub error 404 Not Found: {"error":"not_found"}',
+        );
+      }
+      if (method == 'list_agents') {
+        final handle = (body['params'] as Map?)?['handle'] as String?;
+        if (handle != null) agentsHandle ??= handle;
+        if (handle == 'orinea@tbhco') {
+          return _rpcErr(
+            body['id'],
+            'hub error 404 Not Found: {"error":"not_found","message":"User not found"}',
+          );
+        }
+        if (handle == 'Orinea@tbhco') {
+          return _rpcOk(body['id'], {
+            'agents': [
+              {'id': 'o1', 'slug': 'claude', 'transport': 'sidecar'},
+            ],
+          });
+        }
+        if (handle == 'bob@acme') {
+          return _rpcOk(body['id'], {
+            'agents': [
+              {'id': 'b1', 'slug': 'cursor', 'transport': 'sidecar'},
+            ],
+          });
+        }
+        return _rpcOk(body['id'], {
+          'agents': [
+            {'id': 'a1', 'slug': 'cursor', 'transport': 'sidecar'},
+          ],
+        });
+      }
+      return _rpcOk(body['id'], {'ok': true});
+    });
+
+    await _pumpSheet(tester, daemon: daemon, handle: 'tawanda@tbhco');
+
+    expect(find.text('Create collab'), findsOneWidget);
+    expect(find.text('Orinea'), findsOneWidget);
+    expect(find.text('Bob Builder'), findsOneWidget);
+    expect(find.text('@cursor'), findsOneWidget);
+    expect(find.text('bob@acme/cursor'), findsOneWidget);
+    expect(find.text('orinea@tbhco/claude'), findsOneWidget);
+    expect(agentsHandle, 'Orinea@tbhco');
+    expect(find.textContaining('signed in'), findsNothing);
+    expect(find.text('Sign in'), findsNothing);
+    expect(find.text('Retry'), findsNothing);
+    expect(find.text('Cancel'), findsOneWidget);
+    expect(find.text('Create'), findsOneWidget);
+  });
+
+  testWidgets('contacts ok and own agents fail still shows people chips', (
+    tester,
+  ) async {
+    final daemon = _mockDaemon((request) async {
+      final body = _rpc(request);
+      final method = body['method'] as String?;
+      if (method == 'list_contacts') {
+        return _rpcOk(body['id'], {
+          'contacts': [
+            {'handle': 'bob@acme', 'display_name': 'Bob Builder'},
+          ],
+        });
+      }
+      if (method == 'list_agents') {
+        final handle = (body['params'] as Map?)?['handle'] as String?;
+        if (handle == null) {
+          return _rpcErr(body['id'], 'hub error 503 Service Unavailable');
+        }
+        return _rpcOk(body['id'], {
+          'agents': [
+            {'id': 'b1', 'slug': 'claude', 'transport': 'sidecar'},
+          ],
+        });
+      }
+      return _rpcOk(body['id'], {'ok': true});
+    });
+
+    await _pumpSheet(tester, daemon: daemon);
+
+    expect(find.text('Bob Builder'), findsOneWidget);
+    expect(find.text('alice@acme'), findsOneWidget);
+    expect(find.text('bob@acme/claude'), findsOneWidget);
+    expect(find.textContaining('signed in'), findsNothing);
+  });
+
+  testWidgets('create_collab 404 says hub has no collab, not sign-in', (
+    tester,
+  ) async {
+    final daemon = _mockDaemon((request) async {
+      final body = _rpc(request);
+      final method = body['method'] as String?;
+      if (method == 'list_contacts') {
+        return _rpcOk(body['id'], {'contacts': []});
+      }
+      if (method == 'list_agents') {
+        return _rpcOk(body['id'], {
+          'agents': [
+            {'id': 'a1', 'slug': 'cursor', 'transport': 'sidecar'},
+          ],
+        });
+      }
+      if (method == 'create_collab') {
+        return _rpcErr(
+          body['id'],
+          'hub error 404 Not Found: {"error":"not_found"}',
+        );
+      }
+      return _rpcOk(body['id'], {'ok': true});
+    });
+
+    await _pumpSheet(tester, daemon: daemon);
+    await tester.enterText(find.byType(TextField).first, 'Launch week');
+    await tester.tap(find.text('@cursor'));
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, 'Create'));
+    await tester.pump();
+
+    expect(find.text("This hub doesn't support collab yet."), findsOneWidget);
+    expect(find.textContaining('signed in'), findsNothing);
+    expect(find.text('Launch week'), findsOneWidget);
+    expect(find.text('Sign in'), findsNothing);
+    expect(find.text('Cancel'), findsOneWidget);
+    expect(find.text('Create'), findsOneWidget);
+  });
+
+  testWidgets('load 401 shows Sign in; retry keeps name', (tester) async {
+    var contactsCalls = 0;
+    final daemon = _mockDaemon((request) async {
+      final body = _rpc(request);
+      final method = body['method'] as String?;
+      if (method == 'list_contacts') {
+        contactsCalls += 1;
+        if (contactsCalls == 1) {
+          return _rpcErr(body['id'], 'hub error 401 Unauthorized');
+        }
+        return _rpcOk(body['id'], {
+          'contacts': [
+            {'handle': 'bob@acme', 'display_name': 'Bob Builder'},
+          ],
+        });
+      }
+      if (method == 'list_agents') {
+        return _rpcOk(body['id'], {
+          'agents': [
+            {'id': 'a1', 'slug': 'cursor', 'transport': 'sidecar'},
+          ],
+        });
+      }
+      return _rpcOk(body['id'], {'ok': true});
+    });
+
+    await _pumpSheet(tester, daemon: daemon);
+    expect(find.text('Sign in'), findsOneWidget);
+    expect(find.text('Retry'), findsOneWidget);
+    expect(find.textContaining('Sign-in expired'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField).first, 'Keep me');
+    await tester.tap(find.text('Retry'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(find.text('Keep me'), findsOneWidget);
+    expect(find.text('Bob Builder'), findsOneWidget);
+    expect(find.text('Sign in'), findsNothing);
   });
 }

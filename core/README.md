@@ -137,9 +137,9 @@ curl -s -X POST http://127.0.0.1:3847/rpc \
 |------|----------|
 | Cursor | Writes `~/.cursor/skills/mutande/SKILL.md` (`mode: auto`) |
 | ChatGPT | Writes `~/.agents/skills/mutande/SKILL.md` and `~/.codex/skills/mutande/SKILL.md` |
-| Claude | Stages ZIP at `~/.mutande/skills/mutande-claude.zip` (`mode: manual`) — user uploads in Claude → Customize → Skills |
+| Claude | Writes `~/.claude/skills/mutande/SKILL.md` for Claude Code (`mode: auto`) and stages `~/.mutande/skills/mutande-claude.zip` for Desktop upload |
 
-Result shape: `{ host, ok, mode, path?, zip_path?, hint? }`. Claude always returns `ok: false` with `mode: manual` (account-side upload); Cursor/ChatGPT return `ok: true` when the file write succeeds.
+Result shape: `{ host, ok, mode, path?, zip_path?, hint? }`. Cursor/ChatGPT/Claude Code return `ok: true` when the file write succeeds. Claude still returns `zip_path` so Desktop can upload if needed; `ok: false` / `mode: manual` only if the Code path could not be written.
 
 ### Host tool permissions
 

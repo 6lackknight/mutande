@@ -13,9 +13,68 @@ abstract final class HomeChrome {
   static const muteFill = MutandeColors.stone200;
   static const muteForeground = MutandeColors.stone500;
 
+  /// Segment label / chrome control icon (Threads · Collab · Network).
+  static const iconSize = 16.0;
+
+  /// Selected thumb min width.
+  static const controlMinWidth = 112.0;
+
+  /// Window inset around the home body card (below the titlebar).
+  static const bodyInset = EdgeInsets.fromLTRB(10, 6, 10, 10);
+
+  /// Content-card radius — same family as the tab track (stadium 20).
+  static BorderRadius get bodyRadius => BorderRadius.circular(16);
+
+  /// Active tab thumb fill — raised reading pane reuses this.
+  static const raisedFill = MutandeColors.stone50;
+
+  /// Inset of the reading card inside the muted body (list stays flush).
+  static const raisedInset = EdgeInsets.fromLTRB(4, 8, 8, 8);
+
+  /// Nested in [bodyRadius] 16; matches Material card corners.
+  static BorderRadius get raisedRadius => BorderRadius.circular(12);
+
   static BorderRadius get stadium => BorderRadius.circular(height / 2);
   static BorderRadius get thumbStadium =>
       BorderRadius.circular(thumbHeight / 2);
+}
+
+/// Inset muted surface for Threads · Collab · Network — same fill as the
+/// tab-chip track, clipped so inner panes don't bleed into the window frame.
+class HomeChromeBody extends StatelessWidget {
+  const HomeChromeBody({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: HomeChrome.bodyInset,
+      child: ClipRRect(
+        borderRadius: HomeChrome.bodyRadius,
+        child: ColoredBox(color: HomeChrome.muteFill, child: child),
+      ),
+    );
+  }
+}
+
+/// White raised surface matching the selected tab thumb (`stone50`, no
+/// border/shadow — the chip has none). Used for the Threads reading pane.
+class HomeChromeRaised extends StatelessWidget {
+  const HomeChromeRaised({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: HomeChrome.raisedInset,
+      child: ClipRRect(
+        borderRadius: HomeChrome.raisedRadius,
+        child: ColoredBox(color: HomeChrome.raisedFill, child: child),
+      ),
+    );
+  }
 }
 
 /// Pinned home tabs: Threads · Collab · Network.
@@ -51,10 +110,7 @@ class HomeChromeStrip extends StatelessWidget {
       children: [
         if (showGlyph) ...[
           const Padding(
-            padding: EdgeInsets.only(
-              left: HomeChrome.glyphLeading,
-              right: 12,
-            ),
+            padding: EdgeInsets.only(left: HomeChrome.glyphLeading, right: 12),
             child: _AtIGlyph(),
           ),
         ],

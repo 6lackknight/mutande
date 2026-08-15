@@ -234,7 +234,7 @@ class _SearchDialogState extends State<SearchDialog> {
       error = friendlyDaemonError(e, what: 'Search');
     }
     try {
-      collabs = await widget.daemon.listCollabs();
+      collabs = (await widget.daemon.listCollabs()).collabs;
     } catch (e) {
       error ??= friendlyDaemonError(e, what: 'Search');
     }
