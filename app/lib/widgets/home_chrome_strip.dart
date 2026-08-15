@@ -20,6 +20,11 @@ class HomeChromeStrip extends StatelessWidget {
   final bool showGlyph;
 
   static const labels = ['Threads', 'Collab', 'Network'];
+  static const icons = [
+    CupertinoIcons.envelope,
+    CupertinoIcons.rectangle_split_3x1,
+    CupertinoIcons.person_2,
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -27,7 +32,10 @@ class HomeChromeStrip extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         if (showGlyph) ...[
-          const Padding(padding: EdgeInsets.only(right: 8), child: _AtIGlyph()),
+          const Padding(
+            padding: EdgeInsets.only(right: 12),
+            child: _AtIGlyph(),
+          ),
         ],
         CupertinoSlidingSegmentedControl<int>(
           groupValue: tab,
@@ -39,17 +47,44 @@ class HomeChromeStrip extends StatelessWidget {
           proportionalWidth: true,
           children: {
             for (var i = 0; i < labels.length; i++)
-              i: Text(
-                labels[i],
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: tab == i ? FontWeight.w600 : FontWeight.w500,
-                  color: tab == i
-                      ? MutandeColors.stone800
-                      : MutandeColors.stone500,
-                ),
+              i: _SegmentLabel(
+                icon: icons[i],
+                label: labels[i],
+                selected: tab == i,
               ),
           },
+        ),
+      ],
+    );
+  }
+}
+
+class _SegmentLabel extends StatelessWidget {
+  const _SegmentLabel({
+    required this.icon,
+    required this.label,
+    required this.selected,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = selected ? MutandeColors.stone800 : MutandeColors.stone500;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: color),
+        const SizedBox(width: 5),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+            color: color,
+          ),
         ),
       ],
     );

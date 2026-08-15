@@ -1073,7 +1073,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: Row(
                         children: [
                           Padding(
-                            padding: const EdgeInsets.only(right: 8),
+                            padding: const EdgeInsets.only(right: 12),
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(7),
                               child: Image.asset(
@@ -1121,7 +1121,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       padding: _searchMode
                           ? EdgeInsets.zero
                           : (_tab == 0 || _tab == 1
-                                ? const EdgeInsets.fromLTRB(0, 4, 0, 0)
+                                ? const EdgeInsets.fromLTRB(0, 10, 0, 0)
                                 : const EdgeInsets.fromLTRB(16, 8, 16, 12)),
                       child: _contentBody(),
                     ),
@@ -1141,7 +1141,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 automaticallyImplyLeading: false,
                 dividerColor: MacosColors.transparent,
                 title: _tabStrip(showGlyph: true),
-                titleWidth: 380,
+                titleWidth: 540,
                 actions: [
                   if (_searchInChrome)
                     CustomToolbarItem(
@@ -1166,7 +1166,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         Expanded(
                           child: Padding(
                             padding: (!_searchMode && (_tab == 0 || _tab == 1))
-                                ? const EdgeInsets.fromLTRB(0, 4, 0, 0)
+                                ? const EdgeInsets.fromLTRB(0, 10, 0, 0)
                                 : (!_searchMode
                                       ? const EdgeInsets.fromLTRB(16, 8, 16, 12)
                                       : EdgeInsets.zero),

@@ -3992,6 +3992,7 @@ mod tests {
                 upvotes: None,
                 receipts: None,
             }],
+            pending_downgrade: None,
         };
 
         let opened = state.open_thread_detail(detail);
@@ -4177,6 +4178,7 @@ mod tests {
                 upvotes: None,
                 receipts: None,
             }],
+            pending_downgrade: None,
         };
 
         let opened = state.open_thread_detail(detail);
@@ -4458,6 +4460,7 @@ mod tests {
                 upvotes: None,
                 receipts: None,
             }],
+            pending_downgrade: None,
         };
         let opened = state.open_thread_detail(detail);
         let msg = &opened.messages[0];
@@ -5002,6 +5005,7 @@ mod tests {
             app_envelope: Some(app.clone()),
             content_store: None,
             upvotes: None,
+            receipts: None,
         };
         let opened = state.finish_opened_app_message(msg, app);
         let bundle = opened.bundle.expect("bundle");
@@ -5107,6 +5111,7 @@ mod tests {
                 upvotes: None,
                 receipts: None,
             }],
+            pending_downgrade: None,
         };
         let opened = state.open_thread_detail(detail);
         let bundle = opened.messages[0].bundle.as_ref().expect("bundle");
@@ -6027,6 +6032,7 @@ mod tests {
                 upvotes: None,
                 receipts: None,
             }],
+            pending_downgrade: None,
         };
 
         Mock::given(method("GET"))

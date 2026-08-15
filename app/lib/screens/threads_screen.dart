@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_resizable_container/flutter_resizable_container.dart';
@@ -306,9 +307,8 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
     }
     try {
       final threadsFuture = widget.daemon.listThreads(
-        filter: (_filter == 'all' ||
-                _filter == 'collab' ||
-                _filter == 'unfiled')
+        filter:
+            (_filter == 'all' || _filter == 'collab' || _filter == 'unfiled')
             ? null
             : _filter,
       );
@@ -350,8 +350,7 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
     }
 
     final unchanged = _sameThreadList(_threads, next);
-    final openStillPresent =
-        openId == null || next.any((t) => t.id == openId);
+    final openStillPresent = openId == null || next.any((t) => t.id == openId);
 
     if (!unchanged || _loading || (clearError && _error != null)) {
       setState(() {
@@ -388,17 +387,22 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
 
   void _removeThreadLocally(String threadId) {
     setState(() {
-      _threads = [for (final t in _threads) if (t.id != threadId) t];
+      _threads = [
+        for (final t in _threads)
+          if (t.id != threadId) t,
+      ];
       if (_openId == threadId) _openId = null;
     });
   }
 
   void _applyClosedLocally(String threadId) {
-    final dropFromFilter =
-        _filter == 'open' || _filter == 'needs_action';
+    final dropFromFilter = _filter == 'open' || _filter == 'needs_action';
     setState(() {
       if (dropFromFilter) {
-        _threads = [for (final t in _threads) if (t.id != threadId) t];
+        _threads = [
+          for (final t in _threads)
+            if (t.id != threadId) t,
+        ];
         if (_openId == threadId) _openId = null;
       } else {
         _threads = [
@@ -503,44 +507,38 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
   @override
   Widget build(BuildContext context) {
     final listPane = Padding(
-      padding: const EdgeInsets.only(top: 4, bottom: 12),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: _ThreadsChrome(
-              filter: _filter,
-              onFilterChanged: _onFilterChanged,
-              needsYouCount: _needsYouCount,
-              onCompose: () => setState(() => _composeOpen = true),
-              searchController: widget.searchController,
-              searchFocus: widget.searchFocus,
-              onSearchQueryChanged: widget.onSearchQueryChanged,
-              onSearchSubmit: widget.onSearchSubmit,
-              onClearSearch: widget.onClearSearch,
-            ),
+          _ThreadsChrome(
+            filter: _filter,
+            onFilterChanged: _onFilterChanged,
+            needsYouCount: _needsYouCount,
+            onCompose: () => setState(() => _composeOpen = true),
+            searchController: widget.searchController,
+            searchFocus: widget.searchFocus,
+            onSearchQueryChanged: widget.onSearchQueryChanged,
+            onSearchSubmit: widget.onSearchSubmit,
+            onClearSearch: widget.onClearSearch,
           ),
           if (_composeOpen) ...[
             const SizedBox(height: 12),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: _ComposePanel(
-                daemon: widget.daemon,
-                myHandle: widget.myHandle,
-                initialRecipient: _composePrefillRecipient,
-                onSent: () {
-                  setState(() {
-                    _composeOpen = false;
-                    _composePrefillRecipient = null;
-                  });
-                  unawaited(_reload(silent: true));
-                },
-                onCancel: () => setState(() {
+            _ComposePanel(
+              daemon: widget.daemon,
+              myHandle: widget.myHandle,
+              initialRecipient: _composePrefillRecipient,
+              onSent: () {
+                setState(() {
                   _composeOpen = false;
                   _composePrefillRecipient = null;
-                }),
-              ),
+                });
+                unawaited(_reload(silent: true));
+              },
+              onCancel: () => setState(() {
+                _composeOpen = false;
+                _composePrefillRecipient = null;
+              }),
             ),
           ],
           const SizedBox(height: 8),
@@ -589,14 +587,11 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
       );
     }
     if (_error != null) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        child: PaneQuietState(
-          title: "Couldn't load threads",
-          body: _error!,
-          onRetry: _reload,
-          icon: Icons.cloud_off_outlined,
-        ),
+      return PaneQuietState(
+        title: "Couldn't load threads",
+        body: _error!,
+        onRetry: _reload,
+        icon: Icons.cloud_off_outlined,
       );
     }
     if (_visible.isEmpty) {
@@ -695,7 +690,8 @@ class _ThreadsChrome extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final search = searchController != null &&
+    final search =
+        searchController != null &&
         searchFocus != null &&
         onSearchQueryChanged != null &&
         onSearchSubmit != null &&
@@ -706,45 +702,35 @@ class _ThreadsChrome extends StatelessWidget {
       children: [
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              _ScopePill(
-                label: 'All',
-                selected: filter == 'all',
-                onTap: () => onFilterChanged('all'),
-              ),
-              const SizedBox(width: 4),
-              _ScopePill(
+          child: CupertinoSlidingSegmentedControl<String>(
+            groupValue: filter,
+            proportionalWidth: true,
+            thumbColor: MutandeColors.stone50,
+            backgroundColor: MutandeColors.stone200,
+            onValueChanged: (value) {
+              if (value != null) onFilterChanged(value);
+            },
+            children: {
+              'all': _FilterSeg(label: 'All', selected: filter == 'all'),
+              'needs_action': _FilterSeg(
                 label: 'Needs you',
                 selected: filter == 'needs_action',
                 badge: needsYouCount,
-                onTap: () => onFilterChanged('needs_action'),
               ),
-              const SizedBox(width: 4),
-              _ScopePill(
-                label: 'Open',
-                selected: filter == 'open',
-                onTap: () => onFilterChanged('open'),
-              ),
-              const SizedBox(width: 4),
-              _ScopePill(
+              'open': _FilterSeg(label: 'Open', selected: filter == 'open'),
+              'closed': _FilterSeg(
                 label: 'Closed',
                 selected: filter == 'closed',
-                onTap: () => onFilterChanged('closed'),
               ),
-              const SizedBox(width: 4),
-              _ScopePill(
+              'collab': _FilterSeg(
                 label: 'Collab',
                 selected: filter == 'collab',
-                onTap: () => onFilterChanged('collab'),
               ),
-              const SizedBox(width: 4),
-              _ScopePill(
+              'unfiled': _FilterSeg(
                 label: 'Unfiled',
                 selected: filter == 'unfiled',
-                onTap: () => onFilterChanged('unfiled'),
               ),
-            ],
+            },
           ),
         ),
         const SizedBox(height: 8),
@@ -781,7 +767,8 @@ class _SearchComposeCapsule extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final search = searchController != null &&
+    final search =
+        searchController != null &&
         searchFocus != null &&
         onSearchQueryChanged != null &&
         onSearchSubmit != null &&
@@ -906,69 +893,54 @@ class _SearchComposeCapsule extends StatelessWidget {
   }
 }
 
-class _ScopePill extends StatelessWidget {
-  const _ScopePill({
+class _FilterSeg extends StatelessWidget {
+  const _FilterSeg({
     required this.label,
     required this.selected,
-    required this.onTap,
     this.badge = 0,
   });
 
   final String label;
   final bool selected;
-  final VoidCallback onTap;
   final int badge;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 140),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: selected ? MutandeColors.stone800 : MutandeColors.stone100,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(
-            color: selected ? MutandeColors.stone800 : MutandeColors.stone200,
+    final color = selected ? MutandeColors.stone800 : MutandeColors.stone500;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+            color: color,
           ),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: selected ? MutandeColors.stone50 : MutandeColors.stone600,
+        if (badge > 0) ...[
+          const SizedBox(width: 5),
+          Container(
+            constraints: const BoxConstraints(minWidth: 14),
+            height: 14,
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: MutandeColors.amber,
+              borderRadius: BorderRadius.circular(7),
+            ),
+            child: Text(
+              badge > 9 ? '9+' : '$badge',
+              style: const TextStyle(
+                color: Color(0xFFFFFFFF),
+                fontSize: 9,
+                fontWeight: FontWeight.w700,
+                height: 1,
               ),
             ),
-            if (badge > 0) ...[
-              const SizedBox(width: 6),
-              Container(
-                constraints: const BoxConstraints(minWidth: 16),
-                height: 16,
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: MutandeColors.amber,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  badge > 9 ? '9+' : '$badge',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 9,
-                    fontWeight: FontWeight.w700,
-                    height: 1,
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
+          ),
+        ],
+      ],
     );
   }
 }
@@ -1062,11 +1034,7 @@ class _ThreadRow extends StatelessWidget {
                         )
                       : null,
                 ),
-                _ThreadMark(
-                  thread: thread,
-                  label: title,
-                  avatarUrl: avatarUrl,
-                ),
+                _ThreadMark(thread: thread, label: title, avatarUrl: avatarUrl),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
@@ -1091,11 +1059,12 @@ class _ThreadRow extends StatelessWidget {
                           thread.collabName!.trim().toLowerCase(),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: MutandeColors.stone400,
-                            fontSize: 11,
-                            height: 1.2,
-                          ),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: MutandeColors.stone400,
+                                fontSize: 11,
+                                height: 1.2,
+                              ),
                         ),
                       ],
                       if (snippet.isNotEmpty) ...[
@@ -1104,15 +1073,16 @@ class _ThreadRow extends StatelessWidget {
                           snippet,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: unread
-                                ? MutandeColors.stone600
-                                : MutandeColors.stone400,
-                            fontWeight: unread
-                                ? FontWeight.w500
-                                : FontWeight.w400,
-                            height: 1.25,
-                          ),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: unread
+                                    ? MutandeColors.stone600
+                                    : MutandeColors.stone400,
+                                fontWeight: unread
+                                    ? FontWeight.w500
+                                    : FontWeight.w400,
+                                height: 1.25,
+                              ),
                         ),
                       ],
                     ],
@@ -1197,11 +1167,7 @@ class _ThreadMark extends StatelessWidget {
 
     Widget mark;
     if (!selfCollab && avatarUrl != null) {
-      mark = ContactAvatar(
-        url: avatarUrl!,
-        size: _size,
-        fallback: initials,
-      );
+      mark = ContactAvatar(url: avatarUrl!, size: _size, fallback: initials);
     } else if (host != null) {
       mark = AiHostIcon(host, size: _size, showPlate: false);
     } else {
@@ -1435,7 +1401,9 @@ class _ComposePanelState extends State<_ComposePanel> {
     try {
       // Prefer hub defaults when courier is reachable; fall back to local cache.
       try {
-        prefs = TransportPrefs.fromJson(await widget.daemon.getTransportDefaults());
+        prefs = TransportPrefs.fromJson(
+          await widget.daemon.getTransportDefaults(),
+        );
       } catch (_) {
         prefs = await TransportPrefsStore().load();
       }
@@ -1535,10 +1503,7 @@ class _ComposePanelState extends State<_ComposePanel> {
     if (bare == null) return const [];
     try {
       final list = await widget.daemon.listAgents(handle: bare);
-      return [
-        bare,
-        ...list.agents.map((a) => '$bare/${a.slug.toLowerCase()}'),
-      ];
+      return [bare, ...list.agents.map((a) => '$bare/${a.slug.toLowerCase()}')];
     } catch (_) {
       return [bare];
     }
@@ -1782,7 +1747,8 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
     final ok = await confirmThreadAction(
       context,
       title: 'End E2E for this thread?',
-      body: proposal.prompt ??
+      body:
+          proposal.prompt ??
           'Adding @${proposal.proposedSlug} (web) ends E2E for this thread',
       confirmLabel: 'Approve',
     );
@@ -2056,9 +2022,8 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
               onReply: _startReplyTo,
               onUpvote: _toggleUpvote,
               upvotingId: _upvotingMessageId,
-              onRefresh: () => unawaited(
-                _load(silent: widget.embedded && _detail != null),
-              ),
+              onRefresh: () =>
+                  unawaited(_load(silent: widget.embedded && _detail != null)),
               onClose: _detail!.status == 'closed' ? null : _closeThread,
               onDelete: _deleteThread,
               onMuteToggle: widget.onMuteToggle,
@@ -2066,7 +2031,8 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
                 if (_detail!.isEnterpriseThread) const EnterpriseWarnBanner(),
                 if (_detail!.pendingDowngrade?.isPending == true)
                   DowngradeConsentBanner(
-                    prompt: _detail!.pendingDowngrade!.prompt ??
+                    prompt:
+                        _detail!.pendingDowngrade!.prompt ??
                         'Adding @${_detail!.pendingDowngrade!.proposedSlug} (web) ends E2E for this thread',
                     busy: _downgradeBusy,
                     onApprove: () =>
@@ -2113,4 +2079,3 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
     );
   }
 }
-
