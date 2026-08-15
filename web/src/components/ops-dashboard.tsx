@@ -139,7 +139,7 @@ const inBarLabelsPlugin: Plugin<"bar"> = {
     meta.data.forEach((el, i) => {
       const label = labels[i] ?? "";
       if (!label) return;
-      const bar = el as BarElement;
+      const bar = el as BarElement & { base: number };
       const left = Math.min(bar.base, bar.x);
       const right = Math.max(bar.base, bar.x);
       const barW = right - left;
