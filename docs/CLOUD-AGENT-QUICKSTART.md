@@ -377,7 +377,11 @@ Add this to the website collab brain: "User prefers Tailwind over CSS modules"
 - [ ] Token list loads correctly
 - [ ] Revoke functionality works
 - [ ] Cloud Agent can authenticate with token
-- [ ] MCP tools (`list_threads`, `forward_draft`) work
+- [ ] MCP thread tools (`list_threads`, `forward_draft`) work
+- [ ] MCP collab tools (`list_collabs`, `get_collab`, `set_lane`, `add_learning`) work
+- [ ] Collab workflows (create card, move lanes, read learnings) work end-to-end
+- [ ] Artifacts (links + app_envelope files) readable
+- [ ] E2E collabs list with sidecar_required flag
 - [ ] Token expiry handled gracefully
 - [ ] Documentation is clear and accurate
 
