@@ -4015,11 +4015,15 @@ mod tests {
             context: None,
             notes: Some("hello web".into()),
             ping_kind: None,
+            intent: None,
             questions: None,
             answers: None,
             resources: None,
             resource_requests: None,
             in_reply_to: None,
+            next_turn: None,
+            task: None,
+            hints: None,
         };
         let detail = ThreadDetail {
             thread: ThreadMeta {
@@ -4065,11 +4069,10 @@ mod tests {
                 sender_only: None,
                 parent_message_id: None,
                 upvotes: None,
+                receipts: None,
             }],
-        
-        pending_downgrade: None,
-        pending_task_approvals: None,
-    };
+            pending_downgrade: None,
+        };
         let opened = state.open_thread_detail(detail);
         let msg = &opened.messages[0];
         assert!(msg.open_error.is_none());
@@ -4257,11 +4260,10 @@ mod tests {
                 sender_only: None,
                 parent_message_id: None,
                 upvotes: None,
+                receipts: None,
             }],
-        
-        pending_downgrade: None,
-        pending_task_approvals: None,
-    };
+            pending_downgrade: None,
+        };
         let opened = state.open_thread_detail(detail);
         let msg = &opened.messages[0];
         assert!(msg.bundle.is_none());
@@ -4986,6 +4988,7 @@ mod tests {
             notes: Some("Please review".into()),
             context: None,
             ping_kind: None,
+            intent: None,
             in_reply_to: None,
             questions: None,
             answers: None,
@@ -4994,6 +4997,9 @@ mod tests {
                 "content": "# PRD\n\nCapability graph"
             }])),
             resource_requests: None,
+            next_turn: None,
+            task: None,
+            hints: None,
         };
         let msg = ThreadMessage {
             id: "m1".into(),
@@ -5179,11 +5185,10 @@ mod tests {
                 sender_only: None,
                 parent_message_id: None,
                 upvotes: None,
+                receipts: None,
             }],
-        
-        pending_downgrade: None,
-        pending_task_approvals: None,
-    };
+            pending_downgrade: None,
+        };
         let opened = state.open_thread_detail(detail);
         let bundle = opened.messages[0].bundle.as_ref().expect("bundle");
         let path = bundle.resources[0].path.as_deref().expect("path");

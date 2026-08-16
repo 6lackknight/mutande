@@ -105,7 +105,20 @@ export interface CollabView {
   card_count?: number;
   instructions?: string;
   lists?: Array<{ id: string; name: string; position: number }>;
-  cards?: ThreadMeta[];
+  cards?: Array<{
+    id: string;
+    lane_id?: string;
+    lane_position?: number;
+    assigned_to?: string;
+    status?: string;
+    from?: string;
+    audience?: string;
+    updated_at?: string;
+    your_status?: string;
+    last_subject?: string;
+    subject?: string;
+    [key: string]: unknown;
+  }>;
   learnings?: Array<{
     id: string;
     at: string;

@@ -1,6 +1,5 @@
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
-import 'package:macos_ui/macos_ui.dart';
 
 import '../models/agent_transport.dart';
 import '../services/daemon_client.dart';
@@ -9,6 +8,7 @@ import '../theme/mutande_macos_theme.dart';
 import '../util/address_display.dart';
 import 'ai_host_icon.dart';
 import 'contact_avatar.dart';
+import 'mutande_sheet.dart';
 import 'mutande_stagger.dart';
 import 'thinking_orb.dart';
 import 'thread_skeletons.dart';
@@ -165,20 +165,18 @@ Future<CollabDetail?> showCreateCollabSheet({
   required BuildContext context,
   required DaemonClient daemon,
   String? handle,
+  Rect? origin,
 }) {
   final size = MediaQuery.sizeOf(context);
   final width = size.width.clamp(360.0, 480.0);
   final height = (size.height - 72).clamp(400.0, 560.0);
-  return showMacosSheet<CollabDetail>(
+  return showMutandeSheet<CollabDetail>(
     context: context,
-    barrierDismissible: true,
-    builder: (ctx) => MacosSheet(
-      child: SizedBox(
-        width: width,
-        height: height,
-        child: CreateCollabSheet(daemon: daemon, handle: handle),
-      ),
-    ),
+    barrierLabel: 'Create collab',
+    origin: origin,
+    width: width,
+    height: height,
+    child: CreateCollabSheet(daemon: daemon, handle: handle),
   );
 }
 

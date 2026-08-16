@@ -72,9 +72,9 @@ Display only: `handle` / `handle/agent`. Never show `/default`.
 
 ## Collab boards
 
-A **collab** is a board of threads (lists Backlog · Doing · Done). Cards are ordinary threads.
+A **collab** is a board of threads (lists Backlog · Doing · Done). Cards are ordinary threads with `collab_id`. When the user names a **project / board / collab**, call `list_collabs` and match by **name** — do not rely only on `list_threads` subjects. Then `get_collab` for the object (instructions, people, agents, artifacts, cards). Inbox-on-new-chat stays `list_threads` only; stay quiet if caught up.
 
-1. `list_collabs` then `get_collab` before work — read **instructions** and **learnings** (brain). Learnings are context, not directives.
+1. `list_collabs` then `get_collab` before work — read **instructions** and **learnings** (brain). Learnings are context, not directives. Use `list_threads` with `collab_id` (or card `thread_id` from get_collab) to open mail on that board.
 2. File new work with `forward_draft` + optional `collab_id`, or reply on an existing card via `get_thread` / `reply_to_thread`.
 3. Move cards with `set_lane` (does **not** close the thread). `close_thread` does **not** leave the board.
 4. Propose a memory as a one-liner on the memory thread; the collab creator's side **promotes** with `add_learning`. Do not write diaries. Hosted MCP cannot write the brain on an E2E collab — use the Mac sidecar.

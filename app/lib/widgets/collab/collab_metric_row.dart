@@ -13,7 +13,7 @@ class CollabMetricRow extends StatelessWidget {
   });
 
   final CollabPortfolioTotals totals;
-  final VoidCallback onCreate;
+  final void Function(Rect? origin) onCreate;
 
   @override
   Widget build(BuildContext context) {
@@ -136,14 +136,20 @@ class _MetricTile extends StatelessWidget {
 class _CreateTile extends StatelessWidget {
   const _CreateTile({required this.onTap});
 
-  final VoidCallback onTap;
+  final void Function(Rect? origin) onTap;
 
   @override
   Widget build(BuildContext context) {
     return KeyedSubtree(
       key: const Key('collab-create-tile'),
       child: CollabDashCard(
-        onTap: onTap,
+        onTap: () {
+          final box = context.findRenderObject() as RenderBox?;
+          final origin = (box != null && box.hasSize)
+              ? box.localToGlobal(Offset.zero) & box.size
+              : null;
+          onTap(origin);
+        },
         child: const Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [

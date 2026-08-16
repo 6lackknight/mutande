@@ -11,6 +11,7 @@ class PaneQuietState extends StatelessWidget {
     required this.title,
     this.body,
     this.onRetry,
+    this.onRetryOrigin,
     this.retryLabel = 'Retry',
     this.icon = Icons.inbox_outlined,
   });
@@ -18,6 +19,8 @@ class PaneQuietState extends StatelessWidget {
   final String title;
   final String? body;
   final VoidCallback? onRetry;
+  /// When set, Retry captures the button rect (for from-control sheets).
+  final void Function(Rect? origin)? onRetryOrigin;
   final String retryLabel;
   final IconData icon;
 
@@ -58,22 +61,36 @@ class PaneQuietState extends StatelessWidget {
                   ),
                 ),
               ],
-              if (onRetry != null) ...[
+              if (onRetry != null || onRetryOrigin != null) ...[
                 const SizedBox(height: 16),
-                OutlinedButton(
-                  onPressed: onRetry,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: MutandeColors.bronze,
-                    side: BorderSide(
-                      color: MutandeColors.bronze.withValues(alpha: 0.45),
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    minimumSize: const Size(88, 36),
-                    padding: const EdgeInsets.symmetric(horizontal: 18),
-                  ),
-                  child: Text(retryLabel),
+                Builder(
+                  builder: (btnCtx) {
+                    return OutlinedButton(
+                      onPressed: () {
+                        if (onRetryOrigin != null) {
+                          final box = btnCtx.findRenderObject() as RenderBox?;
+                          final origin = (box != null && box.hasSize)
+                              ? box.localToGlobal(Offset.zero) & box.size
+                              : null;
+                          onRetryOrigin!(origin);
+                          return;
+                        }
+                        onRetry?.call();
+                      },
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: MutandeColors.bronze,
+                        side: BorderSide(
+                          color: MutandeColors.bronze.withValues(alpha: 0.45),
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        minimumSize: const Size(88, 36),
+                        padding: const EdgeInsets.symmetric(horizontal: 18),
+                      ),
+                      child: Text(retryLabel),
+                    );
+                  },
                 ),
               ],
             ],

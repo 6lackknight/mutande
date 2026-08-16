@@ -2,6 +2,9 @@ use serde_json::json;
 
 use super::protocol::{McpToolAnnotations, McpToolDefinition};
 
+pub(crate) use super::collab_view::present_tool_result;
+
+
 /// Read tools — safe for always-allow in host policy.
 const READ_TOOLS: &[(&str, &str, ValueFn)] = &[
     (
@@ -29,7 +32,7 @@ const READ_TOOLS: &[(&str, &str, ValueFn)] = &[
     ),
     (
         "list_threads",
-        "List collaboration threads. Optional filter: needs_action, open, closed. Optional collab_id to restrict to one board. Read-only.",
+        "List collaboration threads. Optional filter: needs_action, open, closed. Optional collab_id to restrict to one board. Items include collab_id and collab_name when the thread is a board card. For a named project/board use list_collabs, not subject search. Read-only.",
         || {
             json!({
                 "type": "object",
@@ -64,12 +67,12 @@ const READ_TOOLS: &[(&str, &str, ValueFn)] = &[
     ),
     (
         "list_collabs",
-        "List collab boards you steer (name, encryption_mode, card_count, lists). A collab is a board of threads. Read-only.",
+        "List collab boards you participate in (steerer or roster). A collab is a board of threads. When the user names a project/board, call this and match by name, then get_collab. Returns id, name, people, agents, lists, artifacts, card_count. Read-only.",
         || json!({ "type": "object", "properties": {}, "additionalProperties": false }),
     ),
     (
         "get_collab",
-        "Get one collab: lists, cards (threads), instructions, learnings (brain). Read instructions and learnings before starting work. Read-only.",
+        "Get one collab board you participate in: instructions, people (handles), agents, artifacts (file|link), lists, cards (thread ids/summaries), learnings. Then get_thread / list_threads(collab_id) for card mail. Not org-wide — 403 if you are not a participant. Read-only.",
         || {
             json!({
                 "type": "object",

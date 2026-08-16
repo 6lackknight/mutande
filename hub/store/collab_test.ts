@@ -138,6 +138,9 @@ Deno.test("adding an agent auto-adds its human as steerer", async () => {
     assertEquals(collab.steerer_joins.length, 2);
     const listed = await store.listCollabs(bobAuth);
     assertEquals(listed.collabs.length, 1);
+    const got = await store.getCollab(bobAuth, collab.id);
+    assertEquals(got.id, collab.id);
+    assertEquals(got.name, "Pair");
   });
 });
 
@@ -215,6 +218,8 @@ Deno.test("non-member cannot get_collab", async () => {
       HubError,
       "Not a collab member",
     );
+    const listed = await store.listCollabs(bobAuth);
+    assertEquals(listed.collabs.length, 0);
   });
 });
 

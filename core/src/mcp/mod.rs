@@ -1,5 +1,6 @@
 //! MCP stdio transport — tool definitions delegate to daemon.
 
+mod collab_view;
 mod protocol;
 mod tools;
 
@@ -131,7 +132,8 @@ async fn forward_tool_call(name: &str, arguments: Value) -> Result<String> {
     if let Some(err) = resp.error {
         anyhow::bail!("{}", err.message);
     }
-    Ok(serde_json::to_string_pretty(&resp.result.unwrap_or(json!({})))?)
+    let result = tools::present_tool_result(name, resp.result.unwrap_or(json!({})));
+    Ok(serde_json::to_string_pretty(&result)?)
 }
 
 fn inject_agent_slug(mut arguments: Value) -> Value {
@@ -226,6 +228,10 @@ mod tests {
         assert!(defs.iter().any(|t| t.name == "delete_thread"));
         assert!(defs.iter().any(|t| t.name == "get_safety_number"));
         assert!(defs.iter().any(|t| t.name == "verify_contact"));
+        let list = defs.iter().find(|t| t.name == "list_threads").unwrap();
+        assert!(list.input_schema["properties"]["collab_id"].is_object());
+        let list_c = defs.iter().find(|t| t.name == "list_collabs").unwrap();
+        assert!(list_c.description.contains("participate"));
     }
 
     #[test]

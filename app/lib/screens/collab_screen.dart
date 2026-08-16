@@ -9,7 +9,9 @@ import '../widgets/collab/collab_lane_donut.dart';
 import '../widgets/collab/collab_metric_row.dart';
 import '../widgets/collab/collab_project_dossier.dart';
 import '../widgets/collab/collab_projects_table.dart';
+import '../widgets/create_card_sheet.dart';
 import '../widgets/create_collab_sheet.dart';
+import '../widgets/mutande_sheet.dart';
 import '../widgets/pane_quiet_state.dart';
 import '../widgets/thread_skeletons.dart';
 import 'threads_screen.dart';
@@ -118,11 +120,12 @@ class _CollabPanelState extends State<CollabPanel> {
     }
   }
 
-  Future<void> _create() async {
+  Future<void> _create({Rect? origin}) async {
     final created = await showCreateCollabSheet(
       context: context,
       daemon: widget.daemon,
       handle: widget.handle,
+      origin: origin,
     );
     if (created == null || !mounted) return;
     await _reload();
@@ -160,7 +163,7 @@ class _CollabPanelState extends State<CollabPanel> {
         body: 'A collab is a board of threads — humans steer, agents work.',
         icon: Icons.view_kanban_outlined,
         retryLabel: 'Create',
-        onRetry: _create,
+        onRetryOrigin: (origin) => _create(origin: origin),
       );
     } else {
       child = Padding(
@@ -180,7 +183,7 @@ class _CollabPanelState extends State<CollabPanel> {
                   SliverToBoxAdapter(
                     child: CollabMetricRow(
                       totals: _portfolio.totals,
-                      onCreate: _create,
+                      onCreate: (origin) => _create(origin: origin),
                     ),
                   ),
                   const SliverToBoxAdapter(child: SizedBox(height: 12)),
@@ -279,42 +282,27 @@ class _CollabBoardState extends State<_CollabBoard> {
     }
   }
 
-  Future<void> _newCard(String laneId) async {
-    final title = await showDialog<String>(
+  Future<void> _newCard(String laneId, {Rect? origin}) async {
+    String? laneName;
+    for (final list in _collab?.lists ?? const <CollabListView>[]) {
+      if (list.id == laneId) {
+        laneName = list.name;
+        break;
+      }
+    }
+    final id = await showCreateCardSheet(
       context: context,
-      builder: (ctx) {
-        final ctl = TextEditingController();
-        return AlertDialog(
-          title: const Text('New card'),
-          content: TextField(
-            controller: ctl,
-            autofocus: true,
-            decoration: const InputDecoration(labelText: 'Title'),
-            onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, ctl.text.trim()),
-              child: const Text('Create'),
-            ),
-          ],
-        );
-      },
+      daemon: widget.daemon,
+      collabId: widget.collabId,
+      laneId: laneId,
+      laneName: laneName,
+      origin: origin,
     );
-    if (title == null || title.isEmpty) return;
+    if (id == null || id.isEmpty) return;
     try {
-      final id = await widget.daemon.createCollabCard(
-        collabId: widget.collabId,
-        title: title,
-        laneId: laneId,
-      );
       await _reload();
       if (!mounted) return;
-      if (id.isNotEmpty) setState(() => _openCardId = id);
+      setState(() => _openCardId = id);
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = friendlyDaemonError(e, what: 'New card'));
@@ -569,7 +557,7 @@ class _Kanban extends StatelessWidget {
           lane: lane,
           cards: cards,
           onOpen: onOpen,
-          onNewCard: () => onNewCard(lane.id),
+          onNewCard: ({Rect? origin}) => onNewCard(lane.id, origin: origin),
           onDrop: (card, {String? beforeId}) =>
               onDrop(card, lane.id, beforeId: beforeId),
         );
@@ -590,7 +578,7 @@ class _LaneColumn extends StatelessWidget {
   final CollabListView lane;
   final List<CollabCardView> cards;
   final ValueChanged<String> onOpen;
-  final VoidCallback onNewCard;
+  final void Function({Rect? origin}) onNewCard;
   final Future<void> Function(CollabCardView card, {String? beforeId}) onDrop;
 
   @override
@@ -643,10 +631,17 @@ class _LaneColumn extends StatelessWidget {
                   itemCount: cards.length + 1,
                   itemBuilder: (context, i) {
                     if (i == cards.length) {
-                      return TextButton.icon(
-                        onPressed: onNewCard,
-                        icon: const Icon(Icons.add, size: 16),
-                        label: const Text('New card'),
+                      return Builder(
+                        builder: (btnCtx) {
+                          return TextButton.icon(
+                            key: Key('collab-new-card-${lane.id}'),
+                            onPressed: () => onNewCard(
+                              origin: mutandeSheetOrigin(btnCtx),
+                            ),
+                            icon: const Icon(Icons.add, size: 16),
+                            label: const Text('New card'),
+                          );
+                        },
                       );
                     }
                     final card = cards[i];

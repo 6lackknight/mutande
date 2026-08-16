@@ -79,7 +79,7 @@ void main() {
           SliverToBoxAdapter(
             child: CollabMetricRow(
               totals: _portfolio().totals,
-              onCreate: () => created = true,
+              onCreate: (_) => created = true,
             ),
           ),
         ],

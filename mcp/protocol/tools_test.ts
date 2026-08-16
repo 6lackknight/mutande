@@ -7,7 +7,7 @@ import {
   filterThreadsForWebAgent,
   threadForWebAgent,
 } from "../hub/inbox.ts";
-import type { ThreadMeta } from "../hub/types.ts";
+import type { ThreadMeta, CollabView } from "../hub/types.ts";
 
 const fakeSession: McpSession = {
   accessToken: "test",
@@ -920,7 +920,7 @@ Deno.test("list_collabs returns hub boards", async () => {
         name: "sprint",
         encryption_mode: "app_envelope",
         card_count: 0,
-      }],
+      } as CollabView],
     });
   const res = await handleMcpRequest(
     {
@@ -934,6 +934,83 @@ Deno.test("list_collabs returns hub boards", async () => {
   const result = res!.result as { content: Array<{ text: string }>; isError?: boolean };
   const body = JSON.parse(result.content[0].text);
   assertEquals(body.collabs[0].id, "c1");
+  assertEquals(body.collabs[0].name, "sprint");
+  assertEquals(Array.isArray(body.collabs[0].people), true);
+  assertEquals(Array.isArray(body.collabs[0].agents), true);
+});
+
+Deno.test("get_collab returns board object with cards and artifacts", async () => {
+  const hub = new HubClient("http://hub.test");
+  hub.getCollab = () =>
+    Promise.resolve({
+      collab: {
+        id: "c-berry",
+        name: "BerrySure",
+        encryption_mode: "app_envelope",
+        instructions: "Ship the alpha.",
+        steerers: [{ user_id: "u1", handle: "Alice@Acme" }],
+        roster: [{ address: "Alice@Acme/ChatGPT", transport: "mcp" }],
+        lists: [{ id: "backlog", name: "Backlog", position: 0 }],
+        cards: [{
+          id: "t-card",
+          last_subject: "Landing copy",
+          lane_id: "backlog",
+          status: "open",
+        }],
+        artifacts: [{ kind: "link", label: "Staging", url: "https://staging.example.com" }],
+      } as unknown as CollabView,
+    });
+  const res = await handleMcpRequest(
+    {
+      jsonrpc: "2.0",
+      id: 23,
+      method: "tools/call",
+      params: { name: "get_collab", arguments: { collab_id: "c-berry" } },
+    },
+    { session: fakeSession, serverVersion: "0.1.0", hub },
+  );
+  const result = res!.result as { content: Array<{ text: string }>; isError?: boolean };
+  const body = JSON.parse(result.content[0].text);
+  assertEquals(body.collab.name, "BerrySure");
+  assertEquals(body.collab.people[0].handle, "alice@acme");
+  assertEquals(body.collab.agents[0].address, "alice@acme/chatgpt");
+  assertEquals(body.collab.cards[0].thread_id, "t-card");
+  assertEquals(body.collab.artifacts[0].kind, "link");
+});
+
+Deno.test("get_collab is forbidden for non-participants", async () => {
+  const hub = new HubClient("http://hub.test");
+  hub.getCollab = () =>
+    Promise.reject(new HubClientError("Not a collab member", 403));
+  const res = await handleMcpRequest(
+    {
+      jsonrpc: "2.0",
+      id: 24,
+      method: "tools/call",
+      params: { name: "get_collab", arguments: { collab_id: "c-secret" } },
+    },
+    { session: fakeSession, serverVersion: "0.1.0", hub },
+  );
+  const result = res!.result as { content: Array<{ text: string }>; isError?: boolean };
+  assertEquals(result.isError, true);
+  assertEquals(result.content[0].text.includes("403"), true);
+});
+
+Deno.test("list_collabs is empty for non-participants", async () => {
+  const hub = new HubClient("http://hub.test");
+  hub.listCollabs = () => Promise.resolve({ collabs: [] });
+  const res = await handleMcpRequest(
+    {
+      jsonrpc: "2.0",
+      id: 25,
+      method: "tools/call",
+      params: { name: "list_collabs", arguments: {} },
+    },
+    { session: fakeSession, serverVersion: "0.1.0", hub },
+  );
+  const result = res!.result as { content: Array<{ text: string }>; isError?: boolean };
+  const body = JSON.parse(result.content[0].text);
+  assertEquals(body.collabs.length, 0);
 });
 
 Deno.test("add_learning refuses e2e collab", async () => {

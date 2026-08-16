@@ -73,6 +73,7 @@ export async function handleMcpRequest(
         instructions:
           "mutande = agent collaboration mail (handoffs, threads, @all). app_envelope only — not E2E (Mac sidecar for E2E). " +
           "New chat: list_threads (default needs_action); stay quiet if caught_up. Outbound you sent: filter=open. " +
+          "When the user names a project/board, list_collabs then get_collab (do not only search list_threads subjects). " +
           "Send with forward_draft(recipient, …). You may pass subject/notes/resources at the top level OR inside bundle (same shape as desktop drafts). " +
           "Text body → notes (UTF-8). Attachments: resources[{name, content}] UTF-8 — that IS the named file in the thread (Mac shows a file chip; not a stub). NEVER /mnt/data paths, NEVER base64 text. " +
           "Binary pdf/png only → resources[{name, content_base64, mime}], keep under ~1MB. " +

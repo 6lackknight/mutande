@@ -97,7 +97,7 @@ export function toolDefinitions(): McpToolDefinition[] {
     {
       name: "list_threads",
       description:
-        "List app_envelope threads for this web agent. Each item includes thread_id, title/subject (message subject or notes peek; else address fallback), from/to + participants[] (agent slugs e.g. chatgpt→cursor), status, your_status, reply_count, created_at/updated_at, encryption_mode. Default filter=needs_action (inbox to do). Use filter=open for outbound you sent (needs_action hides those — your_status is replied). caught_up=true when empty — stay quiet for needs_action. Read-only.",
+        "List app_envelope threads for this web agent. Each item includes thread_id, title/subject (message subject or notes peek; else address fallback), from/to + participants[] (agent slugs e.g. chatgpt→cursor), status, your_status, reply_count, created_at/updated_at, encryption_mode, and collab_id/collab_name when the thread is a board card. Optional collab_id filters to one board. When the user names a project/board, use list_collabs (not subject search). Default filter=needs_action (inbox to do). Use filter=open for outbound you sent (needs_action hides those — your_status is replied). caught_up=true when empty — stay quiet for needs_action. Read-only.",
       inputSchema: {
         type: "object",
         properties: {
@@ -131,13 +131,13 @@ export function toolDefinitions(): McpToolDefinition[] {
     {
       name: "list_collabs",
       description:
-        "List collab boards you steer. Hosted MCP can only work app_envelope collabs (not E2E). Read-only.",
+        "List collab boards you participate in (steerer or roster). A collab is a board of threads. When the user names a project/board, call this and match by name, then get_collab. Hosted MCP can fully work app_envelope boards; E2E boards list with sidecar_required — use the Mac sidecar for card bodies. Read-only.",
       inputSchema: { ...EMPTY_OBJECT },
     },
     {
       name: "get_collab",
       description:
-        "Get one collab: lists, cards, instructions, learnings. Read instructions and learnings before work. E2E collabs: use the Mac sidecar. Read-only.",
+        "Get one collab board you participate in: instructions, people, agents, artifacts (file|link), lists, cards (thread ids), learnings. Then get_thread or list_threads(collab_id) for card mail. Not org-wide — forbidden if you are not a participant. E2E card bodies: Mac sidecar. Read-only.",
       inputSchema: {
         type: "object",
         required: ["collab_id"],
