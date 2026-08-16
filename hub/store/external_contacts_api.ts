@@ -143,13 +143,16 @@ export async function resolveUserByHandleOrExternalLink(
     );
     const link = linkRes.value;
     if (!link) continue;
-    const otherHandle =
-      link.user_a_id === authUserId ? link.user_b_handle : link.user_a_handle;
-    if (normalizeHandle(otherHandle) !== normalized) continue;
     const otherId =
       link.user_a_id === authUserId ? link.user_b_id : link.user_a_id;
     const user = await ctx.getUser(otherId);
-    if (user) return { user, link };
+    if (!user) continue;
+    const otherHandle =
+      link.user_a_id === authUserId ? link.user_b_handle : link.user_a_handle;
+    const linkHandle = normalizeHandle(otherHandle);
+    const liveHandle = normalizeHandle(user.handle ?? "");
+    if (linkHandle !== normalized && liveHandle !== normalized) continue;
+    return { user, link };
   }
   return null;
 }
@@ -189,8 +192,9 @@ export async function listExternalContacts(
       link.user_a_id === auth.userId ? link.user_b_handle : link.user_a_handle;
     const devices = await ctx.listDevicesForUser(otherId);
     const other = await ctx.getUser(otherId);
+    const handle = normalizeHandle(other?.handle ?? otherHandle);
     contacts.push({
-      handle: otherHandle,
+      handle,
       pubkey: devices[0]?.pubkey ?? null,
       devices,
       kind: "external",

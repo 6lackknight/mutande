@@ -37,7 +37,7 @@ class _PersonOpt {
 
   String get rpcHandle {
     final raw = listHandle?.trim();
-    if (raw != null && raw.isNotEmpty) return raw;
+    if (raw != null && raw.isNotEmpty) return raw.toLowerCase();
     return handle;
   }
 }

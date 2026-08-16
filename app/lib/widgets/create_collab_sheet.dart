@@ -255,7 +255,7 @@ class _PersonOpt {
 
   String get rpcHandle {
     final raw = listHandle?.trim();
-    if (raw != null && raw.isNotEmpty) return raw;
+    if (raw != null && raw.isNotEmpty) return raw.toLowerCase();
     return handle;
   }
 }
@@ -673,7 +673,10 @@ class _CreateCollabSheetState extends State<CreateCollabSheet> {
       final instructions = _instructions.text.trim();
       final created = await widget.daemon.createCollab(
         name: name,
-        steererHandles: _steerers.toList(),
+        steererHandles: _people
+            .where((p) => _steerers.contains(p.handle))
+            .map((p) => p.rpcHandle)
+            .toList(),
         rosterAddresses: _roster.map((a) => a.toLowerCase()).toList(),
         instructions: _e2e || instructions.isEmpty ? null : instructions,
         artifacts: [

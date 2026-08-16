@@ -640,17 +640,17 @@ void main() {
         final handle = (body['params'] as Map?)?['handle'] as String?;
         if (handle != null) agentsHandle ??= handle;
         if (handle == 'orinea@tbhco') {
-          return _rpcErr(
-            body['id'],
-            'hub error 404 Not Found: {"error":"not_found","message":"User not found"}',
-          );
-        }
-        if (handle == 'Orinea@tbhco') {
           return _rpcOk(body['id'], {
             'agents': [
               {'id': 'o1', 'slug': 'claude', 'transport': 'sidecar'},
             ],
           });
+        }
+        if (handle == 'Orinea@tbhco') {
+          return _rpcErr(
+            body['id'],
+            'hub error 404 Not Found: {"error":"not_found","message":"User not found"}',
+          );
         }
         if (handle == 'bob@acme') {
           return _rpcOk(body['id'], {
@@ -676,7 +676,7 @@ void main() {
     expect(find.text('@cursor'), findsOneWidget);
     expect(find.text('bob@acme/cursor'), findsOneWidget);
     expect(find.text('orinea@tbhco/claude'), findsOneWidget);
-    expect(agentsHandle, 'Orinea@tbhco');
+    expect(agentsHandle, 'orinea@tbhco');
     expect(find.textContaining('signed in'), findsNothing);
     expect(find.text('Sign in'), findsNothing);
     expect(find.text('Retry'), findsNothing);

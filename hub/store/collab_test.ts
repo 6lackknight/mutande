@@ -907,6 +907,27 @@ Deno.test("multi-steerer external add waits for unanimous consent", async () => 
   });
 });
 
+Deno.test("add external steerer resolves stale link handle after rename", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth, carol } = await pairAliceAndCarol(store);
+    await store.updateProfile(
+      { sub: "auth0|carol", email: "carol@other.test" } as Auth0Claims,
+      { handle: "carolina" },
+    );
+    const listed = await store.listExternalContacts(aliceAuth);
+    assertEquals(listed.contacts[0]?.handle, "carolina@other");
+
+    const collab = await store.createCollab(aliceAuth, {
+      name: "Renamed external",
+      roster_addresses: ["@cursor"],
+    });
+    const added = await store.addCollabSteerer(aliceAuth, collab.id, {
+      handle: "carol@other",
+    });
+    assertEquals(added.steerer_user_ids.includes(carol.id), true);
+  });
+});
+
 Deno.test("archive hides from default list and freezes writes", async () => {
   await withTestStore(async ({ store }) => {
     const { aliceAuth, bob } = await setupOrg(store);

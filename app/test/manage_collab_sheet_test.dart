@@ -302,6 +302,61 @@ void main() {
     expect(bobRemove.onPressed, isNull);
   });
 
+  testWidgets('adds external person with normalized handle', (tester) async {
+    String? addedHandle;
+    final daemon = _mockDaemon((request) async {
+      final body = _rpc(request);
+      final method = body['method'] as String?;
+      if (method == 'list_contacts') {
+        return _rpcOk(body['id'], {
+          'contacts': [
+            {'handle': 'alice@acme', 'kind': 'org'},
+          ],
+        });
+      }
+      if (method == 'list_external_contacts') {
+        return _rpcOk(body['id'], {
+          'contacts': [
+            {
+              'handle': 'Orinea@tbhco',
+              'display_name': 'Orinea',
+              'kind': 'external',
+            },
+          ],
+        });
+      }
+      if (method == 'list_agents') {
+        return _rpcOk(body['id'], {'agents': []});
+      }
+      if (method == 'add_collab_steerer') {
+        addedHandle = (body['params'] as Map?)?['handle'] as String?;
+        return _rpcOk(body['id'], {
+          'collab': _collabJson(
+            steerers: [
+              {'user_id': 'u-alice', 'handle': 'alice@acme'},
+              {'user_id': 'u-orinea', 'handle': 'orinea@tbhco'},
+            ],
+          ),
+        });
+      }
+      return _rpcOk(body['id'], {'ok': true});
+    });
+
+    await _pumpSheet(tester, daemon: daemon);
+
+    await tester.ensureVisible(
+      find.byKey(const Key('manage-person-orinea@tbhco')),
+    );
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const Key('manage-person-orinea@tbhco')),
+        matching: find.text('Add'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(addedHandle, 'orinea@tbhco');
+  });
+
   testWidgets('wide layout uses people and agents columns', (tester) async {
     await _pumpSheet(
       tester,
