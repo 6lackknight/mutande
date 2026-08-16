@@ -19,6 +19,7 @@ class PaneQuietState extends StatelessWidget {
   final String title;
   final String? body;
   final VoidCallback? onRetry;
+
   /// When set, Retry captures the button rect (for from-control sheets).
   final void Function(Rect? origin)? onRetryOrigin;
   final String retryLabel;

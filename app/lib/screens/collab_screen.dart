@@ -4,6 +4,7 @@ import '../services/daemon_client.dart';
 import '../theme/mutande_macos_theme.dart';
 import '../util/address_display.dart';
 import '../util/clock_format.dart';
+import '../util/thread_peer.dart';
 import '../widgets/collab/collab_activity_calendar.dart';
 import '../widgets/collab/collab_lane_donut.dart';
 import '../widgets/collab/collab_metric_row.dart';
@@ -63,6 +64,7 @@ class _CollabPanelState extends State<CollabPanel> {
   String? _error;
   List<CollabSummary> _collabs = const [];
   CollabPortfolio _portfolio = const CollabPortfolio();
+  Map<String, String> _avatarsByHandle = const {};
   String? _openId;
 
   @override
@@ -117,6 +119,20 @@ class _CollabPanelState extends State<CollabPanel> {
         _loading = false;
         _error = collabFetchErrorCopy(e);
       });
+    }
+    final avatars = await _loadAvatarMap();
+    if (!mounted || avatars.isEmpty) return;
+    setState(() => _avatarsByHandle = avatars);
+  }
+
+  Future<Map<String, String>> _loadAvatarMap() async {
+    try {
+      final org = await widget.daemon.listContacts();
+      return avatarUrlsByHandle([
+        for (final c in org) (handle: c.handle, avatarUrl: c.avatarUrl),
+      ]);
+    } catch (_) {
+      return const {};
     }
   }
 
@@ -192,6 +208,8 @@ class _CollabPanelState extends State<CollabPanel> {
                   SliverToBoxAdapter(
                     child: CollabProjectsTable(
                       collabs: _collabs,
+                      avatarUrls: _avatarsByHandle,
+                      myHandle: widget.handle,
                       onOpen: (c) => setState(() => _openId = c.id),
                     ),
                   ),
@@ -299,14 +317,9 @@ class _CollabBoardState extends State<_CollabBoard> {
       origin: origin,
     );
     if (id == null || id.isEmpty) return;
-    try {
-      await _reload();
-      if (!mounted) return;
-      setState(() => _openCardId = id);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _error = friendlyDaemonError(e, what: 'New card'));
-    }
+    await _reload();
+    if (!mounted) return;
+    setState(() => _openCardId = id);
   }
 
   Future<void> _drop(
@@ -377,10 +390,7 @@ class _CollabBoardState extends State<_CollabBoard> {
               if (_error != null)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
-                  child: PaneInlineError(
-                    message: _error!,
-                    onRetry: _reload,
-                  ),
+                  child: PaneInlineError(message: _error!, onRetry: _reload),
                 ),
               Expanded(
                 child: _brainOpen
@@ -532,7 +542,7 @@ class _Kanban extends StatelessWidget {
 
   final CollabDetail collab;
   final ValueChanged<String> onOpen;
-  final ValueChanged<String> onNewCard;
+  final void Function(String laneId, {Rect? origin}) onNewCard;
   final Future<void> Function(
     CollabCardView card,
     String laneId, {
@@ -635,9 +645,8 @@ class _LaneColumn extends StatelessWidget {
                         builder: (btnCtx) {
                           return TextButton.icon(
                             key: Key('collab-new-card-${lane.id}'),
-                            onPressed: () => onNewCard(
-                              origin: mutandeSheetOrigin(btnCtx),
-                            ),
+                            onPressed: () =>
+                                onNewCard(origin: mutandeSheetOrigin(btnCtx)),
                             icon: const Icon(Icons.add, size: 16),
                             label: const Text('New card'),
                           );

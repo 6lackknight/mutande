@@ -57,6 +57,7 @@ Deno.test("tool list marks inbox tools implemented", () => {
     "list_contacts",
     "list_collabs",
     "get_collab",
+    "create_card",
     "set_lane",
     "add_learning",
     "forward_draft",
@@ -1038,4 +1039,121 @@ Deno.test("add_learning refuses e2e collab", async () => {
   const result = res!.result as { content: Array<{ text: string }>; isError?: boolean };
   assertEquals(result.isError, true);
   assertEquals(result.content[0].text.includes("E2E"), true);
+});
+
+Deno.test("create_card files a thread on collab + lane name", async () => {
+  const hub = new HubClient("http://hub.test");
+  let created: Record<string, unknown> | undefined;
+  hub.getCollab = () =>
+    Promise.resolve({
+      collab: {
+        id: "c1",
+        name: "sprint",
+        encryption_mode: "app_envelope",
+        lists: [
+          { id: "l-backlog", name: "Backlog", position: 0 },
+          { id: "l-doing", name: "Doing", position: 1 },
+        ],
+      } as CollabView,
+    });
+  hub.createThread = (_token, input) => {
+    created = input as unknown as Record<string, unknown>;
+    return Promise.resolve({
+      thread: meta({
+        id: "th-card",
+        collab_id: "c1",
+        lane_id: "l-doing",
+        from: "u@acme/chatgpt",
+      }),
+      message_id: "m-card",
+    });
+  };
+  const res = await handleMcpRequest(
+    {
+      jsonrpc: "2.0",
+      id: 26,
+      method: "tools/call",
+      params: {
+        name: "create_card",
+        arguments: {
+          collab_id: "c1",
+          title: "Ship invites",
+          lane: "Doing",
+        },
+      },
+    },
+    { session: fakeSession, serverVersion: "0.1.0", hub },
+  );
+  const result = res!.result as { content: Array<{ text: string }>; isError?: boolean };
+  assertEquals(result.isError ?? false, false);
+  const body = JSON.parse(result.content[0].text);
+  assertEquals(body.thread_id, "th-card");
+  assertEquals(body.collab_id, "c1");
+  assertEquals(created?.collab_id, "c1");
+  assertEquals(created?.lane_id, "Doing");
+  assertEquals(created?.to, "u@acme");
+});
+
+Deno.test("create_card is forbidden for non-participants", async () => {
+  const hub = new HubClient("http://hub.test");
+  hub.getCollab = () =>
+    Promise.reject(new HubClientError("Not a collab member", 403));
+  const res = await handleMcpRequest(
+    {
+      jsonrpc: "2.0",
+      id: 27,
+      method: "tools/call",
+      params: {
+        name: "create_card",
+        arguments: { collab_id: "c-secret", title: "Nope" },
+      },
+    },
+    { session: fakeSession, serverVersion: "0.1.0", hub },
+  );
+  const result = res!.result as { content: Array<{ text: string }>; isError?: boolean };
+  assertEquals(result.isError, true);
+  assertEquals(result.content[0].text.includes("403"), true);
+});
+
+Deno.test("create_card refuses e2e collab on hosted MCP", async () => {
+  const hub = new HubClient("http://hub.test");
+  hub.getCollab = () =>
+    Promise.resolve({
+      collab: {
+        id: "c-e2e",
+        name: "sealed",
+        encryption_mode: "e2e",
+      } as CollabView,
+    });
+  const res = await handleMcpRequest(
+    {
+      jsonrpc: "2.0",
+      id: 28,
+      method: "tools/call",
+      params: {
+        name: "create_card",
+        arguments: { collab_id: "c-e2e", title: "Secret" },
+      },
+    },
+    { session: fakeSession, serverVersion: "0.1.0", hub },
+  );
+  const result = res!.result as { content: Array<{ text: string }>; isError?: boolean };
+  assertEquals(result.isError, true);
+  assertEquals(result.content[0].text.includes("E2E"), true);
+});
+
+Deno.test("create_card requires collab_id and title", async () => {
+  const hub = new HubClient("http://hub.test");
+  const res = await handleMcpRequest(
+    {
+      jsonrpc: "2.0",
+      id: 29,
+      method: "tools/call",
+      params: { name: "create_card", arguments: { collab_id: "c1" } },
+    },
+    { session: fakeSession, serverVersion: "0.1.0", hub },
+  );
+  const result = res!.result as { content: Array<{ text: string }>; isError?: boolean };
+  assertEquals(result.isError, true);
+  assertEquals(result.content[0].text.includes("title"), true);
 });

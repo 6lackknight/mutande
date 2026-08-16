@@ -528,6 +528,9 @@ impl HubClient {
             collab_id: None,
             lane_id: None,
             assigned_to: None,
+            tags: None,
+            due_on: None,
+            checklist: None,
         };
         self.post_json("/v1/threads", &body, true).await
     }
@@ -549,6 +552,9 @@ impl HubClient {
             collab_id: None,
             lane_id: None,
             assigned_to: None,
+            tags: None,
+            due_on: None,
+            checklist: None,
         };
         self.post_json("/v1/threads", &body, true).await
     }
@@ -651,6 +657,9 @@ impl HubClient {
         collab_id: &str,
         lane_id: Option<&str>,
         assigned_to: Option<&str>,
+        tags: Option<&[String]>,
+        due_on: Option<&str>,
+        checklist: Option<&[CollabChecklistItem]>,
     ) -> Result<CreateThreadResponse> {
         let body = CreateThreadRequest {
             to,
@@ -661,6 +670,9 @@ impl HubClient {
             collab_id: Some(collab_id),
             lane_id,
             assigned_to,
+            tags,
+            due_on,
+            checklist,
         };
         self.post_json("/v1/threads", &body, true).await
     }
@@ -1249,6 +1261,9 @@ mod tests {
             collab_id: None,
             lane_id: None,
             assigned_to: None,
+            tags: None,
+            due_on: None,
+            checklist: None,
         };
         let json = serde_json::to_value(&req).unwrap();
         assert_eq!(json["to"], "bob@acme");
@@ -1342,7 +1357,9 @@ mod tests {
                 "encryption_mode": "e2e",
                 "card_count": 2,
                 "open": 1,
+                "backlog": 0,
                 "doing": 1,
+                "done": 0,
                 "needs_you": 1
             }],
             "portfolio": {
@@ -1354,6 +1371,9 @@ mod tests {
         let resp: ListCollabsResponse = serde_json::from_str(json).unwrap();
         assert_eq!(resp.collabs.len(), 1);
         assert_eq!(resp.collabs[0].open, 1);
+        assert_eq!(resp.collabs[0].doing, 1);
+        assert_eq!(resp.collabs[0].backlog, 0);
+        assert_eq!(resp.collabs[0].done, 0);
         assert_eq!(resp.portfolio.totals.needs_you, 1);
         assert_eq!(resp.portfolio.activity[0].date, "2026-08-15");
     }

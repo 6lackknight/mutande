@@ -275,8 +275,21 @@ export interface ThreadMeta {
   assigned_to?: string;
   /** Visibility emphasis addresses — not an access boundary. */
   watchers?: string[];
+  /** Free-typed card tags (not a collab taxonomy). */
+  tags?: string[];
+  /** Due date only (`YYYY-MM-DD`). */
+  due_on?: string;
+  /** One structured checklist; items can be ticked later. */
+  checklist?: CollabChecklistItem[];
   /** View-only: collab name when this is a card (not stored). */
   collab_name?: string;
+}
+
+/** Card checklist row — persisted on the thread so it can be ticked later. */
+export interface CollabChecklistItem {
+  id: string;
+  text: string;
+  done?: boolean;
 }
 
 /** Hub mirror of E2E `next_turn` (user-scoped; actor distinguishes needs-you vs agent mail). */
@@ -582,6 +595,12 @@ export interface CreateThreadInput {
   assigned_to?: string;
   /** Visibility emphasis addresses. */
   watchers?: string[];
+  /** Free-typed card tags. */
+  tags?: string[];
+  /** Due date only (`YYYY-MM-DD`). */
+  due_on?: string;
+  /** Structured checklist items. */
+  checklist?: CollabChecklistItem[];
 }
 
 export interface ReplyInput {
@@ -985,6 +1004,9 @@ export interface CollabCardSummary {
   lane_position?: number;
   assigned_to?: string;
   watchers?: string[];
+  tags?: string[];
+  due_on?: string;
+  checklist?: CollabChecklistItem[];
   status: "open" | "closed";
   from: string;
   audience: string;
@@ -1025,8 +1047,12 @@ export interface CollabView extends Collab {
   card_count: number;
   /** Open cards. Present on list_collabs; optional on get. */
   open?: number;
+  /** Open cards in Backlog. */
+  backlog?: number;
   /** Open cards in Doing. */
   doing?: number;
+  /** Open cards in Done. */
+  done?: number;
   /** Open cards awaiting this viewer. */
   needs_you?: number;
   last_card_updated_at?: string;

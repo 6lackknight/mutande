@@ -152,6 +152,9 @@ mod tests {
             lane_position: None,
             assigned_to: None,
             watchers: None,
+            tags: None,
+            due_on: None,
+            checklist: None,
             collab_name: None,
         };
         thread.last_preview = Some("hello".into());

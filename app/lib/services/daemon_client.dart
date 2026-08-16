@@ -1446,28 +1446,51 @@ class CollabSummary {
     required this.encryptionMode,
     this.cardCount = 0,
     this.openCount = 0,
+    this.backlogCount = 0,
     this.doingCount = 0,
+    this.doneCount = 0,
     this.needsYouCount = 0,
     this.updatedAt,
     this.causeAddress,
+    this.steererHandles = const [],
+    this.roster = const [],
   });
 
   factory CollabSummary.fromJson(Map<String, dynamic> map) {
     final point = map['downgrade_point'] as Map<String, dynamic>?;
+    final rosterRaw = map['roster'] as List<dynamic>? ?? const [];
+    final steerersRaw = map['steerers'] as List<dynamic>? ?? const [];
+    final openCount = (map['open'] as num?)?.toInt() ?? 0;
+    final doingCount = (map['doing'] as num?)?.toInt() ?? 0;
     return CollabSummary(
       id: map['id'] as String? ?? '',
       name: map['name'] as String? ?? '',
       encryptionMode: map['encryption_mode'] as String? ?? 'e2e',
       cardCount: (map['card_count'] as num?)?.toInt() ?? 0,
-      openCount: (map['open'] as num?)?.toInt() ?? 0,
-      doingCount: (map['doing'] as num?)?.toInt() ?? 0,
+      openCount: openCount,
+      backlogCount: _collabLaneCount(
+        map,
+        'backlog',
+        fallback: (openCount - doingCount).clamp(0, openCount),
+      ),
+      doingCount: doingCount,
+      doneCount: _collabLaneCount(map, 'done'),
       needsYouCount: (map['needs_you'] as num?)?.toInt() ?? 0,
       updatedAt:
           map['last_card_updated_at'] as String? ??
           map['updated_at'] as String?,
       causeAddress:
           point?['cause_address'] as String? ??
-          (map['roster'] is List ? _hostedCause(map['roster'] as List) : null),
+          (rosterRaw.isNotEmpty ? _hostedCause(rosterRaw) : null),
+      steererHandles: [
+        for (final e in steerersRaw)
+          if (e is Map && (e['handle'] as String?)?.trim().isNotEmpty == true)
+            (e['handle'] as String).trim().toLowerCase(),
+      ],
+      roster: [
+        for (final e in rosterRaw)
+          CollabRosterView.fromJson(e as Map<String, dynamic>? ?? {}),
+      ],
     );
   }
 
@@ -1476,10 +1499,14 @@ class CollabSummary {
   final String encryptionMode;
   final int cardCount;
   final int openCount;
+  final int backlogCount;
   final int doingCount;
+  final int doneCount;
   final int needsYouCount;
   final String? updatedAt;
   final String? causeAddress;
+  final List<String> steererHandles;
+  final List<CollabRosterView> roster;
 
   bool get isE2e => encryptionMode == 'e2e';
   bool get isActive => openCount > 0;
@@ -1589,6 +1616,15 @@ class CollabListResult {
 
   final List<CollabSummary> collabs;
   final CollabPortfolio portfolio;
+}
+
+int _collabLaneCount(
+  Map<String, dynamic> map,
+  String key, {
+  int fallback = 0,
+}) {
+  if (!map.containsKey(key)) return fallback;
+  return (map[key] as num?)?.toInt() ?? 0;
 }
 
 String? _hostedCause(List<dynamic> roster) {

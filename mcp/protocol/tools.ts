@@ -71,6 +71,7 @@ export const IMPLEMENTED_TOOLS = new Set([
   "list_contacts",
   "list_collabs",
   "get_collab",
+  "create_card",
   "set_lane",
   "add_learning",
   "forward_draft",
@@ -184,6 +185,36 @@ export function toolDefinitions(): McpToolDefinition[] {
       description:
         "List org teammates (bare handles + @all@org) plus approved external contacts when present. Not your agents — use list_agents / @all / @claude for self-collab. Read-only.",
       inputSchema: { ...EMPTY_OBJECT },
+    },
+    {
+      name: "create_card",
+      description:
+        "Create a card on a collab board you participate in. A card is a thread filed on that collab + lane. Pass title, collab_id, and optional lane (list id or name: Backlog, Doing, Done). Default lane is Backlog. Not org-wide — forbidden if you are not a participant. App_envelope boards only; E2E: Mac sidecar.",
+      inputSchema: {
+        type: "object",
+        required: ["collab_id", "title"],
+        properties: {
+          collab_id: { type: "string" },
+          title: {
+            type: "string",
+            description: "Card title (thread subject).",
+          },
+          lane: {
+            type: "string",
+            description:
+              "Board list id or name (Backlog, Doing, Done). Default Backlog.",
+          },
+          lane_id: {
+            type: "string",
+            description: "Alias for lane.",
+          },
+          notes: {
+            type: "string",
+            description: "Optional first message body.",
+          },
+        },
+        additionalProperties: false,
+      },
     },
     {
       name: "forward_draft",

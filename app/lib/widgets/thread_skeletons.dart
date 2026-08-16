@@ -405,8 +405,14 @@ class CollabHomeSkeleton extends StatelessWidget {
                             padding: const EdgeInsets.symmetric(vertical: 10),
                             child: Row(
                               children: [
+                                const _Bone(
+                                  width: 26,
+                                  height: 26,
+                                  circle: true,
+                                ),
+                                const SizedBox(width: 10),
                                 const Expanded(
-                                  flex: 4,
+                                  flex: 5,
                                   child: _Bone(
                                     width: double.infinity,
                                     height: 9,
@@ -414,13 +420,7 @@ class CollabHomeSkeleton extends StatelessWidget {
                                 ),
                                 const SizedBox(width: 16),
                                 const Expanded(
-                                  flex: 2,
-                                  child: _Bone(width: 24, height: 9),
-                                ),
-                                const SizedBox(width: 16),
-                                const Expanded(
-                                  flex: 2,
-                                  child: _Bone(width: 24, height: 9),
+                                  child: _Bone(width: double.infinity, height: 8),
                                 ),
                                 const SizedBox(width: 16),
                                 const _Bone(width: 28, height: 8),

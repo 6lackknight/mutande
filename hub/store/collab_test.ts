@@ -8,6 +8,7 @@ import {
   last84ActivityDays,
   LANE_MIN_GAP,
   rebalancePositions,
+  resolveLaneId,
 } from "./collab.ts";
 import type { Auth0Claims, Envelope } from "./types.ts";
 
@@ -86,6 +87,18 @@ Deno.test("last84ActivityDays fills UTC window", () => {
   assertEquals(days[83].date, "2026-08-15");
   assertEquals(days[83].count, 3);
   assertEquals(days[82].count, 0);
+});
+
+Deno.test("resolveLaneId matches id or case-insensitive name", () => {
+  const lists = [
+    { id: "uuid-backlog", name: "Backlog" },
+    { id: "uuid-doing", name: "Doing" },
+  ];
+  assertEquals(resolveLaneId(lists), "uuid-backlog");
+  assertEquals(resolveLaneId(lists, "Doing"), "uuid-doing");
+  assertEquals(resolveLaneId(lists, "doing"), "uuid-doing");
+  assertEquals(resolveLaneId(lists, "uuid-doing"), "uuid-doing");
+  assertEquals(resolveLaneId(lists, "Icebox"), undefined);
 });
 
 Deno.test("create collab derives e2e from sidecar roster", async () => {
@@ -220,6 +233,16 @@ Deno.test("non-member cannot get_collab", async () => {
     );
     const listed = await store.listCollabs(bobAuth);
     assertEquals(listed.collabs.length, 0);
+    await assertRejects(
+      () =>
+        store.createThread(bobAuth, {
+          to: "alice@acme",
+          envelope: sampleEnvelope("nope"),
+          collab_id: collab.id,
+        }),
+      HubError,
+      "Not a collab member",
+    );
   });
 });
 
@@ -245,6 +268,14 @@ Deno.test("card create wraps to all steerers; set_lane leaves status", async () 
     assertEquals(thread.encryption_mode, "e2e");
     assertEquals(thread.participant_user_ids?.includes(bob.id), true);
 
+    const named = await store.createThread(aliceAuth, {
+      to: "bob@acme/claude",
+      envelope: sampleEnvelope("doing-card"),
+      collab_id: collab.id,
+      lane_id: "Doing",
+    });
+    assertEquals(named.thread.lane_id, doing.id);
+
     const moved = await store.setLane(aliceAuth, collab.id, {
       thread_id: thread.id,
       lane_id: doing.id,
@@ -258,6 +289,60 @@ Deno.test("card create wraps to all steerers; set_lane leaves status", async () 
 
     const bobSees = await store.getThread(bobAuth, thread.id);
     assertEquals(bobSees.thread.id, thread.id);
+  });
+});
+
+Deno.test("card assigned_to + tags + due + checklist persist; wrap stays steerers", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth, bob, bobAuth } = await setupOrg(store);
+    const collab = await store.createCollab(aliceAuth, {
+      name: "Board",
+      steerer_handles: ["bob@acme"],
+      instructions_sealed: undefined,
+      roster_addresses: ["@cursor", "bob@acme/claude"],
+    });
+    const { thread } = await store.createThread(aliceAuth, {
+      to: "bob@acme/claude",
+      envelope: sampleEnvelope("card"),
+      collab_id: collab.id,
+      assigned_to: "bob@acme/claude",
+      tags: ["Launch", "launch", "  invites  "],
+      due_on: "2026-09-01",
+      checklist: [
+        { text: "Draft copy" },
+        { id: "c2", text: "Ship", done: false },
+      ],
+    });
+    assertEquals(thread.assigned_to, "bob@acme/claude");
+    assertEquals(thread.tags, ["launch", "invites"]);
+    assertEquals(thread.due_on, "2026-09-01");
+    assertEquals(thread.checklist?.map((i) => i.text), ["Draft copy", "Ship"]);
+    assertEquals(thread.checklist?.[0].done, false);
+    assertEquals(thread.participant_user_ids?.includes(bob.id), true);
+    assertEquals(thread.participant_user_ids?.includes(aliceAuth.userId), true);
+
+    const viewed = await store.getCollab(aliceAuth, collab.id);
+    const card = viewed.cards.find((c) => c.id === thread.id);
+    assertEquals(card?.assigned_to, "bob@acme/claude");
+    assertEquals(card?.tags, ["launch", "invites"]);
+    assertEquals(card?.due_on, "2026-09-01");
+    assertEquals(card?.checklist?.length, 2);
+
+    await assertRejects(
+      () =>
+        store.createThread(aliceAuth, {
+          to: "bob@acme",
+          envelope: sampleEnvelope("nope"),
+          collab_id: collab.id,
+          assigned_to: "eve@rival",
+        }),
+      HubError,
+      "Assignee must be a collab participant",
+    );
+
+    const bobSees = await store.getThread(bobAuth, thread.id);
+    assertEquals(bobSees.thread.assigned_to, "bob@acme/claude");
+    assertEquals(bobSees.thread.due_on, "2026-09-01");
   });
 });
 
@@ -481,7 +566,9 @@ Deno.test("list collabs portfolio buckets lanes, needs-you, and activity", async
     assertEquals(aliceList.collabs.length, 1);
     assertEquals(aliceList.collabs[0].card_count, 3);
     assertEquals(aliceList.collabs[0].open, 2);
+    assertEquals(aliceList.collabs[0].backlog, 1);
     assertEquals(aliceList.collabs[0].doing, 1);
+    assertEquals(aliceList.collabs[0].done, 0);
     assertEquals(aliceList.portfolio.totals.collabs, 1);
     assertEquals(aliceList.portfolio.totals.open, 2);
     assertEquals(aliceList.portfolio.totals.doing, 1);

@@ -88,6 +88,12 @@ pub struct MutandeBundle {
     pub next_turn: Vec<TurnEntry>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task: Option<BundleTask>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub due_on: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub checklist: Vec<crate::hub_client::CollabChecklistItem>,
     /// Unknown hint kinds are dropped at parse time (forward-compatible).
     #[serde(
         default,
@@ -1673,6 +1679,18 @@ impl DaemonState {
                 bundle.resource_requests = v;
             }
         }
+        if let Some(t) = app.next_turn {
+            if let Ok(v) = serde_json::from_value(t) {
+                bundle.next_turn = v;
+            }
+        }
+        if let Some(tags) = app.tags {
+            bundle.tags = tags;
+        }
+        bundle.due_on = app.due_on;
+        if let Some(items) = app.checklist {
+            bundle.checklist = items;
+        }
         self.surface_opened_bundle_resources(&mut bundle);
         OpenedThreadMessage {
             id: msg.id,
@@ -1905,14 +1923,15 @@ impl DaemonState {
         lane_id: Option<&str>,
         assigned_to: Option<&str>,
     ) -> Result<String> {
-        let turns = self.hub_turns_for_bundle(bundle).await;
-        let turns_ref = turns.as_deref();
-
         let collab = if let Some(cid) = collab_id {
             Some(hub.get_collab(cid).await?)
         } else {
             None
         };
+        let turns = self
+            .hub_turns_for_bundle_with_collab(bundle, collab.as_ref())
+            .await;
+        let turns_ref = turns.as_deref();
         let collab_e2e = collab
             .as_ref()
             .map(|c| c.encryption_mode == "e2e")
@@ -1935,6 +1954,9 @@ impl DaemonState {
                     cid,
                     lane_id,
                     assigned_to,
+                    bundle_tags(bundle),
+                    bundle.due_on.as_deref(),
+                    bundle_checklist(bundle),
                 )
                 .await?
             } else {
@@ -1961,6 +1983,9 @@ impl DaemonState {
                     cid,
                     lane_id,
                     assigned_to,
+                    bundle_tags(bundle),
+                    bundle.due_on.as_deref(),
+                    bundle_checklist(bundle),
                 )
                 .await?
             } else {
@@ -2675,6 +2700,14 @@ impl DaemonState {
         &self,
         bundle: &MutandeBundle,
     ) -> Option<Vec<crate::hub_client::HubAwaitingEntry>> {
+        self.hub_turns_for_bundle_with_collab(bundle, None).await
+    }
+
+    async fn hub_turns_for_bundle_with_collab(
+        &self,
+        bundle: &MutandeBundle,
+        collab: Option<&crate::hub_client::Collab>,
+    ) -> Option<Vec<crate::hub_client::HubAwaitingEntry>> {
         if bundle.next_turn.is_empty() {
             return Some(vec![]);
         }
@@ -2683,8 +2716,26 @@ impl DaemonState {
         let my_id = me.user.as_ref()?.id.clone();
         let my_handle = me.user.as_ref()?.handle.clone().unwrap_or_default();
         let contacts = hub.list_contacts().await.unwrap_or_default();
-        let resolve = |bare: &str| -> Option<String> {
+        let resolve = |bare: &str, full: &str| -> Option<String> {
             let bare_l = bare.to_ascii_lowercase();
+            let full_l = full.to_ascii_lowercase();
+            if let Some(c) = collab {
+                if let Some(r) = c.roster.iter().find(|r| r.address.eq_ignore_ascii_case(&full_l))
+                {
+                    if !r.user_id.is_empty() {
+                        return Some(r.user_id.clone());
+                    }
+                }
+                if let Some(s) = c
+                    .steerers
+                    .iter()
+                    .find(|s| s.handle.eq_ignore_ascii_case(&bare_l))
+                {
+                    if !s.user_id.is_empty() {
+                        return Some(s.user_id.clone());
+                    }
+                }
+            }
             if strip_agent_suffix(&my_handle).eq_ignore_ascii_case(&bare_l)
                 || my_handle.eq_ignore_ascii_case(&bare_l)
             {
@@ -2696,24 +2747,17 @@ impl DaemonState {
                     strip_agent_suffix(&c.handle).eq_ignore_ascii_case(&bare_l)
                         || c.handle.eq_ignore_ascii_case(&bare_l)
                 })
-                .and_then(|_| {
-                    // Contacts don't expose user_id on all rows — fall back to handle match via hub me peers.
-                    None
-                })
+                .and_then(|_| None)
         };
-        // Prefer mapping via thread participants when possible; for create use contact handles.
-        // Minimal: map own handle; for others look up by listing threads' from_user_id is unavailable.
-        // Use hub contact user ids when present on Contact.
         let mut out = Vec::new();
         for e in &bundle.next_turn {
             let bare = super::turn::strip_agent(&e.address);
             let user_id = if strip_agent_suffix(&my_handle).eq_ignore_ascii_case(&bare)
                 || bare.starts_with('@')
             {
-                // @slug self-collab → own user
                 Some(my_id.clone())
             } else {
-                resolve(&bare)
+                resolve(&bare, &e.address)
             };
             let Some(uid) = user_id else { continue };
             let actor = match e.actor {
@@ -3406,6 +3450,17 @@ pub(super) fn bundle_to_app_envelope(
         } else {
             Some(serde_json::to_value(&bundle.hints)?)
         },
+        tags: if bundle.tags.is_empty() {
+            None
+        } else {
+            Some(bundle.tags.clone())
+        },
+        due_on: bundle.due_on.clone(),
+        checklist: if bundle.checklist.is_empty() {
+            None
+        } else {
+            Some(bundle.checklist.clone())
+        },
     };
     let size = serde_json::to_vec(&payload)?.len();
     const MAX_APP_ENVELOPE: usize = 60 * 1024;
@@ -3415,6 +3470,24 @@ pub(super) fn bundle_to_app_envelope(
         );
     }
     Ok(payload)
+}
+
+fn bundle_tags(bundle: &MutandeBundle) -> Option<&[String]> {
+    if bundle.tags.is_empty() {
+        None
+    } else {
+        Some(bundle.tags.as_slice())
+    }
+}
+
+fn bundle_checklist(
+    bundle: &MutandeBundle,
+) -> Option<&[crate::hub_client::CollabChecklistItem]> {
+    if bundle.checklist.is_empty() {
+        None
+    } else {
+        Some(bundle.checklist.as_slice())
+    }
 }
 
 /// Mirror hub `resolveAgentForUser` transport pick for a slug (or default agent).
@@ -3978,6 +4051,9 @@ mod tests {
                 lane_position: None,
                 assigned_to: None,
                 watchers: None,
+                tags: None,
+                due_on: None,
+                checklist: None,
                 collab_name: None,
             },
             messages: vec![ThreadMessage {
@@ -4024,6 +4100,9 @@ mod tests {
             next_turn: None,
             task: None,
             hints: None,
+            tags: None,
+            due_on: None,
+            checklist: None,
         };
         let detail = ThreadDetail {
             thread: ThreadMeta {
@@ -4054,6 +4133,9 @@ mod tests {
                 lane_position: None,
                 assigned_to: None,
                 watchers: None,
+                tags: None,
+                due_on: None,
+                checklist: None,
                 collab_name: None,
             },
             messages: vec![ThreadMessage {
@@ -4167,6 +4249,9 @@ mod tests {
                 lane_position: None,
                 assigned_to: None,
                 watchers: None,
+                tags: None,
+                due_on: None,
+                checklist: None,
                 collab_name: None,
             },
             messages: vec![ThreadMessage {
@@ -4245,6 +4330,9 @@ mod tests {
                 lane_position: None,
                 assigned_to: None,
                 watchers: None,
+                tags: None,
+                due_on: None,
+                checklist: None,
                 collab_name: None,
             },
             messages: vec![ThreadMessage {
@@ -4448,6 +4536,9 @@ mod tests {
                 lane_position: None,
                 assigned_to: None,
                 watchers: None,
+                tags: None,
+                due_on: None,
+                checklist: None,
                 collab_name: None,
             },
             messages: vec![ThreadMessage {
@@ -4728,6 +4819,9 @@ mod tests {
                 lane_position: None,
                 assigned_to: None,
                 watchers: None,
+                tags: None,
+                due_on: None,
+                checklist: None,
                 collab_name: None,
             },
             messages: vec![],
@@ -5000,6 +5094,9 @@ mod tests {
             next_turn: None,
             task: None,
             hints: None,
+            tags: None,
+            due_on: None,
+            checklist: None,
         };
         let msg = ThreadMessage {
             id: "m1".into(),
@@ -5103,6 +5200,9 @@ mod tests {
                 lane_position: None,
                 assigned_to: None,
                 watchers: None,
+                tags: None,
+                due_on: None,
+                checklist: None,
                 collab_name: None,
             },
             messages: vec![ThreadMessage {
@@ -5170,6 +5270,9 @@ mod tests {
                 lane_position: None,
                 assigned_to: None,
                 watchers: None,
+                tags: None,
+                due_on: None,
+                checklist: None,
                 collab_name: None,
             },
             messages: vec![ThreadMessage {
@@ -5227,6 +5330,9 @@ mod tests {
             lane_position: None,
             assigned_to: None,
             watchers: None,
+            tags: None,
+            due_on: None,
+            checklist: None,
             collab_name: None,
         };
         assert!(thread_visible_for_agent(&thread, "u-solo", "cursor", "cursor"));
@@ -5265,6 +5371,9 @@ mod tests {
             lane_position: None,
             assigned_to: None,
             watchers: None,
+            tags: None,
+            due_on: None,
+            checklist: None,
             collab_name: None,
         };
         assert!(thread_visible_for_agent(&thread, "u-alice", "cursor", "cursor"));
@@ -5306,6 +5415,9 @@ mod tests {
             lane_position: None,
             assigned_to: None,
             watchers: None,
+            tags: None,
+            due_on: None,
+            checklist: None,
             collab_name: None,
         };
         assert_eq!(
@@ -5348,6 +5460,9 @@ mod tests {
             lane_position: None,
             assigned_to: None,
             watchers: None,
+            tags: None,
+            due_on: None,
+            checklist: None,
             collab_name: None,
         };
         assert!(thread_visible_for_agent(&thread, "u-solo", "cursor", "cursor"));
@@ -5399,6 +5514,9 @@ mod tests {
             lane_position: None,
             assigned_to: None,
             watchers: None,
+            tags: None,
+            due_on: None,
+            checklist: None,
             collab_name: None,
         };
         assert!(thread_visible_for_agent(&thread, "u-bob", "cursor", "cursor"));
@@ -6023,6 +6141,9 @@ mod tests {
                 lane_position: None,
                 assigned_to: None,
                 watchers: None,
+                tags: None,
+                due_on: None,
+                checklist: None,
                 collab_name: None,
             },
             messages: vec![ThreadMessage {
@@ -6096,6 +6217,9 @@ mod tests {
             lane_position: None,
             assigned_to: None,
             watchers: None,
+            tags: None,
+            due_on: None,
+            checklist: None,
             collab_name: None,
         };
 

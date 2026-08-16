@@ -1677,6 +1677,9 @@ export class HubStore {
           lane_id: input.lane_id,
           assigned_to: input.assigned_to,
           watchers: input.watchers,
+          tags: input.tags,
+          due_on: input.due_on,
+          checklist: input.checklist,
         },
       );
       encryptionMode = collabCard.encryptionMode;
@@ -1756,6 +1759,9 @@ export class HubStore {
           lane_position: collabCard.lane_position,
           assigned_to: collabCard.assigned_to,
           watchers: collabCard.watchers,
+          tags: collabCard.tags,
+          due_on: collabCard.due_on,
+          checklist: collabCard.checklist,
           participant_user_ids: collabCard.recipientIds,
           participant_count: collabCard.recipientIds.length,
         }

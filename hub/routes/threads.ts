@@ -25,6 +25,9 @@ export function createThreadRoutes(store: HubStore) {
       lane_id?: string;
       assigned_to?: string;
       watchers?: string[];
+      tags?: string[];
+      due_on?: string;
+      checklist?: { id?: string; text: string; done?: boolean }[];
     }>();
     const result = await store.createThread(c.get("auth"), body);
     return c.json(result, 201);

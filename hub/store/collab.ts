@@ -35,6 +35,7 @@ import type {
   CollabArtifactView,
   CollabCardStats,
   CollabCardSummary,
+  CollabChecklistItem,
   CollabLearning,
   CollabList,
   CollabPortfolio,
@@ -381,6 +382,22 @@ function defaultLists(): CollabList[] {
     name,
     position: i,
   }));
+}
+
+/** Match a board list by id or case-insensitive name (`Doing`). Empty → first list. */
+export function resolveLaneId(
+  lists: { id: string; name: string }[],
+  lane?: string,
+): string | undefined {
+  if (!lists.length) return undefined;
+  const raw = lane?.trim() ?? "";
+  if (!raw) return lists[0].id;
+  const lower = raw.toLowerCase();
+  const match = lists.find(
+    (l) => l.id === raw || l.id.toLowerCase() === lower ||
+      l.name.trim().toLowerCase() === lower,
+  );
+  return match?.id;
 }
 
 async function loadCollab(ctx: CollabKvCtx, id: string): Promise<Collab | null> {
@@ -769,7 +786,9 @@ export async function listCollabs(
       ...collab,
       card_count: stats.card_count,
       open: stats.open,
+      backlog: stats.backlog,
       doing: stats.doing,
+      done: stats.done,
       needs_you: stats.needs_you,
       last_card_updated_at: stats.last_updated_at,
       cards: [],
@@ -830,6 +849,9 @@ async function listCards(
       lane_position: thread.lane_position,
       assigned_to: thread.assigned_to,
       watchers: thread.watchers,
+      tags: thread.tags,
+      due_on: thread.due_on,
+      checklist: thread.checklist,
       status: thread.status,
       from: thread.from,
       audience: thread.audience,
@@ -1337,7 +1359,14 @@ export async function resolveCollabCardCreate(
   ctx: CollabKvCtx,
   auth: AuthContext,
   collabId: string,
-  opts?: { lane_id?: string; assigned_to?: string; watchers?: string[] },
+  opts?: {
+    lane_id?: string;
+    assigned_to?: string;
+    watchers?: string[];
+    tags?: string[];
+    due_on?: string;
+    checklist?: CollabChecklistItem[];
+  },
 ): Promise<{
   collab: Collab;
   recipientIds: string[];
@@ -1346,24 +1375,116 @@ export async function resolveCollabCardCreate(
   lane_position: number;
   assigned_to?: string;
   watchers?: string[];
+  tags?: string[];
+  due_on?: string;
+  checklist?: CollabChecklistItem[];
 }> {
   const collab = await loadCollab(ctx, collabId);
   if (!collab) throw notFound("Collab");
   assertMember(collab, auth);
-  const laneId = opts?.lane_id ?? collab.lists[0]?.id;
-  if (!laneId || !collab.lists.some((l) => l.id === laneId)) {
+  const laneId = resolveLaneId(collab.lists, opts?.lane_id);
+  if (!laneId) {
     throw new HubError("Unknown lane", "invalid_argument", 400);
   }
   const lane_position = await nextLanePosition(ctx, auth, collab, laneId);
+  const assigned_to = opts?.assigned_to?.trim().toLowerCase() || undefined;
+  if (assigned_to) {
+    await assertCardAssignee(ctx, collab, assigned_to);
+  }
   return {
     collab,
     recipientIds: [...collab.steerer_user_ids],
     encryptionMode: collab.encryption_mode,
     lane_id: laneId,
     lane_position,
-    assigned_to: opts?.assigned_to?.trim().toLowerCase() || undefined,
+    assigned_to,
     watchers: opts?.watchers?.map((w) => w.trim().toLowerCase()).filter(Boolean),
+    tags: normalizeCardTags(opts?.tags),
+    due_on: normalizeDueOn(opts?.due_on),
+    checklist: normalizeChecklist(opts?.checklist),
   };
+}
+
+const MAX_CARD_TAGS = 12;
+const MAX_CARD_TAG_LEN = 32;
+const MAX_CHECKLIST_ITEMS = 24;
+const MAX_CHECKLIST_TEXT = 160;
+
+export function normalizeCardTags(raw?: string[]): string[] | undefined {
+  if (!raw?.length) return undefined;
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const item of raw) {
+    const tag = item.trim().toLowerCase().replace(/\s+/g, " ");
+    if (!tag || seen.has(tag)) continue;
+    if (tag.length > MAX_CARD_TAG_LEN) {
+      throw new HubError("tag is too long", "invalid_argument", 400);
+    }
+    seen.add(tag);
+    out.push(tag);
+    if (out.length > MAX_CARD_TAGS) {
+      throw new HubError("too many tags", "invalid_argument", 400);
+    }
+  }
+  return out.length ? out : undefined;
+}
+
+export function normalizeDueOn(raw?: string): string | undefined {
+  const s = raw?.trim() ?? "";
+  if (!s) return undefined;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    throw new HubError("due_on must be YYYY-MM-DD", "invalid_argument", 400);
+  }
+  const [y, m, d] = s.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  if (
+    dt.getUTCFullYear() !== y ||
+    dt.getUTCMonth() !== m - 1 ||
+    dt.getUTCDate() !== d
+  ) {
+    throw new HubError("due_on is not a valid date", "invalid_argument", 400);
+  }
+  return s;
+}
+
+export function normalizeChecklist(
+  raw?: CollabChecklistItem[],
+): CollabChecklistItem[] | undefined {
+  if (!raw?.length) return undefined;
+  const out: CollabChecklistItem[] = [];
+  for (const item of raw) {
+    const text = (item?.text ?? "").trim();
+    if (!text) continue;
+    if (text.length > MAX_CHECKLIST_TEXT) {
+      throw new HubError("checklist item is too long", "invalid_argument", 400);
+    }
+    const id = (item.id ?? "").trim() || crypto.randomUUID();
+    out.push({ id, text, done: item.done === true });
+    if (out.length > MAX_CHECKLIST_ITEMS) {
+      throw new HubError("too many checklist items", "invalid_argument", 400);
+    }
+  }
+  return out.length ? out : undefined;
+}
+
+async function assertCardAssignee(
+  ctx: CollabKvCtx,
+  collab: Collab,
+  assignedTo: string,
+): Promise<void> {
+  const roster = new Set(
+    collab.roster.map((r) => r.address.trim().toLowerCase()),
+  );
+  if (roster.has(assignedTo)) return;
+  for (const userId of collab.steerer_user_ids) {
+    const handle = await steererHandle(ctx, userId);
+    if (handle === assignedTo) return;
+  }
+  throw new HubError(
+    "Assignee must be a collab participant",
+    "invalid_argument",
+    400,
+  );
 }
 
 export async function indexCollabThread(

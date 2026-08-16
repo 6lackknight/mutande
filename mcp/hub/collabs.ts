@@ -210,3 +210,51 @@ export async function addLearningAsWebAgent(
 }
 
 export { E2E_COLLAB_REFUSAL };
+
+export async function createCardAsUser(
+  hub: HubClient,
+  accessToken: string,
+  input: {
+    collab_id: string;
+    title: string;
+    lane?: string;
+    notes?: string;
+  },
+  from: { handle: string; slug: string; agentId: string },
+): Promise<{
+  ok: true;
+  thread_id: string;
+  collab_id: string;
+  lane_id?: string;
+}> {
+  const { collab } = await hub.getCollab(accessToken, input.collab_id);
+  assertAppEnvelopeCollab(collab);
+  const to = from.handle.trim().toLowerCase();
+  const title = input.title.trim();
+  if (!title) {
+    throw new Error("title is required");
+  }
+  const notes = input.notes?.trim();
+  const result = await hub.createThread(accessToken, {
+    to,
+    app_envelope: {
+      version: 1,
+      subject: title,
+      ...(notes ? { notes } : {}),
+    },
+    from_agent: from.slug,
+    from_agent_id: from.agentId,
+    collab_id: input.collab_id,
+    ...(input.lane ? { lane_id: input.lane } : {}),
+  });
+  const threadId = result?.thread?.id?.trim();
+  if (!threadId) {
+    throw new Error("create_card failed: hub returned no thread_id");
+  }
+  return {
+    ok: true,
+    thread_id: threadId,
+    collab_id: input.collab_id,
+    lane_id: result.thread.lane_id,
+  };
+}

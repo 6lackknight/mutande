@@ -4,9 +4,14 @@ use anyhow::{Context, Result, bail};
 use serde_json::Value;
 
 use crate::crypto::DevicePubKey;
-use crate::hub_client::{Collab, CollabArtifactSummary, ListCollabsResponse};
+use crate::hub_client::{
+    Collab, CollabArtifactSummary, CollabChecklistItem, CollabLane, ListCollabsResponse,
+};
 
-use super::state::{bundle_for_blob_artifact, BundleResource, DaemonState, MutandeBundle};
+use super::state::{
+    bundle_for_blob_artifact, BundleResource, DaemonState, MutandeBundle, TurnActor, TurnEntry,
+    TurnReason,
+};
 
 /// Flutter/RPC draft — `path` is read by RPC; this carries bytes, never a hub path.
 #[derive(Clone, Debug, Default)]
@@ -17,6 +22,23 @@ pub struct CollabArtifactDraft {
     pub name: Option<String>,
     pub mime: Option<String>,
     pub bytes: Option<Vec<u8>>,
+}
+
+/// Match a board list by id or case-insensitive name (`Doing`). Empty → hub default.
+pub fn resolve_collab_lane_id(
+    lists: &[CollabLane],
+    lane: Option<&str>,
+) -> Result<Option<String>> {
+    let Some(raw) = lane.map(str::trim).filter(|s| !s.is_empty()) else {
+        return Ok(None);
+    };
+    if lists.iter().any(|l| l.id == raw) {
+        return Ok(Some(raw.to_string()));
+    }
+    if let Some(found) = lists.iter().find(|l| l.name.eq_ignore_ascii_case(raw)) {
+        return Ok(Some(found.id.clone()));
+    }
+    bail!("Unknown lane");
 }
 
 impl DaemonState {
@@ -196,6 +218,7 @@ impl DaemonState {
     }
 
     /// New board card: seal once to every steerer device, then POST with collab_id.
+    /// Assignee sets `assigned_to` + bundle `next_turn` (awaiting). Wrap stays all steerers.
     pub async fn create_collab_card(
         &self,
         collab_id: &str,
@@ -204,6 +227,10 @@ impl DaemonState {
         lane_id: Option<&str>,
         assigned_to: Option<&str>,
         agent_slug: Option<&str>,
+        tags: &[String],
+        due_on: Option<&str>,
+        checklist: &[CollabChecklistItem],
+        artifacts: &[CollabArtifactDraft],
     ) -> Result<String> {
         let hub = self
             .hub_client()
@@ -213,20 +240,47 @@ impl DaemonState {
         if collab.encryption_mode == "e2e" && self.agent_slug_is_mcp(from_agent.as_deref()).await? {
             bail!("Hosted agents cannot create cards on an E2E collab");
         }
+        let assigned = assigned_to
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_ascii_lowercase());
+        if let Some(addr) = assigned.as_deref() {
+            if !assignee_is_participant(&collab, addr) {
+                bail!("Assignee must be a collab participant");
+            }
+        }
         let to = collab
             .steerers
             .first()
             .map(|s| s.handle.clone())
-                    .or_else(|| {
-                collab
-                    .roster
-                    .first()
-                    .map(|r| r.address.clone())
-            })
+            .or_else(|| collab.roster.first().map(|r| r.address.clone()))
             .unwrap_or(self.my_bare_handle().await?);
+        let lane = resolve_collab_lane_id(&collab.lists, lane_id)?;
+        let next_turn = assigned
+            .as_deref()
+            .map(turn_for_assignee)
+            .into_iter()
+            .collect();
+        let resources = resources_from_card_artifacts(artifacts)?;
+        let due = due_on
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
+        if let Some(d) = due.as_deref() {
+            validate_due_on(d)?;
+        }
         let bundle = MutandeBundle {
             subject: Some(subject.to_string()),
             notes: notes.map(str::to_string),
+            next_turn,
+            tags: tags
+                .iter()
+                .map(|t| t.trim().to_ascii_lowercase())
+                .filter(|t| !t.is_empty())
+                .collect(),
+            due_on: due,
+            checklist: checklist.to_vec(),
+            resources,
             ..Default::default()
         };
         self.create_hub_thread(
@@ -235,8 +289,8 @@ impl DaemonState {
             &bundle,
             from_agent.as_deref(),
             Some(collab_id),
-            lane_id,
-            assigned_to,
+            lane.as_deref(),
+            assigned.as_deref(),
         )
         .await
     }
@@ -484,6 +538,39 @@ mod tests {
         assert_eq!(host, "staging.example.com");
         assert!(parse_http_url("javascript:alert(1)").is_err());
         assert!(parse_http_url("ftp://files.example.com").is_err());
+    }
+
+    #[test]
+    fn resolve_collab_lane_id_accepts_name_or_id() {
+        let lists = vec![
+            CollabLane {
+                id: "uuid-doing".into(),
+                name: "Doing".into(),
+                position: 1,
+            },
+            CollabLane {
+                id: "uuid-backlog".into(),
+                name: "Backlog".into(),
+                position: 0,
+            },
+        ];
+        assert_eq!(
+            resolve_collab_lane_id(&lists, Some("Doing")).unwrap().as_deref(),
+            Some("uuid-doing")
+        );
+        assert_eq!(
+            resolve_collab_lane_id(&lists, Some("doing")).unwrap().as_deref(),
+            Some("uuid-doing")
+        );
+        assert_eq!(
+            resolve_collab_lane_id(&lists, Some("uuid-backlog"))
+                .unwrap()
+                .as_deref(),
+            Some("uuid-backlog")
+        );
+        assert_eq!(resolve_collab_lane_id(&lists, None).unwrap(), None);
+        assert_eq!(resolve_collab_lane_id(&lists, Some("  ")).unwrap(), None);
+        assert!(resolve_collab_lane_id(&lists, Some("Icebox")).is_err());
     }
 
     #[test]

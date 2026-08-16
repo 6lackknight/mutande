@@ -198,11 +198,32 @@ class CreateCollabSheet extends StatefulWidget {
 }
 
 class CollabPendingFile {
-  const CollabPendingFile({required this.name, required this.path, this.mime});
+  const CollabPendingFile({
+    required this.name,
+    required this.path,
+    this.mime,
+    this.size,
+  });
 
   final String name;
   final String path;
   final String? mime;
+  final int? size;
+
+  String? get sizeLabel => collabFileSizeLabel(size);
+}
+
+/// Short size for pending file chips (`12 KB`). Null when unknown.
+String? collabFileSizeLabel(int? bytes) {
+  final n = bytes;
+  if (n == null || n < 0) return null;
+  if (n < 1024) return '$n B';
+  if (n < 1024 * 1024) {
+    final kb = n / 1024;
+    return kb >= 10 ? '${kb.round()} KB' : '${kb.toStringAsFixed(1)} KB';
+  }
+  final mb = n / (1024 * 1024);
+  return mb >= 10 ? '${mb.round()} MB' : '${mb.toStringAsFixed(1)} MB';
 }
 
 class CollabPendingLink {
@@ -277,6 +298,7 @@ class _CreateCollabSheetState extends State<CreateCollabSheet> {
   final _roster = <String>{};
   final _files = <CollabPendingFile>[];
   final _links = <CollabPendingLink>[];
+  final _artifactListKey = GlobalKey();
 
   String? get _me => bareCollabHandle(widget.handle);
 
@@ -559,27 +581,54 @@ class _CreateCollabSheetState extends State<CreateCollabSheet> {
           ? await widget.pickFiles!()
           : await _pickCollabFiles();
       if (!mounted || picked.isEmpty) return;
+      var added = 0;
       setState(() {
         for (final f in picked) {
           if (f.path.trim().isEmpty) continue;
           if (_files.any((e) => e.path == f.path)) continue;
           _files.add(f);
+          added++;
         }
         _error = null;
       });
+      if (added > 0) _revealArtifacts();
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = 'Could not attach that file.');
     }
   }
 
+  void _revealArtifacts() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = _artifactListKey.currentContext;
+      if (ctx == null || !ctx.mounted) return;
+      Scrollable.ensureVisible(
+        ctx,
+        alignment: 0.15,
+        duration: MutandeMotion.of(context, MutandeMotion.ui),
+      );
+    });
+  }
+
   Future<List<CollabPendingFile>> _pickCollabFiles() async {
-    final files = await openFiles();
-    return [
-      for (final f in files)
-        if (f.path.trim().isNotEmpty)
-          CollabPendingFile(name: f.name, path: f.path, mime: f.mimeType),
-    ];
+    final files = await openFiles(confirmButtonText: 'Attach');
+    final out = <CollabPendingFile>[];
+    for (final f in files) {
+      if (f.path.trim().isEmpty) continue;
+      int? size;
+      try {
+        size = await f.length();
+      } catch (_) {}
+      out.add(
+        CollabPendingFile(
+          name: f.name,
+          path: f.path,
+          mime: f.mimeType,
+          size: size,
+        ),
+      );
+    }
+    return out;
   }
 
   void _addLink() {
@@ -601,6 +650,7 @@ class _CreateCollabSheetState extends State<CreateCollabSheet> {
       _linkUrl.clear();
       _error = null;
     });
+    _revealArtifacts();
   }
 
   Future<void> _submit() async {
@@ -864,21 +914,44 @@ class _CreateCollabSheetState extends State<CreateCollabSheet> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Wrap(
-          spacing: 8,
-          runSpacing: 6,
-          children: [
-            TextButton(
-              key: const Key('collab-attach-file'),
-              onPressed: _busy ? null : _attachFiles,
-              child: const Text('Attach file'),
-            ),
-          ],
-        ),
-        const SizedBox(height: 6),
+        if (_files.isNotEmpty || _links.isNotEmpty) ...[
+          Wrap(
+            key: _artifactListKey,
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (var i = 0; i < _files.length; i++)
+                _PendingChip(
+                  key: Key('collab-file-chip-${_files[i].path}'),
+                  icon: Icons.insert_drive_file_outlined,
+                  label: _files[i].name,
+                  caption: _files[i].sizeLabel,
+                  onRemove: _busy
+                      ? null
+                      : () => setState(() => _files.removeAt(i)),
+                ),
+              for (var i = 0; i < _links.length; i++)
+                _PendingChip(
+                  key: Key('collab-link-chip-${_links[i].url}'),
+                  icon: Icons.link,
+                  label: _links[i].label,
+                  onRemove: _busy
+                      ? null
+                      : () => setState(() => _links.removeAt(i)),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+        ],
         Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            _ArtifactActionButton(
+              key: const Key('collab-attach-file'),
+              icon: Icons.attach_file,
+              label: 'Attach file',
+              onPressed: _busy ? null : _attachFiles,
+            ),
+            const SizedBox(width: 8),
             Expanded(
               child: TextField(
                 key: const Key('collab-artifact-label'),
@@ -891,9 +964,12 @@ class _CreateCollabSheetState extends State<CreateCollabSheet> {
                 ),
               ),
             ),
-            const SizedBox(width: 8),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
             Expanded(
-              flex: 2,
               child: TextField(
                 key: const Key('collab-artifact-url'),
                 controller: _linkUrl,
@@ -906,44 +982,15 @@ class _CreateCollabSheetState extends State<CreateCollabSheet> {
                 ),
               ),
             ),
-            const SizedBox(width: 4),
-            TextButton(
+            const SizedBox(width: 8),
+            _ArtifactActionButton(
               key: const Key('collab-add-link'),
+              icon: Icons.link,
+              label: 'Add link',
               onPressed: _busy ? null : _addLink,
-              child: const Text('Add link'),
             ),
           ],
         ),
-        if (_files.isNotEmpty || _links.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              for (var i = 0; i < _files.length; i++)
-                InputChip(
-                  key: Key('collab-file-chip-${_files[i].path}'),
-                  avatar: const Icon(
-                    Icons.insert_drive_file_outlined,
-                    size: 14,
-                  ),
-                  label: Text(_files[i].name),
-                  onDeleted: _busy
-                      ? null
-                      : () => setState(() => _files.removeAt(i)),
-                ),
-              for (var i = 0; i < _links.length; i++)
-                InputChip(
-                  key: Key('collab-link-chip-${_links[i].url}'),
-                  avatar: const Icon(Icons.link, size: 14),
-                  label: Text(_links[i].label),
-                  onDeleted: _busy
-                      ? null
-                      : () => setState(() => _links.removeAt(i)),
-                ),
-            ],
-          ),
-        ],
       ],
     );
   }
@@ -1255,6 +1302,119 @@ class _PickChip extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(999),
         child: child,
+      ),
+    );
+  }
+}
+
+class _ArtifactActionButton extends StatelessWidget {
+  const _ArtifactActionButton({
+    super.key,
+    required this.label,
+    this.icon,
+    required this.onPressed,
+  });
+
+  final String label;
+  final IconData? icon;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        foregroundColor: MutandeColors.stone800,
+        backgroundColor: MutandeColors.stone50,
+        disabledForegroundColor: MutandeColors.stone400,
+        side: const BorderSide(color: MutandeColors.stone200),
+        minimumSize: const Size(0, 36),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        textStyle: const TextStyle(
+          fontSize: 12.5,
+          fontWeight: FontWeight.w600,
+          height: 1.15,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[Icon(icon, size: 15), const SizedBox(width: 6)],
+          Text(label),
+        ],
+      ),
+    );
+  }
+}
+
+class _PendingChip extends StatelessWidget {
+  const _PendingChip({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.onRemove,
+    this.caption,
+  });
+
+  final IconData icon;
+  final String label;
+  final String? caption;
+  final VoidCallback? onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 240, minHeight: 28),
+      padding: const EdgeInsets.fromLTRB(8, 5, 4, 5),
+      decoration: BoxDecoration(
+        color: MutandeColors.stone50,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: MutandeColors.stone200),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: MutandeColors.stone500),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: MutandeColors.stone800,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                height: 1.15,
+              ),
+            ),
+          ),
+          if (caption != null && caption!.trim().isNotEmpty) ...[
+            const SizedBox(width: 6),
+            Text(
+              caption!,
+              style: const TextStyle(
+                color: MutandeColors.stone500,
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+                height: 1.15,
+              ),
+            ),
+          ],
+          if (onRemove != null)
+            GestureDetector(
+              onTap: onRemove,
+              child: const Padding(
+                padding: EdgeInsets.all(4),
+                child: Icon(
+                  Icons.close,
+                  size: 14,
+                  color: MutandeColors.stone400,
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

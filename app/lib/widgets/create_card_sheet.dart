@@ -17,7 +17,7 @@ Future<String?> showCreateCardSheet({
 }) {
   final size = MediaQuery.sizeOf(context);
   final width = size.width.clamp(360.0, 420.0);
-  final height = (size.height - 160).clamp(280.0, 400.0);
+  final height = (size.height - 200).clamp(240.0, 320.0);
   return showMutandeSheet<String>(
     context: context,
     barrierLabel: 'New card',
@@ -54,7 +54,6 @@ class CreateCardSheet extends StatefulWidget {
 
 class _CreateCardSheetState extends State<CreateCardSheet> {
   final _title = TextEditingController();
-  final _notes = TextEditingController();
   bool _busy = false;
   String? _error;
 
@@ -67,7 +66,6 @@ class _CreateCardSheetState extends State<CreateCardSheet> {
   @override
   void dispose() {
     _title.dispose();
-    _notes.dispose();
     super.dispose();
   }
 
@@ -98,12 +96,10 @@ class _CreateCardSheetState extends State<CreateCardSheet> {
       _error = null;
     });
     try {
-      final notes = _notes.text.trim();
       final id = await widget.daemon.createCollabCard(
         collabId: widget.collabId,
         title: title,
         laneId: widget.laneId,
-        notes: notes.isEmpty ? null : notes,
       );
       if (!mounted) return;
       Navigator.of(context).pop(id);
@@ -135,7 +131,12 @@ class _CreateCardSheetState extends State<CreateCardSheet> {
               ),
             ),
             const SizedBox(height: 18),
-            Expanded(child: _form()),
+            Expanded(
+              child: MutandeStaggerScope(
+                delay: MutandeStaggerScope.sectionStagger,
+                child: _form(),
+              ),
+            ),
             const SizedBox(height: 12),
             if (_error != null) ...[
               Text(
@@ -169,68 +170,48 @@ class _CreateCardSheetState extends State<CreateCardSheet> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const _SectionLabel('Title'),
-          const SizedBox(height: 6),
-          TextField(
-            key: const Key('card-title-field'),
-            controller: _title,
-            autofocus: true,
-            enabled: !_busy,
-            maxLength: 120,
-            textInputAction: TextInputAction.next,
-            onSubmitted: (_) => _submit(),
-            onChanged: (_) {
-              if (_error != null) setState(() => _error = null);
-            },
-            decoration: const InputDecoration(
-              hintText: 'e.g. ship invites',
-              counterText: '',
-            ),
-          ),
-          MutandeStaggerScope(
-            delay: MutandeStaggerScope.sectionStagger,
+          MutandeStaggerIn(
+            id: 'title',
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (_laneCaption != null)
-                  MutandeStaggerIn(
-                    id: 'lane',
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text(
-                        _laneCaption!,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          height: 1.35,
-                          color: MutandeColors.stone500,
-                        ),
-                      ),
-                    ),
-                  ),
-                MutandeStaggerIn(
-                  id: 'notes',
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const SizedBox(height: 18),
-                      const _SectionLabel('First message'),
-                      const SizedBox(height: 6),
-                      TextField(
-                        key: const Key('card-notes-field'),
-                        controller: _notes,
-                        enabled: !_busy,
-                        maxLines: 3,
-                        decoration: const InputDecoration(
-                          hintText: 'Optional',
-                        ),
-                      ),
-                    ],
+                const _SectionLabel('Title'),
+                const SizedBox(height: 6),
+                TextField(
+                  key: const Key('card-title-field'),
+                  controller: _title,
+                  autofocus: true,
+                  enabled: !_busy,
+                  maxLength: 120,
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: (_) => _submit(),
+                  onChanged: (_) {
+                    if (_error != null) setState(() => _error = null);
+                  },
+                  decoration: const InputDecoration(
+                    hintText: 'e.g. ship invites',
+                    counterText: '',
                   ),
                 ),
               ],
             ),
           ),
+          if (_laneCaption != null)
+            MutandeStaggerIn(
+              id: 'lane',
+              child: Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  _laneCaption!,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    height: 1.35,
+                    color: MutandeColors.stone500,
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );

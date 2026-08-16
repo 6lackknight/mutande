@@ -84,7 +84,22 @@ pub struct ThreadMeta {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub watchers: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub due_on: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checklist: Option<Vec<CollabChecklistItem>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub collab_name: Option<String>,
+}
+
+/// Card checklist row — same JSON as hub `CollabChecklistItem`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CollabChecklistItem {
+    pub id: String,
+    pub text: String,
+    #[serde(default)]
+    pub done: bool,
 }
 
 /// Hub-stored awaiting holder (blind courier mirror of E2E `next_turn`).
@@ -151,6 +166,12 @@ pub struct AppEnvelopePayload {
     pub task: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hints: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub due_on: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checklist: Option<Vec<CollabChecklistItem>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -657,6 +678,12 @@ pub struct CreateThreadRequest<'a> {
     pub lane_id: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub assigned_to: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tags: Option<&'a [String]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub due_on: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checklist: Option<&'a [CollabChecklistItem]>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -821,6 +848,12 @@ pub struct CollabCardSummary {
     #[serde(default)]
     pub watchers: Option<Vec<String>>,
     #[serde(default)]
+    pub tags: Option<Vec<String>>,
+    #[serde(default)]
+    pub due_on: Option<String>,
+    #[serde(default)]
+    pub checklist: Option<Vec<CollabChecklistItem>>,
+    #[serde(default)]
     pub status: Option<String>,
     #[serde(default)]
     pub from: Option<String>,
@@ -935,7 +968,11 @@ pub struct Collab {
     #[serde(default)]
     pub open: u64,
     #[serde(default)]
+    pub backlog: u64,
+    #[serde(default)]
     pub doing: u64,
+    #[serde(default)]
+    pub done: u64,
     #[serde(default)]
     pub needs_you: u64,
     #[serde(default)]

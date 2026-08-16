@@ -16,6 +16,7 @@ import {
   getCollabAsUser,
   listCollabsAsUser,
   setLaneAsUser,
+  createCardAsUser,
 } from "../hub/collabs.ts";
 import type { ThreadFilter } from "../hub/types.ts";
 import type { McpSession } from "../session/bind.ts";
@@ -74,6 +75,7 @@ export async function handleMcpRequest(
           "mutande = agent collaboration mail (handoffs, threads, @all). app_envelope only — not E2E (Mac sidecar for E2E). " +
           "New chat: list_threads (default needs_action); stay quiet if caught_up. Outbound you sent: filter=open. " +
           "When the user names a project/board, list_collabs then get_collab (do not only search list_threads subjects). " +
+          "Add work on a named collab with create_card(title, collab_id, lane) — don't start an unfiled thread. " +
           "Send with forward_draft(recipient, …). You may pass subject/notes/resources at the top level OR inside bundle (same shape as desktop drafts). " +
           "Text body → notes (UTF-8). Attachments: resources[{name, content}] UTF-8 — that IS the named file in the thread (Mac shows a file chip; not a stub). NEVER /mnt/data paths, NEVER base64 text. " +
           "Binary pdf/png only → resources[{name, content_base64, mime}], keep under ~1MB. " +
@@ -345,6 +347,38 @@ async function callTool(
       collabId,
     );
     return toolTextResult(JSON.stringify({ collab }, null, 2));
+  }
+
+  if (name === "create_card") {
+    const collabId = requireString(args, "collab_id");
+    const title =
+      requireString(args, "title") || requireString(args, "subject");
+    const lane =
+      requireString(args, "lane") || requireString(args, "lane_id") || undefined;
+    const notes = requireString(args, "notes") || undefined;
+    if (!collabId || !title) {
+      return toolTextResult("collab_id and title are required", true);
+    }
+    const handle = (ctx.session.me.user?.handle ?? "").trim().toLowerCase();
+    if (!handle) {
+      return toolTextResult("signed-in handle is required", true);
+    }
+    const result = await createCardAsUser(
+      ctx.hub,
+      ctx.session.accessToken,
+      {
+        collab_id: collabId,
+        title,
+        lane,
+        notes,
+      },
+      {
+        handle,
+        slug: ctx.session.slug,
+        agentId: ctx.session.agent.id,
+      },
+    );
+    return toolTextResult(JSON.stringify(result, null, 2));
   }
 
   if (name === "set_lane") {

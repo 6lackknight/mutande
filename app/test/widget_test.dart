@@ -15,9 +15,7 @@ import 'package:app/services/daemon_client.dart';
 import 'package:app/services/first_run_store.dart';
 import 'package:app/services/host_link_store.dart';
 
-DaemonClient _mockDaemon(
-  Future<http.Response> Function(http.Request) handler,
-) {
+DaemonClient _mockDaemon(Future<http.Response> Function(http.Request) handler) {
   return DaemonClient(
     httpClient: MockClient((request) async {
       final body = jsonDecode(request.body) as Map<String, dynamic>;
@@ -235,8 +233,11 @@ void main() {
       MutandeApp(
         config: const AppConfig(hubUrl: 'http://localhost:8000'),
         daemon: daemon,
-        firstRunStore:
-            FirstRunStore.memory(connectComplete: true, pingComplete: true, notificationsComplete: true),
+        firstRunStore: FirstRunStore.memory(
+          connectComplete: true,
+          pingComplete: true,
+          notificationsComplete: true,
+        ),
         welcomeDuration: Duration.zero,
         startupRetryAttempts: 0,
       ),
@@ -332,11 +333,7 @@ void main() {
           'command': '/Users/dev/bin/mutande-core',
           'args': ['mcp'],
           'hosts': [
-            {
-              'host': host,
-              'path': '/Users/dev/.cursor/mcp.json',
-              'ok': true,
-            },
+            {'host': host, 'path': '/Users/dev/.cursor/mcp.json', 'ok': true},
           ],
         });
       }
@@ -480,15 +477,18 @@ void main() {
       if (method == 'get_safety_number') {
         return _rpcOk(body['id'], {
           'handle': 'me',
-          'fingerprint': '11111 22222 33333 44444 55555 66666 77777 88888 99999 00000 12345 67890',
+          'fingerprint':
+              '11111 22222 33333 44444 55555 66666 77777 88888 99999 00000 12345 67890',
           'uri': 'mutande:safety:me:11111 22222',
-          'pubkey': '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+          'pubkey':
+              '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
         });
       }
       if (method == 'register_device') {
         return _rpcOk(body['id'], {
           'ok': true,
-          'pubkey': '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+          'pubkey':
+              '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
         });
       }
       return _rpcOk(body['id'], {'ok': true});
@@ -542,7 +542,9 @@ void main() {
     expect(find.text('Sign in with Auth0'), findsOneWidget);
   });
 
-  testWidgets('onboarding choose step when signed in', (WidgetTester tester) async {
+  testWidgets('onboarding choose step when signed in', (
+    WidgetTester tester,
+  ) async {
     final daemon = _mockDaemon((request) async {
       final body = jsonDecode(request.body) as Map<String, dynamic>;
       return _rpcOk(body['id'], {
@@ -573,7 +575,9 @@ void main() {
     expect(find.text('I have an invite'), findsOneWidget);
   });
 
-  testWidgets('web-joined user refreshes past create/join', (WidgetTester tester) async {
+  testWidgets('web-joined user refreshes past create/join', (
+    WidgetTester tester,
+  ) async {
     final daemon = _mockDaemon((request) async {
       final body = jsonDecode(request.body) as Map<String, dynamic>;
       return _rpcOk(body['id'], {
@@ -613,7 +617,9 @@ void main() {
     expect(find.text('Sign in with Auth0'), findsNothing);
   });
 
-  testWidgets('already onboarded status skips create/join', (WidgetTester tester) async {
+  testWidgets('already onboarded status skips create/join', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
       MutandeApp(
         config: const AppConfig(hubUrl: 'http://localhost:8000'),
@@ -699,7 +705,9 @@ void main() {
           'version': '0.0.0',
         });
       }
-      throw Exception('TimeoutException after 0:00:03.000000: Future not completed');
+      throw Exception(
+        'TimeoutException after 0:00:03.000000: Future not completed',
+      );
     });
 
     await tester.pumpWidget(
@@ -864,7 +872,7 @@ void main() {
     expect(find.text('Create a team'), findsNothing);
   });
 
-test('validateHandle and validateHubUrl', () {
+  test('validateHandle and validateHubUrl', () {
     expect(validateHandle('alice@acme'), isNull);
     expect(validateHandle('nope'), isNotNull);
     expect(validateHandle('@acme'), isNotNull);
@@ -898,8 +906,10 @@ test('validateHandle and validateHubUrl', () {
 
   test('friendlyDaemonError hides raw TimeoutException', () {
     expect(
-      friendlyDaemonError('TimeoutException after 0:00:03.000000: Future not completed',
-          what: 'Threads'),
+      friendlyDaemonError(
+        'TimeoutException after 0:00:03.000000: Future not completed',
+        what: 'Threads',
+      ),
       allOf(contains('took too long'), isNot(contains('TimeoutException'))),
     );
   });
@@ -942,23 +952,20 @@ test('validateHandle and validateHubUrl', () {
         'hub error 404 Not Found: {"error":"not_found"}',
         what: 'Create collab',
       ),
-      allOf(
-        contains("doesn't support collab"),
-        isNot(contains('signed in')),
-      ),
+      allOf(contains("doesn't support collab"), isNot(contains('signed in'))),
     );
     expect(
       friendlyDaemonError(
         'hub error 404 Not Found: {"error":"not_found","message":"User not found"}',
         what: 'Create collab',
       ),
-      allOf(
-        contains('Retry'),
-        isNot(contains('signed in')),
-      ),
+      allOf(contains('Retry'), isNot(contains('signed in'))),
     );
     expect(
-      friendlyDaemonError('method not found: create_collab', what: 'Create collab'),
+      friendlyDaemonError(
+        'method not found: create_collab',
+        what: 'Create collab',
+      ),
       contains("doesn't support collab"),
     );
   });
@@ -1031,10 +1038,7 @@ test('validateHandle and validateHubUrl', () {
       bundleNotes:
           'Binary artifact (3127062 bytes); too large to inline in opened bundle.',
       resources: [
-        BundleResourceView(
-          name: 'landing-intro.mp4',
-          mime: 'video/mp4',
-        ),
+        BundleResourceView(name: 'landing-intro.mp4', mime: 'video/mp4'),
       ],
     );
     expect(stub.isEmptyBody, isFalse);
@@ -1207,7 +1211,8 @@ test('validateHandle and validateHubUrl', () {
           'hosts': [
             {
               'host': connectedHost,
-              'path': '/Users/dev/Library/Application Support/Claude/claude_desktop_config.json',
+              'path':
+                  '/Users/dev/Library/Application Support/Claude/claude_desktop_config.json',
               'ok': true,
             },
           ],
@@ -1255,11 +1260,7 @@ test('validateHandle and validateHubUrl', () {
     String? setDefaultId;
     final hostLinks = HostLinkStore.memory();
     await hostLinks.record(
-      const HostWriteResult(
-        host: 'claude',
-        path: '/tmp/claude.json',
-        ok: true,
-      ),
+      const HostWriteResult(host: 'claude', path: '/tmp/claude.json', ok: true),
     );
     final daemon = _mockDaemon((request) async {
       final body = jsonDecode(request.body) as Map<String, dynamic>;
@@ -1285,10 +1286,7 @@ test('validateHandle and validateHubUrl', () {
       if (method == 'set_default_agent') {
         final params = body['params'] as Map<String, dynamic>? ?? {};
         setDefaultId = params['agent_id'] as String?;
-        return _rpcOk(body['id'], {
-          'id': setDefaultId,
-          'slug': 'claude',
-        });
+        return _rpcOk(body['id'], {'id': setDefaultId, 'slug': 'claude'});
       }
       return _rpcOk(body['id'], {'ok': true});
     });
@@ -1325,11 +1323,7 @@ test('validateHandle and validateHubUrl', () {
   ) async {
     final hostLinks = HostLinkStore.memory();
     await hostLinks.record(
-      const HostWriteResult(
-        host: 'cursor',
-        path: '/tmp/cursor.json',
-        ok: true,
-      ),
+      const HostWriteResult(host: 'cursor', path: '/tmp/cursor.json', ok: true),
     );
     final daemon = _mockDaemon((request) async {
       final body = jsonDecode(request.body) as Map<String, dynamic>;
@@ -1422,7 +1416,10 @@ test('validateHandle and validateHubUrl', () {
     expect(find.text('Alice'), findsOneWidget);
     expect(find.text('alice@acme'), findsWidgets);
     expect(find.text('@all@acme'), findsOneWidget);
-    expect(find.text('Broadcast to each member’s default agent'), findsOneWidget);
+    expect(
+      find.text('Broadcast to each member’s default agent'),
+      findsOneWidget,
+    );
     expect(find.text('You’re the only member of acme'), findsOneWidget);
     expect(find.text('Invite teammates'), findsOneWidget);
   });
@@ -1485,7 +1482,9 @@ test('validateHandle and validateHubUrl', () {
     expect(find.text('You’re the only member of acme'), findsNothing);
   });
 
-  testWidgets('first-run connect gate shows when incomplete', (WidgetTester tester) async {
+  testWidgets('first-run connect gate shows when incomplete', (
+    WidgetTester tester,
+  ) async {
     final daemon = _mockDaemon((request) async {
       final body = jsonDecode(request.body) as Map<String, dynamic>;
       final method = body['method'] as String?;
@@ -1534,14 +1533,13 @@ test('validateHandle and validateHubUrl', () {
     expect(find.text('Connect'), findsOneWidget);
     expect(find.text('Installed'), findsOneWidget);
     // Undetected hosts collapse to one line instead of dead tiles.
-    expect(
-      find.textContaining('installed on this Mac'),
-      findsOneWidget,
-    );
+    expect(find.textContaining('installed on this Mac'), findsOneWidget);
     expect(find.text('Threads'), findsNothing);
   });
 
-  testWidgets('first-run ping wizard shows after connect complete', (WidgetTester tester) async {
+  testWidgets('first-run ping wizard shows after connect complete', (
+    WidgetTester tester,
+  ) async {
     final daemon = _mockDaemon((request) async {
       final body = jsonDecode(request.body) as Map<String, dynamic>;
       final method = body['method'] as String?;
@@ -1578,7 +1576,9 @@ test('validateHandle and validateHubUrl', () {
     expect(find.text('Skip for now'), findsOneWidget);
   });
 
-  testWidgets('ping wizard skip marks complete and shows home', (WidgetTester tester) async {
+  testWidgets('ping wizard skip marks complete and shows home', (
+    WidgetTester tester,
+  ) async {
     final daemon = _mockDaemon((request) async {
       final body = jsonDecode(request.body) as Map<String, dynamic>;
       final method = body['method'] as String?;
@@ -1616,16 +1616,19 @@ test('validateHandle and validateHubUrl', () {
     expect(find.text('Threads'), findsWidgets);
   });
 
-  testWidgets('collab tab shows empty create shell', (WidgetTester tester) async {
+  testWidgets('collab tab shows empty create shell', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     final daemon = _mockDaemon((request) async {
-      return _rpcOk(
-        jsonDecode(request.body)['id'],
-        {'ok': true, 'service': 'mutande-core', 'version': '0.0.0'},
-      );
+      return _rpcOk(jsonDecode(request.body)['id'], {
+        'ok': true,
+        'service': 'mutande-core',
+        'version': '0.0.0',
+      });
     });
     await tester.pumpWidget(
       MutandeApp(
@@ -1750,7 +1753,7 @@ test('validateHandle and validateHubUrl', () {
     await tester.tap(find.text('Create').first);
     for (var i = 0; i < 20; i++) {
       await tester.pump(const Duration(milliseconds: 50));
-      if (find.text('PEOPLE').evaluate().isNotEmpty) break;
+      if (find.text('@cursor').evaluate().isNotEmpty) break;
     }
     expect(find.text('Create collab'), findsOneWidget);
     expect(find.text('PEOPLE'), findsOneWidget);
@@ -1759,7 +1762,9 @@ test('validateHandle and validateHubUrl', () {
     expect(find.text('Roster (agent addresses)'), findsNothing);
   });
 
-  testWidgets('network people segment shows contacts', (WidgetTester tester) async {
+  testWidgets('network people segment shows contacts', (
+    WidgetTester tester,
+  ) async {
     final daemon = _mockDaemon((request) async {
       final body = jsonDecode(request.body) as Map<String, dynamic>;
       final method = body['method'] as String?;

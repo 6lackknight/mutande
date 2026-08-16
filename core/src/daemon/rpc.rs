@@ -316,7 +316,8 @@ async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Resu
                 .or_else(|| optional_str(&params, "title"))
                 .ok_or_else(|| anyhow::anyhow!("missing param: subject"))?;
             let notes = optional_str(&params, "notes");
-            let lane_id = optional_str(&params, "lane_id");
+            let lane_id = optional_str(&params, "lane_id")
+                .or_else(|| optional_str(&params, "lane"));
             let assigned_to = optional_str(&params, "assigned_to");
             let agent_slug = optional_str(&params, "agent_slug");
             let thread_id = state

@@ -1001,6 +1001,13 @@ void main() {
     );
   });
 
+  test('collabFileSizeLabel formats bytes', () {
+    expect(collabFileSizeLabel(null), isNull);
+    expect(collabFileSizeLabel(400), '400 B');
+    expect(collabFileSizeLabel(2048), '2.0 KB');
+    expect(collabFileSizeLabel(12000), '12 KB');
+  });
+
   testWidgets('create collab sends a link artifact', (tester) async {
     Map<String, dynamic>? created;
     final daemon = _mockDaemon((request) async {
@@ -1061,6 +1068,172 @@ void main() {
     await tester.pump();
     expect(created, isNotNull);
     final artifacts = (created!['artifacts'] as List).cast<Map>();
+    expect(
+      artifacts.any(
+        (a) => a['kind'] == 'link' && a['url'] == 'https://staging.example.com',
+      ),
+      isTrue,
+    );
+  });
+
+  testWidgets('picking a local file shows a chip and create includes it', (
+    tester,
+  ) async {
+    Map<String, dynamic>? created;
+    final daemon = _mockDaemon((request) async {
+      final body = _rpc(request);
+      final method = body['method'] as String?;
+      if (method == 'list_contacts') {
+        return _rpcOk(body['id'], {'contacts': []});
+      }
+      if (method == 'list_agents') {
+        return _rpcOk(body['id'], {
+          'agents': [
+            {'id': 'a1', 'slug': 'cursor', 'transport': 'sidecar'},
+          ],
+        });
+      }
+      if (method == 'create_collab') {
+        created = body['params'] as Map<String, dynamic>?;
+        return _rpcOk(body['id'], {
+          'collab': {
+            'id': 'c1',
+            'name': 'Launch',
+            'encryption_mode': 'e2e',
+            'lists': <Map<String, dynamic>>[],
+            'artifacts': [
+              {'kind': 'file', 'name': 'brief.md', 'path': '/tmp/brief.md'},
+            ],
+          },
+        });
+      }
+      return _rpcOk(body['id'], {'ok': true});
+    });
+
+    await _pumpSheet(
+      tester,
+      daemon: daemon,
+      pickFiles: () async => [
+        const CollabPendingFile(
+          name: 'brief.md',
+          path: '/tmp/brief.md',
+          mime: 'text/markdown',
+          size: 2048,
+        ),
+      ],
+    );
+
+    await tester.tap(find.text('@cursor'));
+    await tester.pump();
+    await tester.enterText(find.byType(TextField).first, 'Launch');
+
+    await tester.ensureVisible(find.byKey(const Key('collab-attach-file')));
+    await tester.tap(find.byKey(const Key('collab-attach-file')));
+    await tester.pump();
+
+    expect(
+      find.byKey(const Key('collab-file-chip-/tmp/brief.md')),
+      findsOneWidget,
+    );
+    expect(find.text('brief.md'), findsOneWidget);
+    expect(find.text('2.0 KB'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Create'));
+    await tester.pump();
+    expect(created, isNotNull);
+    final artifacts = (created!['artifacts'] as List).cast<Map>();
+    expect(
+      artifacts.any(
+        (a) =>
+            a['kind'] == 'file' &&
+            a['path'] == '/tmp/brief.md' &&
+            a['name'] == 'brief.md',
+      ),
+      isTrue,
+    );
+  });
+
+  testWidgets('file and link artifacts both round-trip on create', (
+    tester,
+  ) async {
+    Map<String, dynamic>? created;
+    final daemon = _mockDaemon((request) async {
+      final body = _rpc(request);
+      final method = body['method'] as String?;
+      if (method == 'list_contacts') {
+        return _rpcOk(body['id'], {'contacts': []});
+      }
+      if (method == 'list_agents') {
+        return _rpcOk(body['id'], {
+          'agents': [
+            {'id': 'a1', 'slug': 'cursor', 'transport': 'sidecar'},
+          ],
+        });
+      }
+      if (method == 'create_collab') {
+        created = body['params'] as Map<String, dynamic>?;
+        return _rpcOk(body['id'], {
+          'collab': {
+            'id': 'c1',
+            'name': 'Launch',
+            'encryption_mode': 'e2e',
+            'lists': <Map<String, dynamic>>[],
+            'artifacts': <Map<String, dynamic>>[],
+          },
+        });
+      }
+      return _rpcOk(body['id'], {'ok': true});
+    });
+
+    await _pumpSheet(
+      tester,
+      daemon: daemon,
+      pickFiles: () async => [
+        const CollabPendingFile(
+          name: 'notes.txt',
+          path: '/tmp/notes.txt',
+          size: 400,
+        ),
+      ],
+    );
+
+    await tester.tap(find.text('@cursor'));
+    await tester.pump();
+    await tester.enterText(find.byType(TextField).first, 'Launch');
+
+    await tester.ensureVisible(find.byKey(const Key('collab-attach-file')));
+    await tester.tap(find.byKey(const Key('collab-attach-file')));
+    await tester.pump();
+    expect(find.text('notes.txt'), findsOneWidget);
+    expect(find.text('400 B'), findsOneWidget);
+
+    await tester.ensureVisible(find.byKey(const Key('collab-artifact-label')));
+    await tester.enterText(
+      find.byKey(const Key('collab-artifact-label')),
+      'Staging',
+    );
+    await tester.enterText(
+      find.byKey(const Key('collab-artifact-url')),
+      'https://staging.example.com',
+    );
+    await tester.ensureVisible(find.byKey(const Key('collab-add-link')));
+    await tester.tap(find.byKey(const Key('collab-add-link')));
+    await tester.pump();
+    expect(
+      find.byKey(const Key('collab-link-chip-https://staging.example.com')),
+      findsOneWidget,
+    );
+    expect(find.text('Staging'), findsWidgets);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Create'));
+    await tester.pump();
+    final artifacts = (created!['artifacts'] as List).cast<Map>();
+    expect(
+      artifacts.any(
+        (a) => a['kind'] == 'file' && a['path'] == '/tmp/notes.txt',
+      ),
+      isTrue,
+    );
     expect(
       artifacts.any(
         (a) => a['kind'] == 'link' && a['url'] == 'https://staging.example.com',
