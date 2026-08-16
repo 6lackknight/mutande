@@ -135,13 +135,12 @@ Future<SearchHit?> showSearchDialog({
   List<String> recentQueries = const [],
   ValueChanged<String>? onRememberQuery,
 }) {
-  final reduce = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
   return showGeneralDialog<SearchHit>(
     context: context,
     barrierDismissible: false,
     barrierLabel: 'Search',
     barrierColor: MutandeColors.stone100,
-    transitionDuration: Duration(milliseconds: reduce ? 0 : 200),
+    transitionDuration: Duration.zero,
     pageBuilder: (ctx, animation, secondary) {
       return SearchDialog(
         daemon: daemon,
@@ -150,24 +149,7 @@ Future<SearchHit?> showSearchDialog({
         onRememberQuery: onRememberQuery,
       );
     },
-    transitionBuilder: (ctx, animation, secondary, child) {
-      if (reduce) return child;
-      final curved = CurvedAnimation(
-        parent: animation,
-        curve: Curves.easeOutCubic,
-        reverseCurve: Curves.easeInCubic,
-      );
-      return FadeTransition(
-        opacity: curved,
-        child: SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(0, 0.018),
-            end: Offset.zero,
-          ).animate(curved),
-          child: child,
-        ),
-      );
-    },
+    transitionBuilder: (ctx, animation, secondary, child) => child,
   );
 }
 
@@ -457,7 +439,8 @@ class _DialogSearchField extends StatelessWidget {
       builder: (context, _) {
         final focused = focusNode.hasFocus;
         return AnimatedContainer(
-          duration: const Duration(milliseconds: 140),
+          duration: MutandeMotion.of(context, MutandeMotion.hover),
+          curve: MutandeMotion.ease,
           height: 44,
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
@@ -551,7 +534,8 @@ class _ScopeChip extends StatelessWidget {
       child: GestureDetector(
         onTap: onTap,
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 140),
+          duration: MutandeMotion.of(context, MutandeMotion.hover),
+          curve: MutandeMotion.ease,
           padding: const EdgeInsets.fromLTRB(10, 6, 12, 6),
           decoration: BoxDecoration(
             color: selected ? MutandeColors.stone800 : MutandeColors.stone100,

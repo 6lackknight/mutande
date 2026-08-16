@@ -13,6 +13,7 @@ import '../util/address_display.dart';
 import '../util/clock_format.dart';
 import 'ai_host_icon.dart';
 import 'message_attachments.dart';
+import 'mutande_stagger.dart';
 import 'thread_message_tree.dart';
 import 'thread_status_badge.dart';
 
@@ -702,7 +703,9 @@ class _CapsuleComposerState extends State<_CapsuleComposer> {
           ),
         Focus(
           onFocusChange: (v) => setState(() => _focused = v),
-          child: DecoratedBox(
+          child: AnimatedContainer(
+            duration: MutandeMotion.of(context, MutandeMotion.hover),
+            curve: MutandeMotion.ease,
             decoration: BoxDecoration(
               color: MutandeColors.stone100,
               borderRadius: BorderRadius.circular(18),
@@ -872,39 +875,56 @@ class _RelayTimelineState extends State<_RelayTimeline> {
         ],
         const SizedBox(height: 12),
         Expanded(
-          child: ListView(
-            padding: const EdgeInsets.only(bottom: 12),
-            children: [
-              if (op != null)
-                _RailItem(
-                  host: host,
-                  message: op,
-                  isOp: true,
-                  open: openId == op.id,
-                  latest: false,
-                  closed: closed,
-                  indented: false,
-                  first: true,
-                  last: nodes.isEmpty,
-                  onToggle: () => _toggle(op.id),
-                ),
-              for (var i = 0; i < nodes.length; i++)
-                _RailItem(
-                  host: host,
-                  message: nodes[i].message,
-                  isOp: false,
-                  open: openId == nodes[i].message.id,
-                  latest: i == nodes.length - 1,
-                  closed: closed,
-                  indented: nodes[i].depth >= 1,
-                  replyToLabel: nodes[i].depth > 1
-                      ? _parentLabel(byId, nodes[i].message)
-                      : null,
-                  first: op == null && i == 0,
-                  last: i == nodes.length - 1,
-                  onToggle: () => _toggle(nodes[i].message.id),
-                ),
-            ],
+          // Keyed by thread: remounts on open/select; freeze holds across
+          // silent poll, upvote, and send. Builder so off-screen nested
+          // history does not claim stagger slots.
+          child: MutandeStaggerScope(
+            key: ValueKey(d.id),
+            child: ListView.builder(
+              padding: const EdgeInsets.only(bottom: 12),
+              itemCount: (op != null ? 1 : 0) + nodes.length,
+              itemBuilder: (context, i) {
+                if (op != null && i == 0) {
+                  return MutandeStaggerIn(
+                    key: ValueKey(op.id),
+                    id: op.id,
+                    child: _RailItem(
+                      host: host,
+                      message: op,
+                      isOp: true,
+                      open: openId == op.id,
+                      latest: false,
+                      closed: closed,
+                      indented: false,
+                      first: true,
+                      last: nodes.isEmpty,
+                      onToggle: () => _toggle(op.id),
+                    ),
+                  );
+                }
+                final ni = op == null ? i : i - 1;
+                final n = nodes[ni];
+                return MutandeStaggerIn(
+                  key: ValueKey(n.message.id),
+                  id: n.message.id,
+                  child: _RailItem(
+                    host: host,
+                    message: n.message,
+                    isOp: false,
+                    open: openId == n.message.id,
+                    latest: ni == nodes.length - 1,
+                    closed: closed,
+                    indented: n.depth >= 1,
+                    replyToLabel: n.depth > 1
+                        ? _parentLabel(byId, n.message)
+                        : null,
+                    first: op == null && ni == 0,
+                    last: ni == nodes.length - 1,
+                    onToggle: () => _toggle(n.message.id),
+                  ),
+                );
+              },
+            ),
           ),
         ),
         _CapsuleComposer(
@@ -1110,13 +1130,9 @@ class _RailItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final content = Padding(
       padding: const EdgeInsets.only(bottom: 16, left: 2),
-      child: AnimatedSize(
-        duration: const Duration(milliseconds: 160),
-        curve: Curves.easeOutCubic,
-        alignment: Alignment.topLeft,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
             if (replyToLabel != null)
               Padding(
                 padding: const EdgeInsets.only(bottom: 3),
@@ -1157,7 +1173,6 @@ class _RailItem extends StatelessWidget {
               ),
           ],
         ),
-      ),
     );
 
     return GestureDetector(

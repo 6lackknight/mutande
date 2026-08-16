@@ -834,6 +834,80 @@ pub struct CollabCardSummary {
     pub last_subject: Option<String>,
 }
 
+fn default_artifact_kind() -> String {
+    "file".into()
+}
+
+/// Collab artifact: hub-persisted (file envelope/content or link URL) or
+/// device-local harvest from a card thread after open.
+///
+/// `kind` defaults to `file` so older harvested payloads keep parsing.
+/// Hub never receives local `path`; the sidecar sets it after decrypt.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CollabArtifactSummary {
+    #[serde(default = "default_artifact_kind")]
+    pub kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub mime: String,
+    #[serde(default)]
+    pub size: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub envelope: Option<crate::crypto::Envelope>,
+    #[serde(default)]
+    pub thread_id: String,
+    #[serde(default)]
+    pub message_id: String,
+    #[serde(default)]
+    pub card_title: String,
+    #[serde(default)]
+    pub from_handle: String,
+    #[serde(default)]
+    pub created_at: String,
+}
+
+impl CollabArtifactSummary {
+    pub fn is_link(&self) -> bool {
+        self.kind.eq_ignore_ascii_case("link")
+    }
+
+    pub fn display_label(&self) -> String {
+        if let Some(label) = self.label.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+            return label.to_string();
+        }
+        if self.is_link() {
+            return self
+                .url
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .unwrap_or("link")
+                .to_string();
+        }
+        if !self.name.trim().is_empty() {
+            return self.name.clone();
+        }
+        "file".into()
+    }
+
+    /// Drop sealed payload after local open — Flutter only needs path/content.
+    pub fn strip_sealed(&mut self) {
+        self.envelope = None;
+        if self.path.as_deref().map(str::trim).filter(|s| !s.is_empty()).is_some() {
+            self.content = None;
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Collab {
     pub id: String,
@@ -872,6 +946,17 @@ pub struct Collab {
     pub cards: Vec<CollabCardSummary>,
     #[serde(default)]
     pub learnings: Vec<CollabLearning>,
+    /// Hub-persisted plus sidecar harvest. JSON null/omitted → [].
+    #[serde(default, deserialize_with = "null_as_default")]
+    pub artifacts: Vec<CollabArtifactSummary>,
+}
+
+fn null_as_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Default + serde::Deserialize<'de>,
+{
+    Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -934,6 +1019,8 @@ pub struct CreateCollabRequest<'a> {
     pub roster_addresses: Option<&'a [String]>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub instructions: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub artifacts: Option<&'a [CollabArtifactSummary]>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -962,4 +1049,96 @@ pub struct AddLearningRequest<'a> {
 pub struct UpdateInstructionsRequest<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub instructions: Option<&'a str>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct AddCollabArtifactsRequest<'a> {
+    pub artifacts: &'a [CollabArtifactSummary],
+}
+
+#[cfg(test)]
+mod collab_artifact_tests {
+    use super::*;
+
+    #[test]
+    fn omitted_kind_is_file_and_null_artifacts_default_empty() {
+        let collab: Collab = serde_json::from_value(serde_json::json!({
+            "id": "c1",
+            "org_id": "o1",
+            "name": "Launch",
+            "created_by": "u1",
+            "created_at": "2026-08-16T12:00:00Z",
+            "encryption_mode": "e2e",
+        }))
+        .unwrap();
+        assert!(collab.artifacts.is_empty());
+
+        let harvested: CollabArtifactSummary = serde_json::from_value(serde_json::json!({
+            "name": "brief.md",
+            "mime": "text/markdown",
+            "thread_id": "t1",
+            "message_id": "m1",
+            "card_title": "Triage",
+            "from_handle": "alice@acme",
+            "created_at": "2026-08-16T12:00:00Z",
+        }))
+        .unwrap();
+        assert_eq!(harvested.kind, "file");
+        assert!(!harvested.is_link());
+        assert_eq!(harvested.display_label(), "brief.md");
+    }
+
+    #[test]
+    fn link_and_file_round_trip() {
+        let link = CollabArtifactSummary {
+            kind: "link".into(),
+            label: Some("Staging".into()),
+            url: Some("https://staging.example.com".into()),
+            name: String::new(),
+            mime: String::new(),
+            size: None,
+            path: None,
+            content: None,
+            envelope: None,
+            thread_id: String::new(),
+            message_id: String::new(),
+            card_title: String::new(),
+            from_handle: "alice@acme".into(),
+            created_at: "2026-08-16T12:00:00Z".into(),
+        };
+        let v = serde_json::to_value(&link).unwrap();
+        assert_eq!(v["kind"], "link");
+        assert_eq!(v["url"], "https://staging.example.com");
+        assert!(v.get("path").is_none());
+        let back: CollabArtifactSummary = serde_json::from_value(v).unwrap();
+        assert!(back.is_link());
+        assert_eq!(back.display_label(), "Staging");
+
+        let file: CollabArtifactSummary = serde_json::from_value(serde_json::json!({
+            "kind": "file",
+            "name": "shot.png",
+            "mime": "image/png",
+            "size": 12,
+            "path": "/tmp/shot.png",
+        }))
+        .unwrap();
+        assert!(!file.is_link());
+        assert_eq!(file.display_label(), "shot.png");
+        assert_eq!(file.path.as_deref(), Some("/tmp/shot.png"));
+    }
+
+    #[test]
+    fn artifacts_json_null_is_empty_vec() {
+        let collab: Collab = serde_json::from_value(serde_json::json!({
+            "id": "c1",
+            "org_id": "o1",
+            "name": "Launch",
+            "created_by": "u1",
+            "created_at": "2026-08-16T12:00:00Z",
+            "encryption_mode": "e2e",
+            "artifacts": null,
+        }))
+        .unwrap();
+        assert!(collab.artifacts.is_empty());
+    }
 }

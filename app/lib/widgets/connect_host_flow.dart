@@ -88,18 +88,18 @@ Future<ConnectHostFlowResult?> showConnectHostFlow({
     barrierDismissible: false,
     barrierLabel: 'Connect AI host',
     barrierColor: const Color(0x660C0A09),
-    transitionDuration: const Duration(milliseconds: 420),
+    transitionDuration: MutandeMotion.ui,
     pageBuilder: (ctx, animation, secondary) => dialog,
     transitionBuilder: (ctx, animation, secondary, child) {
       final curved = CurvedAnimation(
         parent: animation,
-        curve: Curves.easeOutCubic,
+        curve: MutandeMotion.easeOut,
         reverseCurve: Curves.easeInCubic,
       );
       return FadeTransition(
         opacity: curved,
         child: ScaleTransition(
-          scale: Tween<double>(begin: 0.78, end: 1).animate(curved),
+          scale: Tween<double>(begin: 0.95, end: 1).animate(curved),
           alignment: alignment,
           child: child,
         ),
@@ -131,30 +131,18 @@ class _ConnectHostFlowDialog extends StatefulWidget {
   State<_ConnectHostFlowDialog> createState() => _ConnectHostFlowDialogState();
 }
 
-class _ConnectHostFlowDialogState extends State<_ConnectHostFlowDialog>
-    with SingleTickerProviderStateMixin {
+class _ConnectHostFlowDialogState extends State<_ConnectHostFlowDialog> {
   _Step _step = _Step.mcp;
   bool _busy = true;
   String? _error;
   String? _mcpHint;
   InstallSkillResult? _skill;
   SkillLinkStatus _skillStatus = SkillLinkStatus.none;
-  late final AnimationController _checkCtrl;
 
   @override
   void initState() {
     super.initState();
-    _checkCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 420),
-    );
     WidgetsBinding.instance.addPostFrameCallback((_) => _runMcp());
-  }
-
-  @override
-  void dispose() {
-    _checkCtrl.dispose();
-    super.dispose();
   }
 
   bool get _reduceMotion {
@@ -203,12 +191,6 @@ class _ConnectHostFlowDialogState extends State<_ConnectHostFlowDialog>
             ? write.note!.trim()
             : _restartHint(widget.host);
       });
-      if (!_reduceMotion) {
-        await _checkCtrl.forward(from: 0);
-      }
-      await Future<void>.delayed(
-        Duration(milliseconds: _reduceMotion ? 80 : 280),
-      );
       if (!mounted) return;
       await _runSkill();
     } catch (e) {
@@ -259,9 +241,6 @@ class _ConnectHostFlowDialogState extends State<_ConnectHostFlowDialog>
           'host': widget.host.toLowerCase(),
           'mode': skill.mode,
         });
-      }
-      if (skill.ok && !_reduceMotion) {
-        await _checkCtrl.forward(from: 0);
       }
     } catch (e) {
       if (!mounted) return;
@@ -352,7 +331,15 @@ class _ConnectHostFlowDialogState extends State<_ConnectHostFlowDialog>
             (_skill?.isManual ?? false));
 
     final body = AnimatedSwitcher(
-      duration: Duration(milliseconds: _reduceMotion ? 0 : 220),
+      duration: Duration(milliseconds: _reduceMotion ? 0 : 200),
+      switchInCurve: MutandeMotion.easeOut,
+      switchOutCurve: MutandeMotion.easeOut,
+      layoutBuilder: (current, previous) {
+        return Stack(
+          alignment: Alignment.topLeft,
+          children: [...previous, ?current],
+        );
+      },
       child: KeyedSubtree(
         key: ValueKey('${_step}_$_busy$_error$_skillStatus'),
         child: _body(label, showSkillActions),

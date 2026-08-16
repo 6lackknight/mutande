@@ -18,6 +18,17 @@ export function createCollabRoutes(store: HubStore) {
       roster_addresses?: string[];
       instructions?: string;
       instructions_sealed?: { envelope_id: string; updated_by: string };
+      artifacts?: Array<{
+        kind: "file" | "link";
+        label?: string;
+        title?: string;
+        url?: string;
+        name?: string;
+        mime?: string;
+        size?: number;
+        content?: string;
+        envelope?: Envelope;
+      }>;
     }>();
     const collab = await store.createCollab(c.get("auth"), body);
     return c.json({ collab }, 201);
@@ -56,6 +67,28 @@ export function createCollabRoutes(store: HubStore) {
       instructions_sealed?: { envelope_id: string; updated_by: string };
     }>();
     const collab = await store.updateCollabInstructions(
+      c.get("auth"),
+      c.req.param("id"),
+      body,
+    );
+    return c.json({ collab });
+  });
+
+  routes.post("/:id/artifacts", async (c) => {
+    const body = await c.req.json<{
+      artifacts: Array<{
+        kind: "file" | "link";
+        label?: string;
+        title?: string;
+        url?: string;
+        name?: string;
+        mime?: string;
+        size?: number;
+        content?: string;
+        envelope?: Envelope;
+      }>;
+    }>();
+    const collab = await store.addCollabArtifacts(
       c.get("auth"),
       c.req.param("id"),
       body,

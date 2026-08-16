@@ -494,3 +494,133 @@ Deno.test("list collabs portfolio buckets lanes, needs-you, and activity", async
     assertEquals(aliceList.collabs[0].needs_you ?? 0, 0);
   });
 });
+
+Deno.test("create collab persists link artifacts and omits when empty", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth } = await setupOrg(store);
+    const empty = await store.createCollab(aliceAuth, { name: "Bare" });
+    assertEquals(empty.artifacts, []);
+
+    const collab = await store.createCollab(aliceAuth, {
+      name: "Launch",
+      roster_addresses: ["@cursor"],
+      artifacts: [
+        {
+          kind: "link",
+          label: "Staging",
+          url: "https://staging.example.com/app",
+        },
+      ],
+    });
+    assertEquals(collab.artifacts.length, 1);
+    assertEquals(collab.artifacts[0].kind, "link");
+    assertEquals(collab.artifacts[0].label, "Staging");
+    assertEquals(collab.artifacts[0].url, "https://staging.example.com/app");
+    assertEquals(collab.artifacts[0].from_handle, "alice@acme");
+    assertEquals(collab.artifacts[0].envelope, undefined);
+
+    const got = await store.getCollab(aliceAuth, collab.id);
+    assertEquals(got.artifacts[0].url, "https://staging.example.com/app");
+
+    const listed = await store.listCollabs(aliceAuth);
+    const row = listed.collabs.find((c) => c.id === collab.id);
+    assertEquals(row?.artifacts[0].kind, "link");
+    assertEquals(row?.artifacts[0].url, "https://staging.example.com/app");
+  });
+});
+
+Deno.test("create collab file artifacts follow encryption mode", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth } = await setupOrg(store);
+    const e2e = await store.createCollab(aliceAuth, {
+      name: "Sealed files",
+      roster_addresses: ["@cursor"],
+      artifacts: [
+        {
+          kind: "file",
+          name: "brief.md",
+          mime: "text/markdown",
+          envelope: sampleEnvelope("brief"),
+        },
+      ],
+    });
+    assertEquals(e2e.encryption_mode, "e2e");
+    assertEquals(e2e.artifacts[0].kind, "file");
+    assertEquals(e2e.artifacts[0].name, "brief.md");
+    assertExists(e2e.artifacts[0].envelope);
+
+    await store.connectAgent(aliceAuth, "mcp", { slug: "chatgpt" });
+    await store.setTransportDefault(aliceAuth, {
+      slug: "chatgpt",
+      transport: "mcp",
+    });
+    const web = await store.createCollab(aliceAuth, {
+      name: "Hub files",
+      roster_addresses: ["@chatgpt"],
+      artifacts: [
+        {
+          kind: "file",
+          name: "notes.txt",
+          mime: "text/plain",
+          content: "ship the alpha",
+        },
+      ],
+    });
+    assertEquals(web.encryption_mode, "app_envelope");
+    assertEquals(web.artifacts[0].content, "ship the alpha");
+    assertEquals(web.artifacts[0].envelope, undefined);
+
+    const listed = await store.listCollabs(aliceAuth);
+    const listedWeb = listed.collabs.find((c) => c.id === web.id);
+    assertEquals(listedWeb?.artifacts[0].kind, "file");
+    assertEquals(listedWeb?.artifacts[0].content, undefined);
+    assertEquals(listedWeb?.artifacts[0].envelope, undefined);
+  });
+});
+
+Deno.test("collab artifact validation: link url, file xor, omitted kind", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth } = await setupOrg(store);
+    await assertRejects(
+      () =>
+        store.createCollab(aliceAuth, {
+          name: "Bad link",
+          artifacts: [{ kind: "link", url: "javascript:alert(1)" }],
+        }),
+      HubError,
+      "http or https",
+    );
+    await assertRejects(
+      () =>
+        store.createCollab(aliceAuth, {
+          name: "No payload",
+          artifacts: [{ kind: "file", name: "x.bin" }],
+        }),
+      HubError,
+      "envelope or content",
+    );
+    await assertRejects(
+      () =>
+        store.createCollab(aliceAuth, {
+          name: "Plain e2e",
+          roster_addresses: ["@cursor"],
+          artifacts: [{ kind: "file", name: "x.md", content: "nope" }],
+        }),
+      HubError,
+      "sealed envelope",
+    );
+  });
+});
+
+Deno.test("add collab artifacts appends a link after create", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth } = await setupOrg(store);
+    const collab = await store.createCollab(aliceAuth, { name: "Later" });
+    const updated = await store.addCollabArtifacts(aliceAuth, collab.id, {
+      artifacts: [{ kind: "link", url: "https://docs.example.com" }],
+    });
+    assertEquals(updated.artifacts.length, 1);
+    assertEquals(updated.artifacts[0].kind, "link");
+    assertEquals(updated.artifacts[0].label, "docs.example.com");
+  });
+});

@@ -30,6 +30,7 @@ import 'theme/mutande_macos_theme.dart';
 import 'widgets/daemon_error_screen.dart';
 import 'widgets/home_chrome_pills.dart';
 import 'widgets/home_chrome_strip.dart';
+import 'widgets/mutande_error_widget.dart';
 import 'widgets/search_dialog.dart';
 import 'widgets/thinking_orb.dart';
 import 'widgets/onboarding_chrome.dart';
@@ -86,9 +87,22 @@ class _MutandeAppState extends State<MutandeApp> {
   /// Welcome splash stays up until bootstrap finishes (covers Keychain prompts).
   final ValueNotifier<bool> _sessionReady = ValueNotifier(false);
   final ValueNotifier<String?> _splashStatus = ValueNotifier(null);
+  int _shellGen = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    MutandeErrorWidget.bindRetry(_retryFromErrorWidget);
+  }
+
+  void _retryFromErrorWidget() {
+    if (!mounted) return;
+    setState(() => _shellGen++);
+  }
 
   @override
   void dispose() {
+    MutandeErrorWidget.bindRetry(null);
     _sessionReady.dispose();
     _splashStatus.dispose();
     super.dispose();
@@ -102,6 +116,7 @@ class _MutandeAppState extends State<MutandeApp> {
       dismissWhen: _sessionReady,
       statusLabel: _splashStatus,
       child: RootScreen(
+        key: ValueKey<int>(_shellGen),
         config: widget.config,
         daemon: widget.daemon,
         seedStatus: widget.seedStatus,

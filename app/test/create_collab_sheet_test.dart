@@ -5,6 +5,8 @@ import 'package:app/models/agent_transport.dart';
 import 'package:app/services/daemon_client.dart';
 import 'package:app/theme/mutande_macos_theme.dart';
 import 'package:app/widgets/create_collab_sheet.dart';
+import 'package:app/widgets/mutande_stagger.dart';
+import 'package:app/widgets/thread_skeletons.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -48,22 +50,40 @@ Future<void> _pumpSheet(
   WidgetTester tester, {
   required DaemonClient daemon,
   String handle = 'alice@acme',
+  bool reduce = false,
+  bool waitForForm = true,
+  Future<List<CollabPendingFile>> Function()? pickFiles,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
       theme: mutandeMaterialTheme(),
+      builder: (context, child) {
+        if (!reduce) return child!;
+        return MediaQuery(
+          data: MediaQuery.of(context).copyWith(disableAnimations: true),
+          child: child!,
+        );
+      },
       home: Scaffold(
         body: SizedBox(
           width: 480,
           height: 560,
-          child: CreateCollabSheet(daemon: daemon, handle: handle),
+          child: CreateCollabSheet(
+            daemon: daemon,
+            handle: handle,
+            pickFiles: pickFiles,
+          ),
         ),
       ),
     ),
   );
+  if (!waitForForm) {
+    await tester.pump();
+    return;
+  }
   for (var i = 0; i < 20; i++) {
     await tester.pump(const Duration(milliseconds: 20));
-    if (find.text('PEOPLE').evaluate().isNotEmpty) return;
+    if (find.text(handle).evaluate().isNotEmpty) return;
   }
 }
 
@@ -90,7 +110,10 @@ void main() {
 
   test('collabPersonTitle prefers display name, else local-part', () {
     expect(
-      collabPersonTitle(displayName: 'Tawanda Brandon', handle: 'tawanda@tbhco'),
+      collabPersonTitle(
+        displayName: 'Tawanda Brandon',
+        handle: 'tawanda@tbhco',
+      ),
       'Tawanda Brandon',
     );
     expect(collabPersonTitle(handle: 'alice@acme'), 'Alice');
@@ -136,17 +159,11 @@ void main() {
 
   test('instructions visible when steerers ∪ roster is more than one', () {
     expect(
-      collabInstructionsVisible(
-        steerers: ['alice@acme'],
-        roster: [],
-      ),
+      collabInstructionsVisible(steerers: ['alice@acme'], roster: []),
       isFalse,
     );
     expect(
-      collabInstructionsVisible(
-        steerers: ['alice@acme'],
-        roster: ['@cursor'],
-      ),
+      collabInstructionsVisible(steerers: ['alice@acme'], roster: ['@cursor']),
       isTrue,
     );
     expect(
@@ -430,7 +447,11 @@ void main() {
       if (method == 'list_contacts') {
         return _rpcOk(body['id'], {
           'contacts': [
-            {'handle': 'bob@acme', 'display_name': 'Bob Builder', 'kind': 'org'},
+            {
+              'handle': 'bob@acme',
+              'display_name': 'Bob Builder',
+              'kind': 'org',
+            },
           ],
         });
       }
@@ -738,6 +759,50 @@ void main() {
     expect(find.text('Create'), findsOneWidget);
   });
 
+  testWidgets('create_collab user-not-found is not load Create collab', (
+    tester,
+  ) async {
+    final daemon = _mockDaemon((request) async {
+      final body = _rpc(request);
+      final method = body['method'] as String?;
+      if (method == 'list_contacts') {
+        return _rpcOk(body['id'], {'contacts': []});
+      }
+      if (method == 'list_agents') {
+        return _rpcOk(body['id'], {
+          'agents': [
+            {'id': 'a1', 'slug': 'cursor', 'transport': 'sidecar'},
+          ],
+        });
+      }
+      if (method == 'create_collab') {
+        return _rpcErr(
+          body['id'],
+          'hub error 404 Not Found: {"error":"not_found","message":"User not found"}',
+        );
+      }
+      return _rpcOk(body['id'], {'ok': true});
+    });
+
+    await _pumpSheet(tester, daemon: daemon);
+    await tester.enterText(find.byType(TextField).first, 'Launch week');
+    await tester.tap(find.text('@cursor'));
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, 'Create'));
+    await tester.pump();
+
+    expect(find.textContaining("Couldn't load Create collab"), findsNothing);
+    expect(
+      find.text(
+        "A selected person wasn't found. Check their handle, then retry.",
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Launch week'), findsOneWidget);
+    expect(find.text('INSTRUCTIONS'), findsOneWidget);
+    expect(find.textContaining('signed in'), findsNothing);
+  });
+
   testWidgets('load 401 shows Sign in; retry keeps name', (tester) async {
     var contactsCalls = 0;
     final daemon = _mockDaemon((request) async {
@@ -776,5 +841,231 @@ void main() {
     expect(find.text('Keep me'), findsOneWidget);
     expect(find.text('Bob Builder'), findsOneWidget);
     expect(find.text('Sign in'), findsNothing);
+  });
+
+  testWidgets('stone skeleton while people and agents load', (tester) async {
+    final gate = Completer<void>();
+    final daemon = _mockDaemon((request) async {
+      final body = _rpc(request);
+      final method = body['method'] as String?;
+      if (method == 'list_contacts' || method == 'list_external_contacts') {
+        await gate.future;
+        return _rpcOk(body['id'], {
+          'contacts': [
+            {'handle': 'bob@acme', 'display_name': 'Bob Builder'},
+          ],
+        });
+      }
+      if (method == 'list_agents') {
+        await gate.future;
+        return _rpcOk(body['id'], {
+          'agents': [
+            {'id': 'a1', 'slug': 'cursor', 'transport': 'sidecar'},
+          ],
+        });
+      }
+      return _rpcOk(body['id'], {'ok': true});
+    });
+
+    await _pumpSheet(tester, daemon: daemon, waitForForm: false);
+
+    expect(find.byType(CreateCollabChipSkeleton), findsNWidgets(2));
+    expect(find.text('Create collab'), findsOneWidget);
+    expect(find.text('NAME'), findsOneWidget);
+    expect(find.text('PEOPLE'), findsOneWidget);
+    expect(find.text('AGENTS'), findsOneWidget);
+    expect(find.text('ARTIFACTS'), findsOneWidget);
+    expect(find.text('Attach file'), findsOneWidget);
+    expect(find.text('Add link'), findsOneWidget);
+    expect(find.text('e.g. launch week'), findsOneWidget);
+    expect(find.text('Picking an agent adds their person.'), findsOneWidget);
+    expect(
+      find.text('Mail in this collab is sealed to steerer devices.'),
+      findsOneWidget,
+    );
+    expect(find.text('Cancel'), findsOneWidget);
+    expect(find.text('Create'), findsOneWidget);
+    expect(find.byType(TextField), findsNWidgets(3));
+    expect(find.text('Bob Builder'), findsNothing);
+
+    gate.complete();
+    for (var i = 0; i < 30; i++) {
+      await tester.pump(const Duration(milliseconds: 20));
+      if (find.text('Bob Builder').evaluate().isNotEmpty) break;
+    }
+    expect(find.text('PEOPLE'), findsOneWidget);
+    expect(find.text('Bob Builder'), findsOneWidget);
+    expect(find.text('@cursor'), findsOneWidget);
+    expect(find.text('Create'), findsOneWidget);
+    expect(find.text('NAME'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(MutandeStaggerIn),
+        matching: find.text('Bob Builder'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byType(MutandeStaggerIn),
+        matching: find.text('@cursor'),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('chips fade and rise when pickers resolve', (tester) async {
+    final gate = Completer<void>();
+    final daemon = _mockDaemon((request) async {
+      final body = _rpc(request);
+      final method = body['method'] as String?;
+      if (method == 'list_contacts') {
+        await gate.future;
+        return _rpcOk(body['id'], {
+          'contacts': [
+            {'handle': 'bob@acme', 'display_name': 'Bob Builder'},
+          ],
+        });
+      }
+      if (method == 'list_agents') {
+        return _rpcOk(body['id'], {
+          'agents': [
+            {'id': 'a1', 'slug': 'cursor', 'transport': 'sidecar'},
+          ],
+        });
+      }
+      return _rpcOk(body['id'], {'ok': true});
+    });
+
+    await _pumpSheet(tester, daemon: daemon, waitForForm: false);
+    gate.complete();
+    for (var i = 0; i < 20; i++) {
+      await tester.pump();
+      if (find.text('Bob Builder').evaluate().isNotEmpty) break;
+    }
+
+    final bobFade = find.ancestor(
+      of: find.text('Bob Builder'),
+      matching: find.byType(Opacity),
+    );
+    expect(bobFade, findsWidgets);
+    expect(tester.widget<Opacity>(bobFade.first).opacity, lessThan(0.2));
+
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text('Bob Builder'), findsOneWidget);
+    expect(find.text('@cursor'), findsOneWidget);
+  });
+
+  testWidgets('disableAnimations snaps skeleton and form without throw', (
+    tester,
+  ) async {
+    final gate = Completer<void>();
+    final daemon = _mockDaemon((request) async {
+      final body = _rpc(request);
+      final method = body['method'] as String?;
+      if (method == 'list_contacts') {
+        await gate.future;
+        return _rpcOk(body['id'], {'contacts': []});
+      }
+      if (method == 'list_agents') {
+        return _rpcOk(body['id'], {
+          'agents': [
+            {'id': 'a1', 'slug': 'cursor', 'transport': 'sidecar'},
+          ],
+        });
+      }
+      return _rpcOk(body['id'], {'ok': true});
+    });
+
+    await _pumpSheet(tester, daemon: daemon, reduce: true, waitForForm: false);
+    expect(find.byType(CreateCollabChipSkeleton), findsNWidgets(2));
+    expect(find.text('NAME'), findsOneWidget);
+    expect(find.text('Create'), findsOneWidget);
+    expect(find.text('Cancel'), findsOneWidget);
+
+    gate.complete();
+    await tester.pump();
+    await tester.pump(MutandeMotion.ui);
+
+    expect(find.text('PEOPLE'), findsOneWidget);
+    expect(find.text('AGENTS'), findsOneWidget);
+    expect(find.text('@cursor'), findsOneWidget);
+    expect(find.byType(CreateCollabChipSkeleton), findsNothing);
+    expect(find.byType(MutandeStaggerScope), findsWidgets);
+    expect(
+      find.descendant(
+        of: find.byType(MutandeStaggerIn),
+        matching: find.byType(Opacity),
+      ),
+      findsNothing,
+    );
+  });
+
+  testWidgets('create collab sends a link artifact', (tester) async {
+    Map<String, dynamic>? created;
+    final daemon = _mockDaemon((request) async {
+      final body = _rpc(request);
+      final method = body['method'] as String?;
+      if (method == 'list_contacts') {
+        return _rpcOk(body['id'], {'contacts': []});
+      }
+      if (method == 'list_agents') {
+        return _rpcOk(body['id'], {
+          'agents': [
+            {'id': 'a1', 'slug': 'cursor', 'transport': 'sidecar'},
+          ],
+        });
+      }
+      if (method == 'create_collab') {
+        created = body['params'] as Map<String, dynamic>?;
+        return _rpcOk(body['id'], {
+          'collab': {
+            'id': 'c1',
+            'name': 'Launch',
+            'encryption_mode': 'e2e',
+            'lists': <Map<String, dynamic>>[],
+            'artifacts': [
+              {
+                'kind': 'link',
+                'label': 'Staging',
+                'url': 'https://staging.example.com',
+              },
+            ],
+          },
+        });
+      }
+      return _rpcOk(body['id'], {'ok': true});
+    });
+
+    await _pumpSheet(tester, daemon: daemon);
+
+    await tester.tap(find.text('@cursor'));
+    await tester.pump();
+    await tester.enterText(find.byType(TextField).first, 'Launch');
+
+    await tester.ensureVisible(find.byKey(const Key('collab-artifact-label')));
+    await tester.enterText(
+      find.byKey(const Key('collab-artifact-label')),
+      'Staging',
+    );
+    await tester.enterText(
+      find.byKey(const Key('collab-artifact-url')),
+      'https://staging.example.com',
+    );
+    await tester.ensureVisible(find.byKey(const Key('collab-add-link')));
+    await tester.tap(find.byKey(const Key('collab-add-link')));
+    await tester.pump();
+    expect(find.text('Staging'), findsWidgets);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Create'));
+    await tester.pump();
+    expect(created, isNotNull);
+    final artifacts = (created!['artifacts'] as List).cast<Map>();
+    expect(
+      artifacts.any(
+        (a) => a['kind'] == 'link' && a['url'] == 'https://staging.example.com',
+      ),
+      isTrue,
+    );
   });
 }

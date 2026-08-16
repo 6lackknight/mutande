@@ -9,36 +9,18 @@ String formatClockHm(String? iso) {
   return '$h:$m';
 }
 
-/// Inbox time: `now` / `2m` / `3h` / today `HH:MM` / `yday` / `Aug 13`.
+/// Mail/collab age: last 24h local `HH:MM`, then `Nd` / `Nw` / `Nm` (months).
 String formatRelativeTime(String? iso, {DateTime? now}) {
   if (iso == null || iso.trim().isEmpty) return '';
   final dt = DateTime.tryParse(iso.trim());
   if (dt == null) return '';
   final local = dt.toLocal();
   final n = now ?? DateTime.now();
-  final diff = n.difference(local);
-  if (diff.inSeconds.abs() < 45) return 'now';
-  if (diff.inMinutes.abs() < 60) return '${diff.inMinutes.abs()}m';
-  if (diff.inHours.abs() < 6) return '${diff.inHours.abs()}h';
-  final today = DateTime(n.year, n.month, n.day);
-  final day = DateTime(local.year, local.month, local.day);
-  if (day == today) return formatClockHm(iso);
-  if (day == today.subtract(const Duration(days: 1))) return 'yday';
-  const months = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
-  return '${months[local.month - 1]} ${local.day}';
+  final age = n.difference(local);
+  if (age.inHours < 24) return formatClockHm(iso);
+  if (age.inDays < 7) return '${age.inDays}d';
+  if (age.inDays < 30) return '${age.inDays ~/ 7}w';
+  return '${age.inDays ~/ 30}m';
 }
 
 /// True when [iso] is within [window] of [now] (default 15 minutes).

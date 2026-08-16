@@ -16,19 +16,23 @@
  * - schema_version: 1
  */
 
-import { HubError, forbidden, notFound } from "./errors.ts";
+import { HubError, envelopeTooLarge, forbidden, notFound } from "./errors.ts";
 import {
   formatDisplayAddress,
   parseDisplayAddress,
   parseUserHandle,
 } from "./address.ts";
 import type {
+  AddCollabArtifactsInput,
   AddLearningInput,
   AddSteererInput,
   Agent,
   ApplyCollabDowngradeInput,
   AuthContext,
   Collab,
+  CollabArtifact,
+  CollabArtifactInput,
+  CollabArtifactView,
   CollabCardStats,
   CollabCardSummary,
   CollabLearning,
@@ -47,11 +51,13 @@ import type {
   UpdateCollabInstructionsInput,
   User,
 } from "./types.ts";
+import { MAX_ENVELOPE_BYTES } from "./types.ts";
 
 export const COLLAB_SCHEMA_VERSION = 1 as const;
 export const LANE_GAP = 1024;
 export const LANE_MIN_GAP = 1e-6;
 export const DEFAULT_LIST_NAMES = ["Backlog", "Doing", "Done"] as const;
+export const MAX_COLLAB_ARTIFACTS = 32;
 
 export type CollabKvCtx = {
   kv: Deno.Kv;
@@ -64,6 +70,8 @@ export type CollabKvCtx = {
   orgCollabsPrefix: (orgId: string) => Deno.KvKey;
   collabThreadKey: (collabId: string, threadId: string) => Deno.KvKey;
   collabThreadsPrefix: (collabId: string) => Deno.KvKey;
+  collabArtifactKey: (collabId: string, artifactId: string) => Deno.KvKey;
+  collabArtifactsPrefix: (collabId: string) => Deno.KvKey;
   threadKey: (id: string) => Deno.KvKey;
   messageKey: (threadId: string, messageId: string) => Deno.KvKey;
   messagesPrefix: (threadId: string) => Deno.KvKey;
@@ -84,6 +92,207 @@ function clipName(value: string, field: string, max: number): string {
   return trimmed;
 }
 
+export function assertHttpUrl(raw: string): string {
+  const trimmed = raw?.trim() ?? "";
+  if (!trimmed) {
+    throw new HubError("url is required", "invalid_argument", 400);
+  }
+  if (trimmed.length > 2048) {
+    throw new HubError("url too long (max 2048)", "invalid_argument", 400);
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    throw new HubError("url is invalid", "invalid_argument", 400);
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new HubError("url must be http or https", "invalid_argument", 400);
+  }
+  return trimmed;
+}
+
+function labelFromUrl(url: string): string {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, "");
+    return host || "link";
+  } catch {
+    return "link";
+  }
+}
+
+function assertArtifactPayloadSize(value: unknown): void {
+  const size = new TextEncoder().encode(JSON.stringify(value)).byteLength;
+  if (size > MAX_ENVELOPE_BYTES) throw envelopeTooLarge(size);
+}
+
+/** Normalize one create/add artifact. File bytes stay in envelope/content — never a local path. */
+export function normalizeCollabArtifactInput(
+  raw: CollabArtifactInput,
+  ts: string,
+  userId: string,
+): CollabArtifact {
+  const kind = raw?.kind === "link" ? "link" : raw?.kind === "file" ? "file" : null;
+  if (!kind) {
+    throw new HubError("artifact kind must be file or link", "invalid_argument", 400);
+  }
+  const labelHint = (raw.label ?? raw.title ?? "").trim();
+  if (kind === "link") {
+    const url = assertHttpUrl(raw.url ?? "");
+    const label = clipName(labelHint || labelFromUrl(url), "label", 120);
+    const artifact: CollabArtifact = {
+      id: crypto.randomUUID(),
+      kind,
+      label,
+      url,
+      created_at: ts,
+      created_by: userId,
+    };
+    assertArtifactPayloadSize(artifact);
+    return artifact;
+  }
+  const name = clipName(
+    ((raw.name ?? labelHint) || "file").trim() || "file",
+    "name",
+    240,
+  );
+  const hasEnvelope = raw.envelope != null;
+  const content = raw.content?.trim() ? raw.content : undefined;
+  if (hasEnvelope && content) {
+    throw new HubError(
+      "file artifacts cannot include both envelope and content",
+      "invalid_argument",
+      400,
+    );
+  }
+  if (!hasEnvelope && !content) {
+    throw new HubError(
+      "file artifacts need envelope or content",
+      "invalid_argument",
+      400,
+    );
+  }
+  if (hasEnvelope) {
+    assertArtifactPayloadSize(raw.envelope);
+  }
+  const mime = (raw.mime ?? "").trim() || undefined;
+  const size = typeof raw.size === "number" && raw.size >= 0
+    ? Math.floor(raw.size)
+    : undefined;
+  const artifact: CollabArtifact = {
+    id: crypto.randomUUID(),
+    kind,
+    label: (labelHint || name).slice(0, 120),
+    name,
+    ...(mime ? { mime } : {}),
+    ...(size != null ? { size } : {}),
+    ...(content ? { content } : {}),
+    ...(hasEnvelope ? { envelope: raw.envelope } : {}),
+    created_at: ts,
+    created_by: userId,
+  };
+  assertArtifactPayloadSize(artifact);
+  return artifact;
+}
+
+export function normalizeCollabArtifactInputs(
+  raw: CollabArtifactInput[] | undefined,
+  ts: string,
+  userId: string,
+): CollabArtifact[] {
+  if (raw == null) return [];
+  if (!Array.isArray(raw)) {
+    throw new HubError("artifacts must be a list", "invalid_argument", 400);
+  }
+  if (raw.length > MAX_COLLAB_ARTIFACTS) {
+    throw new HubError(
+      `too many artifacts (max ${MAX_COLLAB_ARTIFACTS})`,
+      "invalid_argument",
+      400,
+    );
+  }
+  return raw.map((item) => normalizeCollabArtifactInput(item, ts, userId));
+}
+
+function stripSealedArtifact(a: CollabArtifact): CollabArtifact {
+  const { envelope: _e, content: _c, ...rest } = a;
+  return rest;
+}
+
+async function listStoredArtifacts(
+  ctx: CollabKvCtx,
+  collabId: string,
+  opts?: { sealed?: boolean },
+): Promise<CollabArtifact[]> {
+  const out: CollabArtifact[] = [];
+  const iter = ctx.kv.list<CollabArtifact>({
+    prefix: ctx.collabArtifactsPrefix(collabId),
+  });
+  for await (const entry of iter) {
+    if (!entry.value) continue;
+    out.push(opts?.sealed === false ? stripSealedArtifact(entry.value) : entry.value);
+  }
+  out.sort((a, b) => b.created_at.localeCompare(a.created_at));
+  return out;
+}
+
+function assertFileArtifactMode(
+  mode: ThreadEncryptionMode,
+  artifacts: CollabArtifact[],
+): void {
+  for (const a of artifacts) {
+    if (a.kind !== "file") continue;
+    if (mode === "e2e") {
+      if (!a.envelope) {
+        throw new HubError(
+          "e2e file artifacts need a sealed envelope",
+          "invalid_argument",
+          400,
+        );
+      }
+      if (a.content) {
+        throw new HubError(
+          "e2e file artifacts cannot store plaintext content",
+          "invalid_argument",
+          400,
+        );
+      }
+    } else if (a.envelope) {
+      throw new HubError(
+        "app_envelope file artifacts cannot store sealed envelopes",
+        "invalid_argument",
+        400,
+      );
+    } else if (!a.content) {
+      throw new HubError(
+        "app_envelope file artifacts need content",
+        "invalid_argument",
+        400,
+      );
+    }
+  }
+}
+
+async function artifactsForView(
+  ctx: CollabKvCtx,
+  collab: Collab,
+  opts?: { sealed?: boolean },
+): Promise<CollabArtifactView[]> {
+  const stored = await listStoredArtifacts(ctx, collab.id, opts);
+  const handleCache = new Map<string, string>();
+  const views: CollabArtifactView[] = [];
+  for (const a of stored) {
+    let handle = handleCache.get(a.created_by);
+    if (handle == null) {
+      const user = await ctx.getUser(a.created_by);
+      handle = (user?.handle ?? "").toLowerCase();
+      handleCache.set(a.created_by, handle);
+    }
+    views.push({ ...a, from_handle: handle });
+  }
+  return views;
+}
+
 export function collabKey(id: string): Deno.KvKey {
   return ["collabs", id];
 }
@@ -98,6 +307,12 @@ export function collabThreadKey(collabId: string, threadId: string): Deno.KvKey 
 }
 export function collabThreadsPrefix(collabId: string): Deno.KvKey {
   return ["collab_threads", collabId];
+}
+export function collabArtifactKey(collabId: string, artifactId: string): Deno.KvKey {
+  return ["collab_artifacts", collabId, artifactId];
+}
+export function collabArtifactsPrefix(collabId: string): Deno.KvKey {
+  return ["collab_artifacts", collabId];
 }
 
 export function insertLanePosition(
@@ -370,6 +585,12 @@ export async function createCollab(
 
   const { mode } = deriveEncryptionMode(roster);
   assertInstructionsXor(mode, input.instructions, input.instructions_sealed);
+  const artifacts = normalizeCollabArtifactInputs(
+    input.artifacts,
+    ts,
+    auth.userId,
+  );
+  assertFileArtifactMode(mode, artifacts);
 
   const id = crypto.randomUUID();
   const memoryThreadId = await createMemoryThread(
@@ -405,6 +626,9 @@ export async function createCollab(
   const tx = ctx.kv.atomic();
   tx.set(ctx.collabKey(id), collab);
   tx.set(ctx.orgCollabKey(auth.orgId, id), id);
+  for (const artifact of artifacts) {
+    tx.set(ctx.collabArtifactKey(id, artifact.id), artifact);
+  }
   const res = await tx.commit();
   if (!res.ok) {
     throw new HubError("Failed to create collab", "internal", 500);
@@ -550,6 +774,7 @@ export async function listCollabs(
       last_card_updated_at: stats.last_updated_at,
       cards: [],
       learnings: [],
+      artifacts: await artifactsForView(ctx, collab, { sealed: false }),
       steerers,
     });
   }
@@ -660,6 +885,7 @@ async function viewCollab(
   const includeCards = opts?.cards !== false;
   const cards = includeCards ? await listCards(ctx, auth, collab) : [];
   const learnings = includeCards ? await listLearnings(ctx, collab) : [];
+  const artifacts = await artifactsForView(ctx, collab, { sealed: true });
   const steerers = await Promise.all(
     collab.steerer_user_ids.map(async (user_id) => ({
       user_id,
@@ -671,6 +897,7 @@ async function viewCollab(
     card_count: cards.length,
     cards,
     learnings,
+    artifacts,
     steerers,
   };
 }
@@ -914,6 +1141,42 @@ export async function updateInstructions(
   }
   await ctx.kv.set(ctx.collabKey(collab.id), updated);
   return viewCollab(ctx, auth, updated, { cards: false });
+}
+
+export async function addCollabArtifacts(
+  ctx: CollabKvCtx,
+  auth: AuthContext,
+  collabId: string,
+  input: AddCollabArtifactsInput,
+): Promise<CollabView> {
+  const collab = await loadCollab(ctx, collabId);
+  if (!collab) throw notFound("Collab");
+  assertMember(collab, auth);
+  const ts = ctx.nowIso();
+  const incoming = normalizeCollabArtifactInputs(input.artifacts, ts, auth.userId);
+  if (incoming.length === 0) {
+    throw new HubError("artifacts is required", "invalid_argument", 400);
+  }
+  assertFileArtifactMode(collab.encryption_mode, incoming);
+  const existing = await listStoredArtifacts(ctx, collab.id);
+  if (existing.length + incoming.length > MAX_COLLAB_ARTIFACTS) {
+    throw new HubError(
+      `too many artifacts (max ${MAX_COLLAB_ARTIFACTS})`,
+      "invalid_argument",
+      400,
+    );
+  }
+  const updated: Collab = { ...collab, updated_at: ts };
+  const tx = ctx.kv.atomic();
+  tx.set(ctx.collabKey(collab.id), updated);
+  for (const artifact of incoming) {
+    tx.set(ctx.collabArtifactKey(collab.id, artifact.id), artifact);
+  }
+  const res = await tx.commit();
+  if (!res.ok) {
+    throw new HubError("Failed to add collab artifacts", "internal", 500);
+  }
+  return viewCollab(ctx, auth, updated);
 }
 
 export async function applyCollabDowngrade(

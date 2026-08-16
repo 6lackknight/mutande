@@ -237,7 +237,10 @@ class _DaemonErrorScreenState extends State<DaemonErrorScreen> {
                     child: Text(_detailsOpen ? 'Hide details' : 'Details'),
                   ),
                   AnimatedCrossFade(
-                    duration: const Duration(milliseconds: 180),
+                    duration: MutandeMotion.of(
+                      context,
+                      const Duration(milliseconds: 180),
+                    ),
                     crossFadeState: _detailsOpen
                         ? CrossFadeState.showSecond
                         : CrossFadeState.showFirst,

@@ -60,8 +60,8 @@ class DaemonClient {
     String? httpToken,
     // Hub RPCs + Keychain bootstrap routinely exceed a few seconds on first open.
     this.requestTimeout = const Duration(seconds: 15),
-  })  : _http = httpClient ?? http.Client(),
-        _httpTokenOverride = httpToken;
+  }) : _http = httpClient ?? http.Client(),
+       _httpTokenOverride = httpToken;
 
   /// Dev HTTP bridge (current Flutter transport).
   static const defaultHttpBaseUrl = 'http://127.0.0.1:3847';
@@ -170,16 +170,15 @@ class DaemonClient {
   /// [host] is `cursor`, `claude`, `chatgpt`, or `all`.
   /// Longer timeout: copies `mutande-core` into `~/.mutande/bin` + preflight.
   Future<ConnectHostResult> connectHost(String host) async {
-    final result = await _callWithTimeout(
-      'connect_host',
-      {'host': host},
-      const Duration(seconds: 60),
-    );
+    final result = await _callWithTimeout('connect_host', {
+      'host': host,
+    }, const Duration(seconds: 60));
     final map = result as Map<String, dynamic>? ?? {};
     final hostsRaw = map['hosts'] as List<dynamic>? ?? const [];
     return ConnectHostResult(
       command: map['command'] as String? ?? '',
-      args: (map['args'] as List<dynamic>?)?.map((e) => e.toString()).toList() ??
+      args:
+          (map['args'] as List<dynamic>?)?.map((e) => e.toString()).toList() ??
           const [],
       hosts: hostsRaw.map((e) {
         final m = e as Map<String, dynamic>;
@@ -217,7 +216,11 @@ class DaemonClient {
       return const [
         AiHostDetection(host: 'cursor', installed: false, configPresent: false),
         AiHostDetection(host: 'claude', installed: false, configPresent: false),
-        AiHostDetection(host: 'chatgpt', installed: false, configPresent: false),
+        AiHostDetection(
+          host: 'chatgpt',
+          installed: false,
+          configPresent: false,
+        ),
       ];
     }
     final home = userHomeDir() ?? '';
@@ -259,11 +262,9 @@ class DaemonClient {
 
   /// Install or stage the mutande agent skill for a host (`cursor`|`claude`|`chatgpt`).
   Future<InstallSkillResult> installSkill(String host) async {
-    final result = await _callWithTimeout(
-      'install_skill',
-      {'host': host},
-      const Duration(seconds: 45),
-    );
+    final result = await _callWithTimeout('install_skill', {
+      'host': host,
+    }, const Duration(seconds: 45));
     final map = result as Map<String, dynamic>? ?? {};
     return InstallSkillResult.fromJson(map);
   }
@@ -372,7 +373,8 @@ class DaemonClient {
     );
   }
 
-  Future<List<ThreadDowngradeProposalView>> listPendingThreadDowngrades() async {
+  Future<List<ThreadDowngradeProposalView>>
+  listPendingThreadDowngrades() async {
     final result = await _call('list_pending_thread_downgrades', null);
     final map = result as Map<String, dynamic>? ?? {};
     final raw = map['proposals'] as List<dynamic>? ?? const [];
@@ -419,10 +421,7 @@ class DaemonClient {
     required String threadId,
     required String messageId,
   }) async {
-    await _call('deny_task', {
-      'thread_id': threadId,
-      'message_id': messageId,
-    });
+    await _call('deny_task', {'thread_id': threadId, 'message_id': messageId});
   }
 
   /// Pilot / product feedback → hub `POST /v1/feedback`.
@@ -498,9 +497,10 @@ class DaemonClient {
           : ThreadDowngradeProposalView.fromJson(pendingRaw),
       pendingTaskApprovals: taskApprovalsRaw
           .whereType<Map>()
-          .map((e) => PendingTaskApprovalView.fromJson(
-                Map<String, dynamic>.from(e),
-              ))
+          .map(
+            (e) =>
+                PendingTaskApprovalView.fromJson(Map<String, dynamic>.from(e)),
+          )
           .toList(),
       messages: messagesRaw.map((e) {
         final m = e as Map<String, dynamic>;
@@ -518,15 +518,19 @@ class DaemonClient {
         final resourceRequests = resourceReqs
             .map((r) {
               final map = r as Map<String, dynamic>? ?? const {};
-              return map['description'] as String? ?? map['id'] as String? ?? '';
+              return map['description'] as String? ??
+                  map['id'] as String? ??
+                  '';
             })
             .where((d) => d.trim().isNotEmpty)
             .toList();
         final resourcesRaw = bundle?['resources'] as List<dynamic>? ?? const [];
         final resources = resourcesRaw
-            .map((r) => BundleResourceView.fromJson(
-                  r as Map<String, dynamic>? ?? const {},
-                ))
+            .map(
+              (r) => BundleResourceView.fromJson(
+                r as Map<String, dynamic>? ?? const {},
+              ),
+            )
             .where((r) => r.name.trim().isNotEmpty)
             .toList();
         final answersRaw = bundle?['answers'] as List<dynamic>? ?? const [];
@@ -736,12 +740,14 @@ class DaemonClient {
     List<String> steererHandles = const [],
     List<String> rosterAddresses = const [],
     String? instructions,
+    List<Map<String, dynamic>> artifacts = const [],
   }) async {
     final result = await _call('create_collab', {
       'name': name,
       if (steererHandles.isNotEmpty) 'steerer_handles': steererHandles,
       if (rosterAddresses.isNotEmpty) 'roster_addresses': rosterAddresses,
       if (instructions != null) 'instructions': instructions,
+      if (artifacts.isNotEmpty) 'artifacts': artifacts,
     });
     final map = result as Map<String, dynamic>? ?? {};
     final collab = map['collab'] as Map<String, dynamic>? ?? map;
@@ -768,10 +774,7 @@ class DaemonClient {
     required String collabId,
     required String notes,
   }) async {
-    await _call('add_learning', {
-      'collab_id': collabId,
-      'notes': notes,
-    });
+    await _call('add_learning', {'collab_id': collabId, 'notes': notes});
   }
 
   Future<void> updateCollabInstructions({
@@ -866,10 +869,7 @@ class DaemonClient {
   }
 
   /// Generic JSON-RPC 2.0 call over HTTP POST to `{base}/rpc`.
-  Future<dynamic> _call(
-    String method, [
-    Map<String, dynamic>? params,
-  ]) async {
+  Future<dynamic> _call(String method, [Map<String, dynamic>? params]) async {
     return _callWithTimeout(method, params, null);
   }
 
@@ -1052,7 +1052,8 @@ class ConnectHostResult {
           _listEq(hosts, other.hosts);
 
   @override
-  int get hashCode => Object.hash(command, Object.hashAll(args), Object.hashAll(hosts));
+  int get hashCode =>
+      Object.hash(command, Object.hashAll(args), Object.hashAll(hosts));
 }
 
 class AiHostDetection {
@@ -1157,6 +1158,7 @@ class InstallSkillResult {
 
   final String host;
   final bool ok;
+
   /// `auto` or `manual`.
   final String mode;
   final String? path;
@@ -1213,12 +1215,16 @@ class ThreadSummary {
   final List<AwaitingEntry> awaiting;
   final int replyCount;
   final String? agentBadge;
+
   /// ISO timestamp of latest thread activity (last message).
   final String? updatedAt;
+
   /// Author of the latest opened message (daemon-local).
   final String? lastFrom;
+
   /// Subject for the list title (latest, else OP — daemon-local).
   final String? lastSubject;
+
   /// Body preview of the latest message (daemon-local).
   final String? lastPreview;
   final String? collabId;
@@ -1300,25 +1306,25 @@ class ThreadSummary {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'kind': kind,
-        'status': status,
-        'from': from,
-        'audience': audience,
-        if (yourStatus != null) 'your_status': yourStatus,
-        if (awaiting.isNotEmpty)
-          'awaiting': awaiting.map((e) => e.toJson()).toList(),
-        'reply_count': replyCount,
-        if (agentBadge != null) 'agent_badge': agentBadge,
-        if (updatedAt != null) 'updated_at': updatedAt,
-        if (lastFrom != null) 'last_from': lastFrom,
-        if (lastSubject != null) 'last_subject': lastSubject,
-        if (lastPreview != null) 'last_preview': lastPreview,
-        if (collabId != null) 'collab_id': collabId,
-        if (collabName != null) 'collab_name': collabName,
-        if (laneId != null) 'lane_id': laneId,
-        if (assignedTo != null) 'assigned_to': assignedTo,
-      };
+    'id': id,
+    'kind': kind,
+    'status': status,
+    'from': from,
+    'audience': audience,
+    if (yourStatus != null) 'your_status': yourStatus,
+    if (awaiting.isNotEmpty)
+      'awaiting': awaiting.map((e) => e.toJson()).toList(),
+    'reply_count': replyCount,
+    if (agentBadge != null) 'agent_badge': agentBadge,
+    if (updatedAt != null) 'updated_at': updatedAt,
+    if (lastFrom != null) 'last_from': lastFrom,
+    if (lastSubject != null) 'last_subject': lastSubject,
+    if (lastPreview != null) 'last_preview': lastPreview,
+    if (collabId != null) 'collab_id': collabId,
+    if (collabName != null) 'collab_name': collabName,
+    if (laneId != null) 'lane_id': laneId,
+    if (assignedTo != null) 'assigned_to': assignedTo,
+  };
 }
 
 class CollabListView {
@@ -1456,12 +1462,12 @@ class CollabSummary {
       openCount: (map['open'] as num?)?.toInt() ?? 0,
       doingCount: (map['doing'] as num?)?.toInt() ?? 0,
       needsYouCount: (map['needs_you'] as num?)?.toInt() ?? 0,
-      updatedAt: map['last_card_updated_at'] as String? ??
+      updatedAt:
+          map['last_card_updated_at'] as String? ??
           map['updated_at'] as String?,
-      causeAddress: point?['cause_address'] as String? ??
-          (map['roster'] is List
-              ? _hostedCause(map['roster'] as List)
-              : null),
+      causeAddress:
+          point?['cause_address'] as String? ??
+          (map['roster'] is List ? _hostedCause(map['roster'] as List) : null),
     );
   }
 
@@ -1494,11 +1500,7 @@ class CollabActivityDay {
 }
 
 class CollabLaneTotals {
-  const CollabLaneTotals({
-    this.backlog = 0,
-    this.doing = 0,
-    this.done = 0,
-  });
+  const CollabLaneTotals({this.backlog = 0, this.doing = 0, this.done = 0});
 
   factory CollabLaneTotals.fromJson(Map<String, dynamic>? map) {
     if (map == null) return const CollabLaneTotals();
@@ -1583,10 +1585,7 @@ class CollabPortfolio {
 }
 
 class CollabListResult {
-  const CollabListResult({
-    required this.collabs,
-    required this.portfolio,
-  });
+  const CollabListResult({required this.collabs, required this.portfolio});
 
   final List<CollabSummary> collabs;
   final CollabPortfolio portfolio;
@@ -1602,6 +1601,18 @@ String? _hostedCause(List<dynamic> roster) {
   return null;
 }
 
+/// Hub/sidecar may omit `artifacts` or send JSON null — never throw in UI.
+List<CollabArtifactView> collabArtifactsFromJson(Object? raw) {
+  if (raw is! List) return const [];
+  return [
+    for (final e in raw)
+      if (e is Map)
+        CollabArtifactView.fromJson(
+          e is Map<String, dynamic> ? e : Map<String, dynamic>.from(e),
+        ),
+  ];
+}
+
 class CollabDetail {
   const CollabDetail({
     required this.id,
@@ -1612,11 +1623,14 @@ class CollabDetail {
     this.steererHandles = const [],
     this.cards = const [],
     this.learnings = const [],
+    List<CollabArtifactView>? artifacts = const [],
     this.instructions,
     this.memoryThreadId,
     this.createdBy,
+    this.createdAt,
+    this.updatedAt,
     this.causeAddress,
-  });
+  }) : _artifacts = artifacts;
 
   factory CollabDetail.fromJson(Map<String, dynamic> map) {
     final listsRaw = map['lists'] as List<dynamic>? ?? const [];
@@ -1629,12 +1643,18 @@ class CollabDetail {
       id: map['id'] as String? ?? '',
       name: map['name'] as String? ?? '',
       encryptionMode: map['encryption_mode'] as String? ?? 'e2e',
-      lists: listsRaw
-          .map((e) => CollabListView.fromJson(e as Map<String, dynamic>? ?? {}))
-          .toList()
-        ..sort((a, b) => a.position.compareTo(b.position)),
+      lists:
+          listsRaw
+              .map(
+                (e) =>
+                    CollabListView.fromJson(e as Map<String, dynamic>? ?? {}),
+              )
+              .toList()
+            ..sort((a, b) => a.position.compareTo(b.position)),
       roster: rosterRaw
-          .map((e) => CollabRosterView.fromJson(e as Map<String, dynamic>? ?? {}))
+          .map(
+            (e) => CollabRosterView.fromJson(e as Map<String, dynamic>? ?? {}),
+          )
           .toList(),
       steererHandles: [
         for (final e in steerersRaw)
@@ -1645,13 +1665,19 @@ class CollabDetail {
           .map((e) => CollabCardView.fromJson(e as Map<String, dynamic>? ?? {}))
           .toList(),
       learnings: learnRaw
-          .map((e) =>
-              CollabLearningView.fromJson(e as Map<String, dynamic>? ?? {}))
+          .map(
+            (e) =>
+                CollabLearningView.fromJson(e as Map<String, dynamic>? ?? {}),
+          )
           .toList(),
+      artifacts: collabArtifactsFromJson(map['artifacts']),
       instructions: map['instructions'] as String?,
       memoryThreadId: map['memory_thread_id'] as String?,
       createdBy: map['created_by'] as String?,
-      causeAddress: point?['cause_address'] as String? ?? _hostedCause(rosterRaw),
+      createdAt: map['created_at'] as String?,
+      updatedAt: map['updated_at'] as String?,
+      causeAddress:
+          point?['cause_address'] as String? ?? _hostedCause(rosterRaw),
     );
   }
 
@@ -1663,12 +1689,77 @@ class CollabDetail {
   final List<String> steererHandles;
   final List<CollabCardView> cards;
   final List<CollabLearningView> learnings;
+  final List<CollabArtifactView>? _artifacts;
   final String? instructions;
   final String? memoryThreadId;
   final String? createdBy;
+  final String? createdAt;
+  final String? updatedAt;
   final String? causeAddress;
 
+  /// Empty when omitted, JSON-null, or unsound (hot-reload) null.
+  List<CollabArtifactView> get artifacts => _artifacts ?? const [];
+
   bool get isE2e => encryptionMode == 'e2e';
+}
+
+/// One collab artifact — file (blob/resource) or link (url + label).
+class CollabArtifactView {
+  const CollabArtifactView({
+    this.kind = 'file',
+    this.label = '',
+    this.url = '',
+    required this.threadId,
+    required this.messageId,
+    required this.cardTitle,
+    required this.fromHandle,
+    required this.createdAt,
+    required this.resource,
+  });
+
+  factory CollabArtifactView.fromJson(Map<String, dynamic> map) {
+    final kind = (map['kind'] as String? ?? 'file').trim().toLowerCase();
+    final label = (map['label'] as String? ?? map['title'] as String? ?? '')
+        .trim();
+    final url = (map['url'] as String? ?? '').trim();
+    final resourceMap = Map<String, dynamic>.from(map);
+    if ((resourceMap['name'] as String? ?? '').trim().isEmpty) {
+      resourceMap['name'] = label.isNotEmpty
+          ? label
+          : (url.isNotEmpty ? url : 'file');
+    }
+    return CollabArtifactView(
+      kind: kind == 'link' ? 'link' : 'file',
+      label: label,
+      url: url,
+      threadId: map['thread_id'] as String? ?? '',
+      messageId: map['message_id'] as String? ?? '',
+      cardTitle: map['card_title'] as String? ?? 'Card',
+      fromHandle: (map['from_handle'] as String? ?? '').toLowerCase(),
+      createdAt: map['created_at'] as String? ?? '',
+      resource: BundleResourceView.fromJson(resourceMap),
+    );
+  }
+
+  final String kind;
+  final String label;
+  final String url;
+  final String threadId;
+  final String messageId;
+  final String cardTitle;
+  final String fromHandle;
+  final String createdAt;
+  final BundleResourceView resource;
+
+  bool get isLink => kind == 'link';
+
+  String get title {
+    if (label.trim().isNotEmpty) return label.trim();
+    if (isLink) {
+      return url.trim().isNotEmpty ? url.trim() : 'link';
+    }
+    return resource.name.trim().isNotEmpty ? resource.name : 'file';
+  }
 }
 
 bool _sameAwaiting(List<AwaitingEntry> a, List<AwaitingEntry> b) {
@@ -1692,10 +1783,7 @@ class AwaitingEntry {
     );
   }
 
-  Map<String, dynamic> toJson() => {
-        'address': address,
-        'actor': actor,
-      };
+  Map<String, dynamic> toJson() => {'address': address, 'actor': actor};
 
   static List<AwaitingEntry> listFrom(Object? raw) {
     if (raw is! List) return const [];
@@ -1846,7 +1934,9 @@ class ContactView {
           .map((e) => ContactDeviceView.fromJson(e as Map<String, dynamic>))
           .toList(),
       kind: map['kind'] as String?,
-      avatarUrl: (avatar != null && avatar.trim().isNotEmpty) ? avatar.trim() : null,
+      avatarUrl: (avatar != null && avatar.trim().isNotEmpty)
+          ? avatar.trim()
+          : null,
       displayName: (name != null && name.isNotEmpty) ? name : null,
       externalLinkId: map['external_link_id'] as String?,
       linkedAt: map['linked_at'] as String?,
@@ -1864,8 +1954,7 @@ class ContactView {
   final String? linkedAt;
   final String? threadId;
 
-  bool get isBroadcast =>
-      handle.startsWith('@all@') || kind == 'broadcast';
+  bool get isBroadcast => handle.startsWith('@all@') || kind == 'broadcast';
   bool get isExternal => kind == 'external';
 }
 
@@ -1978,7 +2067,8 @@ class ThreadDowngradeProposalView {
       threadId: map['thread_id'] as String? ?? '',
       proposedSlug: slug,
       status: map['status'] as String? ?? 'pending',
-      prompt: prompt ??
+      prompt:
+          prompt ??
           (slug.isEmpty
               ? null
               : 'Adding @$slug (web) ends E2E for this thread'),
@@ -2008,7 +2098,8 @@ class PendingTaskApprovalView {
       messageId: map['message_id'] as String? ?? '',
       fromHandle: map['from_handle'] as String? ?? '',
       objective: map['objective'] as String? ?? '',
-      prompt: decision['prompt'] as String? ??
+      prompt:
+          decision['prompt'] as String? ??
           map['objective'] as String? ??
           'Allow this agent task?',
     );
@@ -2073,7 +2164,8 @@ class RegistryListingWarn {
     return RegistryListingWarn(
       listingId: listing['id'] as String? ?? '',
       address: listing['address'] as String? ?? '',
-      trustTier: TrustTier.tryParse(
+      trustTier:
+          TrustTier.tryParse(
             warn['trust_tier'] as String? ?? listing['trust_tier'] as String?,
           ) ??
           TrustTier.enterprise,
@@ -2100,9 +2192,7 @@ class BundleResourceView {
 
   factory BundleResourceView.fromJson(Map<String, dynamic> map) {
     final name = map['name'] as String? ?? '';
-    var mime = map['mime'] as String? ??
-        map['mime_type'] as String? ??
-        '';
+    var mime = map['mime'] as String? ?? map['mime_type'] as String? ?? '';
     if (mime.trim().isEmpty ||
         mime == 'application/octet-stream' ||
         mime == 'binary/octet-stream') {
@@ -2290,10 +2380,12 @@ class ThreadMessageView {
   final String? inReplyTo;
   final String? bundleSubject;
   final String? bundleNotes;
+
   /// Bundle `ping_kind`: `health` | `thread`, when present.
   final String? pingKind;
   final List<String> questionPrompts;
   final List<String> resourceRequests;
+
   /// Opened file attachments (`resources[]` with optional `path` / `content`).
   final List<BundleResourceView> resources;
   final List<String> answerTexts;
@@ -2356,16 +2448,16 @@ class ThreadMessageView {
   }
 
   List<String> get _contentParts => [
-        if (bundleSubject != null && bundleSubject!.trim().isNotEmpty)
-          bundleSubject!.trim(),
-        if (_displayNotes != null) _displayNotes!,
-        ...questionPrompts.map((q) => q.trim()).where((q) => q.isNotEmpty),
-        ...answerTexts.map((a) => a.trim()).where((a) => a.isNotEmpty),
-        ...resourceRequests
-            .map((r) => r.trim())
-            .where((r) => r.isNotEmpty)
-            .map((r) => 'Resource: $r'),
-      ];
+    if (bundleSubject != null && bundleSubject!.trim().isNotEmpty)
+      bundleSubject!.trim(),
+    if (_displayNotes != null) _displayNotes!,
+    ...questionPrompts.map((q) => q.trim()).where((q) => q.isNotEmpty),
+    ...answerTexts.map((a) => a.trim()).where((a) => a.isNotEmpty),
+    ...resourceRequests
+        .map((r) => r.trim())
+        .where((r) => r.isNotEmpty)
+        .map((r) => 'Resource: $r'),
+  ];
 
   /// Prefer notes/subject, then questions/answers — never hide question-only handoffs.
   String get displayBody {
@@ -2460,6 +2552,7 @@ class SafetyNumberResult {
   final String fingerprint;
   final String uri;
   final bool? verified;
+
   /// Hex-encoded X25519 device public key (own device only).
   final String? pubkey;
 }
@@ -2523,9 +2616,7 @@ String friendlyDaemonError(Object error, {String what = 'That'}) {
   if (lower.contains('404') || lower.contains('not found')) {
     return "Couldn't load $what. Retry.";
   }
-  if (lower.contains('500') ||
-      lower.contains('502') ||
-      lower.contains('503')) {
+  if (lower.contains('500') || lower.contains('502') || lower.contains('503')) {
     return "Couldn't reach the hub. Try again in a moment.";
   }
   if (_looksLikeRawException(msg)) {
@@ -2540,6 +2631,9 @@ bool _looksLikeRawException(String msg) {
       lower.contains('uri=') ||
       lower.contains('stack trace') ||
       lower.contains('errno =') ||
-      RegExp(r'https?://127\.0\.0\.1').hasMatch(lower) ||
-      RegExp(r'https?://\[?::1\]?').hasMatch(lower);
+      lower.contains('/v1/') ||
+      lower.contains('hub.mutande') ||
+      lower.contains('jsonrpc') ||
+      RegExp(r'\b(get|post|put|patch|delete)\s+/').hasMatch(lower) ||
+      RegExp(r'https?://').hasMatch(lower);
 }

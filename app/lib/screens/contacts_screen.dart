@@ -9,6 +9,7 @@ import '../services/daemon_client.dart';
 import '../theme/mutande_macos_theme.dart';
 import '../util/address_display.dart';
 import '../widgets/collab/collab_dash_card.dart';
+import '../widgets/mutande_stagger.dart';
 import '../widgets/pane_quiet_state.dart';
 import '../widgets/person_identity_row.dart';
 import '../widgets/thinking_orb.dart';
@@ -113,9 +114,7 @@ class _ContactsPanelState extends State<ContactsPanel> {
     final mine = widget.handle?.trim().toLowerCase();
     return _contacts.where((c) {
       if (c.isBroadcast || c.isExternal) return false;
-      if (mine != null &&
-          mine.isNotEmpty &&
-          c.handle.toLowerCase() == mine) {
+      if (mine != null && mine.isNotEmpty && c.handle.toLowerCase() == mine) {
         return false;
       }
       return true;
@@ -142,7 +141,8 @@ class _ContactsPanelState extends State<ContactsPanel> {
   }
 
   Future<void> _openInvites() async {
-    final url = '${widget.inviteWebUrl.replaceAll(RegExp(r'/+$'), '')}/admin/invites';
+    final url =
+        '${widget.inviteWebUrl.replaceAll(RegExp(r'/+$'), '')}/admin/invites';
     if (Platform.isMacOS) {
       await Process.run('open', [url]);
       return;
@@ -154,9 +154,9 @@ class _ContactsPanelState extends State<ContactsPanel> {
     }
     await Clipboard.setData(ClipboardData(text: url));
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Copied invite link: $url')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('Copied invite link: $url')));
   }
 
   Future<void> _showSharePin() async {
@@ -205,7 +205,9 @@ class _ContactsPanelState extends State<ContactsPanel> {
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Pairing request sent — waiting for approval')),
+        const SnackBar(
+          content: Text('Pairing request sent — waiting for approval'),
+        ),
       );
       await _reload(soft: true);
     } catch (e) {
@@ -312,193 +314,206 @@ class _ContactsPanelState extends State<ContactsPanel> {
     final teammates = _teammates;
     final org = _orgSlug;
 
-    return ListView(
-      padding: EdgeInsets.zero,
-      children: [
-        _DashListCard(
-          title: 'People',
-          children: [
-            if (widget.handle != null && widget.handle!.trim().isNotEmpty)
-              PersonIdentityRow(
-                title: personDisplayTitle(
-                  displayName: _selfContact?.displayName,
-                  handle: widget.handle!,
-                ),
-                handle: widget.handle!,
-                avatarUrl: _selfContact?.avatarUrl,
-                badge: PersonIdentityRow.statusPill(label: 'you'),
-                isSelf: true,
-                onTap: () => _copyHandle(
-                  widget.handle!,
-                  toast: 'Copied your handle',
-                ),
-                trailing: [
-                  _CopyIcon(
-                    onPressed: () => _copyHandle(
+    return MutandeStaggerScope(
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          _DashListCard(
+            title: 'People',
+            children: [
+              if (widget.handle != null && widget.handle!.trim().isNotEmpty)
+                MutandeStaggerIn(
+                  id: 'self',
+                  child: PersonIdentityRow(
+                    title: personDisplayTitle(
+                      displayName: _selfContact?.displayName,
+                      handle: widget.handle!,
+                    ),
+                    handle: widget.handle!,
+                    avatarUrl: _selfContact?.avatarUrl,
+                    badge: PersonIdentityRow.statusPill(label: 'you'),
+                    isSelf: true,
+                    onTap: () => _copyHandle(
                       widget.handle!,
                       toast: 'Copied your handle',
                     ),
+                    trailing: [
+                      _CopyIcon(
+                        onPressed: () => _copyHandle(
+                          widget.handle!,
+                          toast: 'Copied your handle',
+                        ),
+                      ),
+                    ],
+                    showDivider: teammates.isNotEmpty || org != null,
                   ),
-                ],
-                showDivider: teammates.isNotEmpty || org != null,
-              ),
-            for (var i = 0; i < teammates.length; i++)
-              PersonIdentityRow(
-                title: personDisplayTitle(
-                  displayName: teammates[i].displayName,
-                  handle: teammates[i].handle,
                 ),
-                handle: teammates[i].handle,
-                avatarUrl: teammates[i].avatarUrl,
-                onTap: () => _copyHandle(teammates[i].handle),
-                trailing: [
-                  if (widget.onStartThread != null)
-                    _QuietTextAction(
-                      label: 'Message',
-                      onPressed: () =>
-                          widget.onStartThread!(teammates[i].handle),
+              for (var i = 0; i < teammates.length; i++)
+                MutandeStaggerIn(
+                  id: teammates[i].handle,
+                  child: PersonIdentityRow(
+                    title: personDisplayTitle(
+                      displayName: teammates[i].displayName,
+                      handle: teammates[i].handle,
                     ),
-                  _CopyIcon(onPressed: () => _copyHandle(teammates[i].handle)),
-                ],
-                showDivider: i < teammates.length - 1,
-              ),
-            if (teammates.isEmpty && org != null)
-              _SoloInviteBody(orgSlug: org, onInvite: _openInvites),
+                    handle: teammates[i].handle,
+                    avatarUrl: teammates[i].avatarUrl,
+                    onTap: () => _copyHandle(teammates[i].handle),
+                    trailing: [
+                      if (widget.onStartThread != null)
+                        _QuietTextAction(
+                          label: 'Message',
+                          onPressed: () =>
+                              widget.onStartThread!(teammates[i].handle),
+                        ),
+                      _CopyIcon(
+                        onPressed: () => _copyHandle(teammates[i].handle),
+                      ),
+                    ],
+                    showDivider: i < teammates.length - 1,
+                  ),
+                ),
+              if (teammates.isEmpty && org != null)
+                _SoloInviteBody(orgSlug: org, onInvite: _openInvites),
+            ],
+          ),
+          if (broadcast != null) ...[
+            const SizedBox(height: 12),
+            _DashListCard(
+              title: 'Broadcast',
+              children: [
+                PersonIdentityRow(
+                  title: formatMailAddress(broadcast.handle),
+                  handle: broadcast.handle,
+                  subtitle: 'Broadcast to each member’s default agent',
+                  leading: const _MarkIcon(Icons.campaign_outlined),
+                  onTap: () => _copyHandle(
+                    broadcast.handle,
+                    toast: 'Copied ${broadcast.handle}',
+                  ),
+                  trailing: [
+                    _CopyIcon(
+                      onPressed: () => _copyHandle(
+                        broadcast.handle,
+                        toast: 'Copied ${broadcast.handle}',
+                      ),
+                      tooltip: 'Copy broadcast handle',
+                    ),
+                  ],
+                  showDivider: false,
+                ),
+              ],
+            ),
           ],
-        ),
-        if (broadcast != null) ...[
           const SizedBox(height: 12),
           _DashListCard(
-            title: 'Broadcast',
-            children: [
-              PersonIdentityRow(
-                title: formatMailAddress(broadcast.handle),
-                handle: broadcast.handle,
-                subtitle: 'Broadcast to each member’s default agent',
-                leading: const _MarkIcon(Icons.campaign_outlined),
-                onTap: () => _copyHandle(
-                  broadcast.handle,
-                  toast: 'Copied ${broadcast.handle}',
+            title: 'External',
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _QuietTextAction(
+                  label: 'Share PIN',
+                  onPressed: _busy ? null : _showSharePin,
                 ),
-                trailing: [
-                  _CopyIcon(
-                    onPressed: () => _copyHandle(
-                      broadcast.handle,
-                      toast: 'Copied ${broadcast.handle}',
-                    ),
-                    tooltip: 'Copy broadcast handle',
+                _QuietTextAction(
+                  label: 'Add',
+                  onPressed: _busy ? null : _showRequestPair,
+                ),
+              ],
+            ),
+            children: [
+              const Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: Text(
+                  'Cross-org contacts via exact handle + PIN. Mail is not E2E (app envelope).',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: MutandeColors.stone400,
+                    height: 1.35,
                   ),
-                ],
-                showDivider: false,
+                ),
               ),
+              if (_incoming.isNotEmpty)
+                for (final req in _incoming)
+                  _PendingPairRow(
+                    title: formatMailAddress(req.requesterHandle),
+                    subtitle: req.intro?.trim().isNotEmpty == true
+                        ? req.intro!
+                        : 'Wants to connect',
+                    onApprove: _busy ? null : () => _approve(req),
+                    onDeny: _busy ? null : () => _deny(req),
+                  ),
+              if (_outgoing.isNotEmpty)
+                for (final req in _outgoing)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      'Pending → ${formatMailAddress(req.targetHandle)}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: MutandeColors.stone500,
+                      ),
+                    ),
+                  ),
+              if (_external.isNotEmpty)
+                for (var i = 0; i < _external.length; i++)
+                  PersonIdentityRow(
+                    title: personDisplayTitle(
+                      displayName: _external[i].displayName,
+                      handle: _external[i].handle,
+                    ),
+                    handle: _external[i].handle,
+                    subtitle:
+                        _external[i].displayName?.trim().isNotEmpty == true
+                        ? null
+                        : 'via external · not E2E',
+                    avatarUrl: _external[i].avatarUrl,
+                    leading: _external[i].avatarUrl == null
+                        ? const _MarkIcon(Icons.link)
+                        : null,
+                    onTap: () => _copyHandle(_external[i].handle),
+                    trailing: [
+                      if (widget.onStartThread != null)
+                        _QuietTextAction(
+                          label: 'Message',
+                          onPressed: () =>
+                              widget.onStartThread!(_external[i].handle),
+                        ),
+                      _CopyIcon(
+                        onPressed: () => _copyHandle(_external[i].handle),
+                      ),
+                      if (!_busy)
+                        IconButton(
+                          onPressed: () => _unpair(_external[i]),
+                          icon: const Icon(Icons.link_off, size: 18),
+                          color: const Color(0xFF991B1B),
+                          tooltip: 'Remove',
+                          visualDensity: VisualDensity.compact,
+                          constraints: const BoxConstraints(
+                            minWidth: 32,
+                            minHeight: 32,
+                          ),
+                          padding: EdgeInsets.zero,
+                        ),
+                    ],
+                    showDivider: i < _external.length - 1,
+                  )
+              else if (_incoming.isEmpty && _outgoing.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Text(
+                    'No external contacts yet. Share your PIN or add someone else’s handle + PIN.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: MutandeColors.stone400,
+                      height: 1.4,
+                    ),
+                  ),
+                ),
             ],
           ),
         ],
-        const SizedBox(height: 12),
-        _DashListCard(
-          title: 'External',
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _QuietTextAction(
-                label: 'Share PIN',
-                onPressed: _busy ? null : _showSharePin,
-              ),
-              _QuietTextAction(
-                label: 'Add',
-                onPressed: _busy ? null : _showRequestPair,
-              ),
-            ],
-          ),
-          children: [
-            const Padding(
-              padding: EdgeInsets.only(bottom: 8),
-              child: Text(
-                'Cross-org contacts via exact handle + PIN. Mail is not E2E (app envelope).',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: MutandeColors.stone400,
-                  height: 1.35,
-                ),
-              ),
-            ),
-            if (_incoming.isNotEmpty)
-              for (final req in _incoming)
-                _PendingPairRow(
-                  title: formatMailAddress(req.requesterHandle),
-                  subtitle: req.intro?.trim().isNotEmpty == true
-                      ? req.intro!
-                      : 'Wants to connect',
-                  onApprove: _busy ? null : () => _approve(req),
-                  onDeny: _busy ? null : () => _deny(req),
-                ),
-            if (_outgoing.isNotEmpty)
-              for (final req in _outgoing)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Text(
-                    'Pending → ${formatMailAddress(req.targetHandle)}',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: MutandeColors.stone500,
-                    ),
-                  ),
-                ),
-            if (_external.isNotEmpty)
-              for (var i = 0; i < _external.length; i++)
-                PersonIdentityRow(
-                  title: personDisplayTitle(
-                    displayName: _external[i].displayName,
-                    handle: _external[i].handle,
-                  ),
-                  handle: _external[i].handle,
-                  subtitle: _external[i].displayName?.trim().isNotEmpty == true
-                      ? null
-                      : 'via external · not E2E',
-                  avatarUrl: _external[i].avatarUrl,
-                  leading: _external[i].avatarUrl == null
-                      ? const _MarkIcon(Icons.link)
-                      : null,
-                  onTap: () => _copyHandle(_external[i].handle),
-                  trailing: [
-                    if (widget.onStartThread != null)
-                      _QuietTextAction(
-                        label: 'Message',
-                        onPressed: () =>
-                            widget.onStartThread!(_external[i].handle),
-                      ),
-                    _CopyIcon(onPressed: () => _copyHandle(_external[i].handle)),
-                    if (!_busy)
-                      IconButton(
-                        onPressed: () => _unpair(_external[i]),
-                        icon: const Icon(Icons.link_off, size: 18),
-                        color: const Color(0xFF991B1B),
-                        tooltip: 'Remove',
-                        visualDensity: VisualDensity.compact,
-                        constraints: const BoxConstraints(
-                          minWidth: 32,
-                          minHeight: 32,
-                        ),
-                        padding: EdgeInsets.zero,
-                      ),
-                  ],
-                  showDivider: i < _external.length - 1,
-                )
-            else if (_incoming.isEmpty && _outgoing.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 8),
-                child: Text(
-                  'No external contacts yet. Share your PIN or add someone else’s handle + PIN.',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: MutandeColors.stone400,
-                    height: 1.4,
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ],
+      ),
     );
   }
 }
@@ -770,9 +785,9 @@ class _PairPinDialog extends StatelessWidget {
         TextButton(
           onPressed: () {
             Clipboard.setData(ClipboardData(text: pin.qrUri));
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Copied pair URI')),
-            );
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(const SnackBar(content: Text('Copied pair URI')));
           },
           child: const Text('Copy URI'),
         ),
@@ -827,17 +842,13 @@ class _RequestPairDialogState extends State<_RequestPairDialog> {
             const SizedBox(height: 8),
             TextField(
               controller: _pin,
-              decoration: const InputDecoration(
-                labelText: '6-digit PIN',
-              ),
+              decoration: const InputDecoration(labelText: '6-digit PIN'),
               keyboardType: TextInputType.number,
               maxLength: 6,
             ),
             TextField(
               controller: _intro,
-              decoration: const InputDecoration(
-                labelText: 'Intro (optional)',
-              ),
+              decoration: const InputDecoration(labelText: 'Intro (optional)'),
               maxLength: 200,
             ),
           ],

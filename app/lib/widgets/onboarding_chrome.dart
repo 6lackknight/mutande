@@ -332,12 +332,16 @@ class OnboardingActions extends StatelessWidget {
     this.secondary,
     this.tertiary,
     this.topSpacing = OnboardingSpace.lg,
+    this.hugPrimary = false,
   });
 
   final Widget? primary;
   final Widget? secondary;
   final Widget? tertiary;
   final double topSpacing;
+
+  /// When true, the primary button sizes to its label instead of [primaryWidth].
+  final bool hugPrimary;
 
   /// Wide enough to command the column, short of the full measure.
   static const primaryWidth = 260.0;
@@ -351,10 +355,12 @@ class OnboardingActions extends StatelessWidget {
       children: [
         SizedBox(height: topSpacing),
         if (primary != null)
-          SizedBox(
-            width: primaryWidth,
-            child: HomeChromeButtons.theme(child: primary!),
-          ),
+          hugPrimary
+              ? HomeChromeButtons.theme(child: primary!)
+              : SizedBox(
+                  width: primaryWidth,
+                  child: HomeChromeButtons.theme(child: primary!),
+                ),
         if (links.isNotEmpty)
           Padding(
             padding: EdgeInsets.only(top: primary == null ? 0 : 6),

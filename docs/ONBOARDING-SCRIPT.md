@@ -203,8 +203,8 @@ Your address takes it from there.
 Use mutande to ping @all (thread)
 ```
 
-- **Copy prompt** (toast: Copied — paste into your AI host)
-- *I’ve pasted it — wait for pong* (link)
+- Copy icon in the prompt box (tooltip **Copy prompt**; toast: Copied — paste into your AI host)
+- **I’ve pasted it — wait for pong** (button)
 - *Skip for now* (link)
 
 ### 4b. Waiting for pong…

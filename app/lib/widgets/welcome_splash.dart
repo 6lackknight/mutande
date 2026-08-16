@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
+import '../theme/mutande_macos_theme.dart';
 import 'thinking_orb.dart';
 
 /// Stitch launcher splash — dark hold with working orb + wordmark.
@@ -39,6 +40,7 @@ class WelcomeSplash extends StatefulWidget {
 
 class _WelcomeSplashState extends State<WelcomeSplash> {
   bool _showSplash = true;
+  bool _splashOpaque = true;
   bool _minElapsed = false;
 
   @override
@@ -84,7 +86,16 @@ class _WelcomeSplashState extends State<WelcomeSplash> {
       if (!mounted || !_showSplash) return;
       final g = widget.dismissWhen;
       if (g != null && !g.value) return;
-      setState(() => _showSplash = false);
+      if (widget.duration <= Duration.zero) {
+        setState(() => _showSplash = false);
+        return;
+      }
+      final reduce = MediaQuery.disableAnimationsOf(context);
+      if (reduce) {
+        setState(() => _showSplash = false);
+        return;
+      }
+      setState(() => _splashOpaque = false);
     }
 
     // Safe during post-frame callbacks (bootstrap notify); defer if mid-build.
@@ -105,9 +116,20 @@ class _WelcomeSplashState extends State<WelcomeSplash> {
         widget.child,
         if (_showSplash)
           Positioned.fill(
-            child: ColoredBox(
-              color: const Color(0xFF0C0A09),
-              child: Stack(
+            child: IgnorePointer(
+              ignoring: !_splashOpaque,
+              child: AnimatedOpacity(
+                opacity: _splashOpaque ? 1 : 0,
+                duration: MutandeMotion.ui,
+                curve: MutandeMotion.easeOut,
+                onEnd: () {
+                  if (!_splashOpaque && mounted) {
+                    setState(() => _showSplash = false);
+                  }
+                },
+                child: ColoredBox(
+                  color: const Color(0xFF0C0A09),
+                  child: Stack(
                 fit: StackFit.expand,
                 children: [
                   const _MidGlow(),
@@ -147,6 +169,8 @@ class _WelcomeSplashState extends State<WelcomeSplash> {
                     ),
                   ),
                 ],
+              ),
+                ),
               ),
             ),
           ),

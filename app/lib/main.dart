@@ -11,6 +11,7 @@ import 'config/app_config.dart';
 import 'platform/desktop_bootstrap.dart';
 import 'services/analytics.dart';
 import 'services/core_sidecar.dart';
+import 'widgets/mutande_error_widget.dart';
 
 Future<void> main() async {
   final config = AppConfig.fromEnvironment();
@@ -31,6 +32,7 @@ Future<void> main() async {
     },
     appRunner: () async {
       WidgetsFlutterBinding.ensureInitialized();
+      MutandeErrorWidget.install();
 
       // `--dart-define=APP_VERSION=` wins; otherwise pubspec via package_info.
       const definedVersion = String.fromEnvironment('APP_VERSION');

@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 
 import '../services/daemon_client.dart';
 import '../theme/mutande_macos_theme.dart';
+import '../util/address_display.dart';
+import '../util/clock_format.dart';
 import '../widgets/collab/collab_activity_calendar.dart';
 import '../widgets/collab/collab_lane_donut.dart';
 import '../widgets/collab/collab_metric_row.dart';
+import '../widgets/collab/collab_project_dossier.dart';
 import '../widgets/collab/collab_projects_table.dart';
 import '../widgets/create_collab_sheet.dart';
 import '../widgets/pane_quiet_state.dart';
@@ -13,6 +16,24 @@ import 'threads_screen.dart';
 
 export '../widgets/create_collab_sheet.dart'
     show collabEncryptionCopy, collabInstructionsVisible;
+
+/// Human copy for collab fetch failures — never `GET /v1/collabs` or hub paths.
+String collabFetchErrorCopy(Object error) {
+  final mapped = friendlyDaemonError(error, what: 'collab');
+  if (mapped.startsWith("Couldn't load collab")) {
+    return "Couldn't load collab";
+  }
+  return mapped;
+}
+
+String? _collabQuietBody(String? error) {
+  if (error == null || error.trim().isEmpty) return null;
+  if (error == "Couldn't load collab" ||
+      error.startsWith("Couldn't load collab")) {
+    return 'Try again in a moment.';
+  }
+  return error;
+}
 
 /// Collab tab: named boards → Trello-style lanes. Card = thread.
 class CollabPanel extends StatefulWidget {
@@ -92,7 +113,7 @@ class _CollabPanelState extends State<CollabPanel> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = friendlyDaemonError(e, what: 'Collab');
+        _error = collabFetchErrorCopy(e);
       });
     }
   }
@@ -123,63 +144,62 @@ class _CollabPanelState extends State<CollabPanel> {
       );
     }
 
+    final Widget child;
     if (_loading) {
-      return const CollabHomeSkeleton();
-    }
-
-    if (_error != null && _collabs.isEmpty) {
-      return PaneQuietState(
-        title: "Couldn't load collabs",
-        body: _error,
+      child = const CollabHomeSkeleton(key: ValueKey('sk'));
+    } else if (_error != null && _collabs.isEmpty) {
+      child = PaneQuietState(
+        title: "Couldn't load collab",
+        body: _collabQuietBody(_error),
         icon: Icons.cloud_off_outlined,
         onRetry: _reload,
       );
-    }
-
-    if (_collabs.isEmpty) {
-      return PaneQuietState(
+    } else if (_collabs.isEmpty) {
+      child = PaneQuietState(
         title: 'No collabs yet',
         body: 'A collab is a board of threads — humans steer, agents work.',
         icon: Icons.view_kanban_outlined,
         retryLabel: 'Create',
         onRetry: _create,
       );
+    } else {
+      child = Padding(
+        key: const ValueKey('dash'),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: PaneInlineError(message: _error!, onRetry: _reload),
+              ),
+            Expanded(
+              child: CustomScrollView(
+                slivers: [
+                  SliverToBoxAdapter(
+                    child: CollabMetricRow(
+                      totals: _portfolio.totals,
+                      onCreate: _create,
+                    ),
+                  ),
+                  const SliverToBoxAdapter(child: SizedBox(height: 12)),
+                  SliverToBoxAdapter(child: _chartsRow()),
+                  const SliverToBoxAdapter(child: SizedBox(height: 12)),
+                  SliverToBoxAdapter(
+                    child: CollabProjectsTable(
+                      collabs: _collabs,
+                      onOpen: (c) => setState(() => _openId = c.id),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
     }
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: PaneInlineError(message: _error!, onRetry: _reload),
-            ),
-          Expanded(
-            child: CustomScrollView(
-              slivers: [
-                SliverToBoxAdapter(
-                  child: CollabMetricRow(
-                    totals: _portfolio.totals,
-                    onCreate: _create,
-                  ),
-                ),
-                const SliverToBoxAdapter(child: SizedBox(height: 12)),
-                SliverToBoxAdapter(child: _chartsRow()),
-                const SliverToBoxAdapter(child: SizedBox(height: 12)),
-                SliverToBoxAdapter(
-                  child: CollabProjectsTable(
-                    collabs: _collabs,
-                    onOpen: (c) => setState(() => _openId = c.id),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
+    return MutandeFadeSwap(child: child);
   }
 
   Widget _chartsRow() {
@@ -195,11 +215,7 @@ class _CollabPanelState extends State<CollabPanel> {
         );
         if (constraints.maxWidth < 720) {
           return Column(
-            children: [
-              calendar,
-              const SizedBox(height: 12),
-              donut,
-            ],
+            children: [calendar, const SizedBox(height: 12), donut],
           );
         }
         return Row(
@@ -258,7 +274,7 @@ class _CollabBoardState extends State<_CollabBoard> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = friendlyDaemonError(e, what: 'Collab');
+        _error = collabFetchErrorCopy(e);
       });
     }
   }
@@ -344,33 +360,102 @@ class _CollabBoardState extends State<_CollabBoard> {
       );
     }
 
+    final Widget child;
     if (_loading && _collab == null) {
-      return const CollabBoardSkeleton();
-    }
-    final collab = _collab;
-    if (collab == null) {
-      return PaneQuietState(
-        title: 'Couldn’t open collab',
-        body: _error,
-        onRetry: _reload,
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
+      child = const CollabBoardSkeleton(key: ValueKey('sk'));
+    } else {
+      final collab = _collab;
+      if (collab == null) {
+        child = PaneQuietState(
+          title: "Couldn't open collab",
+          body: _collabQuietBody(_error) ?? 'Try again in a moment.',
+          onRetry: _reload,
+        );
+      } else {
+        child = Padding(
+          key: const ValueKey('board'),
+          padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              IconButton(
-                tooltip: 'Boards',
-                onPressed: widget.onBack,
-                icon: const Icon(Icons.arrow_back, size: 18),
+              _ProjectHeader(
+                name: collab.name,
+                e2e: collab.isE2e,
+                causeAddress: collab.causeAddress,
+                brainOpen: _brainOpen,
+                onBack: widget.onBack,
+                onToggleBrain: () => setState(() => _brainOpen = !_brainOpen),
               ),
+              if (_error != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+                  child: PaneInlineError(
+                    message: _error!,
+                    onRetry: _reload,
+                  ),
+                ),
               Expanded(
+                child: _brainOpen
+                    ? _BrainPanel(
+                        daemon: widget.daemon,
+                        collab: collab,
+                        handle: widget.handle,
+                        onChanged: _reload,
+                      )
+                    : _ProjectPage(
+                        collab: collab,
+                        artifacts: collab.artifacts,
+                        artifactsLoading: false,
+                        handle: widget.handle,
+                        onOpenBrain: () => setState(() => _brainOpen = true),
+                        onOpen: (id) => setState(() => _openCardId = id),
+                        onNewCard: _newCard,
+                        onDrop: _drop,
+                      ),
+              ),
+            ],
+          ),
+        );
+      }
+    }
+    return MutandeFadeSwap(child: child);
+  }
+}
+
+class _ProjectHeader extends StatelessWidget {
+  const _ProjectHeader({
+    required this.name,
+    required this.e2e,
+    required this.brainOpen,
+    required this.onBack,
+    required this.onToggleBrain,
+    this.causeAddress,
+  });
+
+  final String name;
+  final bool e2e;
+  final String? causeAddress;
+  final bool brainOpen;
+  final VoidCallback onBack;
+  final VoidCallback onToggleBrain;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        IconButton(
+          tooltip: 'Boards',
+          onPressed: onBack,
+          icon: const Icon(Icons.arrow_back, size: 18),
+        ),
+        Expanded(
+          child: Row(
+            children: [
+              Flexible(
                 child: Text(
-                  collab.name,
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontWeight: FontWeight.w600,
                     fontSize: 16,
@@ -378,52 +463,72 @@ class _CollabBoardState extends State<_CollabBoard> {
                   ),
                 ),
               ),
-              TextButton(
-                onPressed: () => setState(() => _brainOpen = !_brainOpen),
-                child: Text(_brainOpen ? 'Board' : 'Brain'),
+              const SizedBox(width: 6),
+              Tooltip(
+                message: collabEncryptionCopy(
+                  e2e: e2e,
+                  causeAddress: causeAddress,
+                ),
+                child: Icon(
+                  Icons.lock_outline,
+                  key: const Key('collab-seal'),
+                  size: 14,
+                  color: MutandeColors.stone400,
+                ),
               ),
             ],
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-            child: Text(
-              collabEncryptionCopy(
-                e2e: collab.isE2e,
-                causeAddress: collab.causeAddress,
-              ),
-              style: const TextStyle(
-                fontSize: 12,
-                color: MutandeColors.stone500,
-              ),
-            ),
-          ),
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Text(
-                _error!,
-                style: const TextStyle(
-                  color: MutandeColors.bronze,
-                  fontSize: 12,
-                ),
-              ),
-            ),
-          Expanded(
-            child: _brainOpen
-                ? _BrainPanel(
-                    daemon: widget.daemon,
-                    collab: collab,
-                    handle: widget.handle,
-                    onChanged: _reload,
-                  )
-                : _Kanban(
-                    collab: collab,
-                    onOpen: (id) => setState(() => _openCardId = id),
-                    onNewCard: _newCard,
-                    onDrop: _drop,
-                  ),
-          ),
-        ],
+        ),
+        TextButton(
+          onPressed: onToggleBrain,
+          child: Text(brainOpen ? 'Board' : 'Brain'),
+        ),
+      ],
+    );
+  }
+}
+
+class _ProjectPage extends StatelessWidget {
+  const _ProjectPage({
+    required this.collab,
+    List<CollabArtifactView>? artifacts,
+    required this.artifactsLoading,
+    required this.onOpenBrain,
+    required this.onOpen,
+    required this.onNewCard,
+    required this.onDrop,
+    this.handle,
+  }) : _artifacts = artifacts;
+
+  final CollabDetail collab;
+  final List<CollabArtifactView>? _artifacts;
+  List<CollabArtifactView> get artifacts => _artifacts ?? const [];
+  final bool artifactsLoading;
+  final VoidCallback onOpenBrain;
+  final String? handle;
+  final ValueChanged<String> onOpen;
+  final ValueChanged<String> onNewCard;
+  final Future<void> Function(
+    CollabCardView card,
+    String laneId, {
+    String? beforeId,
+  })
+  onDrop;
+
+  @override
+  Widget build(BuildContext context) {
+    return CollabProjectDossier(
+      collab: collab,
+      artifacts: artifacts,
+      artifactsLoading: artifactsLoading,
+      myHandle: handle,
+      onOpenBrain: onOpenBrain,
+      onOpenCard: onOpen,
+      board: _Kanban(
+        collab: collab,
+        onOpen: onOpen,
+        onNewCard: onNewCard,
+        onDrop: onDrop,
       ),
     );
   }
@@ -453,7 +558,7 @@ class _Kanban extends StatelessWidget {
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
       itemCount: collab.lists.length,
-      separatorBuilder: (_, __) => const SizedBox(width: 10),
+      separatorBuilder: (_, _) => const SizedBox(width: 10),
       itemBuilder: (context, i) {
         final lane = collab.lists[i];
         final cards = collab.cards.where((c) => c.laneId == lane.id).toList()
@@ -495,7 +600,11 @@ class _LaneColumn extends StatelessWidget {
       builder: (context, candidate, _) {
         final hot = candidate.isNotEmpty;
         return AnimatedContainer(
-          duration: const Duration(milliseconds: 120),
+          duration: MutandeMotion.of(
+            context,
+            const Duration(milliseconds: 120),
+          ),
+          curve: MutandeMotion.ease,
           width: 260,
           decoration: BoxDecoration(
             color: hot ? MutandeColors.bronzeSoft : MutandeColors.stone100,
@@ -569,6 +678,17 @@ class _CardTile extends StatelessWidget {
   final VoidCallback onOpen;
   final ValueChanged<CollabCardView> onDropBefore;
 
+  String get _meta {
+    final owner = card.assignedTo?.trim();
+    final who = (owner != null && owner.isNotEmpty)
+        ? formatMailAddress(owner)
+        : '';
+    final when = formatRelativeTime(card.updatedAt);
+    if (who.isNotEmpty && when.isNotEmpty) return '$who · $when';
+    if (who.isNotEmpty) return who;
+    return when;
+  }
+
   @override
   Widget build(BuildContext context) {
     final title = (card.title?.trim().isNotEmpty == true)
@@ -578,7 +698,7 @@ class _CardTile extends StatelessWidget {
       onAcceptWithDetails: (d) {
         if (d.data.id != card.id) onDropBefore(d.data);
       },
-      builder: (context, _, __) {
+      builder: (context, _, _) {
         return LongPressDraggable<CollabCardView>(
           data: card,
           feedback: Material(
@@ -644,6 +764,18 @@ class _CardTile extends StatelessWidget {
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
                 color: MutandeColors.amber,
+              ),
+            ),
+          ],
+          if (_meta.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              _meta,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 11,
+                color: MutandeColors.stone400,
               ),
             ),
           ],

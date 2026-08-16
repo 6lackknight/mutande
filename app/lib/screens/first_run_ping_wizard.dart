@@ -260,28 +260,47 @@ class _CopyStep extends StatelessWidget {
         ),
         const SizedBox(height: OnboardingSpace.lg),
         Container(
-          padding: const EdgeInsets.all(OnboardingSpace.md),
+          padding: const EdgeInsets.fromLTRB(
+            OnboardingSpace.md,
+            10,
+            4,
+            10,
+          ),
           decoration: BoxDecoration(
             color: MutandeColors.stone800,
             borderRadius: BorderRadius.circular(10),
           ),
-          child: SelectableText(
-            FirstRunPingWizard.prompt,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              fontFamily: 'Menlo',
-              color: MutandeColors.stone50,
-              height: 1.4,
-            ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: SelectableText(
+                  FirstRunPingWizard.prompt,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontFamily: 'Menlo',
+                    color: MutandeColors.stone50,
+                    height: 1.4,
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: 'Copy prompt',
+                onPressed: onCopy,
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.copy, size: 16),
+                color: MutandeColors.stone50,
+                style: IconButton.styleFrom(
+                  foregroundColor: MutandeColors.stone50,
+                  hoverColor: MutandeColors.stone50.withValues(alpha: 0.08),
+                ),
+              ),
+            ],
           ),
         ),
         OnboardingActions(
           topSpacing: OnboardingSpace.md,
-          primary: FilledButton.icon(
-            onPressed: onCopy,
-            icon: const Icon(Icons.copy, size: 18),
-            label: const Text('Copy prompt'),
-          ),
-          secondary: TextButton(
+          hugPrimary: true,
+          primary: FilledButton(
             onPressed: onWaiting,
             child: const Text('I’ve pasted it — wait for pong'),
           ),

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../services/daemon_client.dart';
 import '../../theme/mutande_macos_theme.dart';
 import '../../util/clock_format.dart';
+import '../mutande_stagger.dart';
 import 'collab_dash_card.dart';
 
 /// Compact collab list — all steered boards, active first via sort.
@@ -29,30 +30,32 @@ class CollabProjectsTable extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final rows = _sorted;
-    return CollabDashCard(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Text(
-            'Collabs',
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: MutandeColors.stone800,
+    return MutandeStaggerScope(
+      child: CollabDashCard(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'Collabs',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: MutandeColors.stone800,
+              ),
             ),
-          ),
-          const SizedBox(height: 10),
-          const _Header(),
-          const Divider(height: 1, color: MutandeColors.stone200),
-          for (final collab in rows) ...[
-            _Row(
-              collab: collab,
-              onTap: () => onOpen(collab),
-            ),
+            const SizedBox(height: 10),
+            const _Header(),
             const Divider(height: 1, color: MutandeColors.stone200),
+            for (final collab in rows) ...[
+              MutandeStaggerIn(
+                id: collab.id,
+                child: _Row(collab: collab, onTap: () => onOpen(collab)),
+              ),
+              const Divider(height: 1, color: MutandeColors.stone200),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }

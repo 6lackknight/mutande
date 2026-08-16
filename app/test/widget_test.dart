@@ -963,6 +963,28 @@ test('validateHandle and validateHubUrl', () {
     );
   });
 
+  test('friendlyDaemonError hides GET/POST /v1/ wire dumps', () {
+    expect(
+      friendlyDaemonError('GET /v1/collabs', what: 'collab'),
+      allOf(
+        contains("Couldn't load collab"),
+        isNot(contains('GET')),
+        isNot(contains('/v1/')),
+      ),
+    );
+    expect(
+      friendlyDaemonError(
+        'DaemonException: POST /v1/collabs: hub error 502',
+        what: 'collab',
+      ),
+      allOf(contains('hub'), isNot(contains('/v1/')), isNot(contains('POST'))),
+    );
+    expect(
+      collabFetchErrorCopy(Exception('GET /v1/collabs')),
+      "Couldn't load collab",
+    );
+  });
+
   test('ThreadMessageView empty body and answers harden', () {
     const empty = ThreadMessageView(
       id: 'm1',
@@ -1550,6 +1572,9 @@ test('validateHandle and validateHubUrl', () {
 
     expect(find.text('Paste this into your connected host.'), findsOneWidget);
     expect(find.text(FirstRunPingWizard.prompt), findsOneWidget);
+    expect(find.byTooltip('Copy prompt'), findsOneWidget);
+    expect(find.text('I’ve pasted it — wait for pong'), findsOneWidget);
+    expect(find.text('Copy prompt'), findsNothing);
     expect(find.text('Skip for now'), findsOneWidget);
   });
 
@@ -1667,7 +1692,7 @@ test('validateHandle and validateHubUrl', () {
 
     expect(find.text('Hub is taking too long'), findsNothing);
     expect(find.text('Courier still starting'), findsNothing);
-    expect(find.text("Couldn't load collabs"), findsOneWidget);
+    expect(find.text("Couldn't load collab"), findsOneWidget);
     expect(find.text('Collab'), findsWidgets);
     expect(find.text('Retry'), findsOneWidget);
   });

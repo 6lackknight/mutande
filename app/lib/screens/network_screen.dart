@@ -120,7 +120,8 @@ class _SegmentPill extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 140),
+        duration: MutandeMotion.of(context, MutandeMotion.hover),
+        curve: MutandeMotion.ease,
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
           color: selected ? MutandeColors.stone800 : MutandeColors.stone100,

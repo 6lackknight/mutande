@@ -18,6 +18,38 @@ abstract final class MutandeColors {
   static const emeraldSoft = Color(0xFFECFDF5);
 }
 
+/// Shared motion tokens. Cubic values match CSS:
+/// `ease` = cubic-bezier(0.25, 0.1, 0.25, 1)
+/// `--ease-out` = cubic-bezier(0.23, 1, 0.32, 1)
+/// `--ease-in-out` = cubic-bezier(0.77, 0, 0.175, 1)
+/// `--ease-drawer` = cubic-bezier(0.32, 0.72, 0, 1)
+abstract final class MutandeMotion {
+  /// Hover / color change.
+  static const Cubic ease = Cubic(0.25, 0.1, 0.25, 1.0);
+
+  /// Strong ease-out for UI enter and response.
+  static const Cubic easeOut = Cubic(0.23, 1.0, 0.32, 1.0);
+
+  /// Moving / morphing on screen.
+  static const Cubic easeInOut = Cubic(0.77, 0.0, 0.175, 1.0);
+
+  /// Panel / drawer from an edge.
+  static const Cubic easeDrawer = Cubic(0.32, 0.72, 0.0, 1.0);
+
+  /// Hover / selection color. Budget 100–160ms.
+  static const Duration hover = Duration(milliseconds: 140);
+
+  /// Button press feedback. Budget 100–160ms.
+  static const Duration press = Duration(milliseconds: 160);
+
+  /// Small UI / modal enter. Budget 200ms (UI stays under 300ms; modals 200–500ms).
+  static const Duration ui = Duration(milliseconds: 200);
+
+  static Duration of(BuildContext context, Duration duration) {
+    return MediaQuery.disableAnimationsOf(context) ? Duration.zero : duration;
+  }
+}
+
 /// Material theme for Threads / Agents / Contacts content (mutande stone).
 ThemeData mutandeMaterialTheme() {
   return ThemeData(

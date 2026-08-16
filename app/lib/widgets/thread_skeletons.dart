@@ -4,11 +4,7 @@ import '../theme/mutande_macos_theme.dart';
 
 /// Quiet bone for a loading bar — same stone as the list, no shine stripe.
 class _Bone extends StatelessWidget {
-  const _Bone({
-    required this.width,
-    required this.height,
-    this.circle = false,
-  });
+  const _Bone({required this.width, required this.height, this.circle = false});
 
   final double width;
   final double height;
@@ -51,7 +47,8 @@ class _BreathState extends State<_Breath> with SingleTickerProviderStateMixin {
   void didChangeDependencies() {
     super.didChangeDependencies();
     final reduced =
-        _inWidgetTest || (MediaQuery.maybeDisableAnimationsOf(context) ?? false);
+        _inWidgetTest ||
+        (MediaQuery.maybeDisableAnimationsOf(context) ?? false);
     if (reduced) {
       _ctrl.stop();
       _ctrl.value = 0.45;
@@ -74,11 +71,7 @@ class _BreathState extends State<_Breath> with SingleTickerProviderStateMixin {
         final t = Curves.easeInOut.transform(_ctrl.value);
         return ColorFiltered(
           colorFilter: ColorFilter.mode(
-            Color.lerp(
-              MutandeColors.stone200,
-              MutandeColors.stone100,
-              t,
-            )!,
+            Color.lerp(MutandeColors.stone200, MutandeColors.stone100, t)!,
             BlendMode.srcATop,
           ),
           child: child,
@@ -153,12 +146,18 @@ class ThreadListSkeleton extends StatelessWidget {
                         children: [
                           FractionallySizedBox(
                             widthFactor: titleW,
-                            child: const _Bone(width: double.infinity, height: 11),
+                            child: const _Bone(
+                              width: double.infinity,
+                              height: 11,
+                            ),
                           ),
                           const SizedBox(height: 8),
                           FractionallySizedBox(
                             widthFactor: (titleW + 0.18).clamp(0.5, 0.88),
-                            child: const _Bone(width: double.infinity, height: 9),
+                            child: const _Bone(
+                              width: double.infinity,
+                              height: 9,
+                            ),
                           ),
                         ],
                       ),
@@ -201,10 +200,7 @@ class ThreadReadingSkeleton extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 16),
-              const _Arrive(
-                order: 1,
-                child: _Bone(width: 220, height: 11),
-              ),
+              const _Arrive(order: 1, child: _Bone(width: 220, height: 11)),
               const SizedBox(height: 10),
               for (final w in [1.0, 0.92, 0.74]) ...[
                 _Arrive(
@@ -337,7 +333,15 @@ class CollabHomeSkeleton extends StatelessWidget {
                                 child: Row(
                                   crossAxisAlignment: CrossAxisAlignment.end,
                                   children: [
-                                    for (final h in [0.4, 0.7, 0.35, 0.85, 0.5, 0.62, 0.3]) ...[
+                                    for (final h in [
+                                      0.4,
+                                      0.7,
+                                      0.35,
+                                      0.85,
+                                      0.5,
+                                      0.62,
+                                      0.3,
+                                    ]) ...[
                                       Expanded(
                                         child: FractionallySizedBox(
                                           heightFactor: h,
@@ -371,7 +375,11 @@ class CollabHomeSkeleton extends StatelessWidget {
                               const _Bone(width: 72, height: 9),
                               const Spacer(),
                               const Center(
-                                child: _Bone(width: 72, height: 72, circle: true),
+                                child: _Bone(
+                                  width: 72,
+                                  height: 72,
+                                  circle: true,
+                                ),
                               ),
                               const Spacer(),
                             ],
@@ -399,19 +407,31 @@ class CollabHomeSkeleton extends StatelessWidget {
                               children: [
                                 const Expanded(
                                   flex: 4,
-                                  child: _Bone(width: double.infinity, height: 9),
+                                  child: _Bone(
+                                    width: double.infinity,
+                                    height: 9,
+                                  ),
                                 ),
                                 const SizedBox(width: 16),
-                                const Expanded(flex: 2, child: _Bone(width: 24, height: 9)),
+                                const Expanded(
+                                  flex: 2,
+                                  child: _Bone(width: 24, height: 9),
+                                ),
                                 const SizedBox(width: 16),
-                                const Expanded(flex: 2, child: _Bone(width: 24, height: 9)),
+                                const Expanded(
+                                  flex: 2,
+                                  child: _Bone(width: 24, height: 9),
+                                ),
                                 const SizedBox(width: 16),
                                 const _Bone(width: 28, height: 8),
                               ],
                             ),
                           ),
                           if (i < 3)
-                            const Divider(height: 1, color: MutandeColors.stone200),
+                            const Divider(
+                              height: 1,
+                              color: MutandeColors.stone200,
+                            ),
                         ],
                       ],
                     ),
@@ -472,6 +492,105 @@ class CollabBoardSkeleton extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Chip-shaped bones for create-collab people / agents lists only.
+class CreateCollabChipSkeleton extends StatelessWidget {
+  const CreateCollabChipSkeleton.people({super.key}) : people = true;
+  const CreateCollabChipSkeleton.agents({super.key}) : people = false;
+
+  final bool people;
+
+  static const _people = [148.0, 128.0, 110.0];
+  static const _agents = [88.0, 104.0, 72.0, 96.0];
+
+  @override
+  Widget build(BuildContext context) {
+    final widths = people ? _people : _agents;
+    final height = people ? 44.0 : 28.0;
+    return Semantics(
+      label: people ? 'Loading people' : 'Loading agents',
+      child: _Breath(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: people ? 168 : 132),
+          child: Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (var i = 0; i < widths.length; i++)
+                _Arrive(
+                  order: i,
+                  child: people
+                      ? _PersonChipBone(width: widths[i])
+                      : _Bone(width: widths[i], height: height),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PersonChipBone extends StatelessWidget {
+  const _PersonChipBone({required this.width});
+
+  final double width;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: width,
+      height: 44,
+      child: const Row(
+        children: [
+          _Bone(width: 28, height: 28, circle: true),
+          SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _Bone(width: double.infinity, height: 11),
+                SizedBox(height: 6),
+                FractionallySizedBox(
+                  widthFactor: 0.72,
+                  child: _Bone(width: double.infinity, height: 8),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Opacity-only crossfade for skeleton → content. No translation.
+class MutandeFadeSwap extends StatelessWidget {
+  const MutandeFadeSwap({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedSwitcher(
+      duration: MutandeMotion.of(context, MutandeMotion.ui),
+      switchInCurve: MutandeMotion.easeOut,
+      switchOutCurve: MutandeMotion.easeOut,
+      layoutBuilder: (current, previous) {
+        return Stack(
+          fit: StackFit.passthrough,
+          alignment: Alignment.topLeft,
+          children: [...previous, ?current],
+        );
+      },
+      transitionBuilder: (child, animation) {
+        return FadeTransition(opacity: animation, child: child);
+      },
+      child: child,
     );
   }
 }

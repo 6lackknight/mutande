@@ -53,6 +53,7 @@ import type {
   CreateOrgInput,
   CreateThreadInput,
   CreateCollabInput,
+  AddCollabArtifactsInput,
   AddLearningInput,
   AddSteererInput,
   ApplyCollabDowngradeInput,
@@ -137,9 +138,12 @@ import {
 import { EnterpriseStore } from "./enterprise.ts";
 import type { RegistryListing } from "./types.ts";
 import {
+  addCollabArtifacts as addCollabArtifactsFn,
   addLearning as addCollabLearning,
   addSteerer as addCollabSteererFn,
   applyCollabDowngrade as applyCollabDowngradeFn,
+  collabArtifactKey,
+  collabArtifactsPrefix,
   collabKey,
   collabNameForThread,
   collabThreadKey,
@@ -667,6 +671,8 @@ export class HubStore {
       orgCollabsPrefix: (o) => this.orgCollabsPrefix(o),
       collabThreadKey: (c, t) => this.collabThreadKey(c, t),
       collabThreadsPrefix: (c) => this.collabThreadsPrefix(c),
+      collabArtifactKey: (c, a) => collabArtifactKey(c, a),
+      collabArtifactsPrefix: (c) => collabArtifactsPrefix(c),
       threadKey: (id) => this.threadKey(id),
       messageKey: (t, m) => this.messageKey(t, m),
       messagesPrefix: (t) => this.messagesPrefix(t),
@@ -713,6 +719,14 @@ export class HubStore {
     input: UpdateCollabInstructionsInput,
   ): Promise<CollabView> {
     return updateCollabInstructionsFn(this.collabCtx(), auth, collabId, input);
+  }
+
+  async addCollabArtifacts(
+    auth: AuthContext,
+    collabId: string,
+    input: AddCollabArtifactsInput,
+  ): Promise<CollabView> {
+    return addCollabArtifactsFn(this.collabCtx(), auth, collabId, input);
   }
 
   async applyCollabDowngrade(

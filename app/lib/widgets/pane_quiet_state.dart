@@ -84,51 +84,71 @@ class PaneQuietState extends StatelessWidget {
   }
 }
 
-/// Compact inline error under a header / compose form.
+/// Compact inline notice — hugs copy, stone capsule, ink Retry pill.
+///
+/// Never a full-width Material error bar. Last-known content stays visible.
 class PaneInlineError extends StatelessWidget {
   const PaneInlineError({
     super.key,
     required this.message,
     this.onRetry,
+    this.retryLabel = 'Retry',
   });
 
   final String message;
   final VoidCallback? onRetry;
+  final String retryLabel;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFEF2F2),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFFECACA)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Text(
-              message,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: const Color(0xFF991B1B),
+    final text = Theme.of(context).textTheme;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: MutandeColors.stone50,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: MutandeColors.stone200),
+        ),
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(14, 6, onRetry != null ? 6 : 14, 6),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 400),
+            child: Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 10,
+              runSpacing: 4,
+              children: [
+                Text(
+                  message,
+                  style: text.bodySmall?.copyWith(
+                    color: MutandeColors.stone600,
                     height: 1.35,
+                    fontWeight: FontWeight.w500,
                   ),
+                ),
+                if (onRetry != null)
+                  FilledButton(
+                    onPressed: onRetry,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: MutandeColors.stone800,
+                      foregroundColor: MutandeColors.stone50,
+                      minimumSize: const Size(44, 32),
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                      shape: const StadiumBorder(),
+                      textStyle: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    child: Text(retryLabel),
+                  ),
+              ],
             ),
           ),
-          if (onRetry != null)
-            TextButton(
-              onPressed: onRetry,
-              style: TextButton.styleFrom(
-                foregroundColor: const Color(0xFF991B1B),
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                minimumSize: const Size(44, 36),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              child: const Text('Retry'),
-            ),
-        ],
+        ),
       ),
     );
   }

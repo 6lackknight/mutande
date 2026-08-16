@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import '../services/daemon_client.dart';
 import '../services/host_link_store.dart';
+import '../theme/mutande_macos_theme.dart';
 import '../util/address_display.dart';
 import '../util/thread_peer.dart';
 import '../widgets/ai_host_icon.dart';
@@ -72,7 +73,7 @@ Duration _agentsMotion(BuildContext context, Duration duration) {
 double _easeUnit(double t, double begin, double end) {
   if (end <= begin) return t >= end ? 1.0 : 0.0;
   final u = ((t - begin) / (end - begin)).clamp(0.0, 1.0);
-  return Curves.easeOutCubic.transform(u);
+  return MutandeMotion.easeOut.transform(u);
 }
 
 /// Handle → primary (default) → sub-agents. Graph (Stitch) + list toggle.
@@ -797,7 +798,7 @@ class _PeopleOrbitGraphState extends State<_PeopleOrbitGraph>
     super.initState();
     _enter = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 680),
+      duration: const Duration(milliseconds: 300),
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -917,7 +918,7 @@ class _PeopleOrbitGraphState extends State<_PeopleOrbitGraph>
                     reduceMotion: reduce,
                     appearDelay: graphReady
                         ? Duration.zero
-                        : Duration(milliseconds: 180 + math.min(i * 70, 280)),
+                        : Duration(milliseconds: math.min(i * 40, 80)),
                     label: people[i].label,
                     ink: true,
                     agentSlugs: people[i].agentSlugs,
@@ -1006,7 +1007,7 @@ class _AgentsGraphState extends State<_AgentsGraph>
     super.initState();
     _enter = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 680),
+      duration: const Duration(milliseconds: 300),
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -1127,7 +1128,7 @@ class _AgentsGraphState extends State<_AgentsGraph>
                     reduceMotion: reduce,
                     appearDelay: graphReady
                         ? Duration.zero
-                        : Duration(milliseconds: 180 + math.min(i * 70, 280)),
+                        : Duration(milliseconds: math.min(i * 40, 80)),
                     label: agents[i].slug.trim().toLowerCase(),
                     mark: AiHostIcon(
                       agents[i].slug.trim().toLowerCase(),
@@ -1200,7 +1201,6 @@ class _OrbitDiscNodeState extends State<_OrbitDiscNode>
     with SingleTickerProviderStateMixin {
   late final AnimationController _appear;
   Timer? _delay;
-  bool _hover = false;
   bool _press = false;
 
   static const _disc = 56.0;
@@ -1211,7 +1211,7 @@ class _OrbitDiscNodeState extends State<_OrbitDiscNode>
     super.initState();
     _appear = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 420),
+      duration: MutandeMotion.ui,
     );
     if (widget.reduceMotion) {
       _appear.value = 1;
@@ -1236,12 +1236,13 @@ class _OrbitDiscNodeState extends State<_OrbitDiscNode>
     final ax = widget.center.dx + math.cos(widget.angle) * widget.orbitR;
     final ay = widget.center.dy + math.sin(widget.angle) * widget.orbitR;
     final motion = _agentsMotion(context, const Duration(milliseconds: 180));
+    final scaleDuration = widget.reduceMotion || !_press
+        ? Duration.zero
+        : MutandeMotion.press;
     final hoverScale = widget.reduceMotion
         ? 1.0
         : _press
-        ? 0.96
-        : _hover
-        ? 1.05
+        ? 0.97
         : 1.0;
     final ink = widget.ink;
     final ticks = widget.agentSlugs.take(4).toList();
@@ -1266,7 +1267,7 @@ class _OrbitDiscNodeState extends State<_OrbitDiscNode>
                 -math.sin(widget.angle) * inward,
               ),
               child: Transform.scale(
-                scale: widget.reduceMotion ? 1 : 0.86 + 0.14 * at,
+                scale: widget.reduceMotion ? 1 : 0.95 + 0.05 * at,
                 child: child,
               ),
             ),
@@ -1274,11 +1275,7 @@ class _OrbitDiscNodeState extends State<_OrbitDiscNode>
         },
         child: MouseRegion(
           cursor: SystemMouseCursors.click,
-          onEnter: (_) => setState(() => _hover = true),
-          onExit: (_) => setState(() {
-            _hover = false;
-            _press = false;
-          }),
+          onExit: (_) => setState(() => _press = false),
           child: GestureDetector(
             onTapDown: (_) => setState(() => _press = true),
             onTapUp: (_) => setState(() => _press = false),
@@ -1287,8 +1284,8 @@ class _OrbitDiscNodeState extends State<_OrbitDiscNode>
             behavior: HitTestBehavior.opaque,
             child: AnimatedScale(
               scale: hoverScale,
-              duration: motion,
-              curve: Curves.easeOutCubic,
+              duration: scaleDuration,
+              curve: MutandeMotion.easeOut,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -1844,7 +1841,7 @@ class _AgentInspectorState extends State<_AgentInspector> {
                         ? const SizedBox.shrink()
                         : Padding(
                             padding: const EdgeInsets.only(bottom: 10),
-                            child: _InspectorErrorBanner(
+                            child: PaneInlineError(
                               message: _actionError!,
                               onRetry: _busy
                                   ? null
@@ -2125,50 +2122,6 @@ class _InspectorTextAction extends StatelessWidget {
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           alignment: Alignment.centerLeft,
         ),
-      ),
-    );
-  }
-}
-
-class _InspectorErrorBanner extends StatelessWidget {
-  const _InspectorErrorBanner({required this.message, this.onRetry});
-
-  final String message;
-  final VoidCallback? onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFEF2F2),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFFECACA)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Text(
-              message,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: const Color(0xFF991B1B),
-                height: 1.35,
-              ),
-            ),
-          ),
-          if (onRetry != null)
-            TextButton(
-              onPressed: onRetry,
-              style: TextButton.styleFrom(
-                foregroundColor: const Color(0xFF991B1B),
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                minimumSize: const Size(44, 36),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              child: const Text('Retry'),
-            ),
-        ],
       ),
     );
   }

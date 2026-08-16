@@ -123,18 +123,17 @@ class _ChromeIconHitState extends State<_ChromeIconHit> {
           behavior: HitTestBehavior.opaque,
           child: Tooltip(
             message: widget.tooltip,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 120),
+            child: SizedBox(
               width: 36,
               height: HomeChrome.thumbHeight,
-              alignment: Alignment.center,
-              color: const Color(0x00000000),
-              child: Icon(
-                widget.icon,
-                size: 16,
-                color: _hover
-                    ? MutandeColors.stone600
-                    : HomeChrome.muteForeground,
+              child: Center(
+                child: Icon(
+                  widget.icon,
+                  size: 16,
+                  color: _hover
+                      ? MutandeColors.stone600
+                      : HomeChrome.muteForeground,
+                ),
               ),
             ),
           ),

@@ -1480,7 +1480,10 @@ impl DaemonState {
         Ok(vec![])
     }
 
-    async fn fetch_and_open_thread(&self, thread_id: &str) -> Result<OpenedThreadDetail> {
+    pub(super) async fn fetch_and_open_thread(
+        &self,
+        thread_id: &str,
+    ) -> Result<OpenedThreadDetail> {
         let Some(hub) = self.hub_client() else {
             bail!("hub not configured");
         };
@@ -1695,7 +1698,7 @@ impl DaemonState {
     }
 
     /// After decrypt: keep small text in `content`; materialize binary/large to `path`.
-    fn surface_opened_bundle_resources(&self, bundle: &mut MutandeBundle) {
+    pub(super) fn surface_opened_bundle_resources(&self, bundle: &mut MutandeBundle) {
         surface_bundle_resources_at(bundle, &self.blob_cache_dir());
     }
 
@@ -3641,7 +3644,7 @@ fn guess_blob_mime(name: &str) -> &'static str {
 /// Build the sealed plaintext for `forward_blob`: a MutandeBundle carrying the artifact.
 /// Always embeds full bytes (text or base64) — R2 holds the sealed ciphertext. Agent-facing
 /// open strips large/binary `content` and materializes a local `path` instead.
-fn bundle_for_blob_artifact(
+pub(super) fn bundle_for_blob_artifact(
     plaintext: &[u8],
     subject: Option<&str>,
     filename: Option<&str>,
@@ -3683,7 +3686,7 @@ fn bundle_for_blob_artifact(
 }
 
 /// Present opened resources: small text stays in `content`; binary/large → local `path`.
-fn surface_bundle_resources_at(bundle: &mut MutandeBundle, cache_dir: &Path) {
+pub(super) fn surface_bundle_resources_at(bundle: &mut MutandeBundle, cache_dir: &Path) {
     use base64::Engine;
 
     let mut materialized: Vec<String> = Vec::new();

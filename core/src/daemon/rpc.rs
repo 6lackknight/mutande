@@ -263,12 +263,14 @@ async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Resu
             let steerer_handles = optional_str_vec(&params, "steerer_handles");
             let roster_addresses = optional_str_vec(&params, "roster_addresses");
             let instructions = optional_str(&params, "instructions");
+            let artifacts = collab_artifact_drafts(&params)?;
             let collab = state
                 .create_collab(
                     &name,
                     &steerer_handles,
                     &roster_addresses,
                     instructions.as_deref(),
+                    &artifacts,
                 )
                 .await?;
             Ok(serde_json::to_value(serde_json::json!({ "collab": collab }))?)
@@ -691,6 +693,73 @@ fn optional_str_vec(params: &Value, key: &str) -> Vec<String> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+fn collab_artifact_drafts(params: &Value) -> Result<Vec<super::collab::CollabArtifactDraft>> {
+    let Some(arr) = params.get("artifacts").and_then(|v| v.as_array()) else {
+        return Ok(Vec::new());
+    };
+    let mut out = Vec::with_capacity(arr.len());
+    for item in arr {
+        let Some(map) = item.as_object() else {
+            continue;
+        };
+        let kind = map
+            .get("kind")
+            .and_then(|v| v.as_str())
+            .unwrap_or("file")
+            .trim()
+            .to_ascii_lowercase();
+        let label = map
+            .get("label")
+            .or_else(|| map.get("title"))
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+        let url = map
+            .get("url")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+        let mut name = map
+            .get("name")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+        let mime = map
+            .get("mime")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+        let mut bytes = None;
+        if kind != "link" {
+            if let Some(path) = map
+                .get("path")
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                let (data, from_path) = read_blob_file(path)?;
+                bytes = Some(data);
+                if name.is_none() {
+                    name = from_path;
+                }
+            }
+        }
+        out.push(super::collab::CollabArtifactDraft {
+            kind,
+            label,
+            url,
+            name,
+            mime,
+            bytes,
+        });
+    }
+    Ok(out)
 }
 
 #[cfg(test)]

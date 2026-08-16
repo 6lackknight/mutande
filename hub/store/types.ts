@@ -884,6 +884,39 @@ export interface Collab {
   updated_at: string;
 }
 
+export type CollabArtifactKind = "file" | "link";
+
+/** Hub-persisted collab artifact. File bytes live in `envelope` (blob wrap-to-N) or `content` (app_envelope). Links are team-visible metadata. */
+export interface CollabArtifact {
+  id: string;
+  kind: CollabArtifactKind;
+  label: string;
+  url?: string;
+  name?: string;
+  mime?: string;
+  size?: number;
+  content?: string;
+  envelope?: Envelope;
+  created_at: string;
+  created_by: string;
+}
+
+export interface CollabArtifactInput {
+  kind: CollabArtifactKind;
+  label?: string;
+  title?: string;
+  url?: string;
+  name?: string;
+  mime?: string;
+  size?: number;
+  content?: string;
+  envelope?: Envelope;
+}
+
+export interface AddCollabArtifactsInput {
+  artifacts: CollabArtifactInput[];
+}
+
 export interface CreateCollabInput {
   name: string;
   /** Human handles. Creator is always included. */
@@ -894,6 +927,7 @@ export interface CreateCollabInput {
   instructions?: string;
   /** Sealed instructions ref — e2e only. */
   instructions_sealed?: CollabInstructionsSealed;
+  artifacts?: CollabArtifactInput[];
 }
 
 export interface SetLaneInput {
@@ -999,4 +1033,13 @@ export interface CollabView extends Collab {
   cards: CollabCardSummary[];
   learnings: CollabLearning[];
   steerers: { user_id: string; handle: string }[];
+  /**
+   * Collab-level artifacts (separate KV prefix). List omits envelope/content;
+   * get includes sealed file payloads for the daemon to open.
+   */
+  artifacts: CollabArtifactView[];
+}
+
+export interface CollabArtifactView extends CollabArtifact {
+  from_handle: string;
 }

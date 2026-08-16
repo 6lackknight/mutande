@@ -31,6 +31,30 @@ Future<void> openAttachmentPath(String path) async {
   await Process.run('open', [path]);
 }
 
+Future<void> openExternalUrl(String url) async {
+  final uri = Uri.tryParse(url.trim());
+  if (uri == null || !(uri.isScheme('http') || uri.isScheme('https'))) {
+    return;
+  }
+  if (Platform.isMacOS) {
+    await Process.run('open', [uri.toString()]);
+    return;
+  }
+  if (Platform.isWindows) {
+    await Process.run('rundll32', [
+      'url.dll,FileProtocolHandler',
+      uri.toString(),
+    ]);
+    return;
+  }
+  await Process.run('xdg-open', [uri.toString()]);
+}
+
+bool isHubCourierUrl(String url) {
+  final host = Uri.tryParse(url.trim())?.host.toLowerCase() ?? '';
+  return host == 'hub.mutande.online';
+}
+
 Future<void> revealAttachmentPath(String path) async {
   await Process.run('open', ['-R', path]);
 }
@@ -148,9 +172,7 @@ class _AttachmentRowState extends State<_AttachmentRow> {
                   if (!unavailable) ...[
                     if (_canInlinePreview)
                       Icon(
-                        _expanded
-                            ? Icons.expand_less
-                            : Icons.expand_more,
+                        _expanded ? Icons.expand_less : Icons.expand_more,
                         size: 18,
                         color: MutandeColors.stone400,
                       )
@@ -312,9 +334,9 @@ class _ImagePreview extends StatelessWidget {
               padding: const EdgeInsets.all(12),
               child: Text(
                 'Could not preview image',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: MutandeColors.stone500,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: MutandeColors.stone500),
               ),
             ),
           ),
@@ -386,9 +408,9 @@ class _VideoPreviewState extends State<_VideoPreview> {
           children: [
             Text(
               'Could not play in-app',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: MutandeColors.stone600,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: MutandeColors.stone600),
             ),
             const SizedBox(height: 8),
             TextButton.icon(
@@ -432,7 +454,9 @@ class _VideoPreviewState extends State<_VideoPreview> {
           ClipRRect(
             borderRadius: const BorderRadius.vertical(top: Radius.circular(9)),
             child: AspectRatio(
-              aspectRatio: c.value.aspectRatio == 0 ? 16 / 9 : c.value.aspectRatio,
+              aspectRatio: c.value.aspectRatio == 0
+                  ? 16 / 9
+                  : c.value.aspectRatio,
               child: Stack(
                 alignment: Alignment.center,
                 children: [
@@ -586,9 +610,9 @@ class _TextPreviewState extends State<_TextPreview> {
       return _PreviewShell(
         child: Text(
           'Loading…',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: MutandeColors.stone400,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: MutandeColors.stone400),
         ),
       );
     }

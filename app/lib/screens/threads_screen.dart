@@ -18,6 +18,7 @@ import '../util/thread_peer.dart';
 import '../widgets/ai_host_icon.dart';
 import '../widgets/contact_avatar.dart';
 import '../widgets/pane_quiet_state.dart';
+import '../widgets/mutande_stagger.dart';
 import '../widgets/thread_skeletons.dart';
 import '../widgets/thread_status_badge.dart';
 import '../widgets/downgrade_consent_banner.dart';
@@ -575,18 +576,17 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
   }
 
   Widget _buildListPane(BuildContext context) {
+    final Widget child;
     if (_loading) {
-      return const ThreadListSkeleton();
-    }
-    if (_error != null) {
-      return PaneQuietState(
+      child = const ThreadListSkeleton(key: ValueKey('sk'));
+    } else if (_error != null) {
+      child = PaneQuietState(
         title: "Couldn't load threads",
         body: _error!,
         onRetry: _reload,
         icon: Icons.cloud_off_outlined,
       );
-    }
-    if (_visible.isEmpty) {
+    } else if (_visible.isEmpty) {
       final (title, body) = switch (_filter) {
         'needs_action' => (
           'Nothing needs you',
@@ -613,33 +613,41 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
           'Compose a handoff, or wait for an agent ping.',
         ),
       };
-      return Padding(
+      child = Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12),
         child: PaneQuietState(title: title, body: body),
       );
+    } else {
+      child = MutandeStaggerScope(
+        key: const ValueKey('list'),
+        child: ListView.builder(
+          controller: _listScroll,
+          padding: EdgeInsets.zero,
+          itemCount: _visible.length,
+          itemBuilder: (context, i) {
+            final t = _visible[i];
+            return MutandeStaggerIn(
+              key: ValueKey(t.id),
+              id: t.id,
+              child: _ThreadRow(
+                thread: t,
+                myHandle: widget.myHandle,
+                avatarUrl: _avatarForThread(t),
+                selected: t.id == _openId,
+                muted: _mutedIds.contains(t.id),
+                onTap: () => setState(() => _openId = t.id),
+                onClose: t.status == 'closed'
+                    ? null
+                    : () => _closeThreadFromList(t.id),
+                onDelete: () => _deleteThreadFromList(t.id),
+                onMuteToggle: () => _toggleMute(t.id),
+              ),
+            );
+          },
+        ),
+      );
     }
-    return ListView.builder(
-      controller: _listScroll,
-      padding: EdgeInsets.zero,
-      itemCount: _visible.length,
-      itemBuilder: (context, i) {
-        final t = _visible[i];
-        return _ThreadRow(
-          key: ValueKey(t.id),
-          thread: t,
-          myHandle: widget.myHandle,
-          avatarUrl: _avatarForThread(t),
-          selected: t.id == _openId,
-          muted: _mutedIds.contains(t.id),
-          onTap: () => setState(() => _openId = t.id),
-          onClose: t.status == 'closed'
-              ? null
-              : () => _closeThreadFromList(t.id),
-          onDelete: () => _deleteThreadFromList(t.id),
-          onMuteToggle: () => _toggleMute(t.id),
-        );
-      },
-    );
+    return MutandeFadeSwap(child: child);
   }
 }
 
@@ -763,7 +771,8 @@ class _ScopePill extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 140),
+        duration: MutandeMotion.of(context, MutandeMotion.hover),
+        curve: MutandeMotion.ease,
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
           color: selected ? MutandeColors.stone800 : MutandeColors.stone100,
@@ -817,7 +826,6 @@ class _ScopePill extends StatelessWidget {
 /// Pulse list row — unread weight, circular mark, last-author snippet, relative time.
 class _ThreadRow extends StatelessWidget {
   const _ThreadRow({
-    super.key,
     required this.thread,
     required this.onTap,
     this.myHandle,
@@ -853,6 +861,11 @@ class _ThreadRow extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
+          splashFactory: NoSplash.splashFactory,
+          overlayColor: const WidgetStatePropertyAll(Color(0x00000000)),
+          hoverColor: const Color(0x00000000),
+          highlightColor: const Color(0x00000000),
+          splashColor: const Color(0x00000000),
           onSecondaryTapDown: (details) {
             final items = <PopupMenuEntry<String>>[
               if (onMuteToggle != null)
@@ -882,7 +895,7 @@ class _ThreadRow extends StatelessWidget {
             });
           },
           child: AnimatedContainer(
-            duration: const Duration(milliseconds: 140),
+            duration: MutandeMotion.of(context, MutandeMotion.hover),
             curve: Curves.easeOutCubic,
             padding: const EdgeInsets.fromLTRB(10, 9, 12, 9),
             color: selected ? MutandeColors.stone100 : Colors.transparent,
@@ -1563,6 +1576,7 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
   bool _downgradeBusy = false;
   int? _hotDivider;
   bool _inspectorVisible = true;
+  bool _inspectorLaidOut = true;
 
   ResizableDivider _splitDivider(int id) {
     final hot = _hotDivider == id;
@@ -1707,12 +1721,18 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
   Future<void> _loadInspectorPref() async {
     final prefs = await widget.notificationPrefs.load();
     if (!mounted) return;
-    setState(() => _inspectorVisible = prefs.threadInspectorVisible);
+    setState(() {
+      _inspectorVisible = prefs.threadInspectorVisible;
+      _inspectorLaidOut = prefs.threadInspectorVisible;
+    });
   }
 
   Future<void> _toggleInspector() async {
     final next = !_inspectorVisible;
-    setState(() => _inspectorVisible = next);
+    setState(() {
+      _inspectorVisible = next;
+      if (next) _inspectorLaidOut = true;
+    });
     await widget.notificationPrefs.update(
       (p) => p.copyWith(threadInspectorVisible: next),
     );
@@ -1874,68 +1894,76 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
                 ),
             ],
           ),
-        if (_loading)
-          const Expanded(child: ThreadReadingSkeleton())
-        else if (_detail == null)
-          Expanded(
-            child: PaneQuietState(
-              title: 'Thread unavailable',
-              body: _error ?? 'This thread couldn’t be opened.',
-              onRetry: _load,
-              icon: Icons.mark_email_unread_outlined,
-            ),
-          )
-        else ...[
-          Expanded(
-            child: ThreadRelayReading(
-              detail: _detail!,
-              myHandle: widget.myHandle,
-              muted: widget.muted,
-              reply: _reply,
-              sending: _sending,
-              replyToHandle: _replyToHandle == null
-                  ? null
-                  : formatMailAddress(
-                      _replyToHandle!,
-                      myHandle: widget.myHandle,
+        Expanded(
+          child: MutandeFadeSwap(
+            child: _loading
+                ? const ThreadReadingSkeleton(key: ValueKey('sk'))
+                : _detail == null
+                ? PaneQuietState(
+                    key: const ValueKey('missing'),
+                    title: 'Thread unavailable',
+                    body: _error ?? 'This thread couldn’t be opened.',
+                    onRetry: _load,
+                    icon: Icons.mark_email_unread_outlined,
+                  )
+                : ThreadRelayReading(
+                    key: const ValueKey('read'),
+                    detail: _detail!,
+                    myHandle: widget.myHandle,
+                    muted: widget.muted,
+                    reply: _reply,
+                    sending: _sending,
+                    replyToHandle: _replyToHandle == null
+                        ? null
+                        : formatMailAddress(
+                            _replyToHandle!,
+                            myHandle: widget.myHandle,
+                          ),
+                    nested: _replyToMessageId != null,
+                    onSend: _sendReply,
+                    onClearTarget: _clearReplyTarget,
+                    onReply: _startReplyTo,
+                    onUpvote: _toggleUpvote,
+                    upvotingId: _upvotingMessageId,
+                    onRefresh: () => unawaited(
+                      _load(silent: widget.embedded && _detail != null),
                     ),
-              nested: _replyToMessageId != null,
-              onSend: _sendReply,
-              onClearTarget: _clearReplyTarget,
-              onReply: _startReplyTo,
-              onUpvote: _toggleUpvote,
-              upvotingId: _upvotingMessageId,
-              onRefresh: () =>
-                  unawaited(_load(silent: widget.embedded && _detail != null)),
-              onClose: _detail!.status == 'closed' ? null : _closeThread,
-              onDelete: _deleteThread,
-              onMuteToggle: widget.onMuteToggle,
-              inspectorVisible: _inspectorVisible,
-              onInspectorToggle: widget.embedded ? _toggleInspector : null,
-              leading: [
-                if (_detail!.isEnterpriseThread) const EnterpriseWarnBanner(),
-                if (_detail!.pendingDowngrade?.isPending == true)
-                  DowngradeConsentBanner(
-                    prompt:
-                        _detail!.pendingDowngrade!.prompt ??
-                        'Adding @${_detail!.pendingDowngrade!.proposedSlug} (web) ends E2E for this thread',
-                    busy: _downgradeBusy,
-                    onApprove: () =>
-                        _approveDowngrade(_detail!.pendingDowngrade!),
-                    onDeny: () => _denyDowngrade(_detail!.pendingDowngrade!),
+                    onClose: _detail!.status == 'closed' ? null : _closeThread,
+                    onDelete: _deleteThread,
+                    onMuteToggle: widget.onMuteToggle,
+                    inspectorVisible: _inspectorVisible,
+                    onInspectorToggle: widget.embedded
+                        ? _toggleInspector
+                        : null,
+                    leading: [
+                      if (_detail!.isEnterpriseThread)
+                        const EnterpriseWarnBanner(),
+                      if (_detail!.pendingDowngrade?.isPending == true)
+                        DowngradeConsentBanner(
+                          prompt:
+                              _detail!.pendingDowngrade!.prompt ??
+                              'Adding @${_detail!.pendingDowngrade!.proposedSlug} (web) ends E2E for this thread',
+                          busy: _downgradeBusy,
+                          onApprove: () =>
+                              _approveDowngrade(_detail!.pendingDowngrade!),
+                          onDeny: () =>
+                              _denyDowngrade(_detail!.pendingDowngrade!),
+                        ),
+                      if (_error != null)
+                        PaneInlineError(
+                          message: _error!,
+                          onRetry: () => _load(),
+                        ),
+                    ],
                   ),
-                if (_error != null)
-                  PaneInlineError(message: _error!, onRetry: () => _load()),
-              ],
-            ),
           ),
-        ],
+        ),
       ],
     );
 
     if (!widget.embedded) return pane;
 
-    if (_loading || _detail == null || !_inspectorVisible) {
+    if (_loading || _detail == null) {
       return Padding(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
         child: pane,
@@ -1954,10 +1982,31 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
           ),
         ),
         ResizableChild(
-          size: const ResizableSize.pixels(200, min: 180, max: 360),
-          child: ThreadInspectorSidebar(
-            detail: _detail!,
-            myHandle: widget.myHandle,
+          size: ResizableSize.pixels(
+            _inspectorLaidOut ? 200 : 0,
+            min: _inspectorLaidOut ? 180 : 0,
+            max: 360,
+          ),
+          child: ClipRect(
+            child: AnimatedSlide(
+              offset: _inspectorVisible ? Offset.zero : const Offset(1, 0),
+              duration: MutandeMotion.of(context, MutandeMotion.ui),
+              curve: MutandeMotion.easeDrawer,
+              child: AnimatedOpacity(
+                opacity: _inspectorVisible ? 1 : 0,
+                duration: MutandeMotion.of(context, MutandeMotion.ui),
+                curve: MutandeMotion.easeOut,
+                onEnd: () {
+                  if (!_inspectorVisible && mounted) {
+                    setState(() => _inspectorLaidOut = false);
+                  }
+                },
+                child: ThreadInspectorSidebar(
+                  detail: _detail!,
+                  myHandle: widget.myHandle,
+                ),
+              ),
+            ),
           ),
         ),
       ],

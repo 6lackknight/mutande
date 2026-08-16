@@ -19,59 +19,66 @@ class CollabMetricRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final tiles = <Widget>[
-          _MetricTile(
-            key: const Key('collab-metric-collabs'),
-            label: 'Collabs',
-            value: '${totals.collabs}',
-            hint: 'you steer',
-          ),
-          _MetricTile(
-            key: const Key('collab-metric-open'),
-            label: 'Open cards',
-            value: '${totals.open}',
-            hint: 'across boards',
-          ),
-          _MetricTile(
-            key: const Key('collab-metric-doing'),
-            label: 'In Doing',
-            value: '${totals.doing}',
-            hint: 'in progress',
-          ),
-          _MetricTile(
-            key: const Key('collab-metric-needs-you'),
-            label: 'Needs you',
-            value: '${totals.needsYou}',
-            hint: 'awaiting a reply',
-            accent: totals.needsYou > 0,
-          ),
-          _CreateTile(onTap: onCreate),
-        ];
-        final wide = constraints.maxWidth >= 900;
-        if (wide) {
-          return IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (var i = 0; i < tiles.length; i++) ...[
-                  if (i > 0) const SizedBox(width: 10),
-                  Expanded(child: tiles[i]),
-                ],
-              ],
+        return _collabMetricTileRow(
+          width: constraints.maxWidth,
+          tiles: [
+            _MetricTile(
+              key: const Key('collab-metric-collabs'),
+              label: 'Collabs',
+              value: '${totals.collabs}',
+              hint: 'you steer',
             ),
-          );
-        }
-        final half = (constraints.maxWidth - 10) / 2;
-        return Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: [
-            for (final tile in tiles) SizedBox(width: half, child: tile),
+            _MetricTile(
+              key: const Key('collab-metric-open'),
+              label: 'Open cards',
+              value: '${totals.open}',
+              hint: 'across boards',
+            ),
+            _MetricTile(
+              key: const Key('collab-metric-doing'),
+              label: 'In Doing',
+              value: '${totals.doing}',
+              hint: 'in progress',
+            ),
+            _MetricTile(
+              key: const Key('collab-metric-needs-you'),
+              label: 'Needs you',
+              value: '${totals.needsYou}',
+              hint: 'awaiting a reply',
+              accent: totals.needsYou > 0,
+            ),
+            _CreateTile(onTap: onCreate),
           ],
         );
       },
     );
   }
+}
+
+Widget _collabMetricTileRow({
+  required double width,
+  required List<Widget> tiles,
+}) {
+  final wide = width >= 900;
+  if (wide) {
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < tiles.length; i++) ...[
+            if (i > 0) const SizedBox(width: 10),
+            Expanded(child: tiles[i]),
+          ],
+        ],
+      ),
+    );
+  }
+  final half = (width - 10) / 2;
+  return Wrap(
+    spacing: 10,
+    runSpacing: 10,
+    children: [for (final tile in tiles) SizedBox(width: half, child: tile)],
+  );
 }
 
 class _MetricTile extends StatelessWidget {
@@ -90,8 +97,7 @@ class _MetricTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final valueColor =
-        accent ? MutandeColors.amber : MutandeColors.stone800;
+    final valueColor = accent ? MutandeColors.amber : MutandeColors.stone800;
     return CollabDashCard(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -119,10 +125,7 @@ class _MetricTile extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             hint,
-            style: const TextStyle(
-              fontSize: 11,
-              color: MutandeColors.stone400,
-            ),
+            style: const TextStyle(fontSize: 11, color: MutandeColors.stone400),
           ),
         ],
       ),

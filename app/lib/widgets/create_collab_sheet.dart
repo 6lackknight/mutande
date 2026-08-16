@@ -1,3 +1,4 @@
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:macos_ui/macos_ui.dart';
 
@@ -8,7 +9,9 @@ import '../theme/mutande_macos_theme.dart';
 import '../util/address_display.dart';
 import 'ai_host_icon.dart';
 import 'contact_avatar.dart';
+import 'mutande_stagger.dart';
 import 'thinking_orb.dart';
+import 'thread_skeletons.dart';
 import 'transport_chip.dart';
 
 /// Honest encryption copy — never says "insecure"; names the cause address.
@@ -52,7 +55,8 @@ String? collabRosterSlug(String? raw) {
 
 /// Full cause address (`alice@acme/chatgpt`) — never `/default` or `@slug`.
 String collabCauseAddress({required String ownerHandle, required String slug}) {
-  final owner = bareCollabHandle(ownerHandle) ?? ownerHandle.trim().toLowerCase();
+  final owner =
+      bareCollabHandle(ownerHandle) ?? ownerHandle.trim().toLowerCase();
   final agent = collabRosterSlug(slug) ?? slug.trim().toLowerCase();
   return '$owner/$agent';
 }
@@ -81,8 +85,7 @@ int collabParticipantCount({
 bool collabInstructionsVisible({
   required Iterable<String> steerers,
   required Iterable<String> roster,
-}) =>
-    collabParticipantCount(steerers: steerers, roster: roster) > 1;
+}) => collabParticipantCount(steerers: steerers, roster: roster) > 1;
 
 ({bool e2e, String? causeAddress, bool external}) collabRosterEncryption(
   Iterable<({String causeAddress, AgentTransport? transport})> selected, {
@@ -141,8 +144,8 @@ List<CollabPickerAgent> collapseCollabAgents(Iterable<CollabPickerAgent> raw) {
 }
 
 CollabPickerAgent _mergeCollabAgent(CollabPickerAgent a, CollabPickerAgent b) {
-  final web = isHostedWebTransport(a.transport) ||
-          isHostedWebTransport(b.transport)
+  final web =
+      isHostedWebTransport(a.transport) || isHostedWebTransport(b.transport)
       ? AgentTransport.mcp
       : (a.transport ?? b.transport);
   final aShort = a.address.startsWith('@');
@@ -181,13 +184,34 @@ Future<CollabDetail?> showCreateCollabSheet({
 
 /// Create-collab form — people + agent chip pickers, roster ⊆ steerers.
 class CreateCollabSheet extends StatefulWidget {
-  const CreateCollabSheet({super.key, required this.daemon, this.handle});
+  const CreateCollabSheet({
+    super.key,
+    required this.daemon,
+    this.handle,
+    this.pickFiles,
+  });
 
   final DaemonClient daemon;
   final String? handle;
+  final Future<List<CollabPendingFile>> Function()? pickFiles;
 
   @override
   State<CreateCollabSheet> createState() => _CreateCollabSheetState();
+}
+
+class CollabPendingFile {
+  const CollabPendingFile({required this.name, required this.path, this.mime});
+
+  final String name;
+  final String path;
+  final String? mime;
+}
+
+class CollabPendingLink {
+  const CollabPendingLink({required this.label, required this.url});
+
+  final String label;
+  final String url;
 }
 
 class _PersonOpt {
@@ -238,6 +262,8 @@ class CollabPickerAgent {
 class _CreateCollabSheetState extends State<CreateCollabSheet> {
   final _name = TextEditingController();
   final _instructions = TextEditingController();
+  final _linkLabel = TextEditingController();
+  final _linkUrl = TextEditingController();
   bool _busy = false;
   bool _loading = true;
   String? _error;
@@ -251,13 +277,13 @@ class _CreateCollabSheetState extends State<CreateCollabSheet> {
   List<CollabPickerAgent> _agents = const [];
   final _steerers = <String>{};
   final _roster = <String>{};
+  final _files = <CollabPendingFile>[];
+  final _links = <CollabPendingLink>[];
 
   String? get _me => bareCollabHandle(widget.handle);
 
-  bool get _showInstructions => collabInstructionsVisible(
-        steerers: _steerers,
-        roster: _roster,
-      );
+  bool get _showInstructions =>
+      collabInstructionsVisible(steerers: _steerers, roster: _roster);
 
   @override
   void initState() {
@@ -269,6 +295,8 @@ class _CreateCollabSheetState extends State<CreateCollabSheet> {
   void dispose() {
     _name.dispose();
     _instructions.dispose();
+    _linkLabel.dispose();
+    _linkUrl.dispose();
     super.dispose();
   }
 
@@ -291,6 +319,25 @@ class _CreateCollabSheetState extends State<CreateCollabSheet> {
       return "Couldn't load $what. Retry.";
     }
     return friendlyDaemonError(e, what: what);
+  }
+
+  /// Create failures are an action, not a fetch of the sheet title.
+  String _submitErrorCopy(Object e) {
+    final lower = e.toString().toLowerCase();
+    if (isHubUnimplemented(lower)) {
+      return "This hub doesn't support collab yet.";
+    }
+    if (lower.contains('user not found')) {
+      return "A selected person wasn't found. Check their handle, then retry.";
+    }
+    final mapped = friendlyDaemonError(e, what: 'collab');
+    if (mapped.startsWith("Couldn't load collab")) {
+      return mapped.replaceFirst(
+        "Couldn't load collab",
+        "Couldn't create this collab",
+      );
+    }
+    return mapped;
   }
 
   Future<void> _loadPickers() async {
@@ -338,26 +385,30 @@ class _CreateCollabSheetState extends State<CreateCollabSheet> {
           continue;
         }
         seen.add(h);
-        people.add(_PersonOpt(
-          handle: h,
-          listHandle: c.handle.trim(),
-          displayName: c.displayName,
-          avatarUrl: c.avatarUrl,
-          isExternal: c.isExternal,
-        ));
+        people.add(
+          _PersonOpt(
+            handle: h,
+            listHandle: c.handle.trim(),
+            displayName: c.displayName,
+            avatarUrl: c.avatarUrl,
+            isExternal: c.isExternal,
+          ),
+        );
       }
       for (final c in external) {
         if (c.isBroadcast) continue;
         final h = bareCollabHandle(c.handle);
         if (h == null || h == me || seen.contains(h)) continue;
         seen.add(h);
-        people.add(_PersonOpt(
-          handle: h,
-          listHandle: c.handle.trim(),
-          displayName: c.displayName,
-          avatarUrl: c.avatarUrl,
-          isExternal: true,
-        ));
+        people.add(
+          _PersonOpt(
+            handle: h,
+            listHandle: c.handle.trim(),
+            displayName: c.displayName,
+            avatarUrl: c.avatarUrl,
+            isExternal: true,
+          ),
+        );
       }
       if (me != null) {
         people.insert(
@@ -456,9 +507,9 @@ class _CreateCollabSheetState extends State<CreateCollabSheet> {
   }
 
   void _syncEncryption() {
-    final selected = _agents.where((a) => _roster.contains(a.address)).map(
-      (a) => (causeAddress: a.causeAddress, transport: a.transport),
-    );
+    final selected = _agents
+        .where((a) => _roster.contains(a.address))
+        .map((a) => (causeAddress: a.causeAddress, transport: a.transport));
     final next = collabRosterEncryption(
       selected,
       externalHandles: _people
@@ -503,6 +554,57 @@ class _CreateCollabSheetState extends State<CreateCollabSheet> {
     });
   }
 
+  Future<void> _attachFiles() async {
+    if (_busy) return;
+    try {
+      final picked = widget.pickFiles != null
+          ? await widget.pickFiles!()
+          : await _pickCollabFiles();
+      if (!mounted || picked.isEmpty) return;
+      setState(() {
+        for (final f in picked) {
+          if (f.path.trim().isEmpty) continue;
+          if (_files.any((e) => e.path == f.path)) continue;
+          _files.add(f);
+        }
+        _error = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = 'Could not attach that file.');
+    }
+  }
+
+  Future<List<CollabPendingFile>> _pickCollabFiles() async {
+    final files = await openFiles();
+    return [
+      for (final f in files)
+        if (f.path.trim().isNotEmpty)
+          CollabPendingFile(name: f.name, path: f.path, mime: f.mimeType),
+    ];
+  }
+
+  void _addLink() {
+    final url = _linkUrl.text.trim();
+    final parsed = Uri.tryParse(url);
+    if (parsed == null ||
+        !(parsed.isScheme('http') || parsed.isScheme('https'))) {
+      setState(() => _error = 'Paste an http or https link.');
+      return;
+    }
+    var label = _linkLabel.text.trim();
+    if (label.isEmpty) {
+      label = parsed.host.replaceFirst(RegExp(r'^www\.'), '');
+      if (label.isEmpty) label = 'link';
+    }
+    setState(() {
+      _links.add(CollabPendingLink(label: label, url: url));
+      _linkLabel.clear();
+      _linkUrl.clear();
+      _error = null;
+    });
+  }
+
   Future<void> _submit() async {
     if (_busy) return;
     final name = _name.text.trim();
@@ -526,6 +628,17 @@ class _CreateCollabSheetState extends State<CreateCollabSheet> {
         steererHandles: _steerers.toList(),
         rosterAddresses: _roster.map((a) => a.toLowerCase()).toList(),
         instructions: _e2e || instructions.isEmpty ? null : instructions,
+        artifacts: [
+          for (final f in _files)
+            {
+              'kind': 'file',
+              'name': f.name,
+              'path': f.path,
+              if (f.mime != null && f.mime!.trim().isNotEmpty) 'mime': f.mime,
+            },
+          for (final l in _links)
+            {'kind': 'link', 'label': l.label, 'url': l.url},
+        ],
       );
       if (!mounted) return;
       Navigator.of(context).pop(created);
@@ -535,11 +648,7 @@ class _CreateCollabSheetState extends State<CreateCollabSheet> {
       setState(() {
         _busy = false;
         _needsSignIn = isHubAuthFailure(lower);
-        if (isHubUnimplemented(lower)) {
-          _error = "This hub doesn't support collab yet.";
-        } else {
-          _error = friendlyDaemonError(e, what: 'Create collab');
-        }
+        _error = _submitErrorCopy(e);
       });
     }
   }
@@ -564,121 +673,10 @@ class _CreateCollabSheetState extends State<CreateCollabSheet> {
             ),
             const SizedBox(height: 18),
             Expanded(
-              child: _loading
-                  ? Center(
-                      child: MutandeOrb.standard(size: ThinkingOrbSize.panel),
-                    )
-                  : ListView(
-                      children: [
-                        const _SectionLabel('Name'),
-                        const SizedBox(height: 6),
-                        TextField(
-                          controller: _name,
-                          autofocus: true,
-                          enabled: !_busy,
-                          maxLength: 120,
-                          textInputAction: TextInputAction.done,
-                          onSubmitted: (_) => _submit(),
-                          onChanged: (_) {
-                            if (_error != null) setState(() => _error = null);
-                          },
-                          decoration: const InputDecoration(
-                            hintText: 'e.g. launch week',
-                            counterText: '',
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                        const _SectionLabel('People'),
-                        const SizedBox(height: 8),
-                        _ChipPane(
-                          empty: _people.isEmpty
-                              ? 'No people yet.'
-                              : null,
-                          maxHeight: 168,
-                          children: [
-                            for (final p in _people)
-                              _PersonChip(
-                                title: collabPersonTitle(
-                                  displayName: p.displayName,
-                                  handle: p.handle,
-                                ),
-                                handle: formatMailAddress(p.handle),
-                                avatarUrl: p.avatarUrl,
-                                caption: p.isExternal ? 'external' : null,
-                                selected: _steerers.contains(p.handle),
-                                locked: p.isSelf,
-                                lockHint: 'You steer this collab.',
-                                onTap: () => _togglePerson(p),
-                              ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        const Text(
-                          'Picking an agent adds their person.',
-                          style: TextStyle(
-                            fontSize: 12,
-                            height: 1.35,
-                            color: MutandeColors.stone500,
-                          ),
-                        ),
-                        const SizedBox(height: 18),
-                        const _SectionLabel('Agents'),
-                        const SizedBox(height: 8),
-                        _ChipPane(
-                          empty: _agents.isEmpty
-                              ? 'Connect an AI host in Settings to add agents.'
-                              : null,
-                          children: [
-                            for (final a in _agents)
-                              _PickChip(
-                                label: formatMailAddress(
-                                  a.address,
-                                  myHandle: widget.handle,
-                                ),
-                                selected: _roster.contains(a.address),
-                                leading: AiHostIcon.assetFor(a.slug) == null
-                                    ? null
-                                    : AiHostIcon(
-                                        a.slug,
-                                        size: 14,
-                                        showPlate: false,
-                                      ),
-                                trailing: TransportChip.webCaption(
-                                  transport: a.transport,
-                                  inverted: _roster.contains(a.address),
-                                ),
-                                onTap: () => _toggleAgent(a),
-                              ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          collabEncryptionCopy(
-                            e2e: _e2e,
-                            causeAddress: _cause,
-                            external: _externalCause,
-                          ),
-                          style: const TextStyle(
-                            fontSize: 12,
-                            height: 1.4,
-                            color: MutandeColors.stone500,
-                          ),
-                        ),
-                        if (_showInstructions) ...[
-                          const SizedBox(height: 14),
-                          const _SectionLabel('Instructions'),
-                          const SizedBox(height: 6),
-                          TextField(
-                            controller: _instructions,
-                            enabled: !_busy,
-                            maxLines: 3,
-                            decoration: const InputDecoration(
-                              hintText: 'Standing context for this board',
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
+              child: MutandeStaggerScope(
+                delay: MutandeStaggerScope.sectionStagger,
+                child: _formList(),
+              ),
             ),
             const SizedBox(height: 12),
             if (_error != null || _pickerError != null) ...[
@@ -702,8 +700,9 @@ class _CreateCollabSheetState extends State<CreateCollabSheet> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     TextButton(
-                      onPressed:
-                          _busy ? null : () => Navigator.of(context).pop(),
+                      onPressed: _busy
+                          ? null
+                          : () => Navigator.of(context).pop(),
                       child: const Text('Cancel'),
                     ),
                     if (_pickerError != null)
@@ -713,8 +712,9 @@ class _CreateCollabSheetState extends State<CreateCollabSheet> {
                       ),
                     if (_needsSignIn)
                       TextButton(
-                        onPressed:
-                            _busy ? null : () => Navigator.of(context).pop(),
+                        onPressed: _busy
+                            ? null
+                            : () => Navigator.of(context).pop(),
                         child: const Text('Sign in'),
                       ),
                   ],
@@ -725,6 +725,299 @@ class _CreateCollabSheetState extends State<CreateCollabSheet> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _formList() {
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          MutandeStaggerIn(
+            id: 'name',
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const _SectionLabel('Name'),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: _name,
+                  autofocus: true,
+                  enabled: !_busy,
+                  maxLength: 120,
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: (_) => _submit(),
+                  onChanged: (_) {
+                    if (_error != null) setState(() => _error = null);
+                  },
+                  decoration: const InputDecoration(
+                    hintText: 'e.g. launch week',
+                    counterText: '',
+                  ),
+                ),
+                const SizedBox(height: 20),
+              ],
+            ),
+          ),
+          const MutandeStaggerIn(
+            id: 'people-label',
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [_SectionLabel('People'), SizedBox(height: 8)],
+            ),
+          ),
+          MutandeStaggerIn(id: 'people-list', child: _peopleList()),
+          const MutandeStaggerIn(
+            id: 'people-hint',
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SizedBox(height: 6),
+                Text(
+                  'Picking an agent adds their person.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.35,
+                    color: MutandeColors.stone500,
+                  ),
+                ),
+                SizedBox(height: 18),
+              ],
+            ),
+          ),
+          const MutandeStaggerIn(
+            id: 'agents-label',
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [_SectionLabel('Agents'), SizedBox(height: 8)],
+            ),
+          ),
+          MutandeStaggerIn(id: 'agents-list', child: _agentsList()),
+          MutandeStaggerIn(
+            id: 'encryption',
+            child: Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: Text(
+                collabEncryptionCopy(
+                  e2e: _e2e,
+                  causeAddress: _cause,
+                  external: _externalCause,
+                ),
+                style: const TextStyle(
+                  fontSize: 12,
+                  height: 1.4,
+                  color: MutandeColors.stone500,
+                ),
+              ),
+            ),
+          ),
+          MutandeFadeSwap(
+            child: _showInstructions
+                ? MutandeStaggerScope(
+                    key: const ValueKey('instructions'),
+                    delay: MutandeStaggerScope.sectionStagger,
+                    child: MutandeStaggerIn(
+                      id: 'instructions',
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const SizedBox(height: 14),
+                          const _SectionLabel('Instructions'),
+                          const SizedBox(height: 6),
+                          TextField(
+                            controller: _instructions,
+                            enabled: !_busy,
+                            maxLines: 3,
+                            decoration: const InputDecoration(
+                              hintText: 'Standing context for this board',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : const SizedBox.shrink(key: ValueKey('no-instructions')),
+          ),
+          const MutandeStaggerIn(
+            id: 'artifacts-label',
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SizedBox(height: 18),
+                _SectionLabel('Artifacts'),
+                SizedBox(height: 8),
+              ],
+            ),
+          ),
+          MutandeStaggerIn(id: 'artifacts', child: _artifactsBlock()),
+        ],
+      ),
+    );
+  }
+
+  Widget _artifactsBlock() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Wrap(
+          spacing: 8,
+          runSpacing: 6,
+          children: [
+            TextButton(
+              key: const Key('collab-attach-file'),
+              onPressed: _busy ? null : _attachFiles,
+              child: const Text('Attach file'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: TextField(
+                key: const Key('collab-artifact-label'),
+                controller: _linkLabel,
+                enabled: !_busy,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(
+                  hintText: 'Label',
+                  isDense: true,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              flex: 2,
+              child: TextField(
+                key: const Key('collab-artifact-url'),
+                controller: _linkUrl,
+                enabled: !_busy,
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) => _addLink(),
+                decoration: const InputDecoration(
+                  hintText: 'https://',
+                  isDense: true,
+                ),
+              ),
+            ),
+            const SizedBox(width: 4),
+            TextButton(
+              key: const Key('collab-add-link'),
+              onPressed: _busy ? null : _addLink,
+              child: const Text('Add link'),
+            ),
+          ],
+        ),
+        if (_files.isNotEmpty || _links.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (var i = 0; i < _files.length; i++)
+                InputChip(
+                  key: Key('collab-file-chip-${_files[i].path}'),
+                  avatar: const Icon(
+                    Icons.insert_drive_file_outlined,
+                    size: 14,
+                  ),
+                  label: Text(_files[i].name),
+                  onDeleted: _busy
+                      ? null
+                      : () => setState(() => _files.removeAt(i)),
+                ),
+              for (var i = 0; i < _links.length; i++)
+                InputChip(
+                  key: Key('collab-link-chip-${_links[i].url}'),
+                  avatar: const Icon(Icons.link, size: 14),
+                  label: Text(_links[i].label),
+                  onDeleted: _busy
+                      ? null
+                      : () => setState(() => _links.removeAt(i)),
+                ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _peopleList() {
+    return MutandeFadeSwap(
+      child: _loading
+          ? const CreateCollabChipSkeleton.people(key: ValueKey('people-sk'))
+          : MutandeStaggerScope(
+              key: const ValueKey('people-chips'),
+              delay: MutandeStaggerScope.sectionStagger,
+              child: _ChipPane(
+                empty: _people.isEmpty ? 'No people yet.' : null,
+                maxHeight: 168,
+                children: [
+                  for (final p in _people)
+                    MutandeStaggerIn(
+                      id: p.handle,
+                      child: _PersonChip(
+                        title: collabPersonTitle(
+                          displayName: p.displayName,
+                          handle: p.handle,
+                        ),
+                        handle: formatMailAddress(p.handle),
+                        avatarUrl: p.avatarUrl,
+                        caption: p.isExternal ? 'external' : null,
+                        selected: _steerers.contains(p.handle),
+                        locked: p.isSelf,
+                        lockHint: 'You steer this collab.',
+                        onTap: () => _togglePerson(p),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+    );
+  }
+
+  Widget _agentsList() {
+    return MutandeFadeSwap(
+      child: _loading
+          ? const CreateCollabChipSkeleton.agents(key: ValueKey('agents-sk'))
+          : MutandeStaggerScope(
+              key: const ValueKey('agents-chips'),
+              delay: MutandeStaggerScope.sectionStagger,
+              child: _ChipPane(
+                empty: _agents.isEmpty
+                    ? 'Connect an AI host in Settings to add agents.'
+                    : null,
+                children: [
+                  for (final a in _agents)
+                    MutandeStaggerIn(
+                      id: a.address,
+                      child: _PickChip(
+                        label: formatMailAddress(
+                          a.address,
+                          myHandle: widget.handle,
+                        ),
+                        selected: _roster.contains(a.address),
+                        leading: AiHostIcon.assetFor(a.slug) == null
+                            ? null
+                            : AiHostIcon(a.slug, size: 14, showPlate: false),
+                        trailing: TransportChip.webCaption(
+                          transport: a.transport,
+                          inverted: _roster.contains(a.address),
+                        ),
+                        onTap: () => _toggleAgent(a),
+                      ),
+                    ),
+                ],
+              ),
+            ),
     );
   }
 }
@@ -749,11 +1042,7 @@ class _SectionLabel extends StatelessWidget {
 }
 
 class _ChipPane extends StatelessWidget {
-  const _ChipPane({
-    required this.children,
-    this.empty,
-    this.maxHeight = 132,
-  });
+  const _ChipPane({required this.children, this.empty, this.maxHeight = 132});
 
   final List<Widget> children;
   final String? empty;
@@ -770,11 +1059,7 @@ class _ChipPane extends StatelessWidget {
     return ConstrainedBox(
       constraints: BoxConstraints(maxHeight: maxHeight),
       child: SingleChildScrollView(
-        child: Wrap(
-          spacing: 6,
-          runSpacing: 6,
-          children: children,
-        ),
+        child: Wrap(spacing: 6, runSpacing: 6, children: children),
       ),
     );
   }
@@ -803,8 +1088,7 @@ class _PersonChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final nameColor =
-        selected ? MutandeColors.stone50 : MutandeColors.stone800;
+    final nameColor = selected ? MutandeColors.stone50 : MutandeColors.stone800;
     final handleColor = selected
         ? MutandeColors.stone50.withValues(alpha: 0.72)
         : MutandeColors.stone500;
@@ -815,10 +1099,7 @@ class _PersonChip extends StatelessWidget {
       width: 28,
       height: 28,
       child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: avatarBg,
-          shape: BoxShape.circle,
-        ),
+        decoration: BoxDecoration(color: avatarBg, shape: BoxShape.circle),
         child: Center(
           child: Text(
             initials,
@@ -834,15 +1115,11 @@ class _PersonChip extends StatelessWidget {
     );
     final avatar = avatarUrl == null
         ? fallback
-        : ContactAvatar(
-            url: avatarUrl!,
-            size: 28,
-            fallback: fallback,
-          );
+        : ContactAvatar(url: avatarUrl!, size: 28, fallback: fallback);
 
     final child = AnimatedContainer(
-      duration: const Duration(milliseconds: 140),
-      curve: Curves.easeOutCubic,
+      duration: MutandeMotion.of(context, MutandeMotion.hover),
+      curve: MutandeMotion.easeOut,
       constraints: const BoxConstraints(maxWidth: 228, minHeight: 44),
       padding: const EdgeInsets.fromLTRB(6, 6, 12, 6),
       decoration: BoxDecoration(
@@ -941,8 +1218,8 @@ class _PickChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final fg = selected ? MutandeColors.stone50 : MutandeColors.stone800;
     final child = AnimatedContainer(
-      duration: const Duration(milliseconds: 140),
-      curve: Curves.easeOutCubic,
+      duration: MutandeMotion.of(context, MutandeMotion.hover),
+      curve: MutandeMotion.easeOut,
       constraints: const BoxConstraints(maxWidth: 200, minHeight: 28),
       padding: const EdgeInsets.fromLTRB(8, 5, 10, 5),
       decoration: BoxDecoration(
@@ -955,10 +1232,7 @@ class _PickChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (leading != null) ...[
-            leading!,
-            const SizedBox(width: 6),
-          ],
+          if (leading != null) ...[leading!, const SizedBox(width: 6)],
           Flexible(
             child: Text(
               label,
@@ -972,10 +1246,7 @@ class _PickChip extends StatelessWidget {
               ),
             ),
           ),
-          if (trailing != null) ...[
-            const SizedBox(width: 5),
-            trailing!,
-          ],
+          if (trailing != null) ...[const SizedBox(width: 5), trailing!],
         ],
       ),
     );

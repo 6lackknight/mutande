@@ -682,6 +682,7 @@ impl HubClient {
         steerer_handles: &[String],
         roster_addresses: &[String],
         instructions: Option<&str>,
+        artifacts: &[CollabArtifactSummary],
     ) -> Result<Collab> {
         let steerer_ref = if steerer_handles.is_empty() {
             None
@@ -693,11 +694,17 @@ impl HubClient {
         } else {
             Some(roster_addresses)
         };
+        let artifacts_ref = if artifacts.is_empty() {
+            None
+        } else {
+            Some(artifacts)
+        };
         let body = CreateCollabRequest {
             name,
             steerer_handles: steerer_ref,
             roster_addresses: roster_ref,
             instructions,
+            artifacts: artifacts_ref,
         };
         let resp: CollabResponse = self.post_json("/v1/collabs", &body, true).await?;
         Ok(resp.collab)
@@ -753,6 +760,22 @@ impl HubClient {
         let resp: CollabResponse = self
             .post_json(
                 &format!("/v1/collabs/{collab_id}/instructions"),
+                &body,
+                true,
+            )
+            .await?;
+        Ok(resp.collab)
+    }
+
+    pub async fn add_collab_artifacts(
+        &self,
+        collab_id: &str,
+        artifacts: &[CollabArtifactSummary],
+    ) -> Result<Collab> {
+        let body = AddCollabArtifactsRequest { artifacts };
+        let resp: CollabResponse = self
+            .post_json(
+                &format!("/v1/collabs/{collab_id}/artifacts"),
                 &body,
                 true,
             )
