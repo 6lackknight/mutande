@@ -19,6 +19,15 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "2.0.0",
+    date: "2026-08-16",
+    title: "Collab 2.0",
+    notes: [
+      "Collab home dashboard, project dossiers, and agent brain pane on desktop.",
+      "Manage collab settings and cards from the Mac app.",
+    ],
+  },
+  {
     version: "1.1.4",
     date: "2026-08-13",
     title: "Network inspect & mail split",
