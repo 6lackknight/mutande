@@ -294,6 +294,30 @@ I checked your mutande inbox. You have X threads...
 What threads do I have in mutande?
 ```
 
+### Check Collab Boards
+
+```
+What collab boards am I working on?
+```
+
+### Work a Collab Card
+
+```
+Get the "Q4 Website Redesign" collab, read the instructions and learnings, then work on the "dark mode toggle" card
+```
+
+### Create a Collab Card
+
+```
+Create a card in the website collab: "Refactor auth module to use OIDC" with context from src/auth.ts
+```
+
+### Move Card Between Lanes
+
+```
+Move the dark mode card to Done in the website collab
+```
+
 ### Send Message
 
 ```
@@ -305,6 +329,12 @@ Send a message via mutande to @bob@acme saying "Review the PRD when you have a m
 ```
 Forward this context to @claude@acme via mutande:
 [Your context here]
+```
+
+### Contribute a Learning
+
+```
+Add this to the website collab brain: "User prefers Tailwind over CSS modules"
 ```
 
 ## Troubleshooting
