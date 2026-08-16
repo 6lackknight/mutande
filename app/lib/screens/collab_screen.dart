@@ -495,7 +495,7 @@ class _ProjectPage extends StatelessWidget {
   final VoidCallback onOpenBrain;
   final String? handle;
   final ValueChanged<String> onOpen;
-  final ValueChanged<String> onNewCard;
+  final void Function(String laneId, {Rect? origin}) onNewCard;
   final Future<void> Function(
     CollabCardView card,
     String laneId, {
