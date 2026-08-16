@@ -518,6 +518,8 @@ pub struct StatusResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub handle: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub org_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub email: Option<String>,
@@ -855,6 +857,7 @@ impl DaemonState {
             needs_onboarding: false,
             hub_url,
             handle: None,
+            user_id: None,
             org_id: None,
             email: None,
             connected_agent: None,
@@ -1143,6 +1146,7 @@ impl DaemonState {
                 needs_onboarding: false,
                 hub_url: cfg.hub_url,
                 handle: None,
+                user_id: None,
                 org_id: None,
                 email: None,
                 connected_agent: None,
@@ -3161,6 +3165,7 @@ fn status_from_me(hub_url: &Option<String>, me: &MeResponse) -> StatusResult {
         needs_onboarding: !onboarded,
         hub_url: hub_url.clone(),
         handle: me.user.as_ref().and_then(|u| u.handle.clone()),
+        user_id: me.user.as_ref().map(|u| u.id.clone()),
         org_id: me
             .user
             .as_ref()

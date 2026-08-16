@@ -24,6 +24,13 @@ pub struct CollabArtifactDraft {
     pub bytes: Option<Vec<u8>>,
 }
 
+fn assert_not_archived(collab: &Collab) -> Result<()> {
+    if collab.is_archived() {
+        bail!("this collab is archived");
+    }
+    Ok(())
+}
+
 /// Match a board list by id or case-insensitive name (`Doing`). Empty → hub default.
 pub fn resolve_collab_lane_id(
     lists: &[CollabLane],
@@ -42,11 +49,11 @@ pub fn resolve_collab_lane_id(
 }
 
 impl DaemonState {
-    pub async fn list_collabs(&self) -> Result<ListCollabsResponse> {
+    pub async fn list_collabs(&self, archived: bool) -> Result<ListCollabsResponse> {
         let hub = self
             .hub_client()
             .context("not signed in — call auth_login first")?;
-        hub.list_collabs().await
+        hub.list_collabs(archived).await
     }
 
     pub async fn get_collab(&self, collab_id: &str) -> Result<Collab> {
@@ -81,19 +88,34 @@ impl DaemonState {
                 let Some(bundle) = message.bundle else {
                     continue;
                 };
+                if card.tags.as_ref().map(|t| t.is_empty()).unwrap_or(true) && !bundle.tags.is_empty()
+                {
+                    card.tags = Some(bundle.tags.clone());
+                }
+                if card.due_on.as_ref().map(|s| s.is_empty()).unwrap_or(true) {
+                    if let Some(due) = bundle.due_on.clone() {
+                        card.due_on = Some(due);
+                    }
+                }
+                if card.checklist.as_ref().map(|c| c.is_empty()).unwrap_or(true)
+                    && !bundle.checklist.is_empty()
+                {
+                    card.checklist = Some(bundle.checklist.clone());
+                }
                 for resource in bundle.resources {
                     if resource.name.trim().is_empty() {
                         continue;
                     }
+                    let is_link = resource.mime.eq_ignore_ascii_case("text/uri-list");
                     artifacts.push(CollabArtifactSummary {
-                        kind: "file".into(),
+                        kind: if is_link { "link".into() } else { "file".into() },
                         label: Some(resource.name.clone()),
-                        url: None,
+                        url: if is_link { resource.content.clone() } else { None },
                         name: resource.name,
                         mime: resource.mime,
                         size: resource.size,
                         path: resource.path,
-                        content: resource.content,
+                        content: if is_link { None } else { resource.content },
                         envelope: None,
                         thread_id: card.id.clone(),
                         message_id: message.id.clone(),
@@ -159,6 +181,8 @@ impl DaemonState {
         let hub = self
             .hub_client()
             .context("not signed in — call auth_login first")?;
+        let collab = hub.get_collab(collab_id).await?;
+        assert_not_archived(&collab)?;
         hub.set_lane(
             collab_id,
             thread_id,
@@ -179,6 +203,7 @@ impl DaemonState {
             .hub_client()
             .context("not signed in — call auth_login first")?;
         let collab = hub.get_collab(collab_id).await?;
+        assert_not_archived(&collab)?;
         if self.agent_slug_is_mcp(from_agent).await? && collab.encryption_mode == "e2e" {
             bail!("Hosted agents cannot write the brain on an E2E collab");
         }
@@ -208,6 +233,7 @@ impl DaemonState {
             .hub_client()
             .context("not signed in — call auth_login first")?;
         let collab = hub.get_collab(collab_id).await?;
+        assert_not_archived(&collab)?;
         if collab.encryption_mode == "e2e" {
             bail!(
                 "E2E collab instructions stay on-device — plaintext updates are only for app_envelope collabs"
@@ -215,6 +241,62 @@ impl DaemonState {
         }
         hub.update_collab_instructions(collab_id, Some(instructions))
             .await
+    }
+
+    pub async fn add_collab_steerer(&self, collab_id: &str, handle: &str) -> Result<Collab> {
+        let hub = self
+            .hub_client()
+            .context("not signed in — call auth_login first")?;
+        hub.add_collab_steerer(collab_id, handle).await
+    }
+
+    pub async fn remove_collab_steerer(&self, collab_id: &str, user_id: &str) -> Result<Collab> {
+        let hub = self
+            .hub_client()
+            .context("not signed in — call auth_login first")?;
+        hub.remove_collab_steerer(collab_id, user_id).await
+    }
+
+    pub async fn add_collab_roster(&self, collab_id: &str, address: &str) -> Result<Collab> {
+        let hub = self
+            .hub_client()
+            .context("not signed in — call auth_login first")?;
+        hub.add_collab_roster(collab_id, address).await
+    }
+
+    pub async fn remove_collab_roster(&self, collab_id: &str, agent_id: &str) -> Result<Collab> {
+        let hub = self
+            .hub_client()
+            .context("not signed in — call auth_login first")?;
+        hub.remove_collab_roster(collab_id, agent_id).await
+    }
+
+    pub async fn archive_collab(&self, collab_id: &str) -> Result<Collab> {
+        let hub = self
+            .hub_client()
+            .context("not signed in — call auth_login first")?;
+        hub.archive_collab(collab_id).await
+    }
+
+    pub async fn unarchive_collab(&self, collab_id: &str) -> Result<Collab> {
+        let hub = self
+            .hub_client()
+            .context("not signed in — call auth_login first")?;
+        hub.unarchive_collab(collab_id).await
+    }
+
+    pub async fn approve_collab_pending_membership(&self, collab_id: &str) -> Result<Collab> {
+        let hub = self
+            .hub_client()
+            .context("not signed in — call auth_login first")?;
+        hub.approve_collab_pending_membership(collab_id).await
+    }
+
+    pub async fn deny_collab_pending_membership(&self, collab_id: &str) -> Result<Collab> {
+        let hub = self
+            .hub_client()
+            .context("not signed in — call auth_login first")?;
+        hub.deny_collab_pending_membership(collab_id).await
     }
 
     /// New board card: seal once to every steerer device, then POST with collab_id.
@@ -236,6 +318,7 @@ impl DaemonState {
             .hub_client()
             .context("not signed in — call auth_login first")?;
         let collab = hub.get_collab(collab_id).await?;
+        assert_not_archived(&collab)?;
         let from_agent = self.from_agent_for_send(agent_slug);
         if collab.encryption_mode == "e2e" && self.agent_slug_is_mcp(from_agent.as_deref()).await? {
             bail!("Hosted agents cannot create cards on an E2E collab");
@@ -501,6 +584,115 @@ fn link_artifact_for_hub(draft: &CollabArtifactDraft) -> Result<CollabArtifactSu
     })
 }
 
+pub fn assignee_is_participant(collab: &Collab, assigned: &str) -> bool {
+    let addr = assigned.trim().to_ascii_lowercase();
+    if addr.is_empty() {
+        return false;
+    }
+    if collab
+        .roster
+        .iter()
+        .any(|r| r.address.trim().eq_ignore_ascii_case(&addr))
+    {
+        return true;
+    }
+    collab
+        .steerers
+        .iter()
+        .any(|s| s.handle.trim().eq_ignore_ascii_case(&addr))
+}
+
+pub fn turn_for_assignee(assigned: &str) -> TurnEntry {
+    let address = assigned.trim().to_ascii_lowercase();
+    let actor = if address.contains('/') && !address.ends_with("/default") {
+        TurnActor::Agent
+    } else {
+        TurnActor::Human
+    };
+    TurnEntry {
+        address,
+        actor,
+        reason: Some(TurnReason::Handoff),
+    }
+}
+
+fn validate_due_on(raw: &str) -> Result<()> {
+    if raw.len() != 10 || raw.as_bytes().get(4) != Some(&b'-') || raw.as_bytes().get(7) != Some(&b'-')
+    {
+        bail!("due_on must be YYYY-MM-DD");
+    }
+    let y: i32 = raw[0..4].parse().map_err(|_| anyhow::anyhow!("due_on must be YYYY-MM-DD"))?;
+    let m: u32 = raw[5..7].parse().map_err(|_| anyhow::anyhow!("due_on must be YYYY-MM-DD"))?;
+    let d: u32 = raw[8..10].parse().map_err(|_| anyhow::anyhow!("due_on must be YYYY-MM-DD"))?;
+    if !(1..=12).contains(&m) || d == 0 || d > 31 {
+        bail!("due_on is not a valid date");
+    }
+    let _ = y;
+    Ok(())
+}
+
+fn resources_from_card_artifacts(artifacts: &[CollabArtifactDraft]) -> Result<Vec<BundleResource>> {
+    let mut out = Vec::new();
+    for draft in artifacts {
+        if draft.kind.eq_ignore_ascii_case("link") {
+            let (url, host) = parse_http_url(draft.url.as_deref().unwrap_or(""))?;
+            let name = draft
+                .label
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                .unwrap_or(host);
+            out.push(BundleResource {
+                name,
+                mime: "text/uri-list".into(),
+                content: Some(url),
+                path: None,
+                size: None,
+            });
+            continue;
+        }
+        let Some(bytes) = draft.bytes.as_deref().filter(|b| !b.is_empty()) else {
+            bail!("file artifact is missing bytes");
+        };
+        let name = draft
+            .name
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .or_else(|| {
+                draft
+                    .label
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+            })
+            .unwrap_or("file")
+            .to_string();
+        let mime = draft
+            .mime
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| "application/octet-stream".into());
+        let content = if let Ok(text) = std::str::from_utf8(bytes) {
+            Some(text.to_string())
+        } else {
+            use base64::Engine;
+            Some(base64::engine::general_purpose::STANDARD.encode(bytes))
+        };
+        out.push(BundleResource {
+            name,
+            mime,
+            content,
+            path: None,
+            size: Some(bytes.len() as u64),
+        });
+    }
+    Ok(out)
+}
+
 fn parse_http_url(raw: &str) -> Result<(String, String)> {
     let url = raw.trim();
     let lower = url.to_ascii_lowercase();
@@ -588,6 +780,73 @@ mod tests {
         let v = serde_json::to_value(&art).unwrap();
         let back: CollabArtifactSummary = serde_json::from_value(v).unwrap();
         assert!(back.is_link());
+    }
+
+    #[test]
+    fn turn_for_assignee_human_vs_agent() {
+        let human = turn_for_assignee("Bob@Acme");
+        assert_eq!(human.address, "bob@acme");
+        assert_eq!(human.actor, TurnActor::Human);
+        let agent = turn_for_assignee("alice@acme/cursor");
+        assert_eq!(agent.address, "alice@acme/cursor");
+        assert_eq!(agent.actor, TurnActor::Agent);
+    }
+
+    #[test]
+    fn assignee_is_participant_steerers_and_roster() {
+        let collab = Collab {
+            id: "c1".into(),
+            org_id: "o1".into(),
+            name: "Board".into(),
+            created_by: "u1".into(),
+            created_at: String::new(),
+            updated_at: String::new(),
+            schema_version: 1,
+            encryption_mode: "e2e".into(),
+            instructions: None,
+            lists: vec![],
+            roster: vec![crate::hub_client::CollabRosterEntry {
+                user_id: "u1".into(),
+                agent_id: "a1".into(),
+                address: "alice@acme/cursor".into(),
+                transport: None,
+            }],
+            memory_thread_id: String::new(),
+            downgrade_point: None,
+            status: None,
+            pending_membership: None,
+            card_count: 0,
+            open: 0,
+            backlog: 0,
+            doing: 0,
+            done: 0,
+            needs_you: 0,
+            last_card_updated_at: None,
+            steerers: vec![crate::hub_client::CollabSteerer {
+                user_id: "u1".into(),
+                handle: "alice@acme".into(),
+            }],
+            cards: vec![],
+            learnings: vec![],
+            artifacts: vec![],
+        };
+        assert!(assignee_is_participant(&collab, "alice@acme"));
+        assert!(assignee_is_participant(&collab, "alice@acme/cursor"));
+        assert!(!assignee_is_participant(&collab, "eve@acme"));
+    }
+
+    #[test]
+    fn card_file_artifact_keeps_path_bytes() {
+        let arts = resources_from_card_artifacts(&[CollabArtifactDraft {
+            kind: "file".into(),
+            name: Some("brief.md".into()),
+            bytes: Some(b"# hi".to_vec()),
+            ..Default::default()
+        }])
+        .unwrap();
+        assert_eq!(arts.len(), 1);
+        assert_eq!(arts[0].name, "brief.md");
+        assert_eq!(arts[0].content.as_deref(), Some("# hi"));
     }
 }
 

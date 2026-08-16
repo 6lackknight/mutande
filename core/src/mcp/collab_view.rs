@@ -69,6 +69,9 @@ fn present_cards(raw: &Value) -> Vec<Value> {
                 "lane_position": c.get("lane_position"),
                 "status": opt_str(c, "status"),
                 "assigned_to": opt_str(c, "assigned_to").map(|a| lower(&a)),
+                "tags": c.get("tags"),
+                "due_on": opt_str(c, "due_on"),
+                "checklist": c.get("checklist"),
                 "from": opt_str(c, "from").map(|a| lower(&a)),
                 "audience": opt_str(c, "audience").map(|a| lower(&a)),
                 "your_status": opt_str(c, "your_status"),
@@ -138,9 +141,15 @@ pub fn present_collab(raw: &Value) -> Value {
         .get("card_count")
         .and_then(|n| n.as_u64())
         .unwrap_or(cards.len() as u64);
+    let status = if opt_str(raw, "status").as_deref() == Some("archived") {
+        "archived"
+    } else {
+        "open"
+    };
     json!({
         "id": str_val(raw, "id"),
         "name": str_val(raw, "name"),
+        "status": status,
         "instructions": opt_str(raw, "instructions"),
         "encryption_mode": opt_str(raw, "encryption_mode"),
         "people": present_people(raw),
@@ -166,6 +175,7 @@ pub fn present_tool_result(tool: &str, daemon_json: Value) -> Value {
                 .and_then(|c| c.as_array())
                 .into_iter()
                 .flatten()
+                .filter(|c| opt_str(c, "status").as_deref() != Some("archived"))
                 .map(present_collab)
                 .collect::<Vec<_>>();
             json!({ "collabs": collabs })
@@ -222,6 +232,7 @@ mod tests {
         let view = present_collab(&sample_collab());
         assert_eq!(view["id"], "c-berry");
         assert_eq!(view["name"], "BerrySure");
+        assert_eq!(view["status"], "open");
         assert_eq!(view["instructions"], "Ship the alpha.");
         assert_eq!(view["people"][0]["handle"], "alice@acme");
         assert_eq!(view["agents"][0]["address"], "alice@acme/chatgpt");
@@ -244,7 +255,17 @@ mod tests {
             json!({ "collabs": [sample_collab()], "portfolio": {"totals": {}} }),
         );
         assert_eq!(listed["collabs"][0]["name"], "BerrySure");
+        assert_eq!(listed["collabs"][0]["status"], "open");
         assert!(listed.get("portfolio").is_none());
+
+        let mut archived = sample_collab();
+        archived["status"] = json!("archived");
+        let filtered = present_tool_result(
+            "list_collabs",
+            json!({ "collabs": [sample_collab(), archived] }),
+        );
+        assert_eq!(filtered["collabs"].as_array().map(|a| a.len()), Some(1));
+        assert_eq!(filtered["collabs"][0]["name"], "BerrySure");
 
         let got = present_tool_result("get_collab", json!({ "collab": sample_collab() }));
         assert_eq!(got["collab"]["cards"][0]["thread_id"], "t-card");

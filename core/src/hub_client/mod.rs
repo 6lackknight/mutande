@@ -677,8 +677,13 @@ impl HubClient {
         self.post_json("/v1/threads", &body, true).await
     }
 
-    pub async fn list_collabs(&self) -> Result<ListCollabsResponse> {
-        self.get_json("/v1/collabs").await
+    pub async fn list_collabs(&self, archived: bool) -> Result<ListCollabsResponse> {
+        let path = if archived {
+            "/v1/collabs?archived=1"
+        } else {
+            "/v1/collabs"
+        };
+        self.get_json(path).await
     }
 
     pub async fn get_collab(&self, collab_id: &str) -> Result<Collab> {
@@ -789,6 +794,105 @@ impl HubClient {
             .post_json(
                 &format!("/v1/collabs/{collab_id}/artifacts"),
                 &body,
+                true,
+            )
+            .await?;
+        Ok(resp.collab)
+    }
+
+    pub async fn add_collab_steerer(&self, collab_id: &str, handle: &str) -> Result<Collab> {
+        let resp: CollabResponse = self
+            .post_json(
+                &format!("/v1/collabs/{collab_id}/steerers"),
+                &serde_json::json!({ "handle": handle }),
+                true,
+            )
+            .await?;
+        Ok(resp.collab)
+    }
+
+    pub async fn remove_collab_steerer(
+        &self,
+        collab_id: &str,
+        user_id: &str,
+    ) -> Result<Collab> {
+        let resp: CollabResponse = self
+            .post_json(
+                &format!("/v1/collabs/{collab_id}/steerers/remove"),
+                &serde_json::json!({ "user_id": user_id }),
+                true,
+            )
+            .await?;
+        Ok(resp.collab)
+    }
+
+    pub async fn add_collab_roster(&self, collab_id: &str, address: &str) -> Result<Collab> {
+        let resp: CollabResponse = self
+            .post_json(
+                &format!("/v1/collabs/{collab_id}/roster"),
+                &serde_json::json!({ "address": address }),
+                true,
+            )
+            .await?;
+        Ok(resp.collab)
+    }
+
+    pub async fn remove_collab_roster(
+        &self,
+        collab_id: &str,
+        agent_id: &str,
+    ) -> Result<Collab> {
+        let resp: CollabResponse = self
+            .post_json(
+                &format!("/v1/collabs/{collab_id}/roster/remove"),
+                &serde_json::json!({ "agent_id": agent_id }),
+                true,
+            )
+            .await?;
+        Ok(resp.collab)
+    }
+
+    pub async fn archive_collab(&self, collab_id: &str) -> Result<Collab> {
+        let resp: CollabResponse = self
+            .post_json(
+                &format!("/v1/collabs/{collab_id}/archive"),
+                &serde_json::json!({}),
+                true,
+            )
+            .await?;
+        Ok(resp.collab)
+    }
+
+    pub async fn unarchive_collab(&self, collab_id: &str) -> Result<Collab> {
+        let resp: CollabResponse = self
+            .post_json(
+                &format!("/v1/collabs/{collab_id}/unarchive"),
+                &serde_json::json!({}),
+                true,
+            )
+            .await?;
+        Ok(resp.collab)
+    }
+
+    pub async fn approve_collab_pending_membership(
+        &self,
+        collab_id: &str,
+    ) -> Result<Collab> {
+        let resp: CollabResponse = self
+            .post_json(
+                &format!("/v1/collabs/{collab_id}/downgrade/approve"),
+                &serde_json::json!({}),
+                true,
+            )
+            .await?;
+        Ok(resp.collab)
+    }
+
+    pub async fn deny_collab_pending_membership(&self, collab_id: &str) -> Result<Collab> {
+        let resp: CollabResponse = self
+            .post_json(
+                &format!("/v1/collabs/{collab_id}/downgrade/deny"),
+                &serde_json::json!({}),
                 true,
             )
             .await?;
@@ -1365,7 +1469,17 @@ mod tests {
             "portfolio": {
                 "activity": [{"date": "2026-08-15", "count": 2}],
                 "lane_totals": {"backlog": 0, "doing": 1, "done": 0},
-                "totals": {"collabs": 1, "open": 1, "doing": 1, "needs_you": 1}
+                "totals": {"collabs": 1, "open": 1, "doing": 1, "needs_you": 1},
+                "recent": [{
+                    "thread_id": "t1",
+                    "collab_id": "c1",
+                    "collab_name": "Launch",
+                    "from": "alice@acme",
+                    "audience": "bob@acme",
+                    "last_subject": "Pilot brief",
+                    "updated_at": "2026-08-15T12:00:00Z",
+                    "needs_you": true
+                }]
             }
         }"#;
         let resp: ListCollabsResponse = serde_json::from_str(json).unwrap();
@@ -1376,6 +1490,11 @@ mod tests {
         assert_eq!(resp.collabs[0].done, 0);
         assert_eq!(resp.portfolio.totals.needs_you, 1);
         assert_eq!(resp.portfolio.activity[0].date, "2026-08-15");
+        assert_eq!(resp.portfolio.recent.len(), 1);
+        assert_eq!(resp.portfolio.recent[0].thread_id, "t1");
+        assert_eq!(resp.portfolio.recent[0].collab_name, "Launch");
+        assert_eq!(resp.portfolio.recent[0].last_subject.as_deref(), Some("Pilot brief"));
+        assert!(resp.portfolio.recent[0].needs_you);
     }
 
     #[test]

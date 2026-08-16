@@ -250,7 +250,9 @@ async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Resu
             Ok(serde_json::to_value(detail)?)
         }
         "list_collabs" => {
-            let listed = state.list_collabs().await?;
+            let archived = optional_bool(&params, "include_archived")
+                || optional_bool(&params, "archived");
+            let listed = state.list_collabs(archived).await?;
             Ok(serde_json::to_value(listed)?)
         }
         "get_collab" => {
@@ -310,6 +312,50 @@ async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Resu
                 .await?;
             Ok(serde_json::to_value(serde_json::json!({ "collab": collab }))?)
         }
+        "add_collab_steerer" => {
+            let collab_id = param_str(&params, "collab_id")?;
+            let handle = param_str(&params, "handle")?;
+            let collab = state.add_collab_steerer(&collab_id, &handle).await?;
+            Ok(serde_json::to_value(serde_json::json!({ "collab": collab }))?)
+        }
+        "remove_collab_steerer" => {
+            let collab_id = param_str(&params, "collab_id")?;
+            let user_id = param_str(&params, "user_id")?;
+            let collab = state.remove_collab_steerer(&collab_id, &user_id).await?;
+            Ok(serde_json::to_value(serde_json::json!({ "collab": collab }))?)
+        }
+        "add_collab_roster" => {
+            let collab_id = param_str(&params, "collab_id")?;
+            let address = param_str(&params, "address")?;
+            let collab = state.add_collab_roster(&collab_id, &address).await?;
+            Ok(serde_json::to_value(serde_json::json!({ "collab": collab }))?)
+        }
+        "remove_collab_roster" => {
+            let collab_id = param_str(&params, "collab_id")?;
+            let agent_id = param_str(&params, "agent_id")?;
+            let collab = state.remove_collab_roster(&collab_id, &agent_id).await?;
+            Ok(serde_json::to_value(serde_json::json!({ "collab": collab }))?)
+        }
+        "archive_collab" => {
+            let collab_id = param_str(&params, "collab_id")?;
+            let collab = state.archive_collab(&collab_id).await?;
+            Ok(serde_json::to_value(serde_json::json!({ "collab": collab }))?)
+        }
+        "unarchive_collab" => {
+            let collab_id = param_str(&params, "collab_id")?;
+            let collab = state.unarchive_collab(&collab_id).await?;
+            Ok(serde_json::to_value(serde_json::json!({ "collab": collab }))?)
+        }
+        "approve_collab_pending_membership" => {
+            let collab_id = param_str(&params, "collab_id")?;
+            let collab = state.approve_collab_pending_membership(&collab_id).await?;
+            Ok(serde_json::to_value(serde_json::json!({ "collab": collab }))?)
+        }
+        "deny_collab_pending_membership" => {
+            let collab_id = param_str(&params, "collab_id")?;
+            let collab = state.deny_collab_pending_membership(&collab_id).await?;
+            Ok(serde_json::to_value(serde_json::json!({ "collab": collab }))?)
+        }
         "create_collab_card" => {
             let collab_id = param_str(&params, "collab_id")?;
             let subject = optional_str(&params, "subject")
@@ -320,6 +366,10 @@ async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Resu
                 .or_else(|| optional_str(&params, "lane"));
             let assigned_to = optional_str(&params, "assigned_to");
             let agent_slug = optional_str(&params, "agent_slug");
+            let tags = optional_str_vec(&params, "tags");
+            let due_on = optional_str(&params, "due_on");
+            let checklist = collab_checklist_items(&params)?;
+            let artifacts = collab_artifact_drafts(&params)?;
             let thread_id = state
                 .create_collab_card(
                     &collab_id,
@@ -328,6 +378,10 @@ async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Resu
                     lane_id.as_deref(),
                     assigned_to.as_deref(),
                     agent_slug.as_deref(),
+                    &tags,
+                    due_on.as_deref(),
+                    &checklist,
+                    &artifacts,
                 )
                 .await?;
             Ok(serde_json::json!({ "thread_id": thread_id }))
@@ -664,6 +718,17 @@ fn read_blob_file(path: &str) -> Result<(Vec<u8>, Option<String>)> {
     Ok((bytes, name))
 }
 
+fn optional_bool(params: &Value, key: &str) -> bool {
+    match params.get(key) {
+        Some(Value::Bool(b)) => *b,
+        Some(Value::String(s)) => {
+            matches!(s.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes")
+        }
+        Some(Value::Number(n)) => n.as_i64() == Some(1),
+        _ => false,
+    }
+}
+
 fn param_str(params: &Value, key: &str) -> Result<String> {
     params
         .get(key)
@@ -759,6 +824,43 @@ fn collab_artifact_drafts(params: &Value) -> Result<Vec<super::collab::CollabArt
             mime,
             bytes,
         });
+    }
+    Ok(out)
+}
+
+fn collab_checklist_items(
+    params: &Value,
+) -> Result<Vec<crate::hub_client::CollabChecklistItem>> {
+    let Some(arr) = params.get("checklist").and_then(|v| v.as_array()) else {
+        return Ok(Vec::new());
+    };
+    let mut out = Vec::new();
+    for (i, item) in arr.iter().enumerate() {
+        let text = item
+            .get("text")
+            .or_else(|| item.get("title"))
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .or_else(|| {
+                item.as_str()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+            });
+        let Some(text) = text else {
+            continue;
+        };
+        let id = item
+            .get("id")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("c{i}"));
+        let done = item.get("done").and_then(|v| v.as_bool()).unwrap_or(false);
+        out.push(crate::hub_client::CollabChecklistItem { id, text, done });
     }
     Ok(out)
 }

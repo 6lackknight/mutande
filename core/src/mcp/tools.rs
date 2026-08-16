@@ -67,12 +67,12 @@ const READ_TOOLS: &[(&str, &str, ValueFn)] = &[
     ),
     (
         "list_collabs",
-        "List collab boards you participate in (steerer or roster). A collab is a board of threads. When the user names a project/board, call this and match by name, then get_collab. Returns id, name, people, agents, lists, artifacts, card_count. Read-only.",
+        "List collab boards you participate in (steerer or roster). Omits archived boards. A collab is a board of threads. When the user names a project/board, call this and match by name, then get_collab. Returns id, name, status, people, agents, lists, artifacts, card_count. Read-only.",
         || json!({ "type": "object", "properties": {}, "additionalProperties": false }),
     ),
     (
         "get_collab",
-        "Get one collab board you participate in: instructions, people (handles), agents, artifacts (file|link), lists, cards (thread ids/summaries), learnings. Then get_thread / list_threads(collab_id) for card mail. Not org-wide — 403 if you are not a participant. Read-only.",
+        "Get one collab board you participate in: status, instructions, people (handles), agents, artifacts (file|link), lists, cards (thread ids/summaries), learnings. Then get_thread / list_threads(collab_id) for card mail. Not org-wide — 403 if you are not a participant. Archived boards are read-only. Read-only.",
         || {
             json!({
                 "type": "object",
@@ -198,7 +198,47 @@ const SEND_TOOLS: &[(&str, &str, ValueFn)] = &[
                         "description": "Board list id or name (Backlog, Doing, Done). Default Backlog."
                     },
                     "lane_id": { "type": "string", "description": "Alias for lane." },
-                    "notes": { "type": "string", "description": "Optional first message body." }
+                    "notes": { "type": "string", "description": "Optional first message body (the agent brief)." },
+                    "assigned_to": {
+                        "type": "string",
+                        "description": "Optional one collab participant — person (alice@org) or agent (alice@org/cursor). Sets awaiting. Mail still wraps the whole collab."
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Optional free-typed labels for this card."
+                    },
+                    "due_on": {
+                        "type": "string",
+                        "description": "Optional due date YYYY-MM-DD (date only)."
+                    },
+                    "checklist": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "text": { "type": "string" },
+                                "id": { "type": "string" },
+                                "done": { "type": "boolean" }
+                            }
+                        },
+                        "description": "Optional structured checklist items (not markdown)."
+                    },
+                    "artifacts": {
+                        "type": "array",
+                        "description": "Optional local files (name+path) and links (label+url). Mail still wraps the collab.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "kind": { "type": "string", "description": "file or link." },
+                                "name": { "type": "string" },
+                                "path": { "type": "string" },
+                                "mime": { "type": "string" },
+                                "label": { "type": "string" },
+                                "url": { "type": "string" }
+                            }
+                        }
+                    }
                 },
                 "additionalProperties": false
             })

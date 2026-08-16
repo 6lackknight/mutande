@@ -19,6 +19,14 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "2.0.1",
+    date: "2026-08-16",
+    title: "Patch release",
+    notes: [
+      "Bug fixes and stability improvements across the Mac app and courier.",
+    ],
+  },
+  {
     version: "2.0.0",
     date: "2026-08-16",
     title: "Collab 2.0",

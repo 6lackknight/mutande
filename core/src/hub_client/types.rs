@@ -819,6 +819,19 @@ pub struct CollabSteerer {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CollabPendingMembership {
+    pub kind: String,
+    #[serde(default)]
+    pub handle: Option<String>,
+    #[serde(default)]
+    pub address: Option<String>,
+    pub cause_address: String,
+    pub proposed_by: String,
+    #[serde(default)]
+    pub approved_by: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CollabLearning {
     pub id: String,
     #[serde(default, alias = "at")]
@@ -963,6 +976,11 @@ pub struct Collab {
     pub memory_thread_id: String,
     #[serde(default)]
     pub downgrade_point: Option<serde_json::Value>,
+    /// Missing or "open" = active. "archived" boards are frozen.
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub pending_membership: Option<CollabPendingMembership>,
     #[serde(default)]
     pub card_count: u64,
     #[serde(default)]
@@ -986,6 +1004,12 @@ pub struct Collab {
     /// Hub-persisted plus sidecar harvest. JSON null/omitted → [].
     #[serde(default, deserialize_with = "null_as_default")]
     pub artifacts: Vec<CollabArtifactSummary>,
+}
+
+impl Collab {
+    pub fn is_archived(&self) -> bool {
+        self.status.as_deref() == Some("archived")
+    }
 }
 
 fn null_as_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
@@ -1026,6 +1050,26 @@ pub struct CollabPortfolioTotals {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct CollabPortfolioRecent {
+    #[serde(default)]
+    pub thread_id: String,
+    #[serde(default)]
+    pub collab_id: String,
+    #[serde(default)]
+    pub collab_name: String,
+    #[serde(default)]
+    pub from: String,
+    #[serde(default)]
+    pub audience: String,
+    #[serde(default)]
+    pub last_subject: Option<String>,
+    #[serde(default)]
+    pub updated_at: String,
+    #[serde(default)]
+    pub needs_you: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct CollabPortfolio {
     #[serde(default)]
     pub activity: Vec<CollabActivityDay>,
@@ -1033,6 +1077,8 @@ pub struct CollabPortfolio {
     pub lane_totals: CollabLaneTotals,
     #[serde(default)]
     pub totals: CollabPortfolioTotals,
+    #[serde(default)]
+    pub recent: Vec<CollabPortfolioRecent>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
