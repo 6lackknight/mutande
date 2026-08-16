@@ -35,18 +35,20 @@ ThreadDetailResult _detail(
 
 ThreadRelayReading _reading(
   ThreadDetailResult detail,
-  TextEditingController reply,
-) {
+  TextEditingController reply, {
+  String? replyToHandle,
+  VoidCallback? onClearTarget,
+}) {
   return ThreadRelayReading(
     detail: detail,
     myHandle: 'alice@acme',
     muted: false,
     reply: reply,
     sending: false,
-    replyToHandle: null,
-    nested: false,
+    replyToHandle: replyToHandle,
+    nested: replyToHandle != null,
     onSend: () {},
-    onClearTarget: () {},
+    onClearTarget: onClearTarget ?? () {},
     onReply: (_) {},
     onUpvote: (_) {},
     upvotingId: null,
@@ -183,5 +185,63 @@ void main() {
       _opacityAround(find.textContaining('thread-b-notes')).first,
     );
     expect(opacity.opacity, lessThan(0.2));
+  });
+
+  testWidgets('idle composer is a single capsule', (WidgetTester tester) async {
+    await _pump(
+      tester,
+      _reading(_detail([_msg('m1', 'alice@acme', 'op-notes')]), reply),
+      reduce: true,
+    );
+
+    expect(find.text('Write a reply…'), findsOneWidget);
+    expect(find.textContaining('Replying to'), findsNothing);
+    expect(find.text('Cancel'), findsNothing);
+    expect(find.byKey(const Key('relay-composer-send')), findsOneWidget);
+
+    final field = tester.widget<TextField>(find.byType(TextField));
+    expect(field.decoration?.filled, isFalse);
+    expect(field.decoration?.border, InputBorder.none);
+    expect(field.decoration?.enabledBorder, InputBorder.none);
+    expect(field.decoration?.focusedBorder, InputBorder.none);
+  });
+
+  testWidgets('threaded reply sits inside the capsule', (
+    WidgetTester tester,
+  ) async {
+    var cleared = false;
+    await _pump(
+      tester,
+      _reading(
+        _detail([_msg('m1', 'alice@acme', 'op-notes')]),
+        reply,
+        replyToHandle: '@chatgpt',
+        onClearTarget: () => cleared = true,
+      ),
+      reduce: true,
+    );
+
+    expect(find.text('Replying to @chatgpt'), findsOneWidget);
+    expect(find.text('Reply to @chatgpt…'), findsOneWidget);
+    expect(find.text('Write a reply…'), findsNothing);
+
+    final capsule = find.ancestor(
+      of: find.byType(TextField),
+      matching: find.byType(AnimatedContainer),
+    );
+    expect(
+      find.descendant(
+        of: capsule,
+        matching: find.text('Replying to @chatgpt'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: capsule, matching: find.text('Cancel')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const Key('relay-composer-cancel')));
+    expect(cleared, isTrue);
   });
 }

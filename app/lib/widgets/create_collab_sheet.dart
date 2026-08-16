@@ -921,7 +921,7 @@ class _CreateCollabSheetState extends State<CreateCollabSheet> {
             runSpacing: 6,
             children: [
               for (var i = 0; i < _files.length; i++)
-                _PendingChip(
+                CollabPendingChip(
                   key: Key('collab-file-chip-${_files[i].path}'),
                   icon: Icons.insert_drive_file_outlined,
                   label: _files[i].name,
@@ -931,7 +931,7 @@ class _CreateCollabSheetState extends State<CreateCollabSheet> {
                       : () => setState(() => _files.removeAt(i)),
                 ),
               for (var i = 0; i < _links.length; i++)
-                _PendingChip(
+                CollabPendingChip(
                   key: Key('collab-link-chip-${_links[i].url}'),
                   icon: Icons.link,
                   label: _links[i].label,
@@ -945,7 +945,7 @@ class _CreateCollabSheetState extends State<CreateCollabSheet> {
         ],
         Row(
           children: [
-            _ArtifactActionButton(
+            CollabArtifactActionButton(
               key: const Key('collab-attach-file'),
               icon: Icons.attach_file,
               label: 'Attach file',
@@ -983,7 +983,7 @@ class _CreateCollabSheetState extends State<CreateCollabSheet> {
               ),
             ),
             const SizedBox(width: 8),
-            _ArtifactActionButton(
+            CollabArtifactActionButton(
               key: const Key('collab-add-link'),
               icon: Icons.link,
               label: 'Add link',
@@ -1307,8 +1307,8 @@ class _PickChip extends StatelessWidget {
   }
 }
 
-class _ArtifactActionButton extends StatelessWidget {
-  const _ArtifactActionButton({
+class CollabArtifactActionButton extends StatelessWidget {
+  const CollabArtifactActionButton({
     super.key,
     required this.label,
     this.icon,
@@ -1348,8 +1348,8 @@ class _ArtifactActionButton extends StatelessWidget {
   }
 }
 
-class _PendingChip extends StatelessWidget {
-  const _PendingChip({
+class CollabPendingChip extends StatelessWidget {
+  const CollabPendingChip({
     super.key,
     required this.icon,
     required this.label,

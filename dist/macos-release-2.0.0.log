@@ -1,0 +1,455 @@
+==> bump version (BUMP=patch, SKIP_BUMP=1)
+skip bump; using 2.0.0+19
+==> version 2.0.0 (build 19)
+==> ARCH=both
+==> identity Developer ID Application: Tawanda Brandon Holdings (PTY) Ltd. (Q22P2YXR6M)
+
+========== ARCH=arm64 (aarch64-apple-darwin) ==========
+==> cargo build --release --target aarch64-apple-darwin
+   Compiling mutande-core v2.0.0 (/Users/tawandabrandon/GitHub/mutande/core)
+warning: unused import: `OpenedThreadMessage`
+  --> src/daemon/turn.rs:11:84
+   |
+11 |     BundleAnswer, HumanDecision, MessageIntent, MutandeBundle, OpenedThreadDetail, OpenedThreadMessage,
+   |                                                                                    ^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: associated function `load_in_memory` is never used
+  --> src/daemon/thread_list_cache.rs:54:12
+   |
+41 | impl ThreadListEnrichmentCache {
+   | ------------------------------ associated function in this implementation
+...
+54 |     pub fn load_in_memory() -> Self {
+   |            ^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: struct `HubTurnMirror` is never constructed
+  --> src/daemon/turn.rs:17:12
+   |
+17 | pub struct HubTurnMirror {
+   |            ^^^^^^^^^^^^^
+
+warning: function `hub_turns_mirror` is never used
+   --> src/daemon/turn.rs:231:8
+    |
+231 | pub fn hub_turns_mirror(
+    |        ^^^^^^^^^^^^^^^^
+
+warning: function `held_by_address` is never used
+   --> src/daemon/turn.rs:387:8
+    |
+387 | pub fn held_by_address<'a>(awaiting: &'a [TurnEntry], address: &str) -> Vec<&'a TurnEntry> {
+    |        ^^^^^^^^^^^^^^^
+
+warning: method `untrust` is never used
+  --> src/daemon/trusted_contacts.rs:46:12
+   |
+23 | impl TrustedContacts {
+   | -------------------- method in this implementation
+...
+46 |     pub fn untrust(&mut self, handle: &str) -> Result<()> {
+   |            ^^^^^^^
+
+warning: field `jsonrpc` is never read
+ --> src/mcp/protocol.rs:6:9
+  |
+5 | pub struct McpRequest {
+  |            ---------- field in this struct
+6 |     pub jsonrpc: Option<String>,
+  |         ^^^^^^^
+  |
+  = note: `McpRequest` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: `mutande-core` (lib) generated 7 warnings (run `cargo fix --lib -p mutande-core` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 55.41s
+==> mutande-core embeds 2.0.0 (cross-arch; --version not runnable here)
+==> mutande-core --version 2.0.0 (matches app 2.0.0)
+==> flutter build macos --release
+Building macOS application...                                   
+/Users/tawandabrandon/GitHub/mutande/app/macos/Pods/Pods.xcodeproj: warning: The macOS deployment target 'MACOSX_DEPLOYMENT_TARGET' is set to 10.11, but the range of supported deployment target versions is 10.13 to 26.5.99. (in target 'macos_ui-macos_ui_privacy' from project 'Pods')
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+✓ Built build/macos/Build/Products/Release/mutande.app (81.5MB)
+==> thin app to arm64
+==> arch check
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/MacOS/mutande: Mach-O 64-bit executable arm64
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Resources/mutande-core: Mach-O 64-bit executable arm64
+arm64
+arm64
+==> codesign nested frameworks + sidecar + app
+    FlutterMacOS.framework
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/FlutterMacOS.framework: replacing existing signature
+    mixpanel_flutter.framework
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/mixpanel_flutter.framework: replacing existing signature
+    MixpanelSwiftCommon.framework
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/MixpanelSwiftCommon.framework: replacing existing signature
+    appkit_ui_element_colors.framework
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/appkit_ui_element_colors.framework: replacing existing signature
+    video_player_avfoundation.framework
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/video_player_avfoundation.framework: replacing existing signature
+    Sentry.framework
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/Sentry.framework: replacing existing signature
+    jsonlogic.framework
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/jsonlogic.framework: replacing existing signature
+    Mixpanel.framework
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/Mixpanel.framework: replacing existing signature
+    sentry_flutter.framework
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/sentry_flutter.framework: replacing existing signature
+    App.framework
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/App.framework: replacing existing signature
+    package_info_plus.framework
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/package_info_plus.framework: replacing existing signature
+    tray_manager.framework
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/tray_manager.framework: replacing existing signature
+    macos_ui.framework
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/macos_ui.framework: replacing existing signature
+    window_manager.framework
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/window_manager.framework: replacing existing signature
+    macos_window_utils.framework
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/macos_window_utils.framework: replacing existing signature
+    JSON.framework
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/JSON.framework: replacing existing signature
+    screen_retriever_macos.framework
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/screen_retriever_macos.framework: replacing existing signature
+    file_selector_macos.framework
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/file_selector_macos.framework: replacing existing signature
+    flutter_local_notifications.framework
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/flutter_local_notifications.framework: replacing existing signature
+    mutande-core
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Resources/mutande-core: replacing existing signature
+    mutande.app
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64: replacing existing signature
+--prepared:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/libswift_Concurrency.dylib
+--validated:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/libswift_Concurrency.dylib
+--prepared:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/mixpanel_flutter.framework/Versions/Current/.
+--prepared:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/appkit_ui_element_colors.framework/Versions/Current/.
+--validated:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/mixpanel_flutter.framework/Versions/Current/.
+--validated:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/appkit_ui_element_colors.framework/Versions/Current/.
+--prepared:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/MixpanelSwiftCommon.framework/Versions/Current/.
+--validated:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/MixpanelSwiftCommon.framework/Versions/Current/.
+--prepared:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/macos_ui.framework/Versions/Current/.
+--validated:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/macos_ui.framework/Versions/Current/.
+--prepared:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/video_player_avfoundation.framework/Versions/Current/.
+--validated:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/video_player_avfoundation.framework/Versions/Current/.
+--prepared:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/sentry_flutter.framework/Versions/Current/.
+--validated:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/sentry_flutter.framework/Versions/Current/.
+--prepared:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/Mixpanel.framework/Versions/Current/.
+--prepared:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/jsonlogic.framework/Versions/Current/.
+--prepared:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/Sentry.framework/Versions/Current/.
+--validated:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/jsonlogic.framework/Versions/Current/.
+--prepared:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/tray_manager.framework/Versions/Current/.
+--validated:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/Mixpanel.framework/Versions/Current/.
+--validated:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/Sentry.framework/Versions/Current/.
+--validated:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/tray_manager.framework/Versions/Current/.
+--prepared:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/package_info_plus.framework/Versions/Current/.
+--validated:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/package_info_plus.framework/Versions/Current/.
+--prepared:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/macos_window_utils.framework/Versions/Current/.
+--prepared:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/window_manager.framework/Versions/Current/.
+--validated:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/macos_window_utils.framework/Versions/Current/.
+--validated:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/window_manager.framework/Versions/Current/.
+--prepared:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/JSON.framework/Versions/Current/.
+--validated:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/JSON.framework/Versions/Current/.
+--prepared:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/file_selector_macos.framework/Versions/Current/.
+--validated:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/file_selector_macos.framework/Versions/Current/.
+--prepared:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/flutter_local_notifications.framework/Versions/Current/.
+--prepared:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/screen_retriever_macos.framework/Versions/Current/.
+--validated:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/flutter_local_notifications.framework/Versions/Current/.
+--validated:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/screen_retriever_macos.framework/Versions/Current/.
+--prepared:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/App.framework/Versions/Current/.
+--validated:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/App.framework/Versions/Current/.
+--prepared:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/FlutterMacOS.framework/Versions/Current/.
+--validated:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64/Contents/Frameworks/FlutterMacOS.framework/Versions/Current/.
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64: valid on disk
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64: satisfies its Designated Requirement
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64: rejected
+source=Unnotarized Developer ID
+==> zip + notarize app (arm64)
+Conducting pre-submission checks for mutande.app.arm64.zip and initiating connection to the Apple notary service...
+Submission ID received
+  id: 7ab73b48-9abf-4856-be17-7b6f7fe3d2cf
+Successfully uploaded file
+  id: 7ab73b48-9abf-4856-be17-7b6f7fe3d2cf
+  path: /Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64.zip
+Waiting for processing to complete.
+Current status: In Progress...Current status: In Progress....Current status: In Progress.....Current status: Accepted......
+Processing complete
+  id: 7ab73b48-9abf-4856-be17-7b6f7fe3d2cf
+  status: Accepted
+Processing: /Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64
+Processing: /Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64
+The staple and validate action worked!
+Processing: /Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.arm64
+The validate action worked!
+==> build DMG mutande-alpha-arm64.dmg
+created: /Users/tawandabrandon/GitHub/mutande/dist/macos/mutande-alpha-arm64.dmg
+==> codesign DMG
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande-alpha-arm64.dmg: valid on disk
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande-alpha-arm64.dmg: satisfies its Designated Requirement
+==> notarize + staple DMG
+Conducting pre-submission checks for mutande-alpha-arm64.dmg and initiating connection to the Apple notary service...
+Submission ID received
+  id: 2b04da87-2aae-4576-bc78-35e8ba62918d
+Successfully uploaded file
+  id: 2b04da87-2aae-4576-bc78-35e8ba62918d
+  path: /Users/tawandabrandon/GitHub/mutande/dist/macos/mutande-alpha-arm64.dmg
+Waiting for processing to complete.
+Current status: In Progress...Current status: In Progress....Current status: In Progress.....Current status: Accepted......
+Processing complete
+  id: 2b04da87-2aae-4576-bc78-35e8ba62918d
+  status: Accepted
+Processing: /Users/tawandabrandon/GitHub/mutande/dist/macos/mutande-alpha-arm64.dmg
+Processing: /Users/tawandabrandon/GitHub/mutande/dist/macos/mutande-alpha-arm64.dmg
+The staple and validate action worked!
+Processing: /Users/tawandabrandon/GitHub/mutande/dist/macos/mutande-alpha-arm64.dmg
+The validate action worked!
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande-alpha-arm64.dmg: accepted
+source=Notarized Developer ID
+==> done arm64 → mutande-alpha-arm64.dmg
+
+========== ARCH=intel (x86_64-apple-darwin) ==========
+==> cargo build --release --target x86_64-apple-darwin
+   Compiling ring v0.17.14
+   Compiling rustls v0.23.42
+   Compiling rustls-webpki v0.103.13
+   Compiling tokio-rustls v0.26.4
+   Compiling hyper-rustls v0.27.9
+   Compiling reqwest v0.12.28
+   Compiling sentry v0.38.1
+   Compiling mutande-core v2.0.0 (/Users/tawandabrandon/GitHub/mutande/core)
+warning: unused import: `OpenedThreadMessage`
+  --> src/daemon/turn.rs:11:84
+   |
+11 |     BundleAnswer, HumanDecision, MessageIntent, MutandeBundle, OpenedThreadDetail, OpenedThreadMessage,
+   |                                                                                    ^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: associated function `load_in_memory` is never used
+  --> src/daemon/thread_list_cache.rs:54:12
+   |
+41 | impl ThreadListEnrichmentCache {
+   | ------------------------------ associated function in this implementation
+...
+54 |     pub fn load_in_memory() -> Self {
+   |            ^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: struct `HubTurnMirror` is never constructed
+  --> src/daemon/turn.rs:17:12
+   |
+17 | pub struct HubTurnMirror {
+   |            ^^^^^^^^^^^^^
+
+warning: function `hub_turns_mirror` is never used
+   --> src/daemon/turn.rs:231:8
+    |
+231 | pub fn hub_turns_mirror(
+    |        ^^^^^^^^^^^^^^^^
+
+warning: function `held_by_address` is never used
+   --> src/daemon/turn.rs:387:8
+    |
+387 | pub fn held_by_address<'a>(awaiting: &'a [TurnEntry], address: &str) -> Vec<&'a TurnEntry> {
+    |        ^^^^^^^^^^^^^^^
+
+warning: method `untrust` is never used
+  --> src/daemon/trusted_contacts.rs:46:12
+   |
+23 | impl TrustedContacts {
+   | -------------------- method in this implementation
+...
+46 |     pub fn untrust(&mut self, handle: &str) -> Result<()> {
+   |            ^^^^^^^
+
+warning: field `jsonrpc` is never read
+ --> src/mcp/protocol.rs:6:9
+  |
+5 | pub struct McpRequest {
+  |            ---------- field in this struct
+6 |     pub jsonrpc: Option<String>,
+  |         ^^^^^^^
+  |
+  = note: `McpRequest` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: `mutande-core` (lib) generated 7 warnings (run `cargo fix --lib -p mutande-core` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 1m 05s
+==> mutande-core --version 2.0.0 (matches app 2.0.0)
+==> reuse flutter Release app (already built this run)
+==> thin app to x86_64
+==> arch check
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/MacOS/mutande: Mach-O 64-bit executable x86_64
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Resources/mutande-core: Mach-O 64-bit executable x86_64
+x86_64
+x86_64
+==> codesign nested frameworks + sidecar + app
+    FlutterMacOS.framework
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/FlutterMacOS.framework: replacing existing signature
+    mixpanel_flutter.framework
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/mixpanel_flutter.framework: replacing existing signature
+    MixpanelSwiftCommon.framework
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/MixpanelSwiftCommon.framework: replacing existing signature
+    appkit_ui_element_colors.framework
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/appkit_ui_element_colors.framework: replacing existing signature
+    video_player_avfoundation.framework
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/video_player_avfoundation.framework: replacing existing signature
+    Sentry.framework
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/Sentry.framework: replacing existing signature
+    jsonlogic.framework
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/jsonlogic.framework: replacing existing signature
+    Mixpanel.framework
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/Mixpanel.framework: replacing existing signature
+    sentry_flutter.framework
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/sentry_flutter.framework: replacing existing signature
+    App.framework
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/App.framework: replacing existing signature
+    package_info_plus.framework
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/package_info_plus.framework: replacing existing signature
+    tray_manager.framework
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/tray_manager.framework: replacing existing signature
+    macos_ui.framework
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/macos_ui.framework: replacing existing signature
+    window_manager.framework
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/window_manager.framework: replacing existing signature
+    macos_window_utils.framework
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/macos_window_utils.framework: replacing existing signature
+    JSON.framework
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/JSON.framework: replacing existing signature
+    screen_retriever_macos.framework
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/screen_retriever_macos.framework: replacing existing signature
+    file_selector_macos.framework
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/file_selector_macos.framework: replacing existing signature
+    flutter_local_notifications.framework
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/flutter_local_notifications.framework: replacing existing signature
+    mutande-core
+    mutande.app
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel: replacing existing signature
+--prepared:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/libswift_Concurrency.dylib
+--validated:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/libswift_Concurrency.dylib
+--prepared:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/jsonlogic.framework/Versions/Current/.
+--validated:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/jsonlogic.framework/Versions/Current/.
+--prepared:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/mixpanel_flutter.framework/Versions/Current/.
+--prepared:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/macos_ui.framework/Versions/Current/.
+--validated:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/mixpanel_flutter.framework/Versions/Current/.
+--validated:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/macos_ui.framework/Versions/Current/.
+--prepared:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/MixpanelSwiftCommon.framework/Versions/Current/.
+--validated:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/MixpanelSwiftCommon.framework/Versions/Current/.
+--prepared:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/tray_manager.framework/Versions/Current/.
+--validated:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/tray_manager.framework/Versions/Current/.
+--prepared:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/appkit_ui_element_colors.framework/Versions/Current/.
+--validated:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/appkit_ui_element_colors.framework/Versions/Current/.
+--prepared:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/Mixpanel.framework/Versions/Current/.
+--prepared:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/sentry_flutter.framework/Versions/Current/.
+--validated:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/Mixpanel.framework/Versions/Current/.
+--validated:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/sentry_flutter.framework/Versions/Current/.
+--prepared:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/video_player_avfoundation.framework/Versions/Current/.
+--prepared:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/package_info_plus.framework/Versions/Current/.
+--validated:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/video_player_avfoundation.framework/Versions/Current/.
+--validated:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/package_info_plus.framework/Versions/Current/.
+--prepared:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/JSON.framework/Versions/Current/.
+--prepared:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/Sentry.framework/Versions/Current/.
+--validated:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/JSON.framework/Versions/Current/.
+--validated:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/Sentry.framework/Versions/Current/.
+--prepared:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/macos_window_utils.framework/Versions/Current/.
+--prepared:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/screen_retriever_macos.framework/Versions/Current/.
+--validated:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/macos_window_utils.framework/Versions/Current/.
+--validated:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/screen_retriever_macos.framework/Versions/Current/.
+--prepared:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/file_selector_macos.framework/Versions/Current/.
+--validated:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/file_selector_macos.framework/Versions/Current/.
+--prepared:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/window_manager.framework/Versions/Current/.
+--validated:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/window_manager.framework/Versions/Current/.
+--prepared:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/flutter_local_notifications.framework/Versions/Current/.
+--validated:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/flutter_local_notifications.framework/Versions/Current/.
+--prepared:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/App.framework/Versions/Current/.
+--validated:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/App.framework/Versions/Current/.
+--prepared:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/FlutterMacOS.framework/Versions/Current/.
+--validated:/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel/Contents/Frameworks/FlutterMacOS.framework/Versions/Current/.
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel: valid on disk
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel: satisfies its Designated Requirement
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel: rejected
+source=Unnotarized Developer ID
+==> zip + notarize app (intel)
+Conducting pre-submission checks for mutande.app.intel.zip and initiating connection to the Apple notary service...
+Submission ID received
+  id: 9a5b629c-7ea1-42c4-a946-5404d85daf62
+Successfully uploaded file
+  id: 9a5b629c-7ea1-42c4-a946-5404d85daf62
+  path: /Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel.zip
+Waiting for processing to complete.
+Current status: In Progress...Current status: In Progress....Current status: In Progress.....Current status: Accepted......
+Processing complete
+  id: 9a5b629c-7ea1-42c4-a946-5404d85daf62
+  status: Accepted
+Processing: /Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel
+Processing: /Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel
+The staple and validate action worked!
+Processing: /Users/tawandabrandon/GitHub/mutande/dist/macos/mutande.app.intel
+The validate action worked!
+==> build DMG mutande-alpha-intel.dmg
+created: /Users/tawandabrandon/GitHub/mutande/dist/macos/mutande-alpha-intel.dmg
+==> codesign DMG
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande-alpha-intel.dmg: valid on disk
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande-alpha-intel.dmg: satisfies its Designated Requirement
+==> notarize + staple DMG
+Conducting pre-submission checks for mutande-alpha-intel.dmg and initiating connection to the Apple notary service...
+Submission ID received
+  id: 80b32260-bb9f-4267-a2b0-515f99cb3d21
+Successfully uploaded file
+  id: 80b32260-bb9f-4267-a2b0-515f99cb3d21
+  path: /Users/tawandabrandon/GitHub/mutande/dist/macos/mutande-alpha-intel.dmg
+Waiting for processing to complete.
+Current status: In Progress...Current status: In Progress....Current status: In Progress.....Current status: Accepted......
+Processing complete
+  id: 80b32260-bb9f-4267-a2b0-515f99cb3d21
+  status: Accepted
+Processing: /Users/tawandabrandon/GitHub/mutande/dist/macos/mutande-alpha-intel.dmg
+Processing: /Users/tawandabrandon/GitHub/mutande/dist/macos/mutande-alpha-intel.dmg
+The staple and validate action worked!
+Processing: /Users/tawandabrandon/GitHub/mutande/dist/macos/mutande-alpha-intel.dmg
+The validate action worked!
+/Users/tawandabrandon/GitHub/mutande/dist/macos/mutande-alpha-intel.dmg: accepted
+source=Notarized Developer ID
+==> done intel → mutande-alpha-intel.dmg
+
+Done.
+  Version: 2.0.0+19
+-rw-r--r--@ 1 tawandabrandon  staff    20M Aug 16 19:21 /Users/tawandabrandon/GitHub/mutande/dist/macos/mutande-alpha-arm64.dmg
+-rw-r--r--@ 1 tawandabrandon  staff    22M Aug 16 19:25 /Users/tawandabrandon/GitHub/mutande/dist/macos/mutande-alpha-intel.dmg
+-rw-r--r--@ 1 tawandabrandon  staff    20M Aug 16 19:21 /Users/tawandabrandon/GitHub/mutande/dist/macos/mutande-alpha.dmg
+  Bundle id: ai.mutande.app
+  Team: Q22P2YXR6M

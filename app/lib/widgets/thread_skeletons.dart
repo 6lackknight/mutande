@@ -114,16 +114,21 @@ class _Arrive extends StatelessWidget {
 
 /// Inbox-shaped placeholder: mark · title · snippet · time.
 class ThreadListSkeleton extends StatelessWidget {
-  const ThreadListSkeleton({super.key, this.rows = 7});
+  const ThreadListSkeleton({
+    super.key,
+    this.rows = 7,
+    this.semanticLabel = 'Loading threads',
+  });
 
   final int rows;
+  final String semanticLabel;
 
   static const _widths = [0.62, 0.48, 0.71, 0.55, 0.66, 0.42, 0.58];
 
   @override
   Widget build(BuildContext context) {
     return Semantics(
-      label: 'Loading threads',
+      label: semanticLabel,
       child: _Breath(
         child: ListView.builder(
           physics: const NeverScrollableScrollPhysics(),
@@ -248,15 +253,13 @@ class ThreadReadingSkeleton extends StatelessWidget {
 }
 
 class _DashPlate extends StatelessWidget {
-  const _DashPlate({required this.child, this.height});
+  const _DashPlate({required this.child});
 
   final Widget child;
-  final double? height;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: height,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: MutandeColors.stone50,
@@ -268,178 +271,179 @@ class _DashPlate extends StatelessWidget {
   }
 }
 
-/// Collab home: metric tiles, two chart plates, a short table.
-class CollabHomeSkeleton extends StatelessWidget {
-  const CollabHomeSkeleton({super.key});
+/// Metric value bones — labels stay on [CollabMetricRow].
+class CollabMetricValueSkeleton extends StatelessWidget {
+  const CollabMetricValueSkeleton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const _Bone(width: 28, height: 22);
+  }
+}
+
+/// Collab table rows only — heading and column labels stay on the table.
+class CollabTableRowsSkeleton extends StatelessWidget {
+  const CollabTableRowsSkeleton({super.key, this.rows = 4});
+
+  final int rows;
 
   @override
   Widget build(BuildContext context) {
     return Semantics(
       label: 'Loading collabs',
       child: _Breath(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-          child: CustomScrollView(
-            physics: const NeverScrollableScrollPhysics(),
-            slivers: [
-              SliverToBoxAdapter(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final n = constraints.maxWidth >= 900 ? 5 : 4;
-                    return Row(
-                      children: [
-                        for (var i = 0; i < n; i++) ...[
-                          if (i > 0) const SizedBox(width: 10),
-                          Expanded(
-                            child: _Arrive(
-                              order: i,
-                              child: _DashPlate(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const _Bone(width: 64, height: 9),
-                                    const SizedBox(height: 14),
-                                    const _Bone(width: 28, height: 22),
-                                    const SizedBox(height: 10),
-                                    const _Bone(width: 72, height: 8),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    );
-                  },
+        child: Column(
+          children: [
+            for (var i = 0; i < rows; i++) ...[
+              _Arrive(
+                order: i,
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 13),
+                  child: Row(
+                    children: [
+                      _Bone(width: 26, height: 26, circle: true),
+                      SizedBox(width: 10),
+                      Expanded(
+                        flex: 5,
+                        child: _Bone(width: double.infinity, height: 9),
+                      ),
+                      SizedBox(width: 16),
+                      Expanded(
+                        child: _Bone(width: double.infinity, height: 8),
+                      ),
+                      SizedBox(width: 16),
+                      _Bone(width: 28, height: 8),
+                    ],
+                  ),
                 ),
               ),
-              const SliverToBoxAdapter(child: SizedBox(height: 12)),
-              SliverToBoxAdapter(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      flex: 3,
-                      child: _Arrive(
-                        order: 5,
-                        child: _DashPlate(
-                          height: 148,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const _Bone(width: 88, height: 9),
-                              const SizedBox(height: 16),
-                              Expanded(
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.end,
-                                  children: [
-                                    for (final h in [
-                                      0.4,
-                                      0.7,
-                                      0.35,
-                                      0.85,
-                                      0.5,
-                                      0.62,
-                                      0.3,
-                                    ]) ...[
-                                      Expanded(
-                                        child: FractionallySizedBox(
-                                          heightFactor: h,
-                                          alignment: Alignment.bottomCenter,
-                                          child: const _Bone(
-                                            width: double.infinity,
-                                            height: double.infinity,
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 6),
-                                    ],
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
+              if (i < rows - 1)
+                const Divider(height: 1, color: MutandeColors.stone200),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Onboarding team roster rows — heading and actions stay on the step.
+class OnboardingRosterSkeleton extends StatelessWidget {
+  const OnboardingRosterSkeleton({super.key, this.rows = 3});
+
+  final int rows;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'Loading team',
+      child: _Breath(
+        child: Column(
+          children: [
+            for (var i = 0; i < rows; i++)
+              _Arrive(
+                order: i,
+                child: const Padding(
+                  padding: EdgeInsets.only(bottom: 12),
+                  child: Row(
+                    children: [
+                      _Bone(width: 32, height: 32, circle: true),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _Bone(width: 128, height: 11),
+                            SizedBox(height: 6),
+                            _Bone(width: 96, height: 8),
+                          ],
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      flex: 2,
-                      child: _Arrive(
-                        order: 6,
-                        child: _DashPlate(
-                          height: 148,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const _Bone(width: 72, height: 9),
-                              const Spacer(),
-                              const Center(
-                                child: _Bone(
-                                  width: 72,
-                                  height: 72,
-                                  circle: true,
-                                ),
-                              ),
-                              const Spacer(),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-              const SliverToBoxAdapter(child: SizedBox(height: 12)),
-              SliverToBoxAdapter(
-                child: _Arrive(
-                  order: 7,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Onboarding host tiles — heading stays on the connect step.
+class OnboardingHostSkeleton extends StatelessWidget {
+  const OnboardingHostSkeleton({super.key, this.tiles = 3});
+
+  final int tiles;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'Detecting hosts',
+      child: _Breath(
+        child: Column(
+          children: [
+            for (var i = 0; i < tiles; i++)
+              _Arrive(
+                order: i,
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
                   child: _DashPlate(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    child: const Row(
                       children: [
-                        const _Bone(width: 56, height: 9),
-                        const SizedBox(height: 14),
-                        for (var i = 0; i < 4; i++) ...[
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                            child: Row(
-                              children: [
-                                const _Bone(
-                                  width: 26,
-                                  height: 26,
-                                  circle: true,
-                                ),
-                                const SizedBox(width: 10),
-                                const Expanded(
-                                  flex: 5,
-                                  child: _Bone(
-                                    width: double.infinity,
-                                    height: 9,
-                                  ),
-                                ),
-                                const SizedBox(width: 16),
-                                const Expanded(
-                                  child: _Bone(width: double.infinity, height: 8),
-                                ),
-                                const SizedBox(width: 16),
-                                const _Bone(width: 28, height: 8),
-                              ],
-                            ),
+                        _Bone(width: 44, height: 44, circle: true),
+                        SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _Bone(width: 88, height: 12),
+                              SizedBox(height: 8),
+                              _Bone(width: 64, height: 8),
+                            ],
                           ),
-                          if (i < 3)
-                            const Divider(
-                              height: 1,
-                              color: MutandeColors.stone200,
-                            ),
-                        ],
+                        ),
                       ],
                     ),
                   ),
                 ),
               ),
-            ],
-          ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Dossier list bones — section headings stay on the dossier.
+class CollabDossierListsSkeleton extends StatelessWidget {
+  const CollabDossierListsSkeleton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'Loading collab',
+      child: _Breath(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 16),
+            for (var i = 0; i < 2; i++)
+              _Arrive(
+                order: i,
+                child: const Padding(
+                  padding: EdgeInsets.only(bottom: 11),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _Bone(width: double.infinity, height: 9),
+                      SizedBox(height: 6),
+                      _Bone(width: 72, height: 8),
+                    ],
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );

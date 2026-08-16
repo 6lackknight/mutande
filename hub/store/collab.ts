@@ -13,10 +13,18 @@
  * - set_lane never touches thread status; close_thread never touches lane
  * - memory thread inherits collab encryption_mode
  * - add_learning: creator's side only; reject hosted transports on e2e
+ * - status missing|"open" = active; archived boards are hidden and frozen
+ * - approved paired externals may steer; cross-org forces app_envelope
  * - schema_version: 1
  */
 
-import { HubError, envelopeTooLarge, forbidden, notFound } from "./errors.ts";
+import {
+  HubError,
+  conflict,
+  envelopeTooLarge,
+  forbidden,
+  notFound,
+} from "./errors.ts";
 import {
   formatDisplayAddress,
   parseDisplayAddress,
@@ -25,6 +33,7 @@ import {
 import type {
   AddCollabArtifactsInput,
   AddLearningInput,
+  AddRosterInput,
   AddSteererInput,
   Agent,
   ApplyCollabDowngradeInput,
@@ -38,11 +47,16 @@ import type {
   CollabChecklistItem,
   CollabLearning,
   CollabList,
+  CollabPendingMembership,
   CollabPortfolio,
+  CollabPortfolioRecent,
   CollabRosterEntry,
+  CollabStatus,
   CollabView,
   CreateCollabInput,
   InboxEntry,
+  ListCollabsOpts,
+  RemoveRosterInput,
   RemoveSteererInput,
   RenameCollabListInput,
   SetLaneInput,
@@ -66,9 +80,19 @@ export type CollabKvCtx = {
   getUserByHandle: (handle: string) => Promise<User | null>;
   getAgent: (id: string) => Promise<Agent | null>;
   resolveAgentForUser: (userId: string, slug?: string) => Promise<Agent>;
+  hasApprovedExternalContact: (
+    userId: string,
+    otherHandle: string,
+  ) => Promise<boolean>;
+  resolveUserForHandle: (
+    authUserId: string,
+    handle: string,
+  ) => Promise<User | null>;
   collabKey: (id: string) => Deno.KvKey;
   orgCollabKey: (orgId: string, id: string) => Deno.KvKey;
   orgCollabsPrefix: (orgId: string) => Deno.KvKey;
+  userCollabKey: (userId: string, collabId: string) => Deno.KvKey;
+  userCollabsPrefix: (userId: string) => Deno.KvKey;
   collabThreadKey: (collabId: string, threadId: string) => Deno.KvKey;
   collabThreadsPrefix: (collabId: string) => Deno.KvKey;
   collabArtifactKey: (collabId: string, artifactId: string) => Deno.KvKey;
@@ -303,6 +327,12 @@ export function orgCollabKey(orgId: string, id: string): Deno.KvKey {
 export function orgCollabsPrefix(orgId: string): Deno.KvKey {
   return ["org_collabs", orgId];
 }
+export function userCollabKey(userId: string, collabId: string): Deno.KvKey {
+  return ["user_collabs", userId, collabId];
+}
+export function userCollabsPrefix(userId: string): Deno.KvKey {
+  return ["user_collabs", userId];
+}
 export function collabThreadKey(collabId: string, threadId: string): Deno.KvKey {
   return ["collab_threads", collabId, threadId];
 }
@@ -405,11 +435,57 @@ async function loadCollab(ctx: CollabKvCtx, id: string): Promise<Collab | null> 
   return res.value ?? null;
 }
 
+export function collabStatus(collab: Collab): CollabStatus {
+  return collab.status === "archived" ? "archived" : "open";
+}
+
+export function isCollabArchived(collab: Collab): boolean {
+  return collabStatus(collab) === "archived";
+}
+
 function assertMember(collab: Collab, auth: AuthContext): void {
-  if (collab.org_id !== auth.orgId) throw notFound("Collab");
   if (!isCollabSteerer(collab, auth.userId)) {
-    throw forbidden("Not a collab member");
+    throw notFound("Collab");
   }
+}
+
+function assertNotArchived(collab: Collab): void {
+  if (isCollabArchived(collab)) {
+    throw conflict("this collab is archived");
+  }
+}
+
+function indexUserCollab(
+  tx: Deno.AtomicOperation,
+  ctx: CollabKvCtx,
+  userId: string,
+  collabId: string,
+): void {
+  tx.set(ctx.userCollabKey(userId, collabId), collabId);
+}
+
+function dropUserCollab(
+  tx: Deno.AtomicOperation,
+  ctx: CollabKvCtx,
+  userId: string,
+  collabId: string,
+): void {
+  tx.delete(ctx.userCollabKey(userId, collabId));
+}
+
+/** Same-org, or an approved paired external. Returns true when the user is external. */
+async function assertOrgOrApprovedPair(
+  ctx: CollabKvCtx,
+  auth: AuthContext,
+  user: User,
+  forbiddenMsg: string,
+): Promise<boolean> {
+  if (user.org_id === auth.orgId) return false;
+  const handle = (user.handle ?? "").trim().toLowerCase();
+  if (!handle) throw notFound("User");
+  const ok = await ctx.hasApprovedExternalContact(auth.userId, handle);
+  if (!ok) throw forbidden(forbiddenMsg);
+  return true;
 }
 
 async function resolveRosterEntry(
@@ -424,11 +500,14 @@ async function resolveRosterEntry(
     slug = parsed.agentSlug;
   } else if (parsed.kind === "user") {
     const handle = formatDisplayAddress(parsed.local, parsed.orgSlug);
-    const user = await ctx.getUserByHandle(handle);
+    const user = await ctx.resolveUserForHandle(auth.userId, handle);
     if (!user) throw notFound("User");
-    if (user.org_id !== auth.orgId) {
-      throw forbidden("Roster agents must be in your org");
-    }
+    await assertOrgOrApprovedPair(
+      ctx,
+      auth,
+      user,
+      "Roster agents must be in your org or an approved external contact",
+    );
     userId = user.id;
     slug = parsed.agentSlug;
   } else {
@@ -463,7 +542,12 @@ async function resolveRosterEntry(
 
 export function deriveEncryptionMode(
   roster: CollabRosterEntry[],
+  opts?: { externalCause?: string },
 ): { mode: ThreadEncryptionMode; cause_address?: string } {
+  const external = opts?.externalCause?.trim().toLowerCase();
+  if (external) {
+    return { mode: "app_envelope", cause_address: external };
+  }
   const hosted = roster.find((r) => r.transport === "mcp");
   if (hosted) {
     return { mode: "app_envelope", cause_address: hosted.address };
@@ -569,6 +653,7 @@ export async function createCollab(
   const joins: Collab["steerer_joins"] = [
     { user_id: auth.userId, joined_at: ts },
   ];
+  let externalCause: string | undefined;
   for (const raw of input.steerer_handles ?? []) {
     const handle = raw.trim().toLowerCase();
     if (!handle) continue;
@@ -580,12 +665,19 @@ export async function createCollab(
         400,
       );
     }
-    const user = await ctx.getUserByHandle(
+    const user = await ctx.resolveUserForHandle(
+      auth.userId,
       formatDisplayAddress(parsed.local, parsed.orgSlug),
     );
     if (!user) throw notFound("User");
-    if (user.org_id !== auth.orgId) {
-      throw forbidden("Steerers must be in your org");
+    const isExternal = await assertOrgOrApprovedPair(
+      ctx,
+      auth,
+      user,
+      "Steerers must be in your org or an approved external contact",
+    );
+    if (isExternal && !externalCause) {
+      externalCause = (user.handle ?? handle).toLowerCase();
     }
     if (!steererIds.includes(user.id)) {
       steererIds.push(user.id);
@@ -600,7 +692,17 @@ export async function createCollab(
   const roster = await uniqueRoster(rosterRaw);
   const membership = ensureSteerersForRoster(steererIds, roster, joins, ts);
 
-  const { mode } = deriveEncryptionMode(roster);
+  if (!externalCause) {
+    for (const uid of membership.steerer_user_ids) {
+      const user = await ctx.getUser(uid);
+      if (user && user.org_id !== auth.orgId) {
+        externalCause = (user.handle ?? uid).toLowerCase();
+        break;
+      }
+    }
+  }
+
+  const { mode } = deriveEncryptionMode(roster, { externalCause });
   assertInstructionsXor(mode, input.instructions, input.instructions_sealed);
   const artifacts = normalizeCollabArtifactInputs(
     input.artifacts,
@@ -643,6 +745,9 @@ export async function createCollab(
   const tx = ctx.kv.atomic();
   tx.set(ctx.collabKey(id), collab);
   tx.set(ctx.orgCollabKey(auth.orgId, id), id);
+  for (const uid of membership.steerer_user_ids) {
+    indexUserCollab(tx, ctx, uid, id);
+  }
   for (const artifact of artifacts) {
     tx.set(ctx.collabArtifactKey(id, artifact.id), artifact);
   }
@@ -694,11 +799,19 @@ export function last84ActivityDays(
   return out;
 }
 
+const RECENT_FEED_LIMIT = 6;
+
+type RecentCardSeed = Omit<
+  CollabPortfolioRecent,
+  "collab_id" | "collab_name"
+>;
+
 function emptyPortfolio(collabCount = 0): CollabPortfolio {
   return {
     activity: last84ActivityDays(new Map()),
     lane_totals: { backlog: 0, doing: 0, done: 0 },
     totals: { collabs: collabCount, open: 0, doing: 0, needs_you: 0 },
+    recent: [],
   };
 }
 
@@ -706,8 +819,13 @@ async function summarizeCollabCards(
   ctx: CollabKvCtx,
   auth: AuthContext,
   collab: Collab,
-): Promise<CollabCardStats & { activity: Map<string, number> }> {
-  const stats: CollabCardStats & { activity: Map<string, number> } = {
+): Promise<
+  CollabCardStats & { activity: Map<string, number>; recent: RecentCardSeed[] }
+> {
+  const stats: CollabCardStats & {
+    activity: Map<string, number>;
+    recent: RecentCardSeed[];
+  } = {
     card_count: 0,
     open: 0,
     closed: 0,
@@ -716,6 +834,7 @@ async function summarizeCollabCards(
     done: 0,
     needs_you: 0,
     activity: new Map(),
+    recent: [],
   };
   const iter = ctx.kv.list<string>({
     prefix: ctx.collabThreadsPrefix(collab.id),
@@ -731,11 +850,13 @@ async function summarizeCollabCards(
     if (isOpen) {
       stats[laneBucket(collab, thread.lane_id)] += 1;
     }
+    let needsYou = false;
     if (isOpen) {
       const inbox = await ctx.kv.get<InboxEntry>(
         ctx.inboxKey(auth.userId, thread.id),
       );
-      if (inbox.value?.your_status === "pending") stats.needs_you += 1;
+      needsYou = inbox.value?.your_status === "pending";
+      if (needsYou) stats.needs_you += 1;
     }
     if (
       !stats.last_updated_at ||
@@ -747,6 +868,15 @@ async function summarizeCollabCards(
     if (day) {
       stats.activity.set(day, (stats.activity.get(day) ?? 0) + 1);
     }
+    const subject = thread.last_subject?.trim();
+    stats.recent.push({
+      thread_id: thread.id,
+      from: thread.from,
+      audience: thread.audience,
+      last_subject: subject || undefined,
+      updated_at: thread.updated_at,
+      needs_you: needsYou,
+    });
   }
   return stats;
 }
@@ -754,21 +884,48 @@ async function summarizeCollabCards(
 export async function listCollabs(
   ctx: CollabKvCtx,
   auth: AuthContext,
+  opts?: ListCollabsOpts,
 ): Promise<{ collabs: CollabView[]; portfolio: CollabPortfolio }> {
+  const wantArchived = opts?.archived === true;
+  const seen = new Set<string>();
+  const ids: string[] = [];
+  const orgIter = ctx.kv.list<string>({ prefix: ctx.orgCollabsPrefix(auth.orgId) });
+  for await (const entry of orgIter) {
+    if (seen.has(entry.value)) continue;
+    seen.add(entry.value);
+    ids.push(entry.value);
+  }
+  const userIter = ctx.kv.list<string>({
+    prefix: ctx.userCollabsPrefix(auth.userId),
+  });
+  for await (const entry of userIter) {
+    if (seen.has(entry.value)) continue;
+    seen.add(entry.value);
+    ids.push(entry.value);
+  }
+
   const collabs: CollabView[] = [];
   const activity = new Map<string, number>();
+  const recent: CollabPortfolioRecent[] = [];
   const laneTotals = { backlog: 0, doing: 0, done: 0 };
   let open = 0;
   let doing = 0;
   let needsYou = 0;
-  const iter = ctx.kv.list<string>({ prefix: ctx.orgCollabsPrefix(auth.orgId) });
-  for await (const entry of iter) {
-    const collab = await loadCollab(ctx, entry.value);
+  for (const id of ids) {
+    const collab = await loadCollab(ctx, id);
     if (!collab) continue;
     if (!isCollabSteerer(collab, auth.userId)) continue;
+    if (wantArchived !== isCollabArchived(collab)) continue;
     const stats = await summarizeCollabCards(ctx, auth, collab);
     for (const [date, count] of stats.activity) {
       activity.set(date, (activity.get(date) ?? 0) + count);
+    }
+    for (const card of stats.recent) {
+      recent.push({
+        ...card,
+        collab_id: collab.id,
+        collab_name: collab.name,
+      });
     }
     open += stats.open;
     doing += stats.doing;
@@ -801,6 +958,7 @@ export async function listCollabs(
   if (collabs.length === 0) {
     return { collabs, portfolio: emptyPortfolio(0) };
   }
+  recent.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
   return {
     collabs,
     portfolio: {
@@ -812,6 +970,7 @@ export async function listCollabs(
         doing,
         needs_you: needsYou,
       },
+      recent: recent.slice(0, RECENT_FEED_LIMIT),
     },
   };
 }
@@ -933,6 +1092,7 @@ export async function setLane(
   const collab = await loadCollab(ctx, collabId);
   if (!collab) throw notFound("Collab");
   assertMember(collab, auth);
+  assertNotArchived(collab);
 
   const lane = collab.lists.find((l) => l.id === input.lane_id);
   if (!lane) {
@@ -1017,6 +1177,7 @@ export async function addLearning(
   const collab = await loadCollab(ctx, collabId);
   if (!collab) throw notFound("Collab");
   assertMember(collab, auth);
+  assertNotArchived(collab);
 
   if (!isCreatorSide(collab, auth.userId)) {
     throw forbidden(
@@ -1143,6 +1304,7 @@ export async function updateInstructions(
   if (!isCreatorSide(collab, auth.userId)) {
     throw forbidden("Only the collab creator can edit instructions");
   }
+  assertNotArchived(collab);
   assertInstructionsXor(
     collab.encryption_mode,
     input.instructions,
@@ -1174,6 +1336,7 @@ export async function addCollabArtifacts(
   const collab = await loadCollab(ctx, collabId);
   if (!collab) throw notFound("Collab");
   assertMember(collab, auth);
+  assertNotArchived(collab);
   const ts = ctx.nowIso();
   const incoming = normalizeCollabArtifactInputs(input.artifacts, ts, auth.userId);
   if (incoming.length === 0) {
@@ -1210,6 +1373,7 @@ export async function applyCollabDowngrade(
   const collab = await loadCollab(ctx, collabId);
   if (!collab) throw notFound("Collab");
   assertMember(collab, auth);
+  assertNotArchived(collab);
   if (collab.downgrade_point) {
     throw new HubError(
       "downgrade_point is immutable once set",
@@ -1247,28 +1411,47 @@ export async function applyCollabDowngrade(
   return viewCollab(ctx, auth, updated, { cards: false });
 }
 
-export async function addSteerer(
+function applyDowngradeToCollab(
+  collab: Collab,
+  ts: string,
+  causeAddress: string,
+  approvers: string[],
+): Collab {
+  const updated: Collab = {
+    ...collab,
+    encryption_mode: "app_envelope",
+    downgrade_point: {
+      at: ts,
+      approvers: [...approvers],
+      cause_address: causeAddress.trim().toLowerCase(),
+    },
+    updated_at: ts,
+  };
+  delete updated.instructions_sealed;
+  delete updated.pending_membership;
+  return updated;
+}
+
+async function persistCollab(
+  ctx: CollabKvCtx,
+  collab: Collab,
+  extras?: (tx: Deno.AtomicOperation) => void,
+): Promise<void> {
+  const tx = ctx.kv.atomic();
+  tx.set(ctx.collabKey(collab.id), collab);
+  extras?.(tx);
+  const res = await tx.commit();
+  if (!res.ok) {
+    throw new HubError("Failed to update collab", "internal", 500);
+  }
+}
+
+async function commitAddSteerer(
   ctx: CollabKvCtx,
   auth: AuthContext,
-  collabId: string,
-  input: AddSteererInput,
+  collab: Collab,
+  user: User,
 ): Promise<CollabView> {
-  const collab = await loadCollab(ctx, collabId);
-  if (!collab) throw notFound("Collab");
-  assertMember(collab, auth);
-  const parsed = parseDisplayAddress(input.handle.trim().toLowerCase());
-  if (parsed.kind !== "user" || parsed.agentSlug) {
-    throw new HubError(
-      "Steerers are human handles (alice@acme)",
-      "invalid_argument",
-      400,
-    );
-  }
-  const user = await ctx.getUserByHandle(
-    formatDisplayAddress(parsed.local, parsed.orgSlug),
-  );
-  if (!user) throw notFound("User");
-  if (user.org_id !== auth.orgId) throw forbidden("Steerers must be in your org");
   if (collab.steerer_user_ids.includes(user.id)) {
     return viewCollab(ctx, auth, collab, { cards: false });
   }
@@ -1279,14 +1462,141 @@ export async function addSteerer(
     steerer_joins: [...collab.steerer_joins, { user_id: user.id, joined_at: ts }],
     updated_at: ts,
   };
-  await ctx.kv.set(ctx.collabKey(collab.id), updated);
-  await ctx.kv.set(ctx.inboxKey(user.id, collab.memory_thread_id), {
-    thread_id: collab.memory_thread_id,
-    your_status: "replied",
-    role: "recipient",
-    updated_at: ts,
-  } satisfies InboxEntry);
+  delete updated.pending_membership;
+  await persistCollab(ctx, updated, (tx) => {
+    indexUserCollab(tx, ctx, user.id, updated.id);
+    tx.set(ctx.inboxKey(user.id, updated.memory_thread_id), {
+      thread_id: updated.memory_thread_id,
+      your_status: "replied",
+      role: "recipient",
+      updated_at: ts,
+    } satisfies InboxEntry);
+  });
   return viewCollab(ctx, auth, updated, { cards: false });
+}
+
+async function commitAddRoster(
+  ctx: CollabKvCtx,
+  auth: AuthContext,
+  collab: Collab,
+  entry: CollabRosterEntry,
+): Promise<CollabView> {
+  if (collab.roster.some((r) => r.agent_id === entry.agent_id)) {
+    return viewCollab(ctx, auth, collab, { cards: false });
+  }
+  const ts = ctx.nowIso();
+  const roster = await uniqueRoster([...collab.roster, entry]);
+  const membership = ensureSteerersForRoster(
+    collab.steerer_user_ids,
+    roster,
+    collab.steerer_joins,
+    ts,
+  );
+  const newHumans = membership.steerer_user_ids.filter(
+    (id) => !collab.steerer_user_ids.includes(id),
+  );
+  const updated: Collab = {
+    ...collab,
+    roster,
+    steerer_user_ids: membership.steerer_user_ids,
+    steerer_joins: membership.steerer_joins,
+    updated_at: ts,
+  };
+  delete updated.pending_membership;
+  await persistCollab(ctx, updated, (tx) => {
+    for (const uid of newHumans) {
+      indexUserCollab(tx, ctx, uid, updated.id);
+      tx.set(ctx.inboxKey(uid, updated.memory_thread_id), {
+        thread_id: updated.memory_thread_id,
+        your_status: "replied",
+        role: "recipient",
+        updated_at: ts,
+      } satisfies InboxEntry);
+    }
+  });
+  return viewCollab(ctx, auth, updated, { cards: false });
+}
+
+async function queueOrApplyMembership(
+  ctx: CollabKvCtx,
+  auth: AuthContext,
+  collab: Collab,
+  pending: Omit<CollabPendingMembership, "proposed_by" | "approved_by">,
+): Promise<CollabView> {
+  if (collab.pending_membership) {
+    throw conflict("A membership change is already pending consent");
+  }
+  const ts = ctx.nowIso();
+  if (collab.steerer_user_ids.length === 1) {
+    const flipped = applyDowngradeToCollab(
+      collab,
+      ts,
+      pending.cause_address,
+      [auth.userId],
+    );
+    if (pending.kind === "steerer") {
+      const user = await ctx.resolveUserForHandle(
+        auth.userId,
+        pending.handle ?? "",
+      );
+      if (!user) throw notFound("User");
+      return commitAddSteerer(ctx, auth, flipped, user);
+    }
+    const entry = await resolveRosterEntry(ctx, auth, pending.address ?? "");
+    return commitAddRoster(ctx, auth, flipped, entry);
+  }
+  const stored: CollabPendingMembership = {
+    ...pending,
+    proposed_by: auth.userId,
+    approved_by: [auth.userId],
+  };
+  const updated: Collab = {
+    ...collab,
+    pending_membership: stored,
+    updated_at: ts,
+  };
+  await persistCollab(ctx, updated);
+  return viewCollab(ctx, auth, updated, { cards: false });
+}
+
+export async function addSteerer(
+  ctx: CollabKvCtx,
+  auth: AuthContext,
+  collabId: string,
+  input: AddSteererInput,
+): Promise<CollabView> {
+  const collab = await loadCollab(ctx, collabId);
+  if (!collab) throw notFound("Collab");
+  assertMember(collab, auth);
+  assertNotArchived(collab);
+  const parsed = parseDisplayAddress(input.handle.trim().toLowerCase());
+  if (parsed.kind !== "user" || parsed.agentSlug) {
+    throw new HubError(
+      "Steerers are human handles (alice@acme)",
+      "invalid_argument",
+      400,
+    );
+  }
+  const handle = formatDisplayAddress(parsed.local, parsed.orgSlug);
+  const user = await ctx.resolveUserForHandle(auth.userId, handle);
+  if (!user) throw notFound("User");
+  const isExternal = await assertOrgOrApprovedPair(
+    ctx,
+    auth,
+    user,
+    "Steerers must be in your org or an approved external contact",
+  );
+  if (collab.steerer_user_ids.includes(user.id)) {
+    return viewCollab(ctx, auth, collab, { cards: false });
+  }
+  if (isExternal && collab.encryption_mode === "e2e") {
+    return queueOrApplyMembership(ctx, auth, collab, {
+      kind: "steerer",
+      handle: (user.handle ?? handle).toLowerCase(),
+      cause_address: (user.handle ?? handle).toLowerCase(),
+    });
+  }
+  return commitAddSteerer(ctx, auth, collab, user);
 }
 
 export async function removeSteerer(
@@ -1298,6 +1608,7 @@ export async function removeSteerer(
   const collab = await loadCollab(ctx, collabId);
   if (!collab) throw notFound("Collab");
   assertMember(collab, auth);
+  assertNotArchived(collab);
   if (input.user_id === collab.created_by) {
     throw forbidden("Cannot remove the collab creator");
   }
@@ -1316,7 +1627,164 @@ export async function removeSteerer(
     updated_at: ts,
   };
   // Joins stay append-only — do not rewrite history.
-  await ctx.kv.set(ctx.collabKey(collab.id), updated);
+  await persistCollab(ctx, updated, (tx) => {
+    dropUserCollab(tx, ctx, input.user_id, updated.id);
+  });
+  return viewCollab(ctx, auth, updated, { cards: false });
+}
+
+export async function addRoster(
+  ctx: CollabKvCtx,
+  auth: AuthContext,
+  collabId: string,
+  input: AddRosterInput,
+): Promise<CollabView> {
+  const collab = await loadCollab(ctx, collabId);
+  if (!collab) throw notFound("Collab");
+  assertMember(collab, auth);
+  assertNotArchived(collab);
+  const entry = await resolveRosterEntry(ctx, auth, input.address);
+  if (collab.roster.some((r) => r.agent_id === entry.agent_id)) {
+    return viewCollab(ctx, auth, collab, { cards: false });
+  }
+  const owner = await ctx.getUser(entry.user_id);
+  const ownerExternal = owner != null && owner.org_id !== auth.orgId;
+  const hosted = entry.transport === "mcp";
+  if (collab.encryption_mode === "e2e" && (hosted || ownerExternal)) {
+    return queueOrApplyMembership(ctx, auth, collab, {
+      kind: "roster",
+      address: entry.address,
+      cause_address: hosted
+        ? entry.address
+        : (owner?.handle ?? entry.address).toLowerCase(),
+    });
+  }
+  return commitAddRoster(ctx, auth, collab, entry);
+}
+
+export async function removeRoster(
+  ctx: CollabKvCtx,
+  auth: AuthContext,
+  collabId: string,
+  input: RemoveRosterInput,
+): Promise<CollabView> {
+  const collab = await loadCollab(ctx, collabId);
+  if (!collab) throw notFound("Collab");
+  assertMember(collab, auth);
+  assertNotArchived(collab);
+  if (!collab.roster.some((r) => r.agent_id === input.agent_id)) {
+    return viewCollab(ctx, auth, collab, { cards: false });
+  }
+  const ts = ctx.nowIso();
+  const updated: Collab = {
+    ...collab,
+    roster: collab.roster.filter((r) => r.agent_id !== input.agent_id),
+    updated_at: ts,
+  };
+  await persistCollab(ctx, updated);
+  return viewCollab(ctx, auth, updated, { cards: false });
+}
+
+export async function approvePendingMembership(
+  ctx: CollabKvCtx,
+  auth: AuthContext,
+  collabId: string,
+): Promise<CollabView> {
+  const collab = await loadCollab(ctx, collabId);
+  if (!collab) throw notFound("Collab");
+  assertMember(collab, auth);
+  assertNotArchived(collab);
+  const pending = collab.pending_membership;
+  if (!pending) {
+    throw new HubError("No pending membership", "invalid_argument", 400);
+  }
+  const approved = pending.approved_by.includes(auth.userId)
+    ? pending.approved_by
+    : [...pending.approved_by, auth.userId];
+  const required = [...collab.steerer_user_ids].sort();
+  const given = [...new Set(approved)].sort();
+  const unanimous = required.length === given.length &&
+    required.every((id, i) => id === given[i]);
+  if (!unanimous) {
+    const updated: Collab = {
+      ...collab,
+      pending_membership: { ...pending, approved_by: approved },
+      updated_at: ctx.nowIso(),
+    };
+    await persistCollab(ctx, updated);
+    return viewCollab(ctx, auth, updated, { cards: false });
+  }
+  const ts = ctx.nowIso();
+  const flipped = applyDowngradeToCollab(
+    collab,
+    ts,
+    pending.cause_address,
+    given,
+  );
+  if (pending.kind === "steerer") {
+    const user = await ctx.resolveUserForHandle(
+      auth.userId,
+      pending.handle ?? "",
+    );
+    if (!user) throw notFound("User");
+    return commitAddSteerer(ctx, auth, flipped, user);
+  }
+  const entry = await resolveRosterEntry(ctx, auth, pending.address ?? "");
+  return commitAddRoster(ctx, auth, flipped, entry);
+}
+
+export async function denyPendingMembership(
+  ctx: CollabKvCtx,
+  auth: AuthContext,
+  collabId: string,
+): Promise<CollabView> {
+  const collab = await loadCollab(ctx, collabId);
+  if (!collab) throw notFound("Collab");
+  assertMember(collab, auth);
+  assertNotArchived(collab);
+  if (!collab.pending_membership) {
+    throw new HubError("No pending membership", "invalid_argument", 400);
+  }
+  const updated: Collab = { ...collab, updated_at: ctx.nowIso() };
+  delete updated.pending_membership;
+  await persistCollab(ctx, updated);
+  return viewCollab(ctx, auth, updated, { cards: false });
+}
+
+export async function archiveCollab(
+  ctx: CollabKvCtx,
+  auth: AuthContext,
+  collabId: string,
+): Promise<CollabView> {
+  const collab = await loadCollab(ctx, collabId);
+  if (!collab) throw notFound("Collab");
+  assertMember(collab, auth);
+  if (isCollabArchived(collab)) {
+    return viewCollab(ctx, auth, collab, { cards: false });
+  }
+  const updated: Collab = {
+    ...collab,
+    status: "archived",
+    updated_at: ctx.nowIso(),
+  };
+  delete updated.pending_membership;
+  await persistCollab(ctx, updated);
+  return viewCollab(ctx, auth, updated, { cards: false });
+}
+
+export async function unarchiveCollab(
+  ctx: CollabKvCtx,
+  auth: AuthContext,
+  collabId: string,
+): Promise<CollabView> {
+  const collab = await loadCollab(ctx, collabId);
+  if (!collab) throw notFound("Collab");
+  assertMember(collab, auth);
+  if (!isCollabArchived(collab)) {
+    return viewCollab(ctx, auth, collab, { cards: false });
+  }
+  const updated: Collab = { ...collab, status: "open", updated_at: ctx.nowIso() };
+  await persistCollab(ctx, updated);
   return viewCollab(ctx, auth, updated, { cards: false });
 }
 
@@ -1329,6 +1797,7 @@ export async function renameList(
   const collab = await loadCollab(ctx, collabId);
   if (!collab) throw notFound("Collab");
   assertMember(collab, auth);
+  assertNotArchived(collab);
   const name = clipName(input.name, "name", 60);
   const lists = collab.lists.map((l) =>
     l.id === input.lane_id ? { ...l, name } : l
@@ -1337,7 +1806,7 @@ export async function renameList(
     throw new HubError("Unknown lane", "invalid_argument", 400);
   }
   const updated: Collab = { ...collab, lists, updated_at: ctx.nowIso() };
-  await ctx.kv.set(ctx.collabKey(collab.id), updated);
+  await persistCollab(ctx, updated);
   return viewCollab(ctx, auth, updated, { cards: false });
 }
 
@@ -1382,6 +1851,7 @@ export async function resolveCollabCardCreate(
   const collab = await loadCollab(ctx, collabId);
   if (!collab) throw notFound("Collab");
   assertMember(collab, auth);
+  assertNotArchived(collab);
   const laneId = resolveLaneId(collab.lists, opts?.lane_id);
   if (!laneId) {
     throw new HubError("Unknown lane", "invalid_argument", 400);

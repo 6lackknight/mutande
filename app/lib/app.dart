@@ -993,6 +993,7 @@ class _HomeScreenState extends State<HomeScreen> {
       return CollabPanel(
         daemon: widget.daemon,
         handle: widget.status.handle,
+        userId: widget.status.userId,
         onReloadReady: _registerCollabReload,
         initialCollabId: _openCollabId,
         onInitialCollabHandled: () {

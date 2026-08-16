@@ -21,6 +21,7 @@ import '../widgets/onboarding_address_rail.dart';
 import '../widgets/onboarding_chrome.dart';
 import '../widgets/person_identity_row.dart';
 import '../widgets/thinking_orb.dart';
+import '../widgets/thread_skeletons.dart';
 import 'first_run_ping_wizard.dart';
 
 /// Guided 4-step onboarding (sign in → team → connect → ping), told as the
@@ -194,9 +195,11 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
       _teamMode = _TeamMode.setupChoose;
     }
     if (_step == OnboardingStep.team) {
+      _contactsLoading = _teamMode == _TeamMode.roster;
       unawaited(_loadTeam());
     }
     if (_step == OnboardingStep.connect) {
+      _hostsLoading = true;
       unawaited(_loadHosts());
     }
     if (_step == OnboardingStep.ping) {
@@ -747,8 +750,24 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
       return _teamSetupBody();
     }
     if (_contactsLoading) {
-      return const Center(
-        child: MutandeOrb.standard(semanticLabel: 'Loading team…'),
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const OnboardingHeading(
+            variant: OnboardingHeadingVariant.display,
+            title: 'Your team.',
+          ),
+          const SizedBox(height: OnboardingSpace.lg),
+          const OnboardingRosterSkeleton(),
+          const SizedBox(height: OnboardingSpace.lg),
+          Text(
+            'Teammates need mutande on Mac to receive agent mail.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: MutandeColors.stone500,
+              height: 1.4,
+            ),
+          ),
+        ],
       );
     }
     final handle = _status?.handle ?? '';
@@ -806,7 +825,10 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
           topSpacing: OnboardingSpace.md,
           primary: FilledButton(
             onPressed: () {
-              setState(() => _step = OnboardingStep.connect);
+              setState(() {
+                _step = OnboardingStep.connect;
+                _hostsLoading = true;
+              });
               unawaited(_loadHosts());
             },
             child: const Text('Continue'),
@@ -957,8 +979,19 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
     }
 
     if (_hostsLoading) {
-      return const Center(
-        child: MutandeOrb.standard(semanticLabel: 'Detecting hosts…'),
+      return const Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          OnboardingHeading(
+            variant: OnboardingHeadingVariant.display,
+            title: 'Pick a host to connect.',
+            subtitle:
+                'One is enough — mutande wires the relay, '
+                'then hands it the collaboration skill.',
+          ),
+          SizedBox(height: OnboardingSpace.lg),
+          OnboardingHostSkeleton(),
+        ],
       );
     }
 

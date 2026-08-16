@@ -936,6 +936,7 @@ Deno.test("list_collabs returns hub boards", async () => {
   const body = JSON.parse(result.content[0].text);
   assertEquals(body.collabs[0].id, "c1");
   assertEquals(body.collabs[0].name, "sprint");
+  assertEquals(body.collabs[0].status, "open");
   assertEquals(Array.isArray(body.collabs[0].people), true);
   assertEquals(Array.isArray(body.collabs[0].agents), true);
 });
@@ -1012,6 +1013,118 @@ Deno.test("list_collabs is empty for non-participants", async () => {
   const result = res!.result as { content: Array<{ text: string }>; isError?: boolean };
   const body = JSON.parse(result.content[0].text);
   assertEquals(body.collabs.length, 0);
+});
+
+Deno.test("list_collabs omits archived boards", async () => {
+  const hub = new HubClient("http://hub.test");
+  hub.listCollabs = () =>
+    Promise.resolve({
+      collabs: [
+        { id: "c1", name: "sprint", encryption_mode: "app_envelope" } as CollabView,
+        {
+          id: "c-old",
+          name: "done",
+          encryption_mode: "app_envelope",
+          status: "archived",
+        } as CollabView,
+      ],
+    });
+  const res = await handleMcpRequest(
+    {
+      jsonrpc: "2.0",
+      id: 31,
+      method: "tools/call",
+      params: { name: "list_collabs", arguments: {} },
+    },
+    { session: fakeSession, serverVersion: "0.1.0", hub },
+  );
+  const result = res!.result as { content: Array<{ text: string }>; isError?: boolean };
+  const body = JSON.parse(result.content[0].text);
+  assertEquals(body.collabs.map((c: { id: string }) => c.id), ["c1"]);
+});
+
+Deno.test("create_card refuses archived collab", async () => {
+  const hub = new HubClient("http://hub.test");
+  hub.getCollab = () =>
+    Promise.resolve({
+      collab: {
+        id: "c-old",
+        name: "done",
+        encryption_mode: "app_envelope",
+        status: "archived",
+      } as CollabView,
+    });
+  const res = await handleMcpRequest(
+    {
+      jsonrpc: "2.0",
+      id: 32,
+      method: "tools/call",
+      params: {
+        name: "create_card",
+        arguments: { collab_id: "c-old", title: "Nope" },
+      },
+    },
+    { session: fakeSession, serverVersion: "0.1.0", hub },
+  );
+  const result = res!.result as { content: Array<{ text: string }>; isError?: boolean };
+  assertEquals(result.isError, true);
+  assertEquals(result.content[0].text.includes("this collab is archived"), true);
+});
+
+Deno.test("set_lane refuses archived collab", async () => {
+  const hub = new HubClient("http://hub.test");
+  hub.getCollab = () =>
+    Promise.resolve({
+      collab: {
+        id: "c-old",
+        name: "done",
+        encryption_mode: "app_envelope",
+        status: "archived",
+      } as CollabView,
+    });
+  const res = await handleMcpRequest(
+    {
+      jsonrpc: "2.0",
+      id: 33,
+      method: "tools/call",
+      params: {
+        name: "set_lane",
+        arguments: { collab_id: "c-old", thread_id: "t1", lane_id: "doing" },
+      },
+    },
+    { session: fakeSession, serverVersion: "0.1.0", hub },
+  );
+  const result = res!.result as { content: Array<{ text: string }>; isError?: boolean };
+  assertEquals(result.isError, true);
+  assertEquals(result.content[0].text.includes("this collab is archived"), true);
+});
+
+Deno.test("add_learning refuses archived collab", async () => {
+  const hub = new HubClient("http://hub.test");
+  hub.getCollab = () =>
+    Promise.resolve({
+      collab: {
+        id: "c-old",
+        name: "done",
+        encryption_mode: "app_envelope",
+        status: "archived",
+      } as CollabView,
+    });
+  const res = await handleMcpRequest(
+    {
+      jsonrpc: "2.0",
+      id: 34,
+      method: "tools/call",
+      params: {
+        name: "add_learning",
+        arguments: { collab_id: "c-old", notes: "Nope" },
+      },
+    },
+    { session: fakeSession, serverVersion: "0.1.0", hub },
+  );
+  const result = res!.result as { content: Array<{ text: string }>; isError?: boolean };
+  assertEquals(result.isError, true);
+  assertEquals(result.content[0].text.includes("this collab is archived"), true);
 });
 
 Deno.test("add_learning refuses e2e collab", async () => {
@@ -1092,6 +1205,60 @@ Deno.test("create_card files a thread on collab + lane name", async () => {
   assertEquals(created?.collab_id, "c1");
   assertEquals(created?.lane_id, "Doing");
   assertEquals(created?.to, "u@acme");
+});
+
+Deno.test("create_card passes assigned_to without retargeting wrap", async () => {
+  const hub = new HubClient("http://hub.test");
+  let created: Record<string, unknown> | undefined;
+  hub.getCollab = () =>
+    Promise.resolve({
+      collab: {
+        id: "c1",
+        name: "sprint",
+        encryption_mode: "app_envelope",
+        lists: [{ id: "l-backlog", name: "Backlog", position: 0 }],
+        steerers: [{ user_id: "u-bob", handle: "bob@acme" }],
+        roster: [{ user_id: "u-bob", agent_id: "a1", address: "bob@acme/claude" }],
+      } as CollabView,
+    });
+  hub.createThread = (_token, input) => {
+    created = input as unknown as Record<string, unknown>;
+    return Promise.resolve({
+      thread: meta({
+        id: "th-card",
+        collab_id: "c1",
+        assigned_to: "bob@acme/claude",
+        from: "u@acme/chatgpt",
+      }),
+      message_id: "m-card",
+    });
+  };
+  const res = await handleMcpRequest(
+    {
+      jsonrpc: "2.0",
+      id: 30,
+      method: "tools/call",
+      params: {
+        name: "create_card",
+        arguments: {
+          collab_id: "c1",
+          title: "Ship invites",
+          assigned_to: "bob@acme/claude",
+          tags: ["launch"],
+          due_on: "2026-09-01",
+          checklist: [{ text: "Draft copy" }],
+        },
+      },
+    },
+    { session: fakeSession, serverVersion: "0.1.0", hub },
+  );
+  const result = res!.result as { content: Array<{ text: string }>; isError?: boolean };
+  assertEquals(result.isError ?? false, false);
+  assertEquals(created?.collab_id, "c1");
+  assertEquals(created?.assigned_to, "bob@acme/claude");
+  assertEquals(created?.to, "u@acme");
+  assertEquals((created?.tags as string[])[0], "launch");
+  assertEquals(created?.due_on, "2026-09-01");
 });
 
 Deno.test("create_card is forbidden for non-participants", async () => {

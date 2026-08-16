@@ -31,6 +31,7 @@ import {
   listExternalContacts,
   listPairingOpsFlags,
   listPendingPairRequests,
+  resolveUserByHandleOrExternalLink,
   rotatePairingPin,
   submitPairRequest,
   unpairExternalContact,
@@ -55,10 +56,13 @@ import type {
   CreateCollabInput,
   AddCollabArtifactsInput,
   AddLearningInput,
+  AddRosterInput,
   AddSteererInput,
   ApplyCollabDowngradeInput,
   CollabPortfolio,
   CollabView,
+  ListCollabsOpts,
+  RemoveRosterInput,
   RemoveSteererInput,
   RenameCollabListInput,
   SetLaneInput,
@@ -140,8 +144,11 @@ import type { RegistryListing } from "./types.ts";
 import {
   addCollabArtifacts as addCollabArtifactsFn,
   addLearning as addCollabLearning,
+  addRoster as addCollabRosterFn,
   addSteerer as addCollabSteererFn,
   applyCollabDowngrade as applyCollabDowngradeFn,
+  approvePendingMembership as approvePendingMembershipFn,
+  archiveCollab as archiveCollabFn,
   collabArtifactKey,
   collabArtifactsPrefix,
   collabKey,
@@ -149,15 +156,20 @@ import {
   collabThreadKey,
   collabThreadsPrefix,
   createCollab as createCollabFn,
+  denyPendingMembership as denyPendingMembershipFn,
   getCollab as getCollabFn,
   listCollabs as listCollabsFn,
   orgCollabKey,
   orgCollabsPrefix,
+  removeRoster as removeCollabRosterFn,
   removeSteerer as removeCollabSteererFn,
   renameList as renameCollabListFn,
   resolveCollabCardCreate,
   setLane as setCollabLane,
+  unarchiveCollab as unarchiveCollabFn,
   updateInstructions as updateCollabInstructionsFn,
+  userCollabKey,
+  userCollabsPrefix,
   type CollabKvCtx,
 } from "./collab.ts";
 
@@ -508,6 +520,10 @@ export class HubStore {
   private collabKey(id: string) { return collabKey(id); }
   private orgCollabKey(orgId: string, id: string) { return orgCollabKey(orgId, id); }
   private orgCollabsPrefix(orgId: string) { return orgCollabsPrefix(orgId); }
+  private userCollabKey(userId: string, collabId: string) {
+    return userCollabKey(userId, collabId);
+  }
+  private userCollabsPrefix(userId: string) { return userCollabsPrefix(userId); }
   private collabThreadKey(collabId: string, threadId: string) {
     return collabThreadKey(collabId, threadId);
   }
@@ -666,9 +682,27 @@ export class HubStore {
       getUserByHandle: (h) => this.getUserByHandle(h),
       getAgent: (id) => this.getAgent(id),
       resolveAgentForUser: (userId, slug) => this.resolveAgentForUser(userId, slug),
+      hasApprovedExternalContact: async (userId, handle) => {
+        const link = await hasApprovedExternalContact(
+          this.pairingCtx(),
+          userId,
+          handle,
+        );
+        return link != null;
+      },
+      resolveUserForHandle: async (authUserId, handle) => {
+        const resolved = await resolveUserByHandleOrExternalLink(
+          this.pairingCtx(),
+          authUserId,
+          handle,
+        );
+        return resolved?.user ?? null;
+      },
       collabKey: (id) => this.collabKey(id),
       orgCollabKey: (o, id) => this.orgCollabKey(o, id),
       orgCollabsPrefix: (o) => this.orgCollabsPrefix(o),
+      userCollabKey: (u, id) => this.userCollabKey(u, id),
+      userCollabsPrefix: (u) => this.userCollabsPrefix(u),
       collabThreadKey: (c, t) => this.collabThreadKey(c, t),
       collabThreadsPrefix: (c) => this.collabThreadsPrefix(c),
       collabArtifactKey: (c, a) => collabArtifactKey(c, a),
@@ -689,8 +723,9 @@ export class HubStore {
 
   async listCollabs(
     auth: AuthContext,
+    opts?: ListCollabsOpts,
   ): Promise<{ collabs: CollabView[]; portfolio: CollabPortfolio }> {
-    return listCollabsFn(this.collabCtx(), auth);
+    return listCollabsFn(this.collabCtx(), auth, opts);
   }
 
   async getCollab(auth: AuthContext, id: string): Promise<CollabView> {
@@ -751,6 +786,47 @@ export class HubStore {
     input: RemoveSteererInput,
   ): Promise<CollabView> {
     return removeCollabSteererFn(this.collabCtx(), auth, collabId, input);
+  }
+
+  async addCollabRoster(
+    auth: AuthContext,
+    collabId: string,
+    input: AddRosterInput,
+  ): Promise<CollabView> {
+    return addCollabRosterFn(this.collabCtx(), auth, collabId, input);
+  }
+
+  async removeCollabRoster(
+    auth: AuthContext,
+    collabId: string,
+    input: RemoveRosterInput,
+  ): Promise<CollabView> {
+    return removeCollabRosterFn(this.collabCtx(), auth, collabId, input);
+  }
+
+  async approveCollabPendingMembership(
+    auth: AuthContext,
+    collabId: string,
+  ): Promise<CollabView> {
+    return approvePendingMembershipFn(this.collabCtx(), auth, collabId);
+  }
+
+  async denyCollabPendingMembership(
+    auth: AuthContext,
+    collabId: string,
+  ): Promise<CollabView> {
+    return denyPendingMembershipFn(this.collabCtx(), auth, collabId);
+  }
+
+  async archiveCollab(auth: AuthContext, collabId: string): Promise<CollabView> {
+    return archiveCollabFn(this.collabCtx(), auth, collabId);
+  }
+
+  async unarchiveCollab(
+    auth: AuthContext,
+    collabId: string,
+  ): Promise<CollabView> {
+    return unarchiveCollabFn(this.collabCtx(), auth, collabId);
   }
 
   async renameCollabList(

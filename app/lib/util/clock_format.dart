@@ -9,6 +9,32 @@ String formatClockHm(String? iso) {
   return '$h:$m';
 }
 
+/// Card due date `YYYY-MM-DD` → `16 Aug` (year if not current).
+String formatDueOn(String? ymd, {DateTime? now}) {
+  final raw = ymd?.trim() ?? '';
+  if (!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(raw)) return '';
+  final dt = DateTime.tryParse(raw);
+  if (dt == null) return '';
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  final month = months[dt.month - 1];
+  final n = now ?? DateTime.now();
+  if (dt.year == n.year) return '${dt.day} $month';
+  return '${dt.day} $month ${dt.year}';
+}
+
 /// Mail/collab age: last 24h local `HH:MM`, then `Nd` / `Nw` / `Nm` (months).
 String formatRelativeTime(String? iso, {DateTime? now}) {
   if (iso == null || iso.trim().isEmpty) return '';

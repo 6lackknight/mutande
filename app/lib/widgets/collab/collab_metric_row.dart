@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/daemon_client.dart';
 import '../../theme/mutande_macos_theme.dart';
+import '../thread_skeletons.dart';
 import 'collab_dash_card.dart';
 
 /// Four portfolio metrics plus a Create tile.
@@ -10,10 +11,12 @@ class CollabMetricRow extends StatelessWidget {
     super.key,
     required this.totals,
     required this.onCreate,
+    this.loading = false,
   });
 
   final CollabPortfolioTotals totals;
   final void Function(Rect? origin) onCreate;
+  final bool loading;
 
   @override
   Widget build(BuildContext context) {
@@ -27,18 +30,21 @@ class CollabMetricRow extends StatelessWidget {
               label: 'Collabs',
               value: '${totals.collabs}',
               hint: 'you steer',
+              loading: loading,
             ),
             _MetricTile(
               key: const Key('collab-metric-open'),
               label: 'Open cards',
               value: '${totals.open}',
               hint: 'across boards',
+              loading: loading,
             ),
             _MetricTile(
               key: const Key('collab-metric-doing'),
               label: 'In Doing',
               value: '${totals.doing}',
               hint: 'in progress',
+              loading: loading,
             ),
             _MetricTile(
               key: const Key('collab-metric-needs-you'),
@@ -46,6 +52,7 @@ class CollabMetricRow extends StatelessWidget {
               value: '${totals.needsYou}',
               hint: 'awaiting a reply',
               accent: totals.needsYou > 0,
+              loading: loading,
             ),
             _CreateTile(onTap: onCreate),
           ],
@@ -88,12 +95,14 @@ class _MetricTile extends StatelessWidget {
     required this.value,
     required this.hint,
     this.accent = false,
+    this.loading = false,
   });
 
   final String label;
   final String value;
   final String hint;
   final bool accent;
+  final bool loading;
 
   @override
   Widget build(BuildContext context) {
@@ -112,16 +121,19 @@ class _MetricTile extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 28,
-              height: 1,
-              fontWeight: FontWeight.w600,
-              letterSpacing: -0.6,
-              color: valueColor,
+          if (loading)
+            const CollabMetricValueSkeleton()
+          else
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 28,
+                height: 1,
+                fontWeight: FontWeight.w600,
+                letterSpacing: -0.6,
+                color: valueColor,
+              ),
             ),
-          ),
           const SizedBox(height: 8),
           Text(
             hint,

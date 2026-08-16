@@ -8,7 +8,9 @@ import 'package:app/services/first_run_store.dart';
 import 'package:app/services/host_link_store.dart';
 import 'package:app/theme/mutande_macos_theme.dart';
 import 'package:app/widgets/contact_avatar.dart';
+import 'package:app/widgets/onboarding_address_rail.dart';
 import 'package:app/widgets/onboarding_chrome.dart';
+import 'package:app/widgets/thread_skeletons.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -112,5 +114,142 @@ void main() {
     expect(find.text('tawandadev@tbhco'), findsOneWidget);
     expect(find.byType(PersonAvatar), findsNWidgets(3));
     expect(find.text('Two teammates can already reach you.'), findsOneWidget);
+  });
+
+  testWidgets('team roster loading keeps onboarding chrome', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final gate = Completer<void>();
+    final daemon = _mockDaemon((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      final method = body['method'] as String?;
+      if (method == 'get_status') {
+        return _rpcOk(body['id'], {
+          'configured': true,
+          'signed_in': true,
+          'handle': 'tawanda@tbhco',
+          'hub_url': 'http://localhost:8000',
+        });
+      }
+      if (method == 'list_contacts') {
+        await gate.future;
+        return _rpcOk(body['id'], {
+          'contacts': [
+            {
+              'handle': 'tawanda@tbhco',
+              'kind': 'org',
+              'display_name': 'Tawanda Brandon',
+            },
+          ],
+        });
+      }
+      return _rpcOk(body['id'], {'ok': true});
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: mutandeMaterialTheme(),
+        home: MediaQuery(
+          data: const MediaQueryData(disableAnimations: true),
+          child: OnboardingFlowScreen(
+            config: const AppConfig(hubUrl: 'http://localhost:8000'),
+            daemon: daemon,
+            firstRunStore: FirstRunStore.memory(),
+            hostLinkStore: HostLinkStore.memory(),
+            onComplete: (_, _) {},
+            initialStatus: const DaemonStatusResult(
+              configured: true,
+              signedIn: true,
+              handle: 'tawanda@tbhco',
+              hubUrl: 'http://localhost:8000',
+            ),
+            initialStep: OnboardingStep.team,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(find.byType(OnboardingAddressRail), findsOneWidget);
+    expect(find.text('Your team.'), findsOneWidget);
+    expect(find.byType(OnboardingRosterSkeleton), findsOneWidget);
+    expect(find.text('Tawanda Brandon'), findsNothing);
+
+    gate.complete();
+    await _pumpUntil(tester, find.text('Tawanda Brandon'));
+    expect(find.byType(OnboardingRosterSkeleton), findsNothing);
+    expect(find.byType(OnboardingAddressRail), findsOneWidget);
+    expect(find.text('Tawanda Brandon'), findsOneWidget);
+  });
+
+  testWidgets('connect host loading keeps onboarding chrome', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final gate = Completer<void>();
+    final daemon = _mockDaemon((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      final method = body['method'] as String?;
+      if (method == 'get_status') {
+        return _rpcOk(body['id'], {
+          'configured': true,
+          'signed_in': true,
+          'handle': 'tawanda@tbhco',
+          'hub_url': 'http://localhost:8000',
+        });
+      }
+      if (method == 'detect_ai_hosts') {
+        await gate.future;
+        return _rpcOk(body['id'], {
+          'hosts': [
+            {'host': 'cursor', 'installed': true, 'config_present': false},
+          ],
+        });
+      }
+      if (method == 'list_agents') {
+        await gate.future;
+        return _rpcOk(body['id'], {'agents': <Object?>[]});
+      }
+      return _rpcOk(body['id'], {'ok': true});
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: mutandeMaterialTheme(),
+        home: MediaQuery(
+          data: const MediaQueryData(disableAnimations: true),
+          child: OnboardingFlowScreen(
+            config: const AppConfig(hubUrl: 'http://localhost:8000'),
+            daemon: daemon,
+            firstRunStore: FirstRunStore.memory(),
+            hostLinkStore: HostLinkStore.memory(),
+            onComplete: (_, _) {},
+            initialStatus: const DaemonStatusResult(
+              configured: true,
+              signedIn: true,
+              handle: 'tawanda@tbhco',
+              hubUrl: 'http://localhost:8000',
+            ),
+            initialStep: OnboardingStep.connect,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(find.byType(OnboardingAddressRail), findsOneWidget);
+    expect(find.text('Pick a host to connect.'), findsOneWidget);
+    expect(find.byType(OnboardingHostSkeleton), findsOneWidget);
+
+    gate.complete();
+    await _pumpUntil(tester, find.text('Cursor'));
+    expect(find.byType(OnboardingHostSkeleton), findsNothing);
+    expect(find.byType(OnboardingAddressRail), findsOneWidget);
+    expect(find.text('Pick a host to connect.'), findsOneWidget);
   });
 }

@@ -8,7 +8,9 @@ export function createCollabRoutes(store: HubStore) {
   routes.use("*", authMiddleware(store));
 
   routes.get("/", async (c) => {
-    return c.json(await store.listCollabs(c.get("auth")));
+    const archived = c.req.query("archived") === "1" ||
+      c.req.query("archived") === "true";
+    return c.json(await store.listCollabs(c.get("auth"), { archived }));
   });
 
   routes.post("/", async (c) => {
@@ -116,6 +118,36 @@ export function createCollabRoutes(store: HubStore) {
     return c.json({ collab });
   });
 
+  routes.post("/:id/roster", async (c) => {
+    const body = await c.req.json<{ address: string }>();
+    const collab = await store.addCollabRoster(
+      c.get("auth"),
+      c.req.param("id"),
+      body,
+    );
+    return c.json({ collab });
+  });
+
+  routes.post("/:id/roster/remove", async (c) => {
+    const body = await c.req.json<{ agent_id: string }>();
+    const collab = await store.removeCollabRoster(
+      c.get("auth"),
+      c.req.param("id"),
+      body,
+    );
+    return c.json({ collab });
+  });
+
+  routes.post("/:id/archive", async (c) => {
+    const collab = await store.archiveCollab(c.get("auth"), c.req.param("id"));
+    return c.json({ collab });
+  });
+
+  routes.post("/:id/unarchive", async (c) => {
+    const collab = await store.unarchiveCollab(c.get("auth"), c.req.param("id"));
+    return c.json({ collab });
+  });
+
   routes.post("/:id/lists/:laneId/rename", async (c) => {
     const body = await c.req.json<{ name: string }>();
     const collab = await store.renameCollabList(
@@ -135,6 +167,22 @@ export function createCollabRoutes(store: HubStore) {
       c.get("auth"),
       c.req.param("id"),
       body,
+    );
+    return c.json({ collab });
+  });
+
+  routes.post("/:id/downgrade/approve", async (c) => {
+    const collab = await store.approveCollabPendingMembership(
+      c.get("auth"),
+      c.req.param("id"),
+    );
+    return c.json({ collab });
+  });
+
+  routes.post("/:id/downgrade/deny", async (c) => {
+    const collab = await store.denyCollabPendingMembership(
+      c.get("auth"),
+      c.req.param("id"),
     );
     return c.json({ collab });
   });

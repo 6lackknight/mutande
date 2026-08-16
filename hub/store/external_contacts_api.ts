@@ -122,14 +122,51 @@ export async function findExternalLinkBetween(
   return linkRes.value;
 }
 
+/** Handle index first; fall back to paired external link handles (stale handle maps). */
+export async function resolveUserByHandleOrExternalLink(
+  ctx: PairingKvCtx,
+  authUserId: string,
+  handle: string,
+): Promise<{ user: User; link: ExternalContactLink | null } | null> {
+  const normalized = normalizeHandle(handle);
+  const direct = await ctx.getUserByHandle(normalized);
+  if (direct) {
+    const link = await findExternalLinkBetween(ctx, authUserId, direct.id);
+    return { user: direct, link };
+  }
+  const iter = ctx.kv.list<string>({
+    prefix: externalLinksByUserPrefix(authUserId),
+  });
+  for await (const entry of iter) {
+    const linkRes = await ctx.kv.get<ExternalContactLink>(
+      externalLinkKey(entry.value),
+    );
+    const link = linkRes.value;
+    if (!link) continue;
+    const otherHandle =
+      link.user_a_id === authUserId ? link.user_b_handle : link.user_a_handle;
+    if (normalizeHandle(otherHandle) !== normalized) continue;
+    const otherId =
+      link.user_a_id === authUserId ? link.user_b_id : link.user_a_id;
+    const user = await ctx.getUser(otherId);
+    if (user) return { user, link };
+  }
+  return null;
+}
+
 export async function hasApprovedExternalContact(
   ctx: PairingKvCtx,
   userId: string,
   otherHandle: string,
 ): Promise<ExternalContactLink | null> {
-  const other = await ctx.getUserByHandle(normalizeHandle(otherHandle));
-  if (!other) return null;
-  return findExternalLinkBetween(ctx, userId, other.id);
+  const resolved = await resolveUserByHandleOrExternalLink(
+    ctx,
+    userId,
+    otherHandle,
+  );
+  if (!resolved) return null;
+  return resolved.link ??
+    findExternalLinkBetween(ctx, userId, resolved.user.id);
 }
 
 export async function listExternalContacts(

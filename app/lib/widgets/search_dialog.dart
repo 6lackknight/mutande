@@ -6,9 +6,10 @@ import '../services/daemon_client.dart';
 import '../theme/mutande_macos_theme.dart';
 import '../util/address_display.dart';
 import 'ai_host_icon.dart';
+import 'home_chrome_pills.dart';
 import 'home_chrome_strip.dart';
 import 'pane_quiet_state.dart';
-import 'thinking_orb.dart';
+import 'thread_skeletons.dart';
 
 enum SearchScope { all, threads, collab, contacts }
 
@@ -21,6 +22,7 @@ class SearchHit {
     required this.title,
     this.subtitle,
     this.hostSlug,
+    this.updatedAt,
   });
 
   final SearchHitKind kind;
@@ -28,10 +30,22 @@ class SearchHit {
   final String title;
   final String? subtitle;
   final String? hostSlug;
+  final String? updatedAt;
 }
 
 bool _needle(String q, Iterable<String?> fields) {
   return fields.any((f) => (f ?? '').toLowerCase().contains(q));
+}
+
+int compareSearchHits(SearchHit a, SearchHit b, MutandeListSort sort) {
+  if (sort == MutandeListSort.name) {
+    final byName = a.title.toLowerCase().compareTo(b.title.toLowerCase());
+    if (byName != 0) return byName;
+    return a.id.compareTo(b.id);
+  }
+  final byTime = (b.updatedAt ?? '').compareTo(a.updatedAt ?? '');
+  if (byTime != 0) return byTime;
+  return a.title.toLowerCase().compareTo(b.title.toLowerCase());
 }
 
 List<SearchHit> filterSearchHits({
@@ -41,6 +55,7 @@ List<SearchHit> filterSearchHits({
   required List<CollabSummary> collabs,
   required List<ContactView> contacts,
   String? myHandle,
+  MutandeListSort sort = MutandeListSort.recent,
 }) {
   final q = query.trim().toLowerCase();
   final out = <SearchHit>[];
@@ -85,6 +100,7 @@ List<SearchHit> filterSearchHits({
           title: title,
           subtitle: meta,
           hostSlug: host,
+          updatedAt: t.updatedAt,
         ),
       );
     }
@@ -100,6 +116,7 @@ List<SearchHit> filterSearchHits({
           id: c.id,
           title: c.name,
           subtitle: '$cards · ${c.isE2e ? 'e2e' : 'app envelope'}',
+          updatedAt: c.updatedAt,
         ),
       );
     }
@@ -120,11 +137,23 @@ List<SearchHit> filterSearchHits({
           id: handle,
           title: name.isNotEmpty ? name : handle,
           subtitle: name.isNotEmpty ? handle : (c.isBroadcast ? 'broadcast' : c.kind),
+          updatedAt: c.linkedAt,
         ),
       );
     }
   }
 
+  if (scope == SearchScope.all) {
+    final threadHits = out.where((h) => h.kind == SearchHitKind.thread).toList()
+      ..sort((a, b) => compareSearchHits(a, b, sort));
+    final collabHits = out.where((h) => h.kind == SearchHitKind.collab).toList()
+      ..sort((a, b) => compareSearchHits(a, b, sort));
+    final contactHits =
+        out.where((h) => h.kind == SearchHitKind.contact).toList()
+          ..sort((a, b) => compareSearchHits(a, b, sort));
+    return [...threadHits, ...collabHits, ...contactHits];
+  }
+  out.sort((a, b) => compareSearchHits(a, b, sort));
   return out;
 }
 
@@ -175,6 +204,7 @@ class _SearchDialogState extends State<SearchDialog> {
   final _controller = TextEditingController();
   final _focus = FocusNode();
   SearchScope _scope = SearchScope.all;
+  MutandeListSort _sort = MutandeListSort.recent;
   bool _loading = true;
   String? _error;
   List<ThreadSummary> _threads = const [];
@@ -255,6 +285,7 @@ class _SearchDialogState extends State<SearchDialog> {
       collabs: _collabs,
       contacts: _contacts,
       myHandle: widget.myHandle,
+      sort: _sort,
     );
   }
 
@@ -329,41 +360,58 @@ class _SearchDialogState extends State<SearchDialog> {
                       focusNode: _focus,
                     ),
                     const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _ScopeChip(
-                          key: const Key('search-scope-all'),
-                          icon: CupertinoIcons.square_stack,
-                          label: 'All',
-                          selected: _scope == SearchScope.all,
-                          onTap: () =>
-                              setState(() => _scope = SearchScope.all),
+                        Expanded(
+                          child: Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: [
+                              _ScopeChip(
+                                key: const Key('search-scope-all'),
+                                icon: CupertinoIcons.square_stack,
+                                label: 'All',
+                                selected: _scope == SearchScope.all,
+                                onTap: () =>
+                                    setState(() => _scope = SearchScope.all),
+                              ),
+                              _ScopeChip(
+                                key: const Key('search-scope-threads'),
+                                icon: CupertinoIcons.envelope,
+                                label: 'Threads',
+                                selected: _scope == SearchScope.threads,
+                                onTap: () => setState(
+                                  () => _scope = SearchScope.threads,
+                                ),
+                              ),
+                              _ScopeChip(
+                                key: const Key('search-scope-collab'),
+                                icon: CupertinoIcons.rectangle_split_3x1,
+                                label: 'Collab',
+                                selected: _scope == SearchScope.collab,
+                                onTap: () => setState(
+                                  () => _scope = SearchScope.collab,
+                                ),
+                              ),
+                              _ScopeChip(
+                                key: const Key('search-scope-contacts'),
+                                icon: CupertinoIcons.person,
+                                label: 'Contacts',
+                                selected: _scope == SearchScope.contacts,
+                                onTap: () => setState(
+                                  () => _scope = SearchScope.contacts,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                        _ScopeChip(
-                          key: const Key('search-scope-threads'),
-                          icon: CupertinoIcons.envelope,
-                          label: 'Threads',
-                          selected: _scope == SearchScope.threads,
-                          onTap: () =>
-                              setState(() => _scope = SearchScope.threads),
-                        ),
-                        _ScopeChip(
-                          key: const Key('search-scope-collab'),
-                          icon: CupertinoIcons.rectangle_split_3x1,
-                          label: 'Collab',
-                          selected: _scope == SearchScope.collab,
-                          onTap: () =>
-                              setState(() => _scope = SearchScope.collab),
-                        ),
-                        _ScopeChip(
-                          key: const Key('search-scope-contacts'),
-                          icon: CupertinoIcons.person,
-                          label: 'Contacts',
-                          selected: _scope == SearchScope.contacts,
-                          onTap: () =>
-                              setState(() => _scope = SearchScope.contacts),
+                        const SizedBox(width: 12),
+                        MutandeSortToggles(
+                          value: _sort,
+                          onChanged: (next) => setState(() => _sort = next),
+                          recentKey: const Key('search-sort-recent'),
+                          nameKey: const Key('search-sort-name'),
                         ),
                       ],
                     ),
@@ -382,8 +430,9 @@ class _SearchDialogState extends State<SearchDialog> {
   Widget _body() {
     final q = _controller.text.trim();
     if (_loading) {
-      return const Center(
-        child: MutandeOrb.standard(semanticLabel: 'Searching…'),
+      return const ThreadListSkeleton(
+        key: ValueKey('search-sk'),
+        semanticLabel: 'Searching…',
       );
     }
     if (_error != null) {

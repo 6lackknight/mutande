@@ -356,6 +356,14 @@ async function callTool(
     const lane =
       requireString(args, "lane") || requireString(args, "lane_id") || undefined;
     const notes = requireString(args, "notes") || undefined;
+    const assignedTo = requireString(args, "assigned_to") || undefined;
+    const dueOn = requireString(args, "due_on") || undefined;
+    const tags = Array.isArray(args.tags)
+      ? args.tags.filter((t): t is string => typeof t === "string")
+      : undefined;
+    const checklist = Array.isArray(args.checklist)
+      ? args.checklist
+      : undefined;
     if (!collabId || !title) {
       return toolTextResult("collab_id and title are required", true);
     }
@@ -371,6 +379,12 @@ async function callTool(
         title,
         lane,
         notes,
+        assigned_to: assignedTo,
+        tags,
+        due_on: dueOn,
+        checklist: checklist as
+          | { id?: string; text: string; done?: boolean }[]
+          | undefined,
       },
       {
         handle,

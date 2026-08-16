@@ -121,6 +121,27 @@
     },
 
     "schema_version": { "type": "integer", "const": 1 },
+    "status": {
+      "type": "string",
+      "enum": ["open", "archived"],
+      "description": "Missing or open = active. Archived boards are hidden from the default list and frozen (reversible). No schema_version bump."
+    },
+    "pending_membership": {
+      "type": "object",
+      "description": "Unanimous consent to add an external or hosted participant to an E2E collab. Deny clears; last approval flips downgrade_point and adds.",
+      "required": ["kind", "cause_address", "proposed_by", "approved_by"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["steerer", "roster"] },
+        "handle": { "type": "string", "description": "Human handle when kind is steerer." },
+        "address": { "type": "string", "description": "Agent address when kind is roster." },
+        "cause_address": { "type": "string" },
+        "proposed_by": { "type": "string", "format": "uuid" },
+        "approved_by": {
+          "type": "array",
+          "items": { "type": "string", "format": "uuid" }
+        }
+      }
+    },
     "created_by": {
       "type": "string",
       "format": "uuid",

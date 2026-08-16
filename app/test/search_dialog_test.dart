@@ -3,7 +3,9 @@ import 'dart:convert';
 
 import 'package:app/services/daemon_client.dart';
 import 'package:app/theme/mutande_macos_theme.dart';
+import 'package:app/widgets/home_chrome_pills.dart';
 import 'package:app/widgets/search_dialog.dart';
+import 'package:app/widgets/thread_skeletons.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -32,6 +34,7 @@ ThreadSummary _thread({
   required String from,
   String subject = '',
   String audience = 'alice@acme',
+  String? updatedAt,
 }) {
   return ThreadSummary(
     id: id,
@@ -40,6 +43,7 @@ ThreadSummary _thread({
     from: from,
     audience: audience,
     lastSubject: subject,
+    updatedAt: updatedAt,
   );
 }
 
@@ -62,7 +66,10 @@ Future<void> _pumpDialog(
   );
   for (var i = 0; i < 40; i++) {
     await tester.pump(const Duration(milliseconds: 50));
-    if (find.text('Searching…').evaluate().isEmpty) return;
+    if (find.byType(ThreadListSkeleton).evaluate().isEmpty &&
+        find.byKey(const Key('search-scope-all')).evaluate().isNotEmpty) {
+      return;
+    }
   }
 }
 
@@ -215,5 +222,149 @@ void main() {
     await tester.tap(find.byKey(const Key('search-scope-collab')));
     await tester.pump();
     expect(find.text('Launch'), findsOneWidget);
+  });
+
+  test('filterSearchHits recent default puts newer threads first', () {
+    final hits = filterSearchHits(
+      query: '',
+      scope: SearchScope.threads,
+      threads: [
+        _thread(
+          id: 'old',
+          from: 'bob@acme',
+          subject: 'Alpha',
+          updatedAt: '2026-08-10T12:00:00Z',
+        ),
+        _thread(
+          id: 'new',
+          from: 'cara@acme',
+          subject: 'Zebra',
+          updatedAt: '2026-08-16T12:00:00Z',
+        ),
+      ],
+      collabs: const [],
+      contacts: const [],
+    );
+    expect(hits.map((h) => h.title), ['Zebra', 'Alpha']);
+    final named = filterSearchHits(
+      query: '',
+      scope: SearchScope.threads,
+      threads: [
+        _thread(
+          id: 'old',
+          from: 'bob@acme',
+          subject: 'Zebra',
+          updatedAt: '2026-08-16T12:00:00Z',
+        ),
+        _thread(
+          id: 'new',
+          from: 'cara@acme',
+          subject: 'Alpha',
+          updatedAt: '2026-08-10T12:00:00Z',
+        ),
+      ],
+      collabs: const [],
+      contacts: const [],
+      sort: MutandeListSort.name,
+    );
+    expect(named.map((h) => h.title), ['Alpha', 'Zebra']);
+  });
+
+  testWidgets('sort toggles sit across from filters and reorder hits', (
+    tester,
+  ) async {
+    final daemon = _mockDaemon((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      switch (body['method'] as String?) {
+        case 'list_threads':
+          return _rpcOk(body['id'], {
+            'threads': [
+              {
+                'id': 't-old',
+                'kind': 'direct',
+                'status': 'open',
+                'from': 'bob@acme',
+                'audience': 'alice@acme',
+                'last_subject': 'Alpha brief',
+                'updated_at': '2026-08-10T12:00:00Z',
+              },
+              {
+                'id': 't-new',
+                'kind': 'direct',
+                'status': 'open',
+                'from': 'cara@acme',
+                'audience': 'alice@acme',
+                'last_subject': 'Zebra brief',
+                'updated_at': '2026-08-16T12:00:00Z',
+              },
+            ],
+          });
+        case 'list_collabs':
+          return _rpcOk(body['id'], {'collabs': []});
+        case 'list_contacts':
+        case 'list_external_contacts':
+          return _rpcOk(body['id'], {'contacts': []});
+        default:
+          return _rpcOk(body['id'], {});
+      }
+    });
+
+    await _pumpDialog(tester, daemon: daemon);
+    expect(find.byKey(const Key('search-sort-recent')), findsOneWidget);
+    expect(find.byKey(const Key('search-sort-name')), findsOneWidget);
+    final filters = tester.getTopLeft(find.byKey(const Key('search-scope-all')));
+    final sort = tester.getTopLeft(find.byKey(const Key('search-sort-recent')));
+    expect(sort.dx, greaterThan(filters.dx));
+
+    await tester.tap(find.byKey(const Key('search-scope-threads')));
+    await tester.pump();
+    var alpha = tester.getTopLeft(find.text('Alpha brief'));
+    var zebra = tester.getTopLeft(find.text('Zebra brief'));
+    expect(zebra.dy, lessThan(alpha.dy));
+
+    await tester.tap(find.byKey(const Key('search-sort-name')));
+    await tester.pump();
+    alpha = tester.getTopLeft(find.text('Alpha brief'));
+    zebra = tester.getTopLeft(find.text('Zebra brief'));
+    expect(alpha.dy, lessThan(zebra.dy));
+  });
+
+  testWidgets('search loading keeps filters and sort, skeletons the list', (
+    tester,
+  ) async {
+    final gate = Completer<void>();
+    final daemon = _mockDaemon((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      await gate.future;
+      return _rpcOk(body['id'], {
+        'threads': <Object?>[],
+        'collabs': <Object?>[],
+        'contacts': <Object?>[],
+      });
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: mutandeMaterialTheme(),
+        home: MediaQuery(
+          data: const MediaQueryData(disableAnimations: true),
+          child: Scaffold(
+            body: SearchDialog(daemon: daemon, myHandle: 'alice@acme'),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(find.text('Search'), findsOneWidget);
+    expect(find.byKey(const Key('search-scope-all')), findsOneWidget);
+    expect(find.byKey(const Key('search-scope-threads')), findsOneWidget);
+    expect(find.byKey(const Key('search-sort-recent')), findsOneWidget);
+    expect(find.byType(ThreadListSkeleton), findsOneWidget);
+    expect(find.text('Type to search collabs, threads, and contacts'), findsNothing);
+
+    gate.complete();
+    await tester.pumpAndSettle();
+    expect(find.byType(ThreadListSkeleton), findsNothing);
+    expect(find.byKey(const Key('search-scope-all')), findsOneWidget);
   });
 }

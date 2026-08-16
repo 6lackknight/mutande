@@ -5,7 +5,7 @@ import '../../theme/mutande_macos_theme.dart';
 import '../../util/address_display.dart';
 import '../../util/clock_format.dart';
 import '../message_attachments.dart';
-import '../thinking_orb.dart';
+import '../thread_skeletons.dart';
 import 'collab_overview.dart';
 
 /// Artifact-led collab body: instructions, produced files, retained memory,
@@ -19,7 +19,9 @@ class CollabProjectDossier extends StatelessWidget {
     required this.board,
     required this.onOpenBrain,
     required this.onOpenCard,
+    this.onManageGroup,
     this.myHandle,
+    this.loading = false,
   }) : _artifacts = artifacts;
 
   final CollabDetail collab;
@@ -29,7 +31,9 @@ class CollabProjectDossier extends StatelessWidget {
   final Widget board;
   final VoidCallback onOpenBrain;
   final ValueChanged<String> onOpenCard;
+  final VoidCallback? onManageGroup;
   final String? myHandle;
+  final bool loading;
 
   @override
   Widget build(BuildContext context) {
@@ -42,6 +46,7 @@ class CollabProjectDossier extends StatelessWidget {
             child: _ProjectInstructions(
               collab: collab,
               onOpenBrain: onOpenBrain,
+              loading: loading,
             ),
           ),
         ),
@@ -53,18 +58,21 @@ class CollabProjectDossier extends StatelessWidget {
               builder: (context, constraints) {
                 final artifactDossier = _ArtifactDossier(
                   artifacts: artifacts,
-                  loading: artifactsLoading,
+                  loading: loading || artifactsLoading,
                   onOpenCard: onOpenCard,
                 );
                 final memory = _MemoryLedger(
                   learnings: collab.learnings,
                   onOpenBrain: onOpenBrain,
                   myHandle: myHandle,
+                  loading: loading,
                 );
                 if (constraints.maxWidth < 760) {
                   return Column(
                     children: [
-                      if (artifactsLoading || artifacts.isNotEmpty) ...[
+                      if (loading ||
+                          artifactsLoading ||
+                          artifacts.isNotEmpty) ...[
                         artifactDossier,
                         const SizedBox(height: 24),
                       ],
@@ -75,7 +83,9 @@ class CollabProjectDossier extends StatelessWidget {
                 return Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (artifactsLoading || artifacts.isNotEmpty) ...[
+                    if (loading ||
+                        artifactsLoading ||
+                        artifacts.isNotEmpty) ...[
                       Expanded(flex: 3, child: artifactDossier),
                       const SizedBox(width: 36),
                     ],
@@ -94,6 +104,8 @@ class CollabProjectDossier extends StatelessWidget {
               overview: overview,
               collab: collab,
               myHandle: myHandle,
+              onManageGroup: onManageGroup,
+              loading: loading,
             ),
           ),
         ),
@@ -106,10 +118,15 @@ class CollabProjectDossier extends StatelessWidget {
 }
 
 class _ProjectInstructions extends StatelessWidget {
-  const _ProjectInstructions({required this.collab, required this.onOpenBrain});
+  const _ProjectInstructions({
+    required this.collab,
+    required this.onOpenBrain,
+    this.loading = false,
+  });
 
   final CollabDetail collab;
   final VoidCallback onOpenBrain;
+  final bool loading;
 
   @override
   Widget build(BuildContext context) {
@@ -136,18 +153,40 @@ class _ProjectInstructions extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 9),
-                Text(
-                  hasInstructions
-                      ? instructions
-                      : 'No standing instructions yet.',
-                  style: TextStyle(
-                    fontSize: hasInstructions ? 17 : 15,
-                    height: 1.4,
-                    letterSpacing: -0.2,
-                    fontWeight: FontWeight.w600,
-                    color: MutandeColors.stone50,
+                if (loading)
+                  const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      FractionallySizedBox(
+                        widthFactor: 0.86,
+                        child: SizedBox(
+                          height: 14,
+                          child: ColoredBox(color: MutandeColors.stone600),
+                        ),
+                      ),
+                      SizedBox(height: 8),
+                      FractionallySizedBox(
+                        widthFactor: 0.54,
+                        child: SizedBox(
+                          height: 14,
+                          child: ColoredBox(color: MutandeColors.stone600),
+                        ),
+                      ),
+                    ],
+                  )
+                else
+                  Text(
+                    hasInstructions
+                        ? instructions
+                        : 'No standing instructions yet.',
+                    style: TextStyle(
+                      fontSize: hasInstructions ? 17 : 15,
+                      height: 1.4,
+                      letterSpacing: -0.2,
+                      fontWeight: FontWeight.w600,
+                      color: MutandeColors.stone50,
+                    ),
                   ),
-                ),
               ],
             ),
           ),
@@ -212,9 +251,7 @@ class _ArtifactDossier extends StatelessWidget {
           body:
               'Attached files stay on this collab; links point at a resource or deployment.',
           trailing: loading
-              ? const MutandeOrb.loading(
-                  semanticLabel: 'Opening collab artifacts',
-                )
+              ? null
               : Text(
                   '${artifacts.length}',
                   style: const TextStyle(
@@ -225,7 +262,9 @@ class _ArtifactDossier extends StatelessWidget {
                 ),
         ),
         const SizedBox(height: 12),
-        if (!loading)
+        if (loading)
+          const CreateCollabChipSkeleton.people()
+        else
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -370,11 +409,13 @@ class _MemoryLedger extends StatelessWidget {
     required this.learnings,
     required this.onOpenBrain,
     this.myHandle,
+    this.loading = false,
   });
 
   final List<CollabLearningView> learnings;
   final VoidCallback onOpenBrain;
   final String? myHandle;
+  final bool loading;
 
   @override
   Widget build(BuildContext context) {
@@ -392,7 +433,9 @@ class _MemoryLedger extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-        if (latest.isEmpty)
+        if (loading)
+          const CollabDossierListsSkeleton()
+        else if (latest.isEmpty)
           const Text(
             'No retained learnings yet.',
             style: TextStyle(fontSize: 12, color: MutandeColors.stone400),
@@ -460,11 +503,15 @@ class _CurrentPosition extends StatelessWidget {
     required this.overview,
     required this.collab,
     this.myHandle,
+    this.onManageGroup,
+    this.loading = false,
   });
 
   final CollabOverview overview;
   final CollabDetail collab;
   final String? myHandle;
+  final VoidCallback? onManageGroup;
+  final bool loading;
 
   @override
   Widget build(BuildContext context) {
@@ -475,26 +522,38 @@ class _CurrentPosition extends StatelessWidget {
           child: _SectionHeading(
             eyebrow: 'CURRENT POSITION',
             title: 'Work in motion',
-            body: [
-              '${overview.open} open',
-              '${overview.doing} in Doing',
-              '${overview.needsYou} awaiting you',
-              if (last.isNotEmpty) 'latest $last',
-            ].join(' · '),
+            body: loading
+                ? 'Cards and lanes load here.'
+                : [
+                    '${overview.open} open',
+                    '${overview.doing} in Doing',
+                    '${overview.needsYou} awaiting you',
+                    if (last.isNotEmpty) 'latest $last',
+                  ].join(' · '),
           ),
         ),
         const SizedBox(width: 20),
-        _WorkingGroupSummary(collab: collab, myHandle: myHandle),
+        if (!loading)
+          _WorkingGroupSummary(
+            collab: collab,
+            myHandle: myHandle,
+            onTap: onManageGroup,
+          ),
       ],
     );
   }
 }
 
 class _WorkingGroupSummary extends StatelessWidget {
-  const _WorkingGroupSummary({required this.collab, this.myHandle});
+  const _WorkingGroupSummary({
+    required this.collab,
+    this.myHandle,
+    this.onTap,
+  });
 
   final CollabDetail collab;
   final String? myHandle;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -507,17 +566,29 @@ class _WorkingGroupSummary extends StatelessWidget {
         if (humanLabels.isNotEmpty) 'Humans steering: $humanLabels',
         if (collab.roster.isNotEmpty)
           'Agents working: ${collab.roster.map((r) => formatMailAddress(r.address, myHandle: myHandle)).join(', ')}',
+        if (onTap != null) 'Manage people and agents',
       ].join('\n'),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
-        decoration: BoxDecoration(
-          border: Border.all(color: MutandeColors.stone200),
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Text(
-          '${collab.steererHandles.length} humans steering · '
-          '${collab.roster.length} agents working',
-          style: const TextStyle(fontSize: 10.5, color: MutandeColors.stone500),
+      child: MouseRegion(
+        cursor: onTap == null
+            ? SystemMouseCursors.basic
+            : SystemMouseCursors.click,
+        child: GestureDetector(
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+            decoration: BoxDecoration(
+              border: Border.all(color: MutandeColors.stone200),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Text(
+              '${collab.steererHandles.length} humans steering · '
+              '${collab.roster.length} agents working',
+              style: const TextStyle(
+                fontSize: 10.5,
+                color: MutandeColors.stone500,
+              ),
+            ),
+          ),
         ),
       ),
     );

@@ -1,17 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../services/daemon_client.dart';
 import '../theme/mutande_macos_theme.dart';
 import '../util/address_display.dart';
 import '../util/clock_format.dart';
 import '../util/thread_peer.dart';
+import '../widgets/ai_host_icon.dart';
 import '../widgets/collab/collab_activity_calendar.dart';
+import '../widgets/collab/collab_brain_pane.dart';
 import '../widgets/collab/collab_lane_donut.dart';
 import '../widgets/collab/collab_metric_row.dart';
 import '../widgets/collab/collab_project_dossier.dart';
 import '../widgets/collab/collab_projects_table.dart';
+import '../widgets/contact_avatar.dart';
 import '../widgets/create_card_sheet.dart';
 import '../widgets/create_collab_sheet.dart';
+import '../widgets/downgrade_consent_banner.dart';
+import '../widgets/home_chrome_pills.dart';
+import '../widgets/home_chrome_strip.dart';
+import '../widgets/manage_collab_sheet.dart';
 import '../widgets/mutande_sheet.dart';
 import '../widgets/pane_quiet_state.dart';
 import '../widgets/thread_skeletons.dart';
@@ -44,6 +52,7 @@ class CollabPanel extends StatefulWidget {
     super.key,
     required this.daemon,
     this.handle,
+    this.userId,
     this.onReloadReady,
     this.initialCollabId,
     this.onInitialCollabHandled,
@@ -51,6 +60,7 @@ class CollabPanel extends StatefulWidget {
 
   final DaemonClient daemon;
   final String? handle;
+  final String? userId;
   final void Function(VoidCallback? reload)? onReloadReady;
   final String? initialCollabId;
   final VoidCallback? onInitialCollabHandled;
@@ -66,6 +76,9 @@ class _CollabPanelState extends State<CollabPanel> {
   CollabPortfolio _portfolio = const CollabPortfolio();
   Map<String, String> _avatarsByHandle = const {};
   String? _openId;
+  String? _pendingCardId;
+  bool _showArchived = false;
+  MutandeListSort _sort = MutandeListSort.recent;
 
   @override
   void initState() {
@@ -105,7 +118,7 @@ class _CollabPanelState extends State<CollabPanel> {
       _error = null;
     });
     try {
-      final listed = await widget.daemon.listCollabs();
+      final listed = await widget.daemon.listCollabs(archived: _showArchived);
       if (!mounted) return;
       setState(() {
         _collabs = listed.collabs;
@@ -120,9 +133,31 @@ class _CollabPanelState extends State<CollabPanel> {
         _error = collabFetchErrorCopy(e);
       });
     }
-    final avatars = await _loadAvatarMap();
-    if (!mounted || avatars.isEmpty) return;
-    setState(() => _avatarsByHandle = avatars);
+    final needRecent = _portfolio.recent.isEmpty && _error == null;
+    final recentFuture = needRecent
+        ? _recentFromInbox()
+        : Future<List<CollabRecentThread>>.value(const []);
+    final avatarsFuture = _loadAvatarMap();
+    final recent = await recentFuture;
+    final avatars = await avatarsFuture;
+    if (!mounted) return;
+    if (recent.isEmpty && avatars.isEmpty) return;
+    setState(() {
+      if (recent.isNotEmpty && _portfolio.recent.isEmpty) {
+        _portfolio = _portfolio.copyWith(recent: recent);
+      }
+      if (avatars.isNotEmpty) {
+        _avatarsByHandle = avatars;
+      }
+    });
+  }
+
+  Future<List<CollabRecentThread>> _recentFromInbox() async {
+    try {
+      return recentFromThreads(await widget.daemon.listThreads());
+    } catch (_) {
+      return const [];
+    }
   }
 
   Future<Map<String, String>> _loadAvatarMap() async {
@@ -156,71 +191,113 @@ class _CollabPanelState extends State<CollabPanel> {
         daemon: widget.daemon,
         collabId: _openId!,
         handle: widget.handle,
+        userId: widget.userId,
+        avatarUrls: _avatarsByHandle,
+        initialCardId: _pendingCardId,
         onBack: () {
-          setState(() => _openId = null);
+          setState(() {
+            _openId = null;
+            _pendingCardId = null;
+          });
           _reload();
         },
       );
     }
 
     final Widget child;
-    if (_loading) {
-      child = const CollabHomeSkeleton(key: ValueKey('sk'));
-    } else if (_error != null && _collabs.isEmpty) {
-      child = PaneQuietState(
-        title: "Couldn't load collab",
-        body: _collabQuietBody(_error),
-        icon: Icons.cloud_off_outlined,
-        onRetry: _reload,
-      );
-    } else if (_collabs.isEmpty) {
-      child = PaneQuietState(
-        title: 'No collabs yet',
-        body: 'A collab is a board of threads — humans steer, agents work.',
-        icon: Icons.view_kanban_outlined,
-        retryLabel: 'Create',
-        onRetryOrigin: (origin) => _create(origin: origin),
-      );
-    } else {
-      child = Padding(
-        key: const ValueKey('dash'),
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (_error != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: PaneInlineError(message: _error!, onRetry: _reload),
-              ),
-            Expanded(
-              child: CustomScrollView(
-                slivers: [
-                  SliverToBoxAdapter(
-                    child: CollabMetricRow(
-                      totals: _portfolio.totals,
-                      onCreate: (origin) => _create(origin: origin),
-                    ),
-                  ),
-                  const SliverToBoxAdapter(child: SizedBox(height: 12)),
-                  SliverToBoxAdapter(child: _chartsRow()),
-                  const SliverToBoxAdapter(child: SizedBox(height: 12)),
-                  SliverToBoxAdapter(
-                    child: CollabProjectsTable(
-                      collabs: _collabs,
-                      avatarUrls: _avatarsByHandle,
-                      myHandle: widget.handle,
-                      onOpen: (c) => setState(() => _openId = c.id),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+    final empty = !_loading && _error == null && _collabs.isEmpty;
+    final failed = !_loading && _error != null && _collabs.isEmpty;
+    child = Padding(
+      key: ValueKey(_loading ? 'dash-sk' : 'dash'),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (empty || failed) ...[
+            _CollabHomeChrome(archiveFilter: _archiveFilter()),
+            const SizedBox(height: 12),
           ],
-        ),
-      );
-    }
+          if (_error != null && _collabs.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: PaneInlineError(message: _error!, onRetry: _reload),
+            ),
+          Expanded(
+            child: failed
+                ? PaneQuietState(
+                    title: "Couldn't load collab",
+                    body: _collabQuietBody(_error),
+                    icon: Icons.cloud_off_outlined,
+                    onRetry: _reload,
+                  )
+                : empty
+                ? PaneQuietState(
+                    title: _showArchived
+                        ? 'No archived collabs'
+                        : 'No collabs yet',
+                    body: _showArchived
+                        ? 'Archived boards stay here until you unarchive them.'
+                        : 'A collab is a board of threads — humans steer, agents work.',
+                    icon: Icons.view_kanban_outlined,
+                    retryLabel: _showArchived ? 'Boards' : 'Create',
+                    onRetry: _showArchived
+                        ? () {
+                            setState(() => _showArchived = false);
+                            _reload();
+                          }
+                        : null,
+                    onRetryOrigin: _showArchived
+                        ? null
+                        : (origin) => _create(origin: origin),
+                  )
+                : CustomScrollView(
+                    slivers: [
+                      if (!_showArchived) ...[
+                        SliverToBoxAdapter(
+                          child: CollabMetricRow(
+                            totals: _portfolio.totals,
+                            loading: _loading,
+                            onCreate: (origin) => _create(origin: origin),
+                          ),
+                        ),
+                        const SliverToBoxAdapter(child: SizedBox(height: 12)),
+                        SliverToBoxAdapter(child: _chartsRow()),
+                        const SliverToBoxAdapter(child: SizedBox(height: 12)),
+                      ],
+                      SliverToBoxAdapter(
+                        child: CollabProjectsTable(
+                          collabs: _collabs,
+                          avatarUrls: _avatarsByHandle,
+                          myHandle: widget.handle,
+                          sort: _sort,
+                          onSort: (next) => setState(() => _sort = next),
+                          loading: _loading,
+                          headerTrailing: _archiveFilter(),
+                          onOpen: (c) => setState(() {
+                            _openId = c.id;
+                            _pendingCardId = null;
+                          }),
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+        ],
+      ),
+    );
     return MutandeFadeSwap(child: child);
+  }
+
+  Widget _archiveFilter() {
+    return HomeChromeLabelPill(
+      key: const Key('collab-archived-filter'),
+      label: 'Archived',
+      selected: _showArchived,
+      onTap: () {
+        setState(() => _showArchived = !_showArchived);
+        _reload();
+      },
+    );
   }
 
   Widget _chartsRow() {
@@ -229,6 +306,15 @@ class _CollabPanelState extends State<CollabPanel> {
         final calendar = CollabActivityCalendar(
           key: const Key('collab-activity-calendar'),
           activity: _portfolio.activity,
+          recent: _portfolio.recent,
+          myHandle: widget.handle,
+          onOpenThread: (item) {
+            if (item.collabId.isEmpty) return;
+            setState(() {
+              _openId = item.collabId;
+              _pendingCardId = item.threadId;
+            });
+          },
         );
         final donut = CollabLaneDonut(
           key: const Key('collab-lane-donut'),
@@ -252,18 +338,37 @@ class _CollabPanelState extends State<CollabPanel> {
   }
 }
 
+class _CollabHomeChrome extends StatelessWidget {
+  const _CollabHomeChrome({required this.archiveFilter});
+
+  final Widget archiveFilter;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(children: [archiveFilter, const Spacer()]);
+  }
+}
+
+enum _CollabBoardPane { board, brain, manage }
+
 class _CollabBoard extends StatefulWidget {
   const _CollabBoard({
     required this.daemon,
     required this.collabId,
     required this.onBack,
     this.handle,
+    this.userId,
+    this.avatarUrls = const {},
+    this.initialCardId,
   });
 
   final DaemonClient daemon;
   final String collabId;
   final VoidCallback onBack;
   final String? handle;
+  final String? userId;
+  final Map<String, String> avatarUrls;
+  final String? initialCardId;
 
   @override
   State<_CollabBoard> createState() => _CollabBoardState();
@@ -273,12 +378,13 @@ class _CollabBoardState extends State<_CollabBoard> {
   bool _loading = true;
   String? _error;
   CollabDetail? _collab;
-  String? _openCardId;
-  bool _brainOpen = false;
+  _CollabBoardPane _pane = _CollabBoardPane.board;
+  String? _pendingCardId;
 
   @override
   void initState() {
     super.initState();
+    _pendingCardId = widget.initialCardId?.trim();
     _reload();
   }
 
@@ -291,6 +397,13 @@ class _CollabBoardState extends State<_CollabBoard> {
         _loading = false;
         _error = null;
       });
+      final pending = _pendingCardId;
+      if (pending != null && pending.isNotEmpty) {
+        _pendingCardId = null;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _openCard(pending);
+        });
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -315,11 +428,14 @@ class _CollabBoardState extends State<_CollabBoard> {
       laneId: laneId,
       laneName: laneName,
       origin: origin,
+      people: _collab?.steererHandles ?? const [],
+      agents: _collab?.roster ?? const [],
+      handle: widget.handle,
     );
     if (id == null || id.isEmpty) return;
     await _reload();
     if (!mounted) return;
-    setState(() => _openCardId = id);
+    await _openCard(id);
   }
 
   Future<void> _drop(
@@ -341,82 +457,188 @@ class _CollabBoardState extends State<_CollabBoard> {
     }
   }
 
+  Future<void> _openCard(String threadId) async {
+    await showMutandeFullscreen<void>(
+      context: context,
+      barrierLabel: 'Card',
+      builder: (ctx) => _CollabCardModal(
+        daemon: widget.daemon,
+        threadId: threadId,
+        handle: widget.handle,
+        onChanged: _reload,
+      ),
+    );
+    if (!mounted) return;
+    await _reload();
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (_openCardId != null) {
-      return ThreadDetailPanel(
-        daemon: widget.daemon,
-        threadId: _openCardId!,
-        myHandle: widget.handle,
-        embedded: true,
-        onBack: () {
-          setState(() => _openCardId = null);
-          _reload();
-        },
-        onListChanged: _reload,
-        onGone: () {
-          setState(() => _openCardId = null);
-          _reload();
-        },
+    final loadingBoard = _loading && _collab == null;
+    final collab =
+        _collab ??
+        const CollabDetail(id: '', name: '', encryptionMode: 'e2e', lists: []);
+    final Widget child;
+    if (!loadingBoard && _collab == null) {
+      child = PaneQuietState(
+        title: "Couldn't open collab",
+        body: _collabQuietBody(_error) ?? 'Try again in a moment.',
+        onRetry: _reload,
+      );
+    } else {
+      child = Padding(
+        key: ValueKey(loadingBoard ? 'board-sk' : 'board'),
+        padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _ProjectHeader(
+              name: loadingBoard ? 'Collab' : collab.name,
+              e2e: collab.isE2e,
+              causeAddress: collab.causeAddress,
+              archived: collab.isArchived,
+              pane: _pane,
+              loading: loadingBoard,
+              onBack: widget.onBack,
+              onBoard: loadingBoard
+                  ? null
+                  : () => setState(() => _pane = _CollabBoardPane.board),
+              onBrain: loadingBoard
+                  ? null
+                  : () => setState(() => _pane = _CollabBoardPane.brain),
+              onManage: loadingBoard
+                  ? null
+                  : () => setState(() => _pane = _CollabBoardPane.manage),
+              onUnarchive: collab.isArchived
+                  ? () async {
+                      await widget.daemon.unarchiveCollab(widget.collabId);
+                      await _reload();
+                    }
+                  : null,
+            ),
+            if (collab.pendingMembership != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+                child: DowngradeConsentBanner(
+                  prompt:
+                      'Adding ${collab.pendingMembership!.who} ends device-sealed mail from this point.',
+                  detail:
+                      'All steerers must agree. Pre-downgrade history stays sealed.',
+                  busy: false,
+                  onApprove: () async {
+                    await widget.daemon.approveCollabPendingMembership(
+                      widget.collabId,
+                    );
+                    await _reload();
+                  },
+                  onDeny: () async {
+                    await widget.daemon.denyCollabPendingMembership(
+                      widget.collabId,
+                    );
+                    await _reload();
+                  },
+                ),
+              ),
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+                child: PaneInlineError(message: _error!, onRetry: _reload),
+              ),
+            Expanded(
+              child: !loadingBoard && _pane == _CollabBoardPane.brain
+                  ? CollabBrainPane(
+                      daemon: widget.daemon,
+                      collab: collab,
+                      handle: widget.handle,
+                      userId: widget.userId,
+                      avatarUrls: widget.avatarUrls,
+                      onChanged: _reload,
+                    )
+                  : !loadingBoard && _pane == _CollabBoardPane.manage
+                  ? ManageCollabSheet(
+                      daemon: widget.daemon,
+                      collab: collab,
+                      handle: widget.handle,
+                      onChanged: _reload,
+                    )
+                  : _ProjectPage(
+                      collab: collab,
+                      artifacts: collab.artifacts,
+                      artifactsLoading: loadingBoard,
+                      loading: loadingBoard,
+                      handle: widget.handle,
+                      avatarUrls: widget.avatarUrls,
+                      readOnly: collab.isArchived,
+                      onOpenBrain: () =>
+                          setState(() => _pane = _CollabBoardPane.brain),
+                      onOpen: _openCard,
+                      onNewCard: _newCard,
+                      onDrop: _drop,
+                      onManage: () =>
+                          setState(() => _pane = _CollabBoardPane.manage),
+                    ),
+            ),
+          ],
+        ),
       );
     }
-
-    final Widget child;
-    if (_loading && _collab == null) {
-      child = const CollabBoardSkeleton(key: ValueKey('sk'));
-    } else {
-      final collab = _collab;
-      if (collab == null) {
-        child = PaneQuietState(
-          title: "Couldn't open collab",
-          body: _collabQuietBody(_error) ?? 'Try again in a moment.',
-          onRetry: _reload,
-        );
-      } else {
-        child = Padding(
-          key: const ValueKey('board'),
-          padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _ProjectHeader(
-                name: collab.name,
-                e2e: collab.isE2e,
-                causeAddress: collab.causeAddress,
-                brainOpen: _brainOpen,
-                onBack: widget.onBack,
-                onToggleBrain: () => setState(() => _brainOpen = !_brainOpen),
-              ),
-              if (_error != null)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
-                  child: PaneInlineError(message: _error!, onRetry: _reload),
-                ),
-              Expanded(
-                child: _brainOpen
-                    ? _BrainPanel(
-                        daemon: widget.daemon,
-                        collab: collab,
-                        handle: widget.handle,
-                        onChanged: _reload,
-                      )
-                    : _ProjectPage(
-                        collab: collab,
-                        artifacts: collab.artifacts,
-                        artifactsLoading: false,
-                        handle: widget.handle,
-                        onOpenBrain: () => setState(() => _brainOpen = true),
-                        onOpen: (id) => setState(() => _openCardId = id),
-                        onNewCard: _newCard,
-                        onDrop: _drop,
-                      ),
-              ),
-            ],
-          ),
-        );
-      }
-    }
     return MutandeFadeSwap(child: child);
+  }
+}
+
+class _CollabCardModal extends StatelessWidget {
+  const _CollabCardModal({
+    required this.daemon,
+    required this.threadId,
+    required this.onChanged,
+    this.handle,
+  });
+
+  final DaemonClient daemon;
+  final String threadId;
+  final VoidCallback onChanged;
+  final String? handle;
+
+  void _close(BuildContext context) {
+    Navigator.of(context, rootNavigator: true).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.expand(
+      child: Material(
+        color: MutandeColors.stone50,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, HomeChrome.height, 12, 0),
+              child: Row(
+                children: [
+                  IconButton(
+                    key: const Key('collab-card-close'),
+                    tooltip: 'Close',
+                    onPressed: () => _close(context),
+                    icon: const Icon(Icons.close, size: 18),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ThreadDetailPanel(
+                daemon: daemon,
+                threadId: threadId,
+                myHandle: handle,
+                embedded: true,
+                onBack: () => _close(context),
+                onListChanged: onChanged,
+                onGone: () => _close(context),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -424,64 +646,138 @@ class _ProjectHeader extends StatelessWidget {
   const _ProjectHeader({
     required this.name,
     required this.e2e,
-    required this.brainOpen,
+    required this.pane,
     required this.onBack,
-    required this.onToggleBrain,
+    this.archived = false,
+    this.onBoard,
+    this.onBrain,
+    this.onManage,
+    this.onUnarchive,
     this.causeAddress,
+    this.loading = false,
   });
 
   final String name;
   final bool e2e;
   final String? causeAddress;
-  final bool brainOpen;
+  final _CollabBoardPane pane;
+  final bool archived;
+  final bool loading;
   final VoidCallback onBack;
-  final VoidCallback onToggleBrain;
+  final VoidCallback? onBoard;
+  final VoidCallback? onBrain;
+  final VoidCallback? onManage;
+  final VoidCallback? onUnarchive;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        IconButton(
-          tooltip: 'Boards',
-          onPressed: onBack,
-          icon: const Icon(Icons.arrow_back, size: 18),
-        ),
-        Expanded(
-          child: Row(
-            children: [
-              Flexible(
-                child: Text(
-                  name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 16,
-                    color: MutandeColors.stone800,
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          IconButton(
+            tooltip: 'Boards',
+            onPressed: onBack,
+            icon: const Icon(Icons.arrow_back, size: 18),
+          ),
+          Expanded(
+            child: Row(
+              children: [
+                Flexible(
+                  child: loading
+                      ? const Align(
+                          alignment: Alignment.centerLeft,
+                          child: SizedBox(
+                            width: 120,
+                            height: 12,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: MutandeColors.stone200,
+                                borderRadius: BorderRadius.all(
+                                  Radius.circular(6),
+                                ),
+                              ),
+                            ),
+                          ),
+                        )
+                      : Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 16,
+                            color: MutandeColors.stone800,
+                          ),
+                        ),
+                ),
+                const SizedBox(width: 6),
+                Tooltip(
+                  message: collabEncryptionCopy(
+                    e2e: e2e,
+                    causeAddress: causeAddress,
+                  ),
+                  child: Icon(
+                    LucideIcons.shield,
+                    key: const Key('collab-seal'),
+                    size: 14,
+                    color: MutandeColors.stone400,
                   ),
                 ),
-              ),
-              const SizedBox(width: 6),
-              Tooltip(
-                message: collabEncryptionCopy(
-                  e2e: e2e,
-                  causeAddress: causeAddress,
-                ),
-                child: Icon(
-                  Icons.lock_outline,
-                  key: const Key('collab-seal'),
-                  size: 14,
-                  color: MutandeColors.stone400,
-                ),
-              ),
-            ],
+                if (archived) ...[
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Archived',
+                    key: Key('collab-archived-chip'),
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: MutandeColors.stone500,
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ),
-        ),
-        TextButton(
-          onPressed: onToggleBrain,
-          child: Text(brainOpen ? 'Board' : 'Brain'),
-        ),
-      ],
+          HomeChromeLabelPill(
+            key: const Key('collab-mode-board'),
+            label: 'Board',
+            icon: LucideIcons.squareKanban,
+            selected: pane == _CollabBoardPane.board,
+            onTap: onBoard,
+          ),
+          const SizedBox(width: 4),
+          HomeChromeLabelPill(
+            key: const Key('collab-mode-brain'),
+            label: 'Brain',
+            icon: LucideIcons.brain,
+            selected: pane == _CollabBoardPane.brain,
+            onTap: onBrain,
+          ),
+          const SizedBox(width: 4),
+          HomeChromeLabelPill(
+            key: const Key('collab-mode-manage'),
+            label: 'Manage',
+            icon: LucideIcons.settings2,
+            selected: pane == _CollabBoardPane.manage,
+            onTap: onManage,
+          ),
+          if (onUnarchive != null)
+            PopupMenuButton<String>(
+              key: const Key('collab-manage-menu'),
+              tooltip: 'More',
+              onSelected: (value) {
+                if (value == 'unarchive') onUnarchive?.call();
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: 'unarchive',
+                  child: Text('Unarchive'),
+                ),
+              ],
+              icon: const Icon(Icons.more_horiz, size: 18),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -496,6 +792,10 @@ class _ProjectPage extends StatelessWidget {
     required this.onNewCard,
     required this.onDrop,
     this.handle,
+    this.avatarUrls = const {},
+    this.readOnly = false,
+    this.onManage,
+    this.loading = false,
   }) : _artifacts = artifacts;
 
   final CollabDetail collab;
@@ -504,6 +804,10 @@ class _ProjectPage extends StatelessWidget {
   final bool artifactsLoading;
   final VoidCallback onOpenBrain;
   final String? handle;
+  final Map<String, String> avatarUrls;
+  final bool readOnly;
+  final VoidCallback? onManage;
+  final bool loading;
   final ValueChanged<String> onOpen;
   final void Function(String laneId, {Rect? origin}) onNewCard;
   final Future<void> Function(
@@ -519,15 +823,22 @@ class _ProjectPage extends StatelessWidget {
       collab: collab,
       artifacts: artifacts,
       artifactsLoading: artifactsLoading,
+      loading: loading,
       myHandle: handle,
       onOpenBrain: onOpenBrain,
       onOpenCard: onOpen,
-      board: _Kanban(
-        collab: collab,
-        onOpen: onOpen,
-        onNewCard: onNewCard,
-        onDrop: onDrop,
-      ),
+      onManageGroup: onManage,
+      board: loading
+          ? const CollabBoardSkeleton()
+          : _Kanban(
+              collab: collab,
+              readOnly: readOnly,
+              handle: handle,
+              avatarUrls: avatarUrls,
+              onOpen: onOpen,
+              onNewCard: onNewCard,
+              onDrop: onDrop,
+            ),
     );
   }
 }
@@ -538,9 +849,15 @@ class _Kanban extends StatelessWidget {
     required this.onOpen,
     required this.onNewCard,
     required this.onDrop,
+    this.handle,
+    this.avatarUrls = const {},
+    this.readOnly = false,
   });
 
   final CollabDetail collab;
+  final bool readOnly;
+  final String? handle;
+  final Map<String, String> avatarUrls;
   final ValueChanged<String> onOpen;
   final void Function(String laneId, {Rect? origin}) onNewCard;
   final Future<void> Function(
@@ -550,26 +867,63 @@ class _Kanban extends StatelessWidget {
   })
   onDrop;
 
+  static const _padH = 16.0;
+  static const _gap = 10.0;
+  static const _minLaneWidth = 240.0;
+
   @override
   Widget build(BuildContext context) {
-    return ListView.separated(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-      itemCount: collab.lists.length,
-      separatorBuilder: (_, _) => const SizedBox(width: 10),
-      itemBuilder: (context, i) {
-        final lane = collab.lists[i];
-        final cards = collab.cards.where((c) => c.laneId == lane.id).toList()
-          ..sort(
-            (a, b) => (a.lanePosition ?? 0).compareTo(b.lanePosition ?? 0),
+    final n = collab.lists.length;
+    if (n == 0) return const SizedBox.shrink();
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final gaps = n > 1 ? (n - 1) * _gap : 0.0;
+        final share = (constraints.maxWidth - _padH - gaps) / n;
+        final fill = share >= _minLaneWidth;
+
+        Widget column(int i, {double? width}) {
+          final lane = collab.lists[i];
+          final cards = collab.cards.where((c) => c.laneId == lane.id).toList()
+            ..sort(
+              (a, b) => (a.lanePosition ?? 0).compareTo(b.lanePosition ?? 0),
+            );
+          return _LaneColumn(
+            key: Key('collab-lane-${lane.id}'),
+            lane: lane,
+            cards: cards,
+            width: width,
+            readOnly: readOnly,
+            handle: handle,
+            avatarUrls: avatarUrls,
+            onOpen: onOpen,
+            onNewCard: ({Rect? origin}) => onNewCard(lane.id, origin: origin),
+            onDrop: (card, {String? beforeId}) =>
+                onDrop(card, lane.id, beforeId: beforeId),
           );
-        return _LaneColumn(
-          lane: lane,
-          cards: cards,
-          onOpen: onOpen,
-          onNewCard: ({Rect? origin}) => onNewCard(lane.id, origin: origin),
-          onDrop: (card, {String? beforeId}) =>
-              onDrop(card, lane.id, beforeId: beforeId),
+        }
+
+        if (fill) {
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var i = 0; i < n; i++) ...[
+                  if (i > 0) const SizedBox(width: _gap),
+                  Expanded(child: column(i)),
+                ],
+              ],
+            ),
+          );
+        }
+
+        return ListView.separated(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+          itemCount: n,
+          separatorBuilder: (_, _) => const SizedBox(width: _gap),
+          itemBuilder: (context, i) => column(i, width: _minLaneWidth),
         );
       },
     );
@@ -578,15 +932,24 @@ class _Kanban extends StatelessWidget {
 
 class _LaneColumn extends StatelessWidget {
   const _LaneColumn({
+    super.key,
     required this.lane,
     required this.cards,
     required this.onOpen,
     required this.onNewCard,
     required this.onDrop,
+    this.width,
+    this.handle,
+    this.avatarUrls = const {},
+    this.readOnly = false,
   });
 
   final CollabListView lane;
   final List<CollabCardView> cards;
+  final double? width;
+  final bool readOnly;
+  final String? handle;
+  final Map<String, String> avatarUrls;
   final ValueChanged<String> onOpen;
   final void Function({Rect? origin}) onNewCard;
   final Future<void> Function(CollabCardView card, {String? beforeId}) onDrop;
@@ -594,7 +957,7 @@ class _LaneColumn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DragTarget<CollabCardView>(
-      onAcceptWithDetails: (d) => onDrop(d.data),
+      onAcceptWithDetails: readOnly ? null : (d) => onDrop(d.data),
       builder: (context, candidate, _) {
         final hot = candidate.isNotEmpty;
         return AnimatedContainer(
@@ -603,7 +966,7 @@ class _LaneColumn extends StatelessWidget {
             const Duration(milliseconds: 120),
           ),
           curve: MutandeMotion.ease,
-          width: 260,
+          width: width ?? double.infinity,
           decoration: BoxDecoration(
             color: hot ? MutandeColors.bronzeSoft : MutandeColors.stone100,
             borderRadius: BorderRadius.circular(10),
@@ -641,6 +1004,7 @@ class _LaneColumn extends StatelessWidget {
                   itemCount: cards.length + 1,
                   itemBuilder: (context, i) {
                     if (i == cards.length) {
+                      if (readOnly) return const SizedBox.shrink();
                       return Builder(
                         builder: (btnCtx) {
                           return TextButton.icon(
@@ -656,6 +1020,8 @@ class _LaneColumn extends StatelessWidget {
                     final card = cards[i];
                     return _CardTile(
                       card: card,
+                      myHandle: handle,
+                      avatarUrls: avatarUrls,
                       onOpen: () => onOpen(card.id),
                       onDropBefore: (incoming) =>
                           onDrop(incoming, beforeId: card.id),
@@ -676,22 +1042,15 @@ class _CardTile extends StatelessWidget {
     required this.card,
     required this.onOpen,
     required this.onDropBefore,
+    this.myHandle,
+    this.avatarUrls = const {},
   });
 
   final CollabCardView card;
   final VoidCallback onOpen;
   final ValueChanged<CollabCardView> onDropBefore;
-
-  String get _meta {
-    final owner = card.assignedTo?.trim();
-    final who = (owner != null && owner.isNotEmpty)
-        ? formatMailAddress(owner)
-        : '';
-    final when = formatRelativeTime(card.updatedAt);
-    if (who.isNotEmpty && when.isNotEmpty) return '$who · $when';
-    if (who.isNotEmpty) return who;
-    return when;
-  }
+  final String? myHandle;
+  final Map<String, String> avatarUrls;
 
   @override
   Widget build(BuildContext context) {
@@ -703,36 +1062,56 @@ class _CardTile extends StatelessWidget {
         if (d.data.id != card.id) onDropBefore(d.data);
       },
       builder: (context, _, _) {
-        return LongPressDraggable<CollabCardView>(
-          data: card,
-          feedback: Material(
-            elevation: 6,
-            borderRadius: BorderRadius.circular(8),
-            child: SizedBox(
-              width: 236,
-              child: _cardBody(title, dragging: true),
-            ),
-          ),
-          childWhenDragging: Opacity(opacity: 0.35, child: _cardBody(title)),
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: 6),
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: onOpen,
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final feedbackWidth = constraints.maxWidth.isFinite
+                ? constraints.maxWidth
+                : 236.0;
+            return LongPressDraggable<CollabCardView>(
+              data: card,
+              feedback: Material(
+                elevation: 6,
                 borderRadius: BorderRadius.circular(8),
+                child: SizedBox(
+                  width: feedbackWidth,
+                  child: _cardBody(title, dragging: true),
+                ),
+              ),
+              childWhenDragging: Opacity(
+                opacity: 0.35,
                 child: _cardBody(title),
               ),
-            ),
-          ),
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: onOpen,
+                    borderRadius: BorderRadius.circular(8),
+                    child: _cardBody(title),
+                  ),
+                ),
+              ),
+            );
+          },
         );
       },
     );
   }
 
+  /// Ticket rail (locked from prototype variant C) — thin bronze/stone
+  /// left rail, title, compact footer (faces · due · time).
   Widget _cardBody(String title, {bool dragging = false}) {
+    final due = formatDueOn(card.dueOn);
+    final time = formatRelativeTime(card.updatedAt);
+    final faces = _facesForCard(
+      card,
+      myHandle: myHandle,
+      avatarUrls: avatarUrls,
+    );
+    final rail = card.needsYou ? MutandeColors.bronze : MutandeColors.stone200;
+    final footer = faces.isNotEmpty || due.isNotEmpty || time.isNotEmpty;
     return Container(
-      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
       decoration: BoxDecoration(
         color: MutandeColors.stone50,
         borderRadius: BorderRadius.circular(8),
@@ -747,203 +1126,211 @@ class _CardTile extends StatelessWidget {
               ]
             : null,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: 13,
-              color: MutandeColors.stone800,
-            ),
-          ),
-          if (card.needsYou) ...[
-            const SizedBox(height: 4),
-            const Text(
-              'Needs you',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: MutandeColors.amber,
+      clipBehavior: Clip.antiAlias,
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(width: 3, color: rail),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                        height: 1.25,
+                        color: MutandeColors.stone800,
+                      ),
+                    ),
+                    if (footer) ...[
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          if (faces.isNotEmpty) ...[
+                            _CardFaceStack(faces: faces, size: 18),
+                            const SizedBox(width: 8),
+                          ],
+                          Expanded(
+                            child: Text(
+                              [
+                                if (due.isNotEmpty) due,
+                                if (time.isNotEmpty) time,
+                              ].join(' · '),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: MutandeColors.stone400,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
               ),
             ),
           ],
-          if (_meta.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text(
-              _meta,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 11,
-                color: MutandeColors.stone400,
-              ),
-            ),
-          ],
-        ],
+        ),
       ),
     );
   }
 }
 
-class _BrainPanel extends StatefulWidget {
-  const _BrainPanel({
-    required this.daemon,
-    required this.collab,
-    required this.onChanged,
-    this.handle,
-  });
+class _CardFace {
+  const _CardFace({required this.mark, required this.tooltip});
 
-  final DaemonClient daemon;
-  final CollabDetail collab;
-  final VoidCallback onChanged;
-  final String? handle;
-
-  @override
-  State<_BrainPanel> createState() => _BrainPanelState();
+  final Widget mark;
+  final String tooltip;
 }
 
-class _BrainPanelState extends State<_BrainPanel> {
-  late final TextEditingController _instructions;
-  final _learning = TextEditingController();
-  bool _saving = false;
+class _CardFaceStack extends StatelessWidget {
+  const _CardFaceStack({required this.faces, this.size = 18});
 
-  @override
-  void initState() {
-    super.initState();
-    _instructions = TextEditingController(
-      text: widget.collab.instructions ?? '',
-    );
-  }
+  final List<_CardFace> faces;
+  final double size;
 
-  @override
-  void dispose() {
-    _instructions.dispose();
-    _learning.dispose();
-    super.dispose();
-  }
-
-  Future<void> _saveInstructions() async {
-    setState(() => _saving = true);
-    try {
-      await widget.daemon.updateCollabInstructions(
-        collabId: widget.collab.id,
-        instructions: _instructions.text,
-      );
-      widget.onChanged();
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
-
-  Future<void> _addLearning() async {
-    final notes = _learning.text.trim();
-    if (notes.isEmpty) return;
-    setState(() => _saving = true);
-    try {
-      await widget.daemon.addLearning(collabId: widget.collab.id, notes: notes);
-      _learning.clear();
-      widget.onChanged();
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
+  static const _overlap = 8.0;
+  static const _maxFaces = 3;
 
   @override
   Widget build(BuildContext context) {
-    final collab = widget.collab;
-    final showInstructions = collabInstructionsVisible(
-      steerers: collab.steererHandles.isNotEmpty
-          ? collab.steererHandles
-          : [if (widget.handle != null) widget.handle!],
-      roster: collab.roster.map((r) => r.address),
-    );
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-      children: [
-        if (showInstructions) ...[
-          const Text(
-            'Instructions',
-            style: TextStyle(
-              fontWeight: FontWeight.w600,
-              color: MutandeColors.stone800,
-            ),
-          ),
-          const SizedBox(height: 6),
-          TextField(
-            controller: _instructions,
-            maxLines: 5,
-            enabled: !collab.isE2e,
-            decoration: InputDecoration(
-              hintText: collab.isE2e
-                  ? 'E2E instructions stay sealed on this device.'
-                  : 'Standing context for this board',
-            ),
-          ),
-          if (!collab.isE2e)
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: _saving ? null : _saveInstructions,
-                child: const Text('Save'),
-              ),
-            ),
-          const SizedBox(height: 12),
-        ],
-        const Text(
-          'Learnings',
-          style: TextStyle(
-            fontWeight: FontWeight.w600,
-            color: MutandeColors.stone800,
-          ),
-        ),
-        const SizedBox(height: 4),
-        const Text(
-          'One-liners, not diaries. Context — not directives.',
-          style: TextStyle(fontSize: 12, color: MutandeColors.stone500),
-        ),
-        const SizedBox(height: 8),
-        if (collab.learnings.isEmpty)
-          const Text(
-            'No learnings yet.',
-            style: TextStyle(fontSize: 13, color: MutandeColors.stone400),
-          ),
-        for (final l in collab.learnings)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Text(
-              l.notes?.trim().isNotEmpty == true
-                  ? '${l.fromHandle}: ${l.notes}'
-                  : '${l.fromHandle}: sealed learning',
-              style: const TextStyle(
-                fontSize: 13,
-                color: MutandeColors.stone600,
-              ),
-            ),
-          ),
-        const SizedBox(height: 8),
-        Row(
+    if (faces.isEmpty) return const SizedBox.shrink();
+    final shown = faces.take(_maxFaces).toList();
+    final extra = faces.length - shown.length;
+    final count = shown.length + (extra > 0 ? 1 : 0);
+    final width = size + (count - 1) * (size - _overlap);
+    final names = faces.map((f) => f.tooltip).join(', ');
+
+    return Tooltip(
+      message: names,
+      child: SizedBox(
+        width: width,
+        height: size,
+        child: Stack(
           children: [
-            Expanded(
-              child: TextField(
-                controller: _learning,
-                decoration: const InputDecoration(
-                  hintText: 'Add a one-line learning',
+            for (var i = 0; i < shown.length; i++)
+              Positioned(
+                left: i * (size - _overlap),
+                child: Container(
+                  width: size,
+                  height: size,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: MutandeColors.stone50,
+                    border: Border.all(
+                      color: MutandeColors.stone50,
+                      width: 1.5,
+                    ),
+                  ),
+                  child: shown[i].mark,
                 ),
-                onSubmitted: (_) => _addLearning(),
               ),
-            ),
-            const SizedBox(width: 8),
-            FilledButton(
-              onPressed: _saving ? null : _addLearning,
-              child: const Text('Add'),
-            ),
+            if (extra > 0)
+              Positioned(
+                left: shown.length * (size - _overlap),
+                child: Container(
+                  width: size,
+                  height: size,
+                  alignment: Alignment.center,
+                  decoration: const BoxDecoration(
+                    color: MutandeColors.stone800,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Text(
+                    '+$extra',
+                    style: TextStyle(
+                      fontSize: size * 0.38,
+                      fontWeight: FontWeight.w700,
+                      color: MutandeColors.stone50,
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
-      ],
+      ),
     );
   }
+}
+
+List<_CardFace> _facesForCard(
+  CollabCardView card, {
+  String? myHandle,
+  Map<String, String> avatarUrls = const {},
+}) {
+  final faces = <_CardFace>[];
+  final seenPeople = <String>{};
+  final seenSlugs = <String>{};
+  final me = myHandle == null || myHandle.trim().isEmpty
+      ? null
+      : bareMailHandle(myHandle);
+
+  void addPerson(String raw) {
+    final handle = bareMailHandle(raw);
+    if (handle.isEmpty || handle.startsWith('@all')) return;
+    if (!seenPeople.add(handle)) return;
+    faces.add(
+      _CardFace(
+        tooltip: formatMailAddress(raw, myHandle: myHandle),
+        mark: PersonAvatar(
+          size: 16,
+          initials: personInitials(titleCaseLocalPart(handle)),
+          url: avatarUrls[handle],
+          seed: handle,
+          isSelf: me != null && handle == me,
+        ),
+      ),
+    );
+  }
+
+  void addHost(String raw) {
+    final slug = _cardAgentSlug(raw);
+    if (slug == null || !seenSlugs.add(slug)) return;
+    faces.add(
+      _CardFace(
+        tooltip: '@$slug',
+        mark: Container(
+          width: 16,
+          height: 16,
+          alignment: Alignment.center,
+          decoration: const BoxDecoration(
+            color: MutandeColors.stone100,
+            shape: BoxShape.circle,
+          ),
+          child: AiHostIcon(slug, size: 11, showPlate: false),
+        ),
+      ),
+    );
+  }
+
+  final assigned = card.assignedTo?.trim();
+  if (assigned != null && assigned.isNotEmpty) {
+    addPerson(assigned);
+    addHost(assigned);
+  }
+  final from = card.from.trim();
+  if (from.isNotEmpty) {
+    addPerson(from);
+    addHost(from);
+  }
+  return faces;
+}
+
+String? _cardAgentSlug(String address) {
+  final a = address.trim().toLowerCase();
+  final slash = a.lastIndexOf('/');
+  if (slash <= 0 || slash >= a.length - 1) return null;
+  final slug = a.substring(slash + 1);
+  if (slug.isEmpty || slug == 'default') return null;
+  return slug;
 }

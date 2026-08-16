@@ -140,6 +140,10 @@ export class HubClient {
       collab_id?: string;
       lane_id?: string;
       assigned_to?: string;
+      tags?: string[];
+      due_on?: string;
+      checklist?: { id?: string; text: string; done?: boolean }[];
+      turns?: { user_id: string; actor: "agent" | "human" }[];
     },
   ): Promise<CreateThreadResponse> {
     return this.request<CreateThreadResponse>("/v1/threads", accessToken, {

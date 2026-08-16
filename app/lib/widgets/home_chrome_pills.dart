@@ -3,6 +3,135 @@ import 'package:flutter/material.dart';
 import '../theme/mutande_macos_theme.dart';
 import 'home_chrome_strip.dart';
 
+/// Quiet trailing sort — same pill family as filters, without a second black selected state.
+enum MutandeListSort { recent, name }
+
+class MutandeSortToggles extends StatelessWidget {
+  const MutandeSortToggles({
+    super.key,
+    required this.value,
+    required this.onChanged,
+    this.recentKey = const Key('sort-recent'),
+    this.nameKey = const Key('sort-name'),
+  });
+
+  final MutandeListSort value;
+  final ValueChanged<MutandeListSort> onChanged;
+  final Key recentKey;
+  final Key nameKey;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _SortPill(
+          key: recentKey,
+          label: 'Recent',
+          selected: value == MutandeListSort.recent,
+          onTap: () => onChanged(MutandeListSort.recent),
+        ),
+        const SizedBox(width: 4),
+        _SortPill(
+          key: nameKey,
+          label: 'Name',
+          selected: value == MutandeListSort.name,
+          onTap: () => onChanged(MutandeListSort.name),
+        ),
+      ],
+    );
+  }
+}
+
+class _SortPill extends StatelessWidget {
+  const _SortPill({
+    super.key,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: MutandeMotion.of(context, MutandeMotion.hover),
+        curve: MutandeMotion.ease,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? MutandeColors.stone100 : Colors.transparent,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: selected ? MutandeColors.stone200 : Colors.transparent,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: selected ? MutandeColors.stone800 : MutandeColors.stone500,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Labeled stadium matching [HomeChromeIconButton] height, padding, and radius.
+class HomeChromeLabelPill extends StatelessWidget {
+  const HomeChromeLabelPill({
+    super.key,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.icon,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback? onTap;
+  final IconData? icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = selected ? MutandeColors.stone50 : MutandeColors.stone600;
+    final labelText = Text(
+      label,
+      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: color),
+    );
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: MutandeMotion.of(context, MutandeMotion.hover),
+        curve: MutandeMotion.ease,
+        height: HomeChrome.thumbHeight,
+        padding: const EdgeInsets.symmetric(horizontal: HomeChrome.thumbPadX),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected ? MutandeColors.stone800 : HomeChrome.muteFill,
+          borderRadius: HomeChrome.thumbStadium,
+        ),
+        child: icon == null
+            ? labelText
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, size: HomeChrome.iconSize, color: color),
+                  const SizedBox(width: 5),
+                  labelText,
+                ],
+              ),
+      ),
+    );
+  }
+}
+
 /// Muted stadium chrome matching unselected segmented segments.
 class HomeChromePill extends StatelessWidget {
   const HomeChromePill({super.key, required this.child});
@@ -124,7 +253,7 @@ class _ChromeIconHitState extends State<_ChromeIconHit> {
           child: Tooltip(
             message: widget.tooltip,
             child: SizedBox(
-              width: 36,
+              width: HomeChrome.iconSize + HomeChrome.thumbPadX * 2,
               height: HomeChrome.thumbHeight,
               child: Center(
                 child: Icon(

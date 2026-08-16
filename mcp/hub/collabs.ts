@@ -6,9 +6,21 @@ import type { CollabView } from "./types.ts";
 const E2E_COLLAB_REFUSAL =
   "This collab is E2E — use the mutande Mac sidecar MCP. Hosted MCP cannot seal cards or the brain.";
 
+const ARCHIVED_COLLAB_REFUSAL = "this collab is archived";
+
 export function assertAppEnvelopeCollab(collab: CollabView): void {
   if (collab.encryption_mode === "e2e") {
     throw new Error(E2E_COLLAB_REFUSAL);
+  }
+}
+
+export function isCollabArchived(collab: CollabView): boolean {
+  return str(asRecord(collab).status).toLowerCase() === "archived";
+}
+
+export function assertNotArchived(collab: CollabView): void {
+  if (isCollabArchived(collab)) {
+    throw new Error(ARCHIVED_COLLAB_REFUSAL);
   }
 }
 
@@ -73,6 +85,13 @@ export function presentCollab(
         assigned_to: optStr(row.assigned_to)
           ? lower(String(row.assigned_to))
           : undefined,
+        tags: Array.isArray(row.tags)
+          ? (row.tags as unknown[]).flatMap((t) =>
+            typeof t === "string" && t.trim() ? [t.trim().toLowerCase()] : []
+          )
+          : undefined,
+        due_on: optStr(row.due_on),
+        checklist: row.checklist,
         from: optStr(row.from) ? lower(String(row.from)) : undefined,
         audience: optStr(row.audience) ? lower(String(row.audience)) : undefined,
         your_status: optStr(row.your_status),
@@ -124,6 +143,7 @@ export function presentCollab(
   const view: Record<string, unknown> = {
     id: str(raw.id),
     name: str(raw.name),
+    status: str(raw.status).toLowerCase() === "archived" ? "archived" : "open",
     instructions: sidecarRequired ? undefined : optStr(raw.instructions),
     encryption_mode: optStr(raw.encryption_mode),
     people,
@@ -149,7 +169,9 @@ export async function listCollabsAsUser(
 ): Promise<{ collabs: Record<string, unknown>[] }> {
   const { collabs } = await hub.listCollabs(accessToken);
   return {
-    collabs: (collabs ?? []).map((c) => presentCollab(c, { hosted: true })),
+    collabs: (collabs ?? [])
+      .filter((c) => !isCollabArchived(c))
+      .map((c) => presentCollab(c, { hosted: true })),
   };
 }
 
@@ -180,6 +202,9 @@ export async function setLaneAsUser(
     after_thread_id?: string;
   },
 ): Promise<{ thread: unknown }> {
+  const { collab } = await hub.getCollab(accessToken, collabId);
+  assertNotArchived(collab);
+  assertAppEnvelopeCollab(collab);
   return hub.setLane(accessToken, collabId, input);
 }
 
@@ -192,6 +217,7 @@ export async function addLearningAsWebAgent(
   agentId: string,
 ): Promise<{ message_id: string }> {
   const { collab } = await hub.getCollab(accessToken, collabId);
+  assertNotArchived(collab);
   assertAppEnvelopeCollab(collab);
   try {
     return await hub.addLearning(accessToken, collabId, {
@@ -209,7 +235,7 @@ export async function addLearningAsWebAgent(
   }
 }
 
-export { E2E_COLLAB_REFUSAL };
+export { E2E_COLLAB_REFUSAL, ARCHIVED_COLLAB_REFUSAL };
 
 export async function createCardAsUser(
   hub: HubClient,
@@ -219,6 +245,10 @@ export async function createCardAsUser(
     title: string;
     lane?: string;
     notes?: string;
+    assigned_to?: string;
+    tags?: string[];
+    due_on?: string;
+    checklist?: { id?: string; text: string; done?: boolean }[];
   },
   from: { handle: string; slug: string; agentId: string },
 ): Promise<{
@@ -228,6 +258,7 @@ export async function createCardAsUser(
   lane_id?: string;
 }> {
   const { collab } = await hub.getCollab(accessToken, input.collab_id);
+  assertNotArchived(collab);
   assertAppEnvelopeCollab(collab);
   const to = from.handle.trim().toLowerCase();
   const title = input.title.trim();
@@ -235,17 +266,37 @@ export async function createCardAsUser(
     throw new Error("title is required");
   }
   const notes = input.notes?.trim();
+  const assignedTo = input.assigned_to?.trim().toLowerCase() || undefined;
+  const turn = assignedTo
+    ? turnForAssignee(collab, assignedTo)
+    : undefined;
+  const nextTurn = assignedTo
+    ? [{
+      address: assignedTo,
+      actor: assignedTo.includes("/") ? "agent" : "human",
+      reason: { kind: "handoff" },
+    }]
+    : undefined;
   const result = await hub.createThread(accessToken, {
     to,
     app_envelope: {
       version: 1,
       subject: title,
       ...(notes ? { notes } : {}),
+      ...(nextTurn ? { next_turn: nextTurn } : {}),
+      ...(input.tags?.length ? { tags: input.tags } : {}),
+      ...(input.due_on ? { due_on: input.due_on } : {}),
+      ...(input.checklist?.length ? { checklist: input.checklist } : {}),
     },
     from_agent: from.slug,
     from_agent_id: from.agentId,
     collab_id: input.collab_id,
     ...(input.lane ? { lane_id: input.lane } : {}),
+    ...(assignedTo ? { assigned_to: assignedTo } : {}),
+    ...(input.tags?.length ? { tags: input.tags } : {}),
+    ...(input.due_on ? { due_on: input.due_on } : {}),
+    ...(input.checklist?.length ? { checklist: input.checklist } : {}),
+    ...(turn ? { turns: [turn] } : {}),
   });
   const threadId = result?.thread?.id?.trim();
   if (!threadId) {
@@ -257,4 +308,27 @@ export async function createCardAsUser(
     collab_id: input.collab_id,
     lane_id: result.thread.lane_id,
   };
+}
+
+function turnForAssignee(
+  collab: CollabView,
+  assignedTo: string,
+): { user_id: string; actor: "agent" | "human" } | undefined {
+  const rec = asRecord(collab);
+  const actor: "agent" | "human" = assignedTo.includes("/") ? "agent" : "human";
+  const roster = Array.isArray(rec.roster) ? rec.roster as unknown[] : [];
+  for (const row of roster) {
+    const r = asRecord(row);
+    if (optStr(r.address)?.toLowerCase() === assignedTo && optStr(r.user_id)) {
+      return { user_id: String(r.user_id), actor };
+    }
+  }
+  const steerers = Array.isArray(rec.steerers) ? rec.steerers as unknown[] : [];
+  for (const row of steerers) {
+    const r = asRecord(row);
+    if (optStr(r.handle)?.toLowerCase() === assignedTo && optStr(r.user_id)) {
+      return { user_id: String(r.user_id), actor };
+    }
+  }
+  return undefined;
 }

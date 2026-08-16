@@ -16,6 +16,7 @@ class CollabLaneDonut extends StatelessWidget {
   Widget build(BuildContext context) {
     final total = lanes.open;
     return CollabDashCard(
+      height: kCollabChartCardHeight,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -33,55 +34,58 @@ class CollabLaneDonut extends StatelessWidget {
             style: TextStyle(fontSize: 11, color: MutandeColors.stone500),
           ),
           const SizedBox(height: 16),
-          Row(
-            children: [
-              SizedBox(
-                width: 108,
-                height: 108,
-                child: CustomPaint(
-                  painter: _DonutPainter(
-                    backlog: lanes.backlog,
-                    doing: lanes.doing,
-                    done: lanes.done,
-                  ),
-                  child: Center(
-                    child: Text(
-                      total == 0 ? '—' : '$total',
-                      style: const TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w600,
-                        color: MutandeColors.stone800,
+          Expanded(
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 108,
+                  height: 108,
+                  child: CustomPaint(
+                    painter: _DonutPainter(
+                      backlog: lanes.backlog,
+                      doing: lanes.doing,
+                      done: lanes.done,
+                    ),
+                    child: Center(
+                      child: Text(
+                        total == 0 ? '—' : '$total',
+                        style: const TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w600,
+                          color: MutandeColors.stone800,
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _Legend(
-                      color: MutandeColors.stone400,
-                      label: 'Backlog',
-                      count: lanes.backlog,
-                    ),
-                    const SizedBox(height: 8),
-                    _Legend(
-                      color: MutandeColors.bronze,
-                      label: 'Doing',
-                      count: lanes.doing,
-                    ),
-                    const SizedBox(height: 8),
-                    _Legend(
-                      color: MutandeColors.stone800,
-                      label: 'Done',
-                      count: lanes.done,
-                    ),
-                  ],
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _Legend(
+                        color: MutandeColors.stone400,
+                        label: 'Backlog',
+                        count: lanes.backlog,
+                      ),
+                      const SizedBox(height: 8),
+                      _Legend(
+                        color: MutandeColors.bronze,
+                        label: 'Doing',
+                        count: lanes.doing,
+                      ),
+                      const SizedBox(height: 8),
+                      _Legend(
+                        color: MutandeColors.stone800,
+                        label: 'Done',
+                        count: lanes.done,
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       ),

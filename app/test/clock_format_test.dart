@@ -75,4 +75,19 @@ void main() {
       }
     });
   });
+
+  group('formatDueOn', () {
+    test('YYYY-MM-DD in current year drops the year', () {
+      expect(formatDueOn('2026-09-01', now: now), '1 Sep');
+    });
+
+    test('other year keeps the year', () {
+      expect(formatDueOn('2027-01-15', now: now), '15 Jan 2027');
+    });
+
+    test('rejects times and junk', () {
+      expect(formatDueOn('2026-09-01T12:00:00Z', now: now), '');
+      expect(formatDueOn('nope', now: now), '');
+    });
+  });
 }

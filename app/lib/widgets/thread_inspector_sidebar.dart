@@ -65,9 +65,63 @@ class ThreadInspectorSidebar extends StatelessWidget {
         _Fact(label: 'Messages', value: '${detail.messages.length}'),
         if (files > 0) _Fact(label: 'Files', value: '$files'),
         if (upvotes > 0) _Fact(label: 'Upvotes', value: '$upvotes'),
+        if (detail.assignedTo != null && detail.assignedTo!.trim().isNotEmpty)
+          _Fact(
+            label: 'Assigned',
+            value: formatMailAddress(detail.assignedTo!, myHandle: myHandle),
+          ),
+        if (detail.dueOn != null && formatDueOn(detail.dueOn).isNotEmpty)
+          _Fact(label: 'Due', value: formatDueOn(detail.dueOn)),
+        if (detail.tags.isNotEmpty)
+          _Fact(label: 'Labels', value: detail.tags.join(', ')),
+        if (detail.checklist.isNotEmpty)
+          _Fact(
+            label: 'Checklist',
+            value:
+                '${detail.checklist.where((e) => e.done).length}/${detail.checklist.length}',
+          ),
         const SizedBox(height: 8),
         _CopyId(id: detail.id),
         const SizedBox(height: 18),
+        if (detail.checklist.isNotEmpty) ...[
+          Text(
+            'CHECKLIST',
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: MutandeColors.stone400,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.6,
+            ),
+          ),
+          const SizedBox(height: 8),
+          for (final item in detail.checklist)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    item.done
+                        ? Icons.check_box
+                        : Icons.check_box_outline_blank,
+                    size: 16,
+                    color: MutandeColors.stone400,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      item.text,
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        color: MutandeColors.stone800,
+                        height: 1.3,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          const SizedBox(height: 18),
+        ],
         Text(
           'PEOPLE',
           style: Theme.of(context).textTheme.labelSmall?.copyWith(

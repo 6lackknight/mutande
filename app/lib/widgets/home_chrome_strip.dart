@@ -1,9 +1,11 @@
 import 'package:flutter/cupertino.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../theme/mutande_macos_theme.dart';
 
 /// Titlebar pill metrics — outer track plus the selected thumb (Collab).
-/// Search and icon pills reuse [thumbHeight] / [thumbStadium].
+/// Search, icon wells, and labeled pills reuse [thumbHeight] / [thumbStadium]
+/// / [thumbPadX].
 abstract final class HomeChrome {
   static const height = 40.0;
   static const inset = 3.0;
@@ -15,6 +17,9 @@ abstract final class HomeChrome {
 
   /// Segment label / chrome control icon (Threads · Collab · Network).
   static const iconSize = 16.0;
+
+  /// Horizontal inset inside thumb-height wells (icon buttons and labels).
+  static const thumbPadX = 10.0;
 
   /// Selected thumb min width.
   static const controlMinWidth = 112.0;
@@ -100,7 +105,7 @@ class HomeChromeStrip extends StatelessWidget {
 
   static const labels = ['Threads', 'Collab', 'Network'];
   static const icons = [
-    CupertinoIcons.envelope,
+    LucideIcons.gitMerge,
     CupertinoIcons.rectangle_split_3x1,
     CupertinoIcons.person_2,
   ];

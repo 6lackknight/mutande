@@ -287,7 +287,7 @@ export interface ThreadMeta {
 
 /** Card checklist row — persisted on the thread so it can be ticked later. */
 export interface CollabChecklistItem {
-  id: string;
+  id?: string;
   text: string;
   done?: boolean;
 }
@@ -883,12 +883,31 @@ export interface CollabInstructionsSealed {
   updated_by: string;
 }
 
+export type CollabStatus = "open" | "archived";
+
+export type CollabPendingMembershipKind = "steerer" | "roster";
+
+/** Unanimous consent to add an external/hosted participant to an E2E collab. */
+export interface CollabPendingMembership {
+  kind: CollabPendingMembershipKind;
+  /** Human handle when kind is steerer. */
+  handle?: string;
+  /** Agent address when kind is roster. */
+  address?: string;
+  cause_address: string;
+  proposed_by: string;
+  approved_by: string[];
+}
+
 export interface Collab {
   id: string;
   org_id: string;
   name: string;
   encryption_mode: CollabEncryptionMode;
   downgrade_point?: CollabDowngradePoint;
+  /** Missing or "open" = active. Archived boards are hidden and frozen. */
+  status?: CollabStatus;
+  pending_membership?: CollabPendingMembership;
   steerer_user_ids: string[];
   steerer_joins: CollabSteererJoin[];
   steerer_removals?: CollabSteererRemoval[];
@@ -984,6 +1003,19 @@ export interface RemoveSteererInput {
   user_id: string;
 }
 
+export interface AddRosterInput {
+  address: string;
+}
+
+export interface RemoveRosterInput {
+  agent_id: string;
+}
+
+export interface ListCollabsOpts {
+  /** When true, only archived boards. Default lists active boards. */
+  archived?: boolean;
+}
+
 export interface RenameCollabListInput {
   lane_id: string;
   name: string;
@@ -1031,6 +1063,18 @@ export interface CollabPortfolioActivityDay {
   count: number;
 }
 
+/** Latest card updates across the viewer's collabs — list-collabs only. */
+export interface CollabPortfolioRecent {
+  thread_id: string;
+  collab_id: string;
+  collab_name: string;
+  from: string;
+  audience: string;
+  last_subject?: string;
+  updated_at: string;
+  needs_you: boolean;
+}
+
 export interface CollabPortfolio {
   activity: CollabPortfolioActivityDay[];
   lane_totals: { backlog: number; doing: number; done: number };
@@ -1040,6 +1084,7 @@ export interface CollabPortfolio {
     doing: number;
     needs_you: number;
   };
+  recent: CollabPortfolioRecent[];
 }
 
 export interface CollabView extends Collab {

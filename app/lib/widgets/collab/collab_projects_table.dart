@@ -7,10 +7,12 @@ import '../../util/clock_format.dart';
 import '../../util/thread_peer.dart';
 import '../ai_host_icon.dart';
 import '../contact_avatar.dart';
+import '../home_chrome_pills.dart';
 import '../mutande_stagger.dart';
+import '../thread_skeletons.dart';
 import 'collab_dash_card.dart';
 
-/// Compact collab list — people first, counts as chips, active first via sort.
+/// Compact collab list — people first, counts as chips, recent via sort.
 class CollabProjectsTable extends StatelessWidget {
   const CollabProjectsTable({
     super.key,
@@ -18,19 +20,32 @@ class CollabProjectsTable extends StatelessWidget {
     required this.onOpen,
     this.avatarUrls = const {},
     this.myHandle,
+    this.sort = MutandeListSort.recent,
+    this.onSort,
+    this.loading = false,
+    this.headerTrailing,
   });
 
   final List<CollabSummary> collabs;
   final ValueChanged<CollabSummary> onOpen;
   final Map<String, String> avatarUrls;
   final String? myHandle;
+  final MutandeListSort sort;
+  final ValueChanged<MutandeListSort>? onSort;
+  final bool loading;
+  final Widget? headerTrailing;
 
   List<CollabSummary> get _sorted {
     final copy = [...collabs];
     copy.sort((a, b) {
-      final needs = b.needsYouCount.compareTo(a.needsYouCount);
-      if (needs != 0) return needs;
-      return (b.updatedAt ?? '').compareTo(a.updatedAt ?? '');
+      if (sort == MutandeListSort.name) {
+        final byName = a.name.toLowerCase().compareTo(b.name.toLowerCase());
+        if (byName != 0) return byName;
+        return a.id.compareTo(b.id);
+      }
+      final byTime = (b.updatedAt ?? '').compareTo(a.updatedAt ?? '');
+      if (byTime != 0) return byTime;
+      return b.needsYouCount.compareTo(a.needsYouCount);
     });
     return copy;
   }
@@ -44,43 +59,63 @@ class CollabProjectsTable extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(8, 0, 8, 0),
-              child: Text(
-                'Collabs',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: MutandeColors.stone800,
-                ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 0),
+              child: Row(
+                children: [
+                  const Text(
+                    'Collabs',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: MutandeColors.stone800,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  MutandeSortToggles(
+                    value: sort,
+                    onChanged: onSort ?? (_) {},
+                    recentKey: const Key('collab-sort-recent'),
+                    nameKey: const Key('collab-sort-name'),
+                  ),
+                  const Spacer(),
+                  if (headerTrailing != null) headerTrailing!,
+                ],
               ),
             ),
             const SizedBox(height: 8),
             const _Header(),
-            for (var i = 0; i < rows.length; i++) ...[
-              if (i > 0)
-                const Divider(
-                  height: 1,
-                  indent: 8,
-                  endIndent: 8,
-                  color: MutandeColors.stone200,
+            if (loading)
+              const CollabTableRowsSkeleton()
+            else
+              for (var i = 0; i < rows.length; i++) ...[
+                if (i > 0)
+                  const Divider(
+                    height: 1,
+                    indent: 8,
+                    endIndent: 8,
+                    color: MutandeColors.stone200,
+                  ),
+                MutandeStaggerIn(
+                  id: rows[i].id,
+                  child: _Row(
+                    collab: rows[i],
+                    avatarUrls: avatarUrls,
+                    myHandle: myHandle,
+                    onTap: () => onOpen(rows[i]),
+                  ),
                 ),
-              MutandeStaggerIn(
-                id: rows[i].id,
-                child: _Row(
-                  collab: rows[i],
-                  avatarUrls: avatarUrls,
-                  myHandle: myHandle,
-                  onTap: () => onOpen(rows[i]),
-                ),
-              ),
-            ],
+              ],
           ],
         ),
       ),
     );
   }
 }
+
+const _statusColWidth = 72.0;
+const _updatedColWidth = 56.0;
+const _rowPadding = EdgeInsets.fromLTRB(8, 13, 8, 13);
 
 class _Header extends StatelessWidget {
   const _Header();
@@ -91,10 +126,14 @@ class _Header extends StatelessWidget {
       padding: EdgeInsets.fromLTRB(8, 6, 8, 4),
       child: Row(
         children: [
-          Expanded(flex: 5, child: _Head('Collab')),
+          Expanded(flex: 5, child: _Head('Title')),
+          SizedBox(
+            width: _statusColWidth,
+            child: Center(child: _Head('Status')),
+          ),
           Expanded(flex: 4, child: _Head('Lanes')),
           SizedBox(
-            width: 56,
+            width: _updatedColWidth,
             child: _Head('Updated', alignEnd: true),
           ),
         ],
@@ -146,7 +185,7 @@ class _Row extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
         hoverColor: MutandeColors.stone100,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(8, 10, 8, 10),
+          padding: _rowPadding,
           child: Row(
             children: [
               Expanded(
@@ -170,16 +209,24 @@ class _Row extends StatelessWidget {
                         ),
                       ),
                     ),
-                    if (collab.isActive) ...[
-                      const SizedBox(width: 8),
-                      const _CountChip(
-                        label: 'Active',
-                        foreground: MutandeColors.emerald,
-                        background: MutandeColors.emeraldSoft,
-                      ),
-                    ],
                   ],
                 ),
+              ),
+              SizedBox(
+                width: _statusColWidth,
+                child: collab.isActive
+                    ? const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          _CountChip(
+                            label: 'active',
+                            foreground: MutandeColors.stone600,
+                            background: MutandeColors.stone100,
+                          ),
+                        ],
+                      )
+                    : const SizedBox.shrink(),
               ),
               Expanded(
                 flex: 4,
@@ -197,7 +244,7 @@ class _Row extends StatelessWidget {
                 ),
               ),
               SizedBox(
-                width: 56,
+                width: _updatedColWidth,
                 child: Text(
                   formatRelativeTime(collab.updatedAt),
                   textAlign: TextAlign.right,
@@ -280,28 +327,34 @@ class _CardChips extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 6,
-      runSpacing: 6,
+    final chips = <Widget>[
+      if (collab.openCount > 0)
+        _CountChip(
+          label: '${collab.openCount} open',
+          foreground: MutandeColors.stone600,
+          background: MutandeColors.stone100,
+        ),
+      if (collab.doingCount > 0)
+        _CountChip(
+          label: '${collab.doingCount} doing',
+          foreground: MutandeColors.bronze,
+          background: MutandeColors.bronzeSoft,
+        ),
+      if (collab.needsYouCount > 0)
+        _CountChip(
+          label: '${collab.needsYouCount} needs you',
+          foreground: MutandeColors.amber,
+          background: MutandeColors.amberSoft,
+        ),
+    ];
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        if (collab.openCount > 0)
-          _CountChip(
-            label: '${collab.openCount} open',
-            foreground: MutandeColors.stone600,
-            background: MutandeColors.stone100,
-          ),
-        if (collab.doingCount > 0)
-          _CountChip(
-            label: '${collab.doingCount} doing',
-            foreground: MutandeColors.bronze,
-            background: MutandeColors.bronzeSoft,
-          ),
-        if (collab.needsYouCount > 0)
-          _CountChip(
-            label: '${collab.needsYouCount} needs you',
-            foreground: MutandeColors.amber,
-            background: MutandeColors.amberSoft,
-          ),
+        for (var i = 0; i < chips.length; i++) ...[
+          if (i > 0) const SizedBox(width: 6),
+          chips[i],
+        ],
       ],
     );
   }
@@ -321,7 +374,7 @@ class _CountChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
         color: background,
         borderRadius: BorderRadius.circular(999),

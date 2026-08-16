@@ -491,6 +491,19 @@ class DaemonClient {
       audience: thread['audience'] as String? ?? '',
       yourStatus: thread['your_status'] as String?,
       awaiting: AwaitingEntry.listFrom(thread['awaiting']),
+      assignedTo: thread['assigned_to'] as String?,
+      tags: [
+        for (final t in thread['tags'] as List<dynamic>? ?? const [])
+          if (t is String && t.trim().isNotEmpty) t.trim().toLowerCase(),
+      ],
+      dueOn: thread['due_on'] as String?,
+      checklist: [
+        for (final e in thread['checklist'] as List<dynamic>? ?? const [])
+          if (e is Map)
+            CollabChecklistItem.fromJson(
+              e is Map<String, dynamic> ? e : Map<String, dynamic>.from(e),
+            ),
+      ],
       enterpriseListingId: thread['enterprise_listing_id'] as String?,
       pendingDowngrade: pendingRaw == null
           ? null
@@ -712,8 +725,10 @@ class DaemonClient {
     await _call('delete_thread', {'thread_id': threadId});
   }
 
-  Future<CollabListResult> listCollabs() async {
-    final result = await _call('list_collabs');
+  Future<CollabListResult> listCollabs({bool archived = false}) async {
+    final result = await _call('list_collabs', {
+      if (archived) 'include_archived': true,
+    });
     final map = result as Map<String, dynamic>? ?? {};
     final raw = map['collabs'] as List<dynamic>? ?? const [];
     final collabs = raw
@@ -752,6 +767,98 @@ class DaemonClient {
     final map = result as Map<String, dynamic>? ?? {};
     final collab = map['collab'] as Map<String, dynamic>? ?? map;
     return CollabDetail.fromJson(collab);
+  }
+
+  Future<CollabDetail> addCollabSteerer({
+    required String collabId,
+    required String handle,
+  }) async {
+    final result = await _call('add_collab_steerer', {
+      'collab_id': collabId,
+      'handle': handle,
+    });
+    final map = result as Map<String, dynamic>? ?? {};
+    return CollabDetail.fromJson(
+      map['collab'] as Map<String, dynamic>? ?? map,
+    );
+  }
+
+  Future<CollabDetail> removeCollabSteerer({
+    required String collabId,
+    required String userId,
+  }) async {
+    final result = await _call('remove_collab_steerer', {
+      'collab_id': collabId,
+      'user_id': userId,
+    });
+    final map = result as Map<String, dynamic>? ?? {};
+    return CollabDetail.fromJson(
+      map['collab'] as Map<String, dynamic>? ?? map,
+    );
+  }
+
+  Future<CollabDetail> addCollabRoster({
+    required String collabId,
+    required String address,
+  }) async {
+    final result = await _call('add_collab_roster', {
+      'collab_id': collabId,
+      'address': address,
+    });
+    final map = result as Map<String, dynamic>? ?? {};
+    return CollabDetail.fromJson(
+      map['collab'] as Map<String, dynamic>? ?? map,
+    );
+  }
+
+  Future<CollabDetail> removeCollabRoster({
+    required String collabId,
+    required String agentId,
+  }) async {
+    final result = await _call('remove_collab_roster', {
+      'collab_id': collabId,
+      'agent_id': agentId,
+    });
+    final map = result as Map<String, dynamic>? ?? {};
+    return CollabDetail.fromJson(
+      map['collab'] as Map<String, dynamic>? ?? map,
+    );
+  }
+
+  Future<CollabDetail> archiveCollab(String collabId) async {
+    final result = await _call('archive_collab', {'collab_id': collabId});
+    final map = result as Map<String, dynamic>? ?? {};
+    return CollabDetail.fromJson(
+      map['collab'] as Map<String, dynamic>? ?? map,
+    );
+  }
+
+  Future<CollabDetail> unarchiveCollab(String collabId) async {
+    final result = await _call('unarchive_collab', {'collab_id': collabId});
+    final map = result as Map<String, dynamic>? ?? {};
+    return CollabDetail.fromJson(
+      map['collab'] as Map<String, dynamic>? ?? map,
+    );
+  }
+
+  Future<CollabDetail> approveCollabPendingMembership(String collabId) async {
+    final result = await _call('approve_collab_pending_membership', {
+      'collab_id': collabId,
+    });
+    final map = result as Map<String, dynamic>? ?? {};
+    return CollabDetail.fromJson(
+      map['collab'] as Map<String, dynamic>? ?? map,
+    );
+  }
+
+  Future<CollabDetail> denyCollabPendingMembership(String collabId) async {
+    final result = await _call('deny_collab_pending_membership', {
+      'collab_id': collabId,
+    });
+    final map = result as Map<String, dynamic>? ?? {};
+    return CollabDetail.fromJson(
+      map['collab'] as Map<String, dynamic>? ?? map,
+    );
   }
 
   Future<void> setLane({
@@ -793,13 +900,22 @@ class DaemonClient {
     String? notes,
     String? laneId,
     String? assignedTo,
+    List<String> tags = const [],
+    String? dueOn,
+    List<Map<String, dynamic>> checklist = const [],
+    List<Map<String, dynamic>> artifacts = const [],
   }) async {
     final result = await _call('create_collab_card', {
       'collab_id': collabId,
       'subject': title,
-      if (notes != null) 'notes': notes,
+      if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
       if (laneId != null) 'lane_id': laneId,
-      if (assignedTo != null) 'assigned_to': assignedTo,
+      if (assignedTo != null && assignedTo.trim().isNotEmpty)
+        'assigned_to': assignedTo.trim().toLowerCase(),
+      if (tags.isNotEmpty) 'tags': tags,
+      if (dueOn != null && dueOn.trim().isNotEmpty) 'due_on': dueOn.trim(),
+      if (checklist.isNotEmpty) 'checklist': checklist,
+      if (artifacts.isNotEmpty) 'artifacts': artifacts,
     });
     final map = result as Map<String, dynamic>? ?? {};
     return map['thread_id'] as String? ?? '';
@@ -991,6 +1107,7 @@ class DaemonStatusResult {
     this.needsOnboarding = false,
     this.hubUrl,
     this.handle,
+    this.userId,
     this.orgId,
     this.email,
     this.connectedAgent,
@@ -1005,6 +1122,7 @@ class DaemonStatusResult {
       needsOnboarding: map['needs_onboarding'] == true,
       hubUrl: map['hub_url'] as String?,
       handle: map['handle'] as String?,
+      userId: map['user_id'] as String?,
       orgId: map['org_id'] as String?,
       email: map['email'] as String?,
       connectedAgent: map['connected_agent'] as String?,
@@ -1018,6 +1136,7 @@ class DaemonStatusResult {
   final bool needsOnboarding;
   final String? hubUrl;
   final String? handle;
+  final String? userId;
   final String? orgId;
   final String? email;
   final String? connectedAgent;
@@ -1370,6 +1489,56 @@ class CollabRosterView {
   final String? transport;
 }
 
+class CollabSteererView {
+  const CollabSteererView({required this.userId, required this.handle});
+
+  factory CollabSteererView.fromJson(Map<String, dynamic> map) {
+    return CollabSteererView(
+      userId: map['user_id'] as String? ?? '',
+      handle: (map['handle'] as String? ?? '').trim().toLowerCase(),
+    );
+  }
+
+  final String userId;
+  final String handle;
+}
+
+class CollabPendingMembership {
+  const CollabPendingMembership({
+    required this.kind,
+    required this.causeAddress,
+    required this.proposedBy,
+    this.handle,
+    this.address,
+    this.approvedBy = const [],
+  });
+
+  factory CollabPendingMembership.fromJson(Map<String, dynamic> map) {
+    final approved = map['approved_by'] as List<dynamic>? ?? const [];
+    return CollabPendingMembership(
+      kind: (map['kind'] as String? ?? 'steerer').toLowerCase(),
+      handle: (map['handle'] as String?)?.trim().toLowerCase(),
+      address: (map['address'] as String?)?.trim().toLowerCase(),
+      causeAddress: (map['cause_address'] as String? ?? '').toLowerCase(),
+      proposedBy: map['proposed_by'] as String? ?? '',
+      approvedBy: [
+        for (final e in approved)
+          if (e is String && e.trim().isNotEmpty) e,
+      ],
+    );
+  }
+
+  final String kind;
+  final String? handle;
+  final String? address;
+  final String causeAddress;
+  final String proposedBy;
+  final List<String> approvedBy;
+
+  String get who =>
+      (kind == 'roster' ? address : handle) ?? causeAddress;
+}
+
 class CollabLearningView {
   const CollabLearningView({
     required this.id,
@@ -1396,6 +1565,32 @@ class CollabLearningView {
   final bool sealed;
 }
 
+class CollabChecklistItem {
+  const CollabChecklistItem({
+    required this.id,
+    required this.text,
+    this.done = false,
+  });
+
+  factory CollabChecklistItem.fromJson(Map<String, dynamic> map) {
+    return CollabChecklistItem(
+      id: map['id'] as String? ?? '',
+      text: map['text'] as String? ?? '',
+      done: map['done'] as bool? ?? false,
+    );
+  }
+
+  final String id;
+  final String text;
+  final bool done;
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'text': text,
+    'done': done,
+  };
+}
+
 class CollabCardView {
   const CollabCardView({
     required this.id,
@@ -1408,9 +1603,14 @@ class CollabCardView {
     this.updatedAt,
     this.yourStatus,
     this.title,
+    this.tags = const [],
+    this.dueOn,
+    this.checklist = const [],
   });
 
   factory CollabCardView.fromJson(Map<String, dynamic> map) {
+    final tagsRaw = map['tags'] as List<dynamic>? ?? const [];
+    final checkRaw = map['checklist'] as List<dynamic>? ?? const [];
     return CollabCardView(
       id: map['id'] as String? ?? '',
       laneId: map['lane_id'] as String?,
@@ -1422,6 +1622,18 @@ class CollabCardView {
       updatedAt: map['updated_at'] as String?,
       yourStatus: map['your_status'] as String?,
       title: map['last_subject'] as String? ?? map['title'] as String?,
+      tags: [
+        for (final t in tagsRaw)
+          if (t is String && t.trim().isNotEmpty) t.trim().toLowerCase(),
+      ],
+      dueOn: map['due_on'] as String?,
+      checklist: [
+        for (final e in checkRaw)
+          if (e is Map)
+            CollabChecklistItem.fromJson(
+              e is Map<String, dynamic> ? e : Map<String, dynamic>.from(e),
+            ),
+      ],
     );
   }
 
@@ -1435,6 +1647,9 @@ class CollabCardView {
   final String? updatedAt;
   final String? yourStatus;
   final String? title;
+  final List<String> tags;
+  final String? dueOn;
+  final List<CollabChecklistItem> checklist;
 
   bool get needsYou => yourStatus == 'pending';
 }
@@ -1444,6 +1659,7 @@ class CollabSummary {
     required this.id,
     required this.name,
     required this.encryptionMode,
+    this.status = 'open',
     this.cardCount = 0,
     this.openCount = 0,
     this.backlogCount = 0,
@@ -1466,6 +1682,7 @@ class CollabSummary {
       id: map['id'] as String? ?? '',
       name: map['name'] as String? ?? '',
       encryptionMode: map['encryption_mode'] as String? ?? 'e2e',
+      status: (map['status'] as String? ?? 'open').toLowerCase(),
       cardCount: (map['card_count'] as num?)?.toInt() ?? 0,
       openCount: openCount,
       backlogCount: _collabLaneCount(
@@ -1497,6 +1714,7 @@ class CollabSummary {
   final String id;
   final String name;
   final String encryptionMode;
+  final String status;
   final int cardCount;
   final int openCount;
   final int backlogCount;
@@ -1509,6 +1727,7 @@ class CollabSummary {
   final List<CollabRosterView> roster;
 
   bool get isE2e => encryptionMode == 'e2e';
+  bool get isArchived => status == 'archived';
   bool get isActive => openCount > 0;
 }
 
@@ -1524,6 +1743,68 @@ class CollabActivityDay {
 
   final String date;
   final int count;
+}
+
+class CollabRecentThread {
+  const CollabRecentThread({
+    required this.threadId,
+    required this.collabId,
+    this.collabName = '',
+    this.from = '',
+    this.audience = '',
+    this.lastSubject,
+    this.updatedAt,
+    this.needsYou = false,
+  });
+
+  factory CollabRecentThread.fromJson(Map<String, dynamic> map) {
+    return CollabRecentThread(
+      threadId: map['thread_id'] as String? ?? '',
+      collabId: map['collab_id'] as String? ?? '',
+      collabName: map['collab_name'] as String? ?? '',
+      from: map['from'] as String? ?? '',
+      audience: map['audience'] as String? ?? '',
+      lastSubject: map['last_subject'] as String?,
+      updatedAt: map['updated_at'] as String?,
+      needsYou: map['needs_you'] == true,
+    );
+  }
+
+  final String threadId;
+  final String collabId;
+  final String collabName;
+  final String from;
+  final String audience;
+  final String? lastSubject;
+  final String? updatedAt;
+  final bool needsYou;
+}
+
+/// Inbox fallback when hub `portfolio.recent` is missing (undeployed hub).
+List<CollabRecentThread> recentFromThreads(
+  List<ThreadSummary> threads, {
+  int limit = 6,
+}) {
+  final filed = [
+    for (final t in threads)
+      if ((t.collabId != null && t.collabId!.trim().isNotEmpty) ||
+          (t.collabName != null && t.collabName!.trim().isNotEmpty))
+        t,
+  ];
+  filed.sort((a, b) => (b.updatedAt ?? '').compareTo(a.updatedAt ?? ''));
+  return [
+    for (final t in filed.take(limit))
+      CollabRecentThread(
+        threadId: t.id,
+        collabId: t.collabId?.trim() ?? '',
+        collabName: t.collabName?.trim() ?? '',
+        from: (t.lastFrom ?? t.from).trim(),
+        audience: t.audience,
+        lastSubject: t.lastSubject,
+        updatedAt: t.updatedAt,
+        needsYou: t.yourStatus == 'pending',
+      ),
+  ];
 }
 
 class CollabLaneTotals {
@@ -1574,7 +1855,8 @@ class CollabPortfolio {
     this.activity = const [],
     this.laneTotals = const CollabLaneTotals(),
     this.totals = const CollabPortfolioTotals(),
-  });
+    List<CollabRecentThread>? recent,
+  }) : _recent = recent;
 
   factory CollabPortfolio.fromJson(
     Map<String, dynamic>? map,
@@ -1591,6 +1873,7 @@ class CollabPortfolio {
       );
     }
     final activityRaw = map['activity'] as List<dynamic>? ?? const [];
+    final recentRaw = map['recent'] as List<dynamic>? ?? const [];
     return CollabPortfolio(
       activity: activityRaw
           .map(
@@ -1603,12 +1886,31 @@ class CollabPortfolio {
       totals: CollabPortfolioTotals.fromJson(
         map['totals'] as Map<String, dynamic>?,
       ),
+      recent: [
+        for (final e in recentRaw)
+          if (e is Map)
+            CollabRecentThread.fromJson(
+              e is Map<String, dynamic> ? e : Map<String, dynamic>.from(e),
+            ),
+      ],
     );
   }
 
   final List<CollabActivityDay> activity;
   final CollabLaneTotals laneTotals;
   final CollabPortfolioTotals totals;
+  final List<CollabRecentThread>? _recent;
+
+  List<CollabRecentThread> get recent => _recent ?? const [];
+
+  CollabPortfolio copyWith({List<CollabRecentThread>? recent}) {
+    return CollabPortfolio(
+      activity: activity,
+      laneTotals: laneTotals,
+      totals: totals,
+      recent: recent ?? _recent,
+    );
+  }
 }
 
 class CollabListResult {
@@ -1655,7 +1957,9 @@ class CollabDetail {
     required this.name,
     required this.encryptionMode,
     required this.lists,
+    this.status = 'open',
     this.roster = const [],
+    this.steerers = const [],
     this.steererHandles = const [],
     this.cards = const [],
     this.learnings = const [],
@@ -1666,6 +1970,7 @@ class CollabDetail {
     this.createdAt,
     this.updatedAt,
     this.causeAddress,
+    this.pendingMembership,
   }) : _artifacts = artifacts;
 
   factory CollabDetail.fromJson(Map<String, dynamic> map) {
@@ -1675,10 +1980,19 @@ class CollabDetail {
     final learnRaw = map['learnings'] as List<dynamic>? ?? const [];
     final steerersRaw = map['steerers'] as List<dynamic>? ?? const [];
     final point = map['downgrade_point'] as Map<String, dynamic>?;
+    final pendingRaw = map['pending_membership'] as Map<String, dynamic>?;
+    final steerers = [
+      for (final e in steerersRaw)
+        if (e is Map)
+          CollabSteererView.fromJson(
+            e is Map<String, dynamic> ? e : Map<String, dynamic>.from(e),
+          ),
+    ];
     return CollabDetail(
       id: map['id'] as String? ?? '',
       name: map['name'] as String? ?? '',
       encryptionMode: map['encryption_mode'] as String? ?? 'e2e',
+      status: (map['status'] as String? ?? 'open').toLowerCase(),
       lists:
           listsRaw
               .map(
@@ -1692,10 +2006,10 @@ class CollabDetail {
             (e) => CollabRosterView.fromJson(e as Map<String, dynamic>? ?? {}),
           )
           .toList(),
+      steerers: steerers,
       steererHandles: [
-        for (final e in steerersRaw)
-          if (e is Map && (e['handle'] as String?)?.trim().isNotEmpty == true)
-            (e['handle'] as String).trim().toLowerCase(),
+        for (final s in steerers)
+          if (s.handle.isNotEmpty) s.handle,
       ],
       cards: cardsRaw
           .map((e) => CollabCardView.fromJson(e as Map<String, dynamic>? ?? {}))
@@ -1714,14 +2028,19 @@ class CollabDetail {
       updatedAt: map['updated_at'] as String?,
       causeAddress:
           point?['cause_address'] as String? ?? _hostedCause(rosterRaw),
+      pendingMembership: pendingRaw == null
+          ? null
+          : CollabPendingMembership.fromJson(pendingRaw),
     );
   }
 
   final String id;
   final String name;
   final String encryptionMode;
+  final String status;
   final List<CollabListView> lists;
   final List<CollabRosterView> roster;
+  final List<CollabSteererView> steerers;
   final List<String> steererHandles;
   final List<CollabCardView> cards;
   final List<CollabLearningView> learnings;
@@ -1732,11 +2051,30 @@ class CollabDetail {
   final String? createdAt;
   final String? updatedAt;
   final String? causeAddress;
+  final CollabPendingMembership? pendingMembership;
 
   /// Empty when omitted, JSON-null, or unsound (hot-reload) null.
   List<CollabArtifactView> get artifacts => _artifacts ?? const [];
 
   bool get isE2e => encryptionMode == 'e2e';
+  bool get isArchived => status == 'archived';
+
+  /// Hub `created_by` is a user id. Prefer [userId] from `me`; else the
+  /// steerer row matching [handle]. Never compare handle to `created_by`.
+  bool isCreator({String? userId, String? handle}) {
+    final createdBy = this.createdBy?.trim();
+    if (createdBy == null || createdBy.isEmpty) return false;
+    final uid = userId?.trim();
+    if (uid != null && uid.isNotEmpty) return uid == createdBy;
+    final h = handle?.trim().toLowerCase();
+    if (h == null || h.isEmpty) return false;
+    for (final s in steerers) {
+      if (s.handle == h && s.userId.isNotEmpty) {
+        return s.userId == createdBy;
+      }
+    }
+    return false;
+  }
 }
 
 /// One collab artifact — file (blob/resource) or link (url + label).
@@ -2156,6 +2494,10 @@ class ThreadDetailResult {
     this.audience = '',
     this.yourStatus,
     this.awaiting = const [],
+    this.assignedTo,
+    this.tags = const [],
+    this.dueOn,
+    this.checklist = const [],
     this.enterpriseListingId,
     this.pendingDowngrade,
     this.pendingTaskApprovals = const [],
@@ -2169,6 +2511,10 @@ class ThreadDetailResult {
   final String audience;
   final String? yourStatus;
   final List<AwaitingEntry> awaiting;
+  final String? assignedTo;
+  final List<String> tags;
+  final String? dueOn;
+  final List<CollabChecklistItem> checklist;
 
   /// Hub billing flag — when set, show enterprise warn banner (§7.2).
   final String? enterpriseListingId;
@@ -2642,6 +2988,16 @@ String friendlyDaemonError(Object error, {String what = 'That'}) {
   }
   if (isHubAuthFailure(lower)) {
     return 'Sign-in expired or was rejected. Open Settings and sign in again.';
+  }
+  if (lower.contains('user not found')) {
+    return "Couldn't find that person on the hub. Check the handle or pairing.";
+  }
+  if (lower.contains('steerers must be in your org') ||
+      lower.contains('roster agents must be in your org')) {
+    return "External people can't be added to collabs until the hub is updated.";
+  }
+  if (lower.contains('approved external contact')) {
+    return 'Pair with that person in Contacts before adding them to a collab.';
   }
   if (isHubUnimplemented(lower)) {
     if (what.toLowerCase().contains('collab')) {

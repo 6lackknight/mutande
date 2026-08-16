@@ -740,7 +740,7 @@ class _ThreadsChrome extends StatelessWidget {
                 width: 32,
                 height: 32,
                 child: Icon(
-                  LucideIcons.squarePen,
+                  LucideIcons.circleFadingPlus,
                   size: 15,
                   color: MutandeColors.stone50,
                 ),
@@ -1869,7 +1869,7 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
               IconButton(
                 tooltip: 'Refresh',
                 onPressed: _loading ? null : _load,
-                icon: const Icon(Icons.refresh, size: 20),
+                icon: const Icon(LucideIcons.arrowUp, size: 20),
                 color: const Color(0xFF78716C),
                 visualDensity: VisualDensity.compact,
               ),

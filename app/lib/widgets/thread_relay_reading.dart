@@ -180,7 +180,7 @@ class _RelayHeader extends StatelessWidget {
         IconButton(
           tooltip: 'Refresh',
           onPressed: host.onRefresh,
-          icon: const Icon(Icons.refresh, size: 16),
+          icon: const Icon(LucideIcons.arrowUp, size: 16),
           color: MutandeColors.stone400,
           visualDensity: VisualDensity.compact,
         ),
@@ -218,12 +218,7 @@ class _RelayHeader extends StatelessWidget {
                 ? 'Hide thread details'
                 : 'Show thread details',
             onPressed: host.onInspectorToggle,
-            icon: Icon(
-              host.inspectorVisible
-                  ? Icons.view_sidebar
-                  : Icons.view_sidebar_outlined,
-              size: 16,
-            ),
+            icon: const Icon(LucideIcons.panelLeftClose, size: 16),
             color: MutandeColors.stone400,
             visualDensity: VisualDensity.compact,
           ),
@@ -576,7 +571,7 @@ class _QuietActions extends StatelessWidget {
           tooltip: 'Upvote',
           onPressed: closed ? null : onUpvote,
           icon: Icon(
-            LucideIcons.arrowBigUp,
+            LucideIcons.arrowUp,
             size: 16,
             color: you ? MutandeColors.bronze : MutandeColors.stone400,
           ),
@@ -597,7 +592,7 @@ class _QuietActions extends StatelessWidget {
           tooltip: 'Reply',
           onPressed: closed ? null : onReply,
           icon: const Icon(
-            LucideIcons.cornerUpLeft,
+            LucideIcons.reply,
             size: 15,
             color: MutandeColors.stone400,
           ),
@@ -675,49 +670,61 @@ class _CapsuleComposerState extends State<_CapsuleComposer> {
   @override
   Widget build(BuildContext context) {
     final canSend = !widget.closed && !widget.sending && _hasText;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (widget.replyToHandle != null)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 6),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Replying to ${widget.replyToHandle}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: MutandeColors.stone500,
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
-                TextButton(
-                  onPressed: widget.onClearTarget,
-                  child: const Text('Cancel'),
-                ),
-              ],
-            ),
+    final targeting = widget.replyToHandle != null;
+    return Focus(
+      onFocusChange: (v) => setState(() => _focused = v),
+      child: AnimatedContainer(
+        duration: MutandeMotion.of(context, MutandeMotion.hover),
+        curve: MutandeMotion.ease,
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          color: MutandeColors.stone100,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: _focused ? MutandeColors.stone800 : MutandeColors.stone200,
+            width: _focused ? 1.5 : 1,
           ),
-        Focus(
-          onFocusChange: (v) => setState(() => _focused = v),
-          child: AnimatedContainer(
-            duration: MutandeMotion.of(context, MutandeMotion.hover),
-            curve: MutandeMotion.ease,
-            decoration: BoxDecoration(
-              color: MutandeColors.stone100,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(
-                color: _focused
-                    ? MutandeColors.stone800
-                    : MutandeColors.stone200,
-                width: _focused ? 1.5 : 1,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (targeting)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 8, 6, 0),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Replying to ${widget.replyToHandle}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: MutandeColors.stone500,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                    TextButton(
+                      key: const Key('relay-composer-cancel'),
+                      onPressed: widget.onClearTarget,
+                      style: TextButton.styleFrom(
+                        foregroundColor: MutandeColors.stone500,
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: const Text(
+                        'Cancel',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
+            Padding(
+              padding: EdgeInsets.fromLTRB(12, targeting ? 0 : 6, 6, 6),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
@@ -727,6 +734,7 @@ class _CapsuleComposerState extends State<_CapsuleComposer> {
                       enabled: !widget.sending && !widget.closed,
                       minLines: 1,
                       maxLines: 6,
+                      cursorColor: MutandeColors.stone800,
                       style: const TextStyle(
                         color: MutandeColors.stone800,
                         fontSize: 13.5,
@@ -738,40 +746,46 @@ class _CapsuleComposerState extends State<_CapsuleComposer> {
                           color: MutandeColors.stone400,
                           fontSize: 13.5,
                         ),
-                        border: InputBorder.none,
                         isDense: true,
-                        contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                        filled: false,
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        disabledBorder: InputBorder.none,
+                        contentPadding: const EdgeInsets.symmetric(
+                          vertical: 8,
+                        ),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 6),
-                  Material(
-                    color: canSend
-                        ? MutandeColors.stone800
-                        : MutandeColors.stone200,
-                    borderRadius: BorderRadius.circular(14),
-                    child: InkWell(
-                      onTap: canSend ? widget.onSend : null,
-                      borderRadius: BorderRadius.circular(14),
-                      child: SizedBox(
-                        width: 32,
-                        height: 32,
-                        child: Icon(
-                          LucideIcons.arrowUp,
-                          size: 15,
-                          color: canSend
-                              ? MutandeColors.stone50
-                              : MutandeColors.stone400,
-                        ),
-                      ),
+                  const SizedBox(width: 4),
+                  IconButton.filled(
+                    key: const Key('relay-composer-send'),
+                    tooltip: 'Send',
+                    onPressed: canSend ? widget.onSend : null,
+                    icon: const Icon(LucideIcons.arrowUp, size: 15),
+                    style: IconButton.styleFrom(
+                      backgroundColor: canSend
+                          ? MutandeColors.stone800
+                          : MutandeColors.stone200,
+                      foregroundColor: canSend
+                          ? MutandeColors.stone50
+                          : MutandeColors.stone400,
+                      disabledBackgroundColor: MutandeColors.stone200,
+                      disabledForegroundColor: MutandeColors.stone400,
+                      minimumSize: const Size(32, 32),
+                      maximumSize: const Size(32, 32),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      padding: EdgeInsets.zero,
+                      visualDensity: VisualDensity.compact,
                     ),
                   ),
                 ],
               ),
             ),
-          ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }

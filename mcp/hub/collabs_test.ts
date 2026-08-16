@@ -55,6 +55,7 @@ Deno.test("presentCollab is participant-complete and lowercases handles", () => 
   assertEquals(arts[1].envelope, undefined);
   assertEquals(view.org_id, undefined);
   assertEquals(view.steerers, undefined);
+  assertEquals(view.status, "open");
 });
 
 Deno.test("hosted E2E get_collab strips sealed file payloads", () => {
@@ -65,4 +66,9 @@ Deno.test("hosted E2E get_collab strips sealed file payloads", () => {
   assertEquals(view.sidecar_required, true);
   const arts = view.artifacts as Array<{ kind: string; content?: string }>;
   assertEquals(arts[1].content, undefined);
+});
+
+Deno.test("presentCollab includes archived status", () => {
+  const view = presentCollab(sample({ status: "archived" }));
+  assertEquals(view.status, "archived");
 });

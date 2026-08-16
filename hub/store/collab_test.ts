@@ -229,7 +229,7 @@ Deno.test("non-member cannot get_collab", async () => {
     await assertRejects(
       () => store.getCollab(bobAuth, collab.id),
       HubError,
-      "Not a collab member",
+      "not found",
     );
     const listed = await store.listCollabs(bobAuth);
     assertEquals(listed.collabs.length, 0);
@@ -241,7 +241,7 @@ Deno.test("non-member cannot get_collab", async () => {
           collab_id: collab.id,
         }),
       HubError,
-      "Not a collab member",
+      "not found",
     );
   });
 });
@@ -436,7 +436,7 @@ Deno.test("steerer joins are append-only; removal is forward-only", async () => 
     await assertRejects(
       () => store.getCollab(bobAuth, collab.id),
       HubError,
-      "Not a collab member",
+      "not found",
     );
     await assertRejects(
       () =>
@@ -446,6 +446,44 @@ Deno.test("steerer joins are append-only; removal is forward-only", async () => 
       HubError,
       "Cannot remove the collab creator",
     );
+  });
+});
+
+Deno.test("only the collab creator can update instructions", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth, bobAuth } = await setupOrg(store);
+    await store.connectAgent(aliceAuth, "mcp", { slug: "chatgpt" });
+    await store.setTransportDefault(aliceAuth, {
+      slug: "chatgpt",
+      transport: "mcp",
+    });
+    const collab = await store.createCollab(aliceAuth, {
+      name: "Letter",
+      steerer_handles: ["bob@acme"],
+      roster_addresses: ["@chatgpt"],
+      instructions: "Ship the alpha.",
+    });
+    assertEquals(collab.created_by, aliceAuth.userId);
+    assertEquals(collab.steerer_user_ids.includes(bobAuth.userId), true);
+
+    const updated = await store.updateCollabInstructions(aliceAuth, collab.id, {
+      instructions: "Keep it short.",
+    });
+    assertEquals(updated.instructions, "Keep it short.");
+
+    const err = await assertRejects(
+      () =>
+        store.updateCollabInstructions(bobAuth, collab.id, {
+          instructions: "Steerer rewrite",
+        }),
+      HubError,
+      "Only the collab creator",
+    );
+    assertEquals((err as HubError).status, 403);
+    assertEquals((err as HubError).code, "forbidden");
+
+    const still = await store.getCollab(aliceAuth, collab.id);
+    assertEquals(still.instructions, "Keep it short.");
   });
 });
 
@@ -579,6 +617,11 @@ Deno.test("list collabs portfolio buckets lanes, needs-you, and activity", async
     const day = aliceList.portfolio.activity.find((d) => d.date === today);
     assertEquals(day?.count, 3);
     assertEquals(aliceList.collabs[0].cards.length, 0);
+    assertEquals(aliceList.portfolio.recent.length, 3);
+    assertEquals(aliceList.portfolio.recent[0].thread_id, closed.thread.id);
+    assertEquals(aliceList.portfolio.recent[0].collab_id, collab.id);
+    assertEquals(aliceList.portfolio.recent[0].collab_name, "Dash");
+    assertEquals(aliceList.portfolio.recent[0].from.startsWith("alice@acme"), true);
 
     const bobList = await store.listCollabs(bobAuth);
     assertEquals(bobList.collabs[0].needs_you, 2);
@@ -714,5 +757,193 @@ Deno.test("add collab artifacts appends a link after create", async () => {
     assertEquals(updated.artifacts.length, 1);
     assertEquals(updated.artifacts[0].kind, "link");
     assertEquals(updated.artifacts[0].label, "docs.example.com");
+  });
+});
+
+async function pairAliceAndCarol(store: HubStore) {
+  const org = await setupOrg(store);
+  const { user: carol } = await store.createOrgWithAdmin(
+    { sub: "auth0|carol", email: "carol@other.test" },
+    { slug: "other", name: "Other", handle: "carol@other" },
+  );
+  await store.registerDevice(store.authContextFromUser(carol), {
+    pubkey: "carol-pk",
+    platform: "macos",
+  });
+  await store.registerAgent(store.authContextFromUser(carol), { slug: "claude" });
+  const carolAuth = store.authContextFromUser(carol);
+  const pin = await store.issuePairingPin(org.aliceAuth);
+  const { request } = await store.submitPairRequest(carolAuth, {
+    handle: "alice@acme",
+    pin: pin.pin,
+  });
+  await store.approvePairRequest(org.aliceAuth, request.id);
+  return { ...org, carolAuth, carol };
+}
+
+Deno.test("paired external can create/list a collab; unpaired is rejected", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth, carolAuth, carol } = await pairAliceAndCarol(store);
+    await store.createOrgWithAdmin(
+      { sub: "auth0|dana", email: "dana@solo.test" },
+      { slug: "solo", name: "Solo", handle: "dana@solo" },
+    );
+    await assertRejects(
+      () =>
+        store.createCollab(aliceAuth, {
+          name: "Nope",
+          steerer_handles: ["dana@solo"],
+          roster_addresses: ["@cursor"],
+        }),
+      HubError,
+      "approved external",
+    );
+
+    const collab = await store.createCollab(aliceAuth, {
+      name: "Cross",
+      steerer_handles: ["carol@other"],
+      roster_addresses: ["@cursor"],
+    });
+    assertEquals(collab.encryption_mode, "app_envelope");
+    assertEquals(collab.steerer_user_ids.includes(carol.id), true);
+
+    const carolList = await store.listCollabs(carolAuth);
+    assertEquals(carolList.collabs.length, 1);
+    assertEquals(carolList.collabs[0].id, collab.id);
+    const carolGot = await store.getCollab(carolAuth, collab.id);
+    assertEquals(carolGot.name, "Cross");
+  });
+});
+
+Deno.test("adding a roster agent auto-adds its human as steerer", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth, bob, bobAuth } = await setupOrg(store);
+    const collab = await store.createCollab(aliceAuth, {
+      name: "Later roster",
+      roster_addresses: ["@cursor"],
+    });
+    const added = await store.addCollabRoster(aliceAuth, collab.id, {
+      address: "bob@acme/claude",
+    });
+    assertEquals(added.steerer_user_ids.includes(bob.id), true);
+    assertEquals(added.roster.some((r) => r.address === "bob@acme/claude"), true);
+    const bobGot = await store.getCollab(bobAuth, collab.id);
+    assertEquals(bobGot.id, collab.id);
+
+    const entry = added.roster.find((r) => r.address === "bob@acme/claude");
+    assertExists(entry);
+    const trimmed = await store.removeCollabRoster(aliceAuth, collab.id, {
+      agent_id: entry.agent_id,
+    });
+    assertEquals(trimmed.roster.some((r) => r.address === "bob@acme/claude"), false);
+    assertEquals(trimmed.steerer_user_ids.includes(bob.id), true);
+  });
+});
+
+Deno.test("sole steerer adding an external downgrades then adds", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth, carolAuth, carol } = await pairAliceAndCarol(store);
+    const collab = await store.createCollab(aliceAuth, {
+      name: "Sealed",
+      roster_addresses: ["@cursor"],
+    });
+    assertEquals(collab.encryption_mode, "e2e");
+    const added = await store.addCollabSteerer(aliceAuth, collab.id, {
+      handle: "carol@other",
+    });
+    assertEquals(added.encryption_mode, "app_envelope");
+    assertExists(added.downgrade_point);
+    assertEquals(added.steerer_user_ids.includes(carol.id), true);
+    assertEquals(added.pending_membership, undefined);
+    const listed = await store.listCollabs(carolAuth);
+    assertEquals(listed.collabs[0].id, collab.id);
+  });
+});
+
+Deno.test("multi-steerer external add waits for unanimous consent", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth, bobAuth, carol } = await pairAliceAndCarol(store);
+    const collab = await store.createCollab(aliceAuth, {
+      name: "Team",
+      steerer_handles: ["bob@acme"],
+      roster_addresses: ["@cursor"],
+    });
+    assertEquals(collab.encryption_mode, "e2e");
+    const pending = await store.addCollabSteerer(aliceAuth, collab.id, {
+      handle: "carol@other",
+    });
+    assertEquals(pending.encryption_mode, "e2e");
+    assertEquals(pending.steerer_user_ids.includes(carol.id), false);
+    assertExists(pending.pending_membership);
+    assertEquals(pending.pending_membership?.kind, "steerer");
+
+    const still = await store.approveCollabPendingMembership(
+      aliceAuth,
+      collab.id,
+    );
+    assertEquals(still.encryption_mode, "e2e");
+    assertEquals(still.pending_membership?.approved_by.length, 1);
+
+    const done = await store.approveCollabPendingMembership(bobAuth, collab.id);
+    assertEquals(done.encryption_mode, "app_envelope");
+    assertEquals(done.steerer_user_ids.includes(carol.id), true);
+    assertEquals(done.pending_membership, undefined);
+
+    const deniedBoard = await store.createCollab(aliceAuth, {
+      name: "Deny",
+      steerer_handles: ["bob@acme"],
+      roster_addresses: ["@cursor"],
+    });
+    await store.addCollabSteerer(aliceAuth, deniedBoard.id, {
+      handle: "carol@other",
+    });
+    const denied = await store.denyCollabPendingMembership(
+      bobAuth,
+      deniedBoard.id,
+    );
+    assertEquals(denied.pending_membership, undefined);
+    assertEquals(denied.encryption_mode, "e2e");
+    assertEquals(denied.steerer_user_ids.includes(carol.id), false);
+  });
+});
+
+Deno.test("archive hides from default list and freezes writes", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth, bob } = await setupOrg(store);
+    const collab = await store.createCollab(aliceAuth, {
+      name: "Ship",
+      roster_addresses: ["@cursor"],
+    });
+    const archived = await store.archiveCollab(aliceAuth, collab.id);
+    assertEquals(archived.status, "archived");
+
+    const listed = await store.listCollabs(aliceAuth);
+    assertEquals(listed.collabs.length, 0);
+    const onlyArchived = await store.listCollabs(aliceAuth, { archived: true });
+    assertEquals(onlyArchived.collabs.length, 1);
+    assertEquals(onlyArchived.collabs[0].id, collab.id);
+
+    await assertRejects(
+      () =>
+        store.addCollabSteerer(aliceAuth, collab.id, { handle: "bob@acme" }),
+      HubError,
+      "archived",
+    );
+    await assertRejects(
+      () =>
+        store.createThread(aliceAuth, {
+          to: "alice@acme",
+          envelope: sampleEnvelope("card"),
+          collab_id: collab.id,
+        }),
+      HubError,
+      "archived",
+    );
+    void bob;
+
+    const restored = await store.unarchiveCollab(aliceAuth, collab.id);
+    assertEquals(restored.status, "open");
+    const active = await store.listCollabs(aliceAuth);
+    assertEquals(active.collabs.length, 1);
   });
 });

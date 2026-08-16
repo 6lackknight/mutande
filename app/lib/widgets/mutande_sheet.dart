@@ -67,3 +67,30 @@ Future<T?> showMutandeSheet<T>({
     },
   );
 }
+
+/// Full-window modal — fade in, Escape / barrier / caller chrome to dismiss.
+Future<T?> showMutandeFullscreen<T>({
+  required BuildContext context,
+  required WidgetBuilder builder,
+  required String barrierLabel,
+}) {
+  final reduce = MediaQuery.disableAnimationsOf(context);
+  return showGeneralDialog<T>(
+    context: context,
+    useRootNavigator: true,
+    barrierDismissible: true,
+    barrierLabel: barrierLabel,
+    barrierColor: const Color(0x990C0A09),
+    transitionDuration: reduce ? Duration.zero : MutandeMotion.ui,
+    pageBuilder: (ctx, animation, secondary) => builder(ctx),
+    transitionBuilder: (ctx, animation, secondary, dialogChild) {
+      if (reduce) return dialogChild;
+      final curved = CurvedAnimation(
+        parent: animation,
+        curve: MutandeMotion.easeOut,
+        reverseCurve: MutandeMotion.easeOut,
+      );
+      return FadeTransition(opacity: curved, child: dialogChild);
+    },
+  );
+}
