@@ -162,7 +162,10 @@ package_dmg() {
   echo "==> build DMG $(basename "$dmg_path")"
   rm -rf "$stage" "$dmg_path"
   mkdir -p "$stage"
-  cp -R "$app" "$stage/"
+  # Stage as mutande.app (not mutande.app.intel / .arm64). Drag-to-Applications
+  # must replace the standard bundle; an arch suffix leaves the old app running.
+  rm -rf "$stage/${APP_NAME}"
+  cp -R "$app" "$stage/${APP_NAME}"
   ln -sf /Applications "$stage/Applications"
   hdiutil create \
     -volname "mutande" \
