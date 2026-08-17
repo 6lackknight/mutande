@@ -1,0 +1,7 @@
+{
+  "name": "@mutande/proto",
+  "tasks": {
+    "generate": "deno run --allow-read --allow-write codegen/generate.ts",
+    "test": "deno test --allow-read --allow-write codegen/"
+  }
+}

@@ -49,6 +49,14 @@ Per-user **router**: `default_agent_id` + `rules[]` (`match_slug` → `agent_id`
 | **open** | Decrypt envelope with local device secret key |
 | **IdentityStore** | Adapter seam for Keychain / memory (beside daemon, not on seal hot path) |
 
+## RPC catalog
+
+| Term | Meaning |
+|------|---------|
+| **RPC catalog** | `proto/rpc-catalog.json` — single source of truth for the daemon JSON-RPC surface (names, aliases, params, hub routes); wire is frozen, codegen + drift tests keep Dart/Rust/hub in step |
+| **passthrough** | Catalog `kind` for a mechanical hub forward (verb + path + param routing, no daemon logic) — generated end-to-end |
+| **core-owned** | Catalog `kind` for methods with daemon logic (sealing, local state, validation, notifications) — hand-written in `DaemonState` |
+
 ## Storage tiers
 
 | Term | Meaning |

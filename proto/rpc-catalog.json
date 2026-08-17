@@ -1,0 +1,584 @@
+{
+  "version": 1,
+  "description": "Daemon JSON-RPC surface (:3847). Single source of truth for the RPC chain: Flutter DaemonClient -> core rpc.rs -> hub. Bootstrapped from the live dispatch in core/src/daemon/rpc.rs — the wire is frozen; every name, alias, param and hub route here must match observed behavior. kind=passthrough methods are mechanical hub forwards (generated end-to-end); kind=core methods have hand-written daemon logic (sealing, local state, validation, notifications); kind=stub methods error by design. Generated artifacts: see codegen/generate.ts.",
+  "methods": [
+    {
+      "name": "health",
+      "kind": "core",
+      "params": [],
+      "notes": "Local liveness; reports mutande-core version."
+    },
+    {
+      "name": "auth_login",
+      "kind": "core",
+      "params": [
+        { "name": "hub_url", "type": "string", "required": true },
+        { "name": "auth0_domain", "type": "string", "required": false },
+        { "name": "auth0_client_id", "type": "string", "required": false },
+        { "name": "auth0_audience", "type": "string", "required": false },
+        { "name": "access_token", "type": "string", "required": false },
+        { "name": "refresh_token", "type": "string", "required": false },
+        { "name": "open_browser", "type": "bool", "required": false }
+      ],
+      "notes": "Auth0 PKCE/loopback login; persists tokens; registers device."
+    },
+    {
+      "name": "auth_logout",
+      "kind": "core",
+      "params": [],
+      "notes": "Clears tokens, keeps hub_url."
+    },
+    {
+      "name": "create_org",
+      "kind": "core",
+      "params": [
+        { "name": "slug", "type": "string", "required": true },
+        { "name": "name", "type": "string", "required": false },
+        { "name": "handle", "type": "string", "required": false }
+      ],
+      "notes": "Hub create + device registration."
+    },
+    {
+      "name": "join_org",
+      "aliases": ["onboard"],
+      "kind": "core",
+      "params": [
+        { "name": "invite_code", "type": "string", "required": true },
+        { "name": "handle", "type": "string", "required": false }
+      ]
+    },
+    {
+      "name": "register",
+      "kind": "stub",
+      "params": [],
+      "notes": "Removed — errors pointing at auth_login + create_org/join_org."
+    },
+    {
+      "name": "get_status",
+      "aliases": ["me"],
+      "kind": "core",
+      "params": [],
+      "notes": "Session + onboarding state; TTL-throttled device re-register."
+    },
+    {
+      "name": "list_contacts",
+      "kind": "passthrough",
+      "params": [],
+      "hub": { "verb": "GET", "path": "/v1/contacts", "unwrap": "contacts" },
+      "result": { "wrap": "contacts" }
+    },
+    {
+      "name": "list_external_contacts",
+      "kind": "passthrough",
+      "params": [],
+      "hub": { "verb": "GET", "path": "/v1/contacts/external", "unwrap": "contacts" },
+      "result": { "wrap": "contacts" }
+    },
+    {
+      "name": "get_registry_listing",
+      "kind": "passthrough",
+      "params": [
+        { "name": "id_or_address", "type": "string", "required": true, "aliases": ["address"] }
+      ],
+      "hub": { "verb": "GET", "path": "/v1/registry/listing/{id_or_address}", "auth": "public" }
+    },
+    {
+      "name": "issue_pairing_pin",
+      "kind": "passthrough",
+      "params": [],
+      "hub": { "verb": "POST", "path": "/v1/contacts/pairing/pin" }
+    },
+    {
+      "name": "get_pairing_pin",
+      "kind": "passthrough",
+      "params": [],
+      "hub": { "verb": "GET", "path": "/v1/contacts/pairing/pin", "unwrap": "pin" },
+      "result": { "wrap": "pin" }
+    },
+    {
+      "name": "rotate_pairing_pin",
+      "kind": "passthrough",
+      "params": [],
+      "hub": { "verb": "POST", "path": "/v1/contacts/pairing/pin/rotate" }
+    },
+    {
+      "name": "submit_pair_request",
+      "kind": "passthrough",
+      "params": [
+        { "name": "handle", "type": "string", "required": true },
+        { "name": "pin", "type": "string", "required": true },
+        { "name": "intro", "type": "string", "required": false }
+      ],
+      "hub": {
+        "verb": "POST",
+        "path": "/v1/contacts/pairing/request",
+        "body": ["handle", "pin", "intro"],
+        "unwrap": "request"
+      },
+      "result": { "wrap": "request" }
+    },
+    {
+      "name": "list_pending_pair_requests",
+      "kind": "passthrough",
+      "params": [],
+      "hub": { "verb": "GET", "path": "/v1/contacts/pairing/pending" }
+    },
+    {
+      "name": "approve_pair_request",
+      "kind": "passthrough",
+      "params": [{ "name": "request_id", "type": "string", "required": true }],
+      "hub": { "verb": "POST", "path": "/v1/contacts/pairing/{request_id}/approve" }
+    },
+    {
+      "name": "deny_pair_request",
+      "kind": "passthrough",
+      "params": [{ "name": "request_id", "type": "string", "required": true }],
+      "hub": { "verb": "POST", "path": "/v1/contacts/pairing/{request_id}/deny" },
+      "result": { "ok": true }
+    },
+    {
+      "name": "unpair_external_contact",
+      "kind": "passthrough",
+      "params": [{ "name": "link_id", "type": "string", "required": true }],
+      "hub": { "verb": "DELETE", "path": "/v1/contacts/external/{link_id}" }
+    },
+    {
+      "name": "propose_thread_downgrade",
+      "kind": "passthrough",
+      "params": [
+        { "name": "thread_id", "type": "string", "required": true },
+        { "name": "agent_slug", "type": "string", "required": true },
+        { "name": "from_agent", "type": "string", "required": false }
+      ],
+      "hub": {
+        "verb": "POST",
+        "path": "/v1/threads/{thread_id}/downgrade-proposals",
+        "body": ["agent_slug", "from_agent"]
+      }
+    },
+    {
+      "name": "list_pending_thread_downgrades",
+      "kind": "passthrough",
+      "params": [],
+      "hub": { "verb": "GET", "path": "/v1/threads/downgrade-proposals/pending" }
+    },
+    {
+      "name": "approve_thread_downgrade",
+      "kind": "core",
+      "params": [
+        { "name": "thread_id", "type": "string", "required": true },
+        { "name": "proposal_id", "type": "string", "required": true }
+      ],
+      "notes": "Hub approve + local inbox-changed notification."
+    },
+    {
+      "name": "deny_thread_downgrade",
+      "kind": "passthrough",
+      "params": [
+        { "name": "thread_id", "type": "string", "required": true },
+        { "name": "proposal_id", "type": "string", "required": true }
+      ],
+      "hub": {
+        "verb": "POST",
+        "path": "/v1/threads/{thread_id}/downgrade-proposals/{proposal_id}/deny"
+      },
+      "result": { "wrap": "proposal" }
+    },
+    {
+      "name": "submit_feedback",
+      "kind": "core",
+      "params": [
+        { "name": "message", "type": "string", "required": true },
+        { "name": "category", "type": "string", "required": false },
+        { "name": "app_version", "type": "string", "required": false }
+      ],
+      "result": { "wrap": "feedback" },
+      "notes": "Injects local device platform before the hub POST."
+    },
+    {
+      "name": "list_threads",
+      "kind": "core",
+      "params": [
+        { "name": "filter", "type": "json", "required": false },
+        { "name": "agent_slug", "type": "string", "required": false },
+        { "name": "collab_id", "type": "string", "required": false }
+      ],
+      "result": { "wrap": "threads" },
+      "notes": "Opens envelopes locally; collab_id filter applied daemon-side."
+    },
+    {
+      "name": "get_thread",
+      "kind": "core",
+      "params": [
+        { "name": "thread_id", "type": "string", "required": true },
+        { "name": "agent_slug", "type": "string", "required": false }
+      ],
+      "notes": "Opens envelopes + materializes blob resources to blob_cache."
+    },
+    {
+      "name": "list_collabs",
+      "kind": "passthrough",
+      "params": [
+        { "name": "include_archived", "type": "bool", "required": false, "aliases": ["archived"] }
+      ],
+      "hub": {
+        "verb": "GET",
+        "path": "/v1/collabs",
+        "query_flags": { "archived": "include_archived" }
+      }
+    },
+    {
+      "name": "get_collab",
+      "kind": "core",
+      "params": [{ "name": "collab_id", "type": "string", "required": true }],
+      "result": { "wrap": "collab" },
+      "notes": "Opens sealed artifacts/cards locally after the hub fetch."
+    },
+    {
+      "name": "create_collab",
+      "kind": "core",
+      "params": [
+        { "name": "name", "type": "string", "required": true },
+        { "name": "steerer_handles", "type": "string[]", "required": false },
+        { "name": "roster_addresses", "type": "string[]", "required": false },
+        { "name": "instructions", "type": "string", "required": false },
+        { "name": "artifacts", "type": "json[]", "required": false }
+      ],
+      "result": { "wrap": "collab" },
+      "notes": "Reads artifact files and seals them for E2E collabs."
+    },
+    {
+      "name": "set_lane",
+      "kind": "core",
+      "params": [
+        { "name": "collab_id", "type": "string", "required": true },
+        { "name": "thread_id", "type": "string", "required": true },
+        { "name": "lane_id", "type": "string", "required": true },
+        { "name": "before_thread_id", "type": "string", "required": false },
+        { "name": "after_thread_id", "type": "string", "required": false }
+      ],
+      "result": { "wrap": "thread" },
+      "notes": "Pre-checks archived state before the hub move."
+    },
+    {
+      "name": "add_learning",
+      "kind": "core",
+      "params": [
+        { "name": "collab_id", "type": "string", "required": true },
+        { "name": "notes", "type": "string", "required": true },
+        { "name": "from_agent", "type": "string", "required": false, "aliases": ["agent_slug"] }
+      ],
+      "notes": "E2E brain writes are sealed locally; hosted agents gated."
+    },
+    {
+      "name": "update_collab_instructions",
+      "kind": "core",
+      "params": [
+        { "name": "collab_id", "type": "string", "required": true },
+        { "name": "instructions", "type": "string", "required": true }
+      ],
+      "result": { "wrap": "collab" },
+      "notes": "Rejects plaintext updates on E2E collabs."
+    },
+    {
+      "name": "add_collab_steerer",
+      "kind": "passthrough",
+      "params": [
+        { "name": "collab_id", "type": "string", "required": true },
+        { "name": "handle", "type": "string", "required": true }
+      ],
+      "hub": { "verb": "POST", "path": "/v1/collabs/{collab_id}/steerers", "body": ["handle"] },
+      "result": { "wrap": "collab" }
+    },
+    {
+      "name": "remove_collab_steerer",
+      "kind": "passthrough",
+      "params": [
+        { "name": "collab_id", "type": "string", "required": true },
+        { "name": "user_id", "type": "string", "required": true }
+      ],
+      "hub": {
+        "verb": "POST",
+        "path": "/v1/collabs/{collab_id}/steerers/remove",
+        "body": ["user_id"]
+      },
+      "result": { "wrap": "collab" }
+    },
+    {
+      "name": "add_collab_roster",
+      "kind": "passthrough",
+      "params": [
+        { "name": "collab_id", "type": "string", "required": true },
+        { "name": "address", "type": "string", "required": true }
+      ],
+      "hub": { "verb": "POST", "path": "/v1/collabs/{collab_id}/roster", "body": ["address"] },
+      "result": { "wrap": "collab" }
+    },
+    {
+      "name": "remove_collab_roster",
+      "kind": "passthrough",
+      "params": [
+        { "name": "collab_id", "type": "string", "required": true },
+        { "name": "agent_id", "type": "string", "required": true }
+      ],
+      "hub": {
+        "verb": "POST",
+        "path": "/v1/collabs/{collab_id}/roster/remove",
+        "body": ["agent_id"]
+      },
+      "result": { "wrap": "collab" }
+    },
+    {
+      "name": "archive_collab",
+      "kind": "passthrough",
+      "params": [{ "name": "collab_id", "type": "string", "required": true }],
+      "hub": { "verb": "POST", "path": "/v1/collabs/{collab_id}/archive" },
+      "result": { "wrap": "collab" }
+    },
+    {
+      "name": "unarchive_collab",
+      "kind": "passthrough",
+      "params": [{ "name": "collab_id", "type": "string", "required": true }],
+      "hub": { "verb": "POST", "path": "/v1/collabs/{collab_id}/unarchive" },
+      "result": { "wrap": "collab" }
+    },
+    {
+      "name": "approve_collab_pending_membership",
+      "kind": "passthrough",
+      "params": [{ "name": "collab_id", "type": "string", "required": true }],
+      "hub": { "verb": "POST", "path": "/v1/collabs/{collab_id}/downgrade/approve" },
+      "result": { "wrap": "collab" }
+    },
+    {
+      "name": "deny_collab_pending_membership",
+      "kind": "passthrough",
+      "params": [{ "name": "collab_id", "type": "string", "required": true }],
+      "hub": { "verb": "POST", "path": "/v1/collabs/{collab_id}/downgrade/deny" },
+      "result": { "wrap": "collab" }
+    },
+    {
+      "name": "create_collab_card",
+      "kind": "core",
+      "params": [
+        { "name": "collab_id", "type": "string", "required": true },
+        { "name": "subject", "type": "string", "required": true, "aliases": ["title"] },
+        { "name": "notes", "type": "string", "required": false },
+        { "name": "lane_id", "type": "string", "required": false, "aliases": ["lane"] },
+        { "name": "assigned_to", "type": "string", "required": false },
+        { "name": "agent_slug", "type": "string", "required": false },
+        { "name": "tags", "type": "string[]", "required": false },
+        { "name": "due_on", "type": "string", "required": false },
+        { "name": "checklist", "type": "json[]", "required": false },
+        { "name": "artifacts", "type": "json[]", "required": false }
+      ],
+      "result": { "wrap": "thread_id" },
+      "notes": "Seals the card once to every steerer device."
+    },
+    {
+      "name": "get_draft",
+      "kind": "core",
+      "params": [],
+      "notes": "Syncs from hub, returns local plaintext draft."
+    },
+    {
+      "name": "draft_add_question",
+      "kind": "core",
+      "params": [],
+      "params_schema": "./human-decision.schema.json",
+      "notes": "Params are the HumanDecision record itself."
+    },
+    {
+      "name": "draft_add_resource",
+      "kind": "core",
+      "params": [],
+      "notes": "Params are the ResourceRequest record itself."
+    },
+    {
+      "name": "forward_draft",
+      "kind": "core",
+      "params": [
+        { "name": "recipient", "type": "string", "required": true },
+        { "name": "agent_slug", "type": "string", "required": false },
+        { "name": "collab_id", "type": "string", "required": false },
+        { "name": "notes", "type": "string", "required": false }
+      ],
+      "notes": "Seals the staged bundle to the recipient set."
+    },
+    {
+      "name": "ping",
+      "kind": "core",
+      "params": [
+        { "name": "kind", "type": "string", "required": true },
+        { "name": "target", "type": "string", "required": false },
+        { "name": "agent_slug", "type": "string", "required": false }
+      ],
+      "notes": "health = daemon auto-pong; thread = real Threads mail. Default target @all."
+    },
+    {
+      "name": "reply_to_thread",
+      "kind": "core",
+      "params": [
+        { "name": "thread_id", "type": "string", "required": true },
+        { "name": "to_agent", "type": "string", "required": false },
+        { "name": "agent_slug", "type": "string", "required": false },
+        { "name": "bundle", "type": "json", "required": false }
+      ],
+      "params_schema": "./bundle.schema.json",
+      "result": { "ok": true },
+      "notes": "Bundle may be nested under `bundle` or spread at the top level."
+    },
+    {
+      "name": "close_thread",
+      "kind": "core",
+      "params": [{ "name": "thread_id", "type": "string", "required": true }],
+      "result": { "ok": true },
+      "notes": "Hub close + local inbox notification."
+    },
+    {
+      "name": "delete_thread",
+      "kind": "core",
+      "params": [{ "name": "thread_id", "type": "string", "required": true }],
+      "result": { "ok": true },
+      "notes": "Hub delete + local inbox notification."
+    },
+    {
+      "name": "mark_processed",
+      "kind": "core",
+      "params": [{ "name": "thread_id", "type": "string", "required": true }],
+      "result": { "ok": true },
+      "notes": "Local-only read state."
+    },
+    {
+      "name": "toggle_message_upvote",
+      "kind": "core",
+      "params": [
+        { "name": "thread_id", "type": "string", "required": true },
+        { "name": "message_id", "type": "string", "required": true },
+        { "name": "agent_slug", "type": "string", "required": false }
+      ],
+      "notes": "Resolves the acting agent before the hub toggle."
+    },
+    {
+      "name": "connect_host",
+      "kind": "core",
+      "params": [{ "name": "host", "type": "string", "required": true }],
+      "notes": "Writes host MCP config + registers connected agent(s)."
+    },
+    {
+      "name": "detect_ai_hosts",
+      "kind": "core",
+      "params": [],
+      "result": { "wrap": "hosts" }
+    },
+    {
+      "name": "install_skill",
+      "kind": "core",
+      "params": [{ "name": "host", "type": "string", "required": true }]
+    },
+    {
+      "name": "register_agent",
+      "kind": "core",
+      "params": [{ "name": "slug", "type": "string", "required": true }],
+      "notes": "Hub register + records connected agent slug locally."
+    },
+    {
+      "name": "list_agents",
+      "kind": "core",
+      "params": [{ "name": "handle", "type": "string", "required": false }],
+      "notes": "Branches: bare -> own agents (raw response); handle -> teammate agents wrapped as {agents}."
+    },
+    {
+      "name": "set_default_agent",
+      "kind": "passthrough",
+      "params": [{ "name": "agent_id", "type": "string", "required": true }],
+      "hub": { "verb": "PUT", "path": "/v1/agents/default", "body": ["agent_id"], "unwrap": "agent" }
+    },
+    {
+      "name": "rename_agent",
+      "kind": "passthrough",
+      "params": [
+        { "name": "agent_id", "type": "string", "required": true },
+        { "name": "slug", "type": "string", "required": true }
+      ],
+      "hub": { "verb": "PATCH", "path": "/v1/agents/{agent_id}", "body": ["slug"] }
+    },
+    {
+      "name": "get_router",
+      "kind": "passthrough",
+      "params": [],
+      "hub": { "verb": "GET", "path": "/v1/agents/router" }
+    },
+    {
+      "name": "set_router",
+      "kind": "passthrough",
+      "params": [
+        { "name": "default_agent_id", "type": "string", "required": false },
+        { "name": "rules", "type": "json[]", "required": false }
+      ],
+      "hub": { "verb": "PUT", "path": "/v1/agents/router", "body": ["default_agent_id", "rules"] }
+    },
+    {
+      "name": "get_transport_defaults",
+      "kind": "passthrough",
+      "params": [],
+      "hub": { "verb": "GET", "path": "/v1/agents/transport-defaults" }
+    },
+    {
+      "name": "set_transport_default",
+      "kind": "core",
+      "params": [
+        { "name": "slug", "type": "string", "required": true },
+        { "name": "transport", "type": "string", "required": true }
+      ],
+      "notes": "Validates transport in {sidecar, mcp} before the hub PUT."
+    },
+    {
+      "name": "get_safety_number",
+      "aliases": ["own_safety_number"],
+      "kind": "core",
+      "params": [],
+      "notes": "Local crypto fingerprint."
+    },
+    {
+      "name": "register_device",
+      "kind": "core",
+      "params": [],
+      "notes": "Force re-register this device pubkey with the hub."
+    },
+    {
+      "name": "contact_safety_number",
+      "kind": "core",
+      "params": [{ "name": "handle", "type": "string", "required": true }],
+      "notes": "Combines contact devices with local identity."
+    },
+    {
+      "name": "verify_contact",
+      "kind": "core",
+      "params": [
+        { "name": "handle", "type": "string", "required": true },
+        { "name": "fingerprint", "type": "string", "required": true, "aliases": ["fingerprint_or_uri"] }
+      ]
+    },
+    {
+      "name": "forward_blob",
+      "kind": "core",
+      "params": [
+        { "name": "recipient", "type": "string", "required": false },
+        { "name": "thread_id", "type": "string", "required": false },
+        { "name": "in_reply_to", "type": "string", "required": false },
+        { "name": "agent_slug", "type": "string", "required": false },
+        { "name": "subject", "type": "string", "required": false },
+        { "name": "content_base64", "type": "string", "required": false },
+        { "name": "path", "type": "string", "required": false },
+        { "name": "filename", "type": "string", "required": false }
+      ],
+      "notes": "recipient required unless thread_id set; content_base64 XOR path. Seals blob to R2."
+    },
+    {
+      "name": "set_core_path",
+      "kind": "core",
+      "params": [{ "name": "path", "type": "string", "required": true }],
+      "notes": "Local sidecar binary path override."
+    }
+  ]
+}

@@ -1,0 +1,88 @@
+// GENERATED FILE — do not edit. Source: proto/rpc-catalog.json (deno task generate in proto/).
+// Daemon JSON-RPC method/param metadata. Not yet imported by the app —
+// stage 4 of the RPC collapse swaps DaemonClient stubs onto it.
+
+/// kind: passthrough = mechanical hub forward; core = daemon logic; stub = removed.
+class DaemonRpcMethod {
+  const DaemonRpcMethod({
+    required this.kind,
+    this.aliases = const [],
+    this.requiredParams = const [],
+    this.optionalParams = const [],
+  });
+
+  final String kind;
+  final List<String> aliases;
+  final List<String> requiredParams;
+  final List<String> optionalParams;
+}
+
+const Map<String, DaemonRpcMethod> daemonRpcCatalog = {
+  'health': DaemonRpcMethod(kind: 'core'),
+  'auth_login': DaemonRpcMethod(kind: 'core', requiredParams: ['hub_url'], optionalParams: ['auth0_domain', 'auth0_client_id', 'auth0_audience', 'access_token', 'refresh_token', 'open_browser']),
+  'auth_logout': DaemonRpcMethod(kind: 'core'),
+  'create_org': DaemonRpcMethod(kind: 'core', requiredParams: ['slug'], optionalParams: ['name', 'handle']),
+  'join_org': DaemonRpcMethod(kind: 'core', aliases: ['onboard'], requiredParams: ['invite_code'], optionalParams: ['handle']),
+  'register': DaemonRpcMethod(kind: 'stub'),
+  'get_status': DaemonRpcMethod(kind: 'core', aliases: ['me']),
+  'list_contacts': DaemonRpcMethod(kind: 'passthrough'),
+  'list_external_contacts': DaemonRpcMethod(kind: 'passthrough'),
+  'get_registry_listing': DaemonRpcMethod(kind: 'passthrough', requiredParams: ['id_or_address']),
+  'issue_pairing_pin': DaemonRpcMethod(kind: 'passthrough'),
+  'get_pairing_pin': DaemonRpcMethod(kind: 'passthrough'),
+  'rotate_pairing_pin': DaemonRpcMethod(kind: 'passthrough'),
+  'submit_pair_request': DaemonRpcMethod(kind: 'passthrough', requiredParams: ['handle', 'pin'], optionalParams: ['intro']),
+  'list_pending_pair_requests': DaemonRpcMethod(kind: 'passthrough'),
+  'approve_pair_request': DaemonRpcMethod(kind: 'passthrough', requiredParams: ['request_id']),
+  'deny_pair_request': DaemonRpcMethod(kind: 'passthrough', requiredParams: ['request_id']),
+  'unpair_external_contact': DaemonRpcMethod(kind: 'passthrough', requiredParams: ['link_id']),
+  'propose_thread_downgrade': DaemonRpcMethod(kind: 'passthrough', requiredParams: ['thread_id', 'agent_slug'], optionalParams: ['from_agent']),
+  'list_pending_thread_downgrades': DaemonRpcMethod(kind: 'passthrough'),
+  'approve_thread_downgrade': DaemonRpcMethod(kind: 'core', requiredParams: ['thread_id', 'proposal_id']),
+  'deny_thread_downgrade': DaemonRpcMethod(kind: 'passthrough', requiredParams: ['thread_id', 'proposal_id']),
+  'submit_feedback': DaemonRpcMethod(kind: 'core', requiredParams: ['message'], optionalParams: ['category', 'app_version']),
+  'list_threads': DaemonRpcMethod(kind: 'core', optionalParams: ['filter', 'agent_slug', 'collab_id']),
+  'get_thread': DaemonRpcMethod(kind: 'core', requiredParams: ['thread_id'], optionalParams: ['agent_slug']),
+  'list_collabs': DaemonRpcMethod(kind: 'passthrough', optionalParams: ['include_archived']),
+  'get_collab': DaemonRpcMethod(kind: 'core', requiredParams: ['collab_id']),
+  'create_collab': DaemonRpcMethod(kind: 'core', requiredParams: ['name'], optionalParams: ['steerer_handles', 'roster_addresses', 'instructions', 'artifacts']),
+  'set_lane': DaemonRpcMethod(kind: 'core', requiredParams: ['collab_id', 'thread_id', 'lane_id'], optionalParams: ['before_thread_id', 'after_thread_id']),
+  'add_learning': DaemonRpcMethod(kind: 'core', requiredParams: ['collab_id', 'notes'], optionalParams: ['from_agent']),
+  'update_collab_instructions': DaemonRpcMethod(kind: 'core', requiredParams: ['collab_id', 'instructions']),
+  'add_collab_steerer': DaemonRpcMethod(kind: 'passthrough', requiredParams: ['collab_id', 'handle']),
+  'remove_collab_steerer': DaemonRpcMethod(kind: 'passthrough', requiredParams: ['collab_id', 'user_id']),
+  'add_collab_roster': DaemonRpcMethod(kind: 'passthrough', requiredParams: ['collab_id', 'address']),
+  'remove_collab_roster': DaemonRpcMethod(kind: 'passthrough', requiredParams: ['collab_id', 'agent_id']),
+  'archive_collab': DaemonRpcMethod(kind: 'passthrough', requiredParams: ['collab_id']),
+  'unarchive_collab': DaemonRpcMethod(kind: 'passthrough', requiredParams: ['collab_id']),
+  'approve_collab_pending_membership': DaemonRpcMethod(kind: 'passthrough', requiredParams: ['collab_id']),
+  'deny_collab_pending_membership': DaemonRpcMethod(kind: 'passthrough', requiredParams: ['collab_id']),
+  'create_collab_card': DaemonRpcMethod(kind: 'core', requiredParams: ['collab_id', 'subject'], optionalParams: ['notes', 'lane_id', 'assigned_to', 'agent_slug', 'tags', 'due_on', 'checklist', 'artifacts']),
+  'get_draft': DaemonRpcMethod(kind: 'core'),
+  'draft_add_question': DaemonRpcMethod(kind: 'core'),
+  'draft_add_resource': DaemonRpcMethod(kind: 'core'),
+  'forward_draft': DaemonRpcMethod(kind: 'core', requiredParams: ['recipient'], optionalParams: ['agent_slug', 'collab_id', 'notes']),
+  'ping': DaemonRpcMethod(kind: 'core', requiredParams: ['kind'], optionalParams: ['target', 'agent_slug']),
+  'reply_to_thread': DaemonRpcMethod(kind: 'core', requiredParams: ['thread_id'], optionalParams: ['to_agent', 'agent_slug', 'bundle']),
+  'close_thread': DaemonRpcMethod(kind: 'core', requiredParams: ['thread_id']),
+  'delete_thread': DaemonRpcMethod(kind: 'core', requiredParams: ['thread_id']),
+  'mark_processed': DaemonRpcMethod(kind: 'core', requiredParams: ['thread_id']),
+  'toggle_message_upvote': DaemonRpcMethod(kind: 'core', requiredParams: ['thread_id', 'message_id'], optionalParams: ['agent_slug']),
+  'connect_host': DaemonRpcMethod(kind: 'core', requiredParams: ['host']),
+  'detect_ai_hosts': DaemonRpcMethod(kind: 'core'),
+  'install_skill': DaemonRpcMethod(kind: 'core', requiredParams: ['host']),
+  'register_agent': DaemonRpcMethod(kind: 'core', requiredParams: ['slug']),
+  'list_agents': DaemonRpcMethod(kind: 'core', optionalParams: ['handle']),
+  'set_default_agent': DaemonRpcMethod(kind: 'passthrough', requiredParams: ['agent_id']),
+  'rename_agent': DaemonRpcMethod(kind: 'passthrough', requiredParams: ['agent_id', 'slug']),
+  'get_router': DaemonRpcMethod(kind: 'passthrough'),
+  'set_router': DaemonRpcMethod(kind: 'passthrough', optionalParams: ['default_agent_id', 'rules']),
+  'get_transport_defaults': DaemonRpcMethod(kind: 'passthrough'),
+  'set_transport_default': DaemonRpcMethod(kind: 'core', requiredParams: ['slug', 'transport']),
+  'get_safety_number': DaemonRpcMethod(kind: 'core', aliases: ['own_safety_number']),
+  'register_device': DaemonRpcMethod(kind: 'core'),
+  'contact_safety_number': DaemonRpcMethod(kind: 'core', requiredParams: ['handle']),
+  'verify_contact': DaemonRpcMethod(kind: 'core', requiredParams: ['handle', 'fingerprint']),
+  'forward_blob': DaemonRpcMethod(kind: 'core', optionalParams: ['recipient', 'thread_id', 'in_reply_to', 'agent_slug', 'subject', 'content_base64', 'path', 'filename']),
+  'set_core_path': DaemonRpcMethod(kind: 'core', requiredParams: ['path']),
+};

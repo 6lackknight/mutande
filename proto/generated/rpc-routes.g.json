@@ -1,0 +1,173 @@
+{
+  "comment": "GENERATED FILE — do not edit. Source: proto/rpc-catalog.json (deno task generate in proto/).",
+  "routes": [
+    {
+      "rpc": "list_contacts",
+      "verb": "GET",
+      "path": "/v1/contacts",
+      "auth": "bearer"
+    },
+    {
+      "rpc": "list_external_contacts",
+      "verb": "GET",
+      "path": "/v1/contacts/external",
+      "auth": "bearer"
+    },
+    {
+      "rpc": "get_registry_listing",
+      "verb": "GET",
+      "path": "/v1/registry/listing/{id_or_address}",
+      "auth": "public"
+    },
+    {
+      "rpc": "issue_pairing_pin",
+      "verb": "POST",
+      "path": "/v1/contacts/pairing/pin",
+      "auth": "bearer"
+    },
+    {
+      "rpc": "get_pairing_pin",
+      "verb": "GET",
+      "path": "/v1/contacts/pairing/pin",
+      "auth": "bearer"
+    },
+    {
+      "rpc": "rotate_pairing_pin",
+      "verb": "POST",
+      "path": "/v1/contacts/pairing/pin/rotate",
+      "auth": "bearer"
+    },
+    {
+      "rpc": "submit_pair_request",
+      "verb": "POST",
+      "path": "/v1/contacts/pairing/request",
+      "auth": "bearer"
+    },
+    {
+      "rpc": "list_pending_pair_requests",
+      "verb": "GET",
+      "path": "/v1/contacts/pairing/pending",
+      "auth": "bearer"
+    },
+    {
+      "rpc": "approve_pair_request",
+      "verb": "POST",
+      "path": "/v1/contacts/pairing/{request_id}/approve",
+      "auth": "bearer"
+    },
+    {
+      "rpc": "deny_pair_request",
+      "verb": "POST",
+      "path": "/v1/contacts/pairing/{request_id}/deny",
+      "auth": "bearer"
+    },
+    {
+      "rpc": "unpair_external_contact",
+      "verb": "DELETE",
+      "path": "/v1/contacts/external/{link_id}",
+      "auth": "bearer"
+    },
+    {
+      "rpc": "propose_thread_downgrade",
+      "verb": "POST",
+      "path": "/v1/threads/{thread_id}/downgrade-proposals",
+      "auth": "bearer"
+    },
+    {
+      "rpc": "list_pending_thread_downgrades",
+      "verb": "GET",
+      "path": "/v1/threads/downgrade-proposals/pending",
+      "auth": "bearer"
+    },
+    {
+      "rpc": "deny_thread_downgrade",
+      "verb": "POST",
+      "path": "/v1/threads/{thread_id}/downgrade-proposals/{proposal_id}/deny",
+      "auth": "bearer"
+    },
+    {
+      "rpc": "list_collabs",
+      "verb": "GET",
+      "path": "/v1/collabs",
+      "auth": "bearer"
+    },
+    {
+      "rpc": "add_collab_steerer",
+      "verb": "POST",
+      "path": "/v1/collabs/{collab_id}/steerers",
+      "auth": "bearer"
+    },
+    {
+      "rpc": "remove_collab_steerer",
+      "verb": "POST",
+      "path": "/v1/collabs/{collab_id}/steerers/remove",
+      "auth": "bearer"
+    },
+    {
+      "rpc": "add_collab_roster",
+      "verb": "POST",
+      "path": "/v1/collabs/{collab_id}/roster",
+      "auth": "bearer"
+    },
+    {
+      "rpc": "remove_collab_roster",
+      "verb": "POST",
+      "path": "/v1/collabs/{collab_id}/roster/remove",
+      "auth": "bearer"
+    },
+    {
+      "rpc": "archive_collab",
+      "verb": "POST",
+      "path": "/v1/collabs/{collab_id}/archive",
+      "auth": "bearer"
+    },
+    {
+      "rpc": "unarchive_collab",
+      "verb": "POST",
+      "path": "/v1/collabs/{collab_id}/unarchive",
+      "auth": "bearer"
+    },
+    {
+      "rpc": "approve_collab_pending_membership",
+      "verb": "POST",
+      "path": "/v1/collabs/{collab_id}/downgrade/approve",
+      "auth": "bearer"
+    },
+    {
+      "rpc": "deny_collab_pending_membership",
+      "verb": "POST",
+      "path": "/v1/collabs/{collab_id}/downgrade/deny",
+      "auth": "bearer"
+    },
+    {
+      "rpc": "set_default_agent",
+      "verb": "PUT",
+      "path": "/v1/agents/default",
+      "auth": "bearer"
+    },
+    {
+      "rpc": "rename_agent",
+      "verb": "PATCH",
+      "path": "/v1/agents/{agent_id}",
+      "auth": "bearer"
+    },
+    {
+      "rpc": "get_router",
+      "verb": "GET",
+      "path": "/v1/agents/router",
+      "auth": "bearer"
+    },
+    {
+      "rpc": "set_router",
+      "verb": "PUT",
+      "path": "/v1/agents/router",
+      "auth": "bearer"
+    },
+    {
+      "rpc": "get_transport_defaults",
+      "verb": "GET",
+      "path": "/v1/agents/transport-defaults",
+      "auth": "bearer"
+    }
+  ]
+}

@@ -407,23 +407,6 @@ class DaemonClient {
     });
   }
 
-  Future<void> approveTask({
-    required String threadId,
-    required String messageId,
-  }) async {
-    await _call('approve_task', {
-      'thread_id': threadId,
-      'message_id': messageId,
-    });
-  }
-
-  Future<void> denyTask({
-    required String threadId,
-    required String messageId,
-  }) async {
-    await _call('deny_task', {'thread_id': threadId, 'message_id': messageId});
-  }
-
   /// Pilot / product feedback → hub `POST /v1/feedback`.
   Future<void> submitFeedback({
     required String message,
