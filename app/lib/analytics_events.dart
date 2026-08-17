@@ -34,4 +34,6 @@ class AnalyticsEvent {
   static const homeReady = 'desktop_home_ready';
   static const tabSelect = 'desktop_tab_select';
   static const signOut = 'desktop_sign_out';
+
+  static const updateRequired = 'desktop_update_required';
 }

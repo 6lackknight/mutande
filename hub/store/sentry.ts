@@ -79,6 +79,7 @@ export function initHubSentry(opts?: {
   const dsn = resolveSentryDsn(env);
   if (!dsn) return false;
   Sentry.init(hubSentryOptions({ smoke: opts?.smoke, dsn, env }));
+  installHubGlobalHandlers();
   return true;
 }
 
@@ -86,6 +87,17 @@ export function initHubSentry(opts?: {
 export function captureHubException(err: unknown): void {
   if (!Sentry.getClient()) return;
   Sentry.captureException(err);
+}
+
+/** Capture unhandled rejections and global errors outside Hono routes. */
+export function installHubGlobalHandlers(): void {
+  if (!Sentry.getClient()) return;
+  globalThis.addEventListener("unhandledrejection", (ev) => {
+    captureHubException(ev.reason);
+  });
+  globalThis.addEventListener("error", (ev) => {
+    captureHubException(ev.error ?? ev.message);
+  });
 }
 
 /**

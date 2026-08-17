@@ -15,6 +15,7 @@ import '../widgets/ai_host_icon.dart';
 import '../widgets/connect_host_flow.dart';
 import '../widgets/connect_host_picker.dart';
 import '../widgets/host_link_status.dart';
+import '../widgets/mutande_sheet.dart';
 import '../widgets/thinking_orb.dart';
 import '../widgets/transport_chip.dart';
 
@@ -46,10 +47,7 @@ BoxDecoration _settingsCardDecoration({Color? borderColor, Color? fill}) {
   );
 }
 
-/// Where a titlebar shortcut should land inside Settings.
-enum SettingsOpenTarget { notifications, feedback }
-
-/// Plumbing + trust — pushed from the home gear (Stitch Settings hub).
+/// Plumbing + trust — fullscreen from the home gear.
 class SettingsScreen extends StatefulWidget {
   SettingsScreen({
     super.key,
@@ -65,7 +63,6 @@ class SettingsScreen extends StatefulWidget {
     this.onOpenThreads,
     this.onOpenAgents,
     this.onSignedOut,
-    this.openTo,
     HostLinkStore? hostLinkStore,
     NotificationPrefsStore? notificationPrefs,
     TransportPrefsStore? transportPrefs,
@@ -90,8 +87,6 @@ class SettingsScreen extends StatefulWidget {
   final VoidCallback? onOpenAgents;
   /// After local Auth0 logout — parent should leave Home for Sign in.
   final ValueChanged<DaemonStatusResult>? onSignedOut;
-  /// Scroll this section into view when the sheet opens.
-  final SettingsOpenTarget? openTo;
   final HostLinkStore hostLinkStore;
   final NotificationPrefsStore notificationPrefs;
   final TransportPrefsStore transportPrefs;
@@ -124,8 +119,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   TransportPrefs _transportPrefs = const TransportPrefs();
   List<AgentInfo> _agents = const [];
   bool _loadingTransport = false;
-  final _notificationsKey = GlobalKey();
-  final _feedbackKey = GlobalKey();
 
   @override
   void initState() {
@@ -138,28 +131,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _loadHostLinks();
     _loadNotifPrefs();
     _loadTransportPrefs();
-    if (widget.openTo != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToOpenTo());
-      });
-    }
-  }
-
-  void _scrollToOpenTo() {
-    if (!mounted) return;
-    final key = switch (widget.openTo) {
-      SettingsOpenTarget.notifications => _notificationsKey,
-      SettingsOpenTarget.feedback => _feedbackKey,
-      null => null,
-    };
-    final ctx = key?.currentContext;
-    if (ctx == null) return;
-    Scrollable.ensureVisible(
-      ctx,
-      alignment: 0.06,
-      duration: const Duration(milliseconds: 280),
-      curve: Curves.easeOutCubic,
-    );
   }
 
   Future<void> _refreshBundledCoreVersion() async {
@@ -462,19 +433,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     return Scaffold(
       backgroundColor: _kStone50,
-      appBar: AppBar(
-        backgroundColor: _kStone50,
-        surfaceTintColor: Colors.transparent,
-        titleSpacing: 0,
-        automaticallyImplyLeading: false,
-        leading: IconButton(
-          tooltip: 'Close',
-          onPressed: () => Navigator.pop(context),
-          icon: const Icon(Icons.close, size: 22),
-        ),
-        title: const Text('Settings'),
-      ),
-      body: SingleChildScrollView(
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: macosModalHeaderPadding(context),
+            child: Row(
+              children: [
+                IconButton(
+                  tooltip: 'Close',
+                  onPressed: () => Navigator.pop(context),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  icon: const Icon(Icons.close, size: 22),
+                ),
+                Text(
+                  'Settings',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: _kStone800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(20, 4, 20, 40),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -599,7 +583,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             _section(
               context,
-              key: _notificationsKey,
               label: 'NOTIFICATIONS',
               child: _NotificationsCard(
                 prefs: _notifPrefs,
@@ -665,17 +648,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onSignOut: widget.onSignedOut == null ? null : _signOut,
               ),
             ),
-            _section(
-              context,
-              key: _feedbackKey,
-              label: 'FEEDBACK',
-              child: _FeedbackCard(
-                daemon: widget.daemon,
-                appVersion: widget.appVersion,
-              ),
-            ),
           ],
         ),
+      ),
+          ),
+        ],
       ),
     );
   }
@@ -1827,136 +1804,6 @@ class _AccountCard extends StatelessWidget {
               ),
             ),
           ],
-        ],
-      ),
-    );
-  }
-}
-
-class _FeedbackCard extends StatefulWidget {
-  const _FeedbackCard({
-    required this.daemon,
-    required this.appVersion,
-  });
-
-  final DaemonClient daemon;
-  final String appVersion;
-
-  @override
-  State<_FeedbackCard> createState() => _FeedbackCardState();
-}
-
-class _FeedbackCardState extends State<_FeedbackCard> {
-  final _controller = TextEditingController();
-  bool _sending = false;
-  String? _error;
-  bool _sent = false;
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  Future<void> _send() async {
-    final message = _controller.text.trim();
-    if (message.isEmpty) {
-      setState(() => _error = 'Write a short note first.');
-      return;
-    }
-    if (message.length > 4000) {
-      setState(() => _error = 'Keep feedback under 4,000 characters.');
-      return;
-    }
-    setState(() {
-      _sending = true;
-      _error = null;
-      _sent = false;
-    });
-    try {
-      await widget.daemon.submitFeedback(
-        message: message,
-        category: 'pilot',
-        appVersion: widget.appVersion,
-      );
-      if (!mounted) return;
-      _controller.clear();
-      setState(() {
-        _sending = false;
-        _sent = true;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _sending = false;
-        _error = friendlyDaemonError(e, what: 'Feedback');
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: _kCardPad,
-      decoration: _settingsCardDecoration(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'Tell us what broke or felt off. Goes to the mutande team — not into threads.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: _kStone500,
-                  height: 1.35,
-                ),
-          ),
-          const SizedBox(height: 10),
-          TextField(
-            controller: _controller,
-            minLines: 3,
-            maxLines: 6,
-            maxLength: 4000,
-            enabled: !_sending,
-            onChanged: (_) {
-              if (_sent || _error != null) {
-                setState(() {
-                  _sent = false;
-                  _error = null;
-                });
-              }
-            },
-            decoration: const InputDecoration(
-              hintText: 'e.g. Connect hosts failed on Claude…',
-              counterText: '',
-            ),
-          ),
-          if (_error != null) ...[
-            const SizedBox(height: 8),
-            Text(
-              _error!,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: _kRed,
-                  ),
-            ),
-          ],
-          if (_sent) ...[
-            const SizedBox(height: 8),
-            Text(
-              'Sent — thank you.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: _kGreen,
-                  ),
-            ),
-          ],
-          const SizedBox(height: 12),
-          SizedBox(
-            height: 40,
-            child: FilledButton(
-              onPressed: _sending ? null : _send,
-              child: _sending
-                  ? const MutandeOrb.loading(semanticLabel: 'Sending…')
-                  : const Text('Send feedback'),
-            ),
-          ),
         ],
       ),
     );

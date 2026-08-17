@@ -55,9 +55,9 @@ class OnboardingFlowScreen extends StatefulWidget {
 
 enum _TeamMode { setupChoose, setupCreate, setupJoin, roster }
 
-/// Org member on the team roster: avatar, name, lowercase handle.
-class _RosterRow extends StatelessWidget {
-  const _RosterRow({
+/// Org member chip on the team roster: avatar, name, lowercase handle.
+class _RosterChip extends StatelessWidget {
+  const _RosterChip({
     required this.handle,
     this.displayName,
     this.avatarUrl,
@@ -73,23 +73,32 @@ class _RosterRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final title = personDisplayTitle(displayName: displayName, handle: handle);
     final address = formatMailAddress(handle);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: OnboardingSpace.sm),
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 228, minHeight: 44),
+      padding: const EdgeInsets.fromLTRB(6, 6, 12, 6),
+      decoration: BoxDecoration(
+        color: MutandeColors.stone50,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: MutandeColors.stone200),
+      ),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
           PersonAvatar(
-            size: 32,
+            size: 28,
             url: avatarUrl,
             initials: personInitials(title),
             seed: handle,
             isSelf: isSelf,
           ),
-          const SizedBox(width: OnboardingSpace.sm),
-          Expanded(
+          const SizedBox(width: 8),
+          Flexible(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Flexible(
                       child: Text(
@@ -97,27 +106,27 @@ class _RosterRow extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          fontSize: 14,
+                          fontSize: 12.5,
                           fontWeight: FontWeight.w600,
                           color: MutandeColors.stone800,
-                          height: 1.2,
+                          height: 1.15,
                         ),
                       ),
                     ),
                     if (isSelf) ...[
-                      const SizedBox(width: OnboardingSpace.xs),
+                      const SizedBox(width: 6),
                       PersonIdentityRow.statusPill(label: 'you'),
                     ],
                   ],
                 ),
-                const SizedBox(height: 2),
                 Text(
                   address,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontFamily: 'Menlo',
-                    fontSize: 12,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
                     color: MutandeColors.stone500,
                     height: 1.2,
                   ),
@@ -749,31 +758,11 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
     if (_teamMode != _TeamMode.roster) {
       return _teamSetupBody();
     }
-    if (_contactsLoading) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const OnboardingHeading(
-            variant: OnboardingHeadingVariant.display,
-            title: 'Your team.',
-          ),
-          const SizedBox(height: OnboardingSpace.lg),
-          const OnboardingRosterSkeleton(),
-          const SizedBox(height: OnboardingSpace.lg),
-          Text(
-            'Teammates need mutande on Mac to receive agent mail.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: MutandeColors.stone500,
-              height: 1.4,
-            ),
-          ),
-        ],
-      );
-    }
+
     final handle = _status?.handle ?? '';
-    final humans = _contacts
-        .where((c) => !c.isBroadcast && !c.isExternal)
-        .toList();
+    final humans = _contactsLoading
+        ? const <ContactView>[]
+        : _contacts.where((c) => !c.isBroadcast && !c.isExternal).toList();
     final handleLower = handle.toLowerCase();
     ContactView? self;
     for (final c in humans) {
@@ -786,32 +775,45 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
         .where((c) => c.handle.toLowerCase() != handleLower)
         .toList();
 
+    final title = _contactsLoading
+        ? 'Your team.'
+        : peers.isEmpty
+        ? 'You’re the only one here yet.'
+        : '${_countWord(peers.length, 'teammate')} can already reach you.';
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // The marquee above already says who and where — the headline says
-        // what that's worth.
         OnboardingHeading(
           variant: OnboardingHeadingVariant.display,
-          title: peers.isEmpty
-              ? 'You’re the only one here yet.'
-              : '${_countWord(peers.length, 'teammate')} can already reach you.',
+          title: title,
         ),
         const SizedBox(height: OnboardingSpace.lg),
-        // Plain rows on the stone ground — no card nesting a card.
-        if (handle.isNotEmpty)
-          _RosterRow(
-            handle: handle,
-            displayName: self?.displayName,
-            avatarUrl: self?.avatarUrl,
-            isSelf: true,
-          ),
-        ...peers.map(
-          (c) => _RosterRow(
-            handle: c.handle,
-            displayName: c.displayName,
-            avatarUrl: c.avatarUrl,
-          ),
+        SizedBox(
+          height: kOnboardingRosterPanelHeight,
+          child: _contactsLoading
+              ? const OnboardingRosterSkeleton()
+              : SingleChildScrollView(
+                  child: Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      if (handle.isNotEmpty)
+                        _RosterChip(
+                          handle: handle,
+                          displayName: self?.displayName,
+                          avatarUrl: self?.avatarUrl,
+                          isSelf: true,
+                        ),
+                      for (final c in peers)
+                        _RosterChip(
+                          handle: c.handle,
+                          displayName: c.displayName,
+                          avatarUrl: c.avatarUrl,
+                        ),
+                    ],
+                  ),
+                ),
         ),
         const SizedBox(height: OnboardingSpace.lg),
         Text(
@@ -824,21 +826,23 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
         OnboardingActions(
           topSpacing: OnboardingSpace.md,
           primary: FilledButton(
-            onPressed: () {
-              setState(() {
-                _step = OnboardingStep.connect;
-                _hostsLoading = true;
-              });
-              unawaited(_loadHosts());
-            },
+            onPressed: _contactsLoading
+                ? null
+                : () {
+                    setState(() {
+                      _step = OnboardingStep.connect;
+                      _hostsLoading = true;
+                    });
+                    unawaited(_loadHosts());
+                  },
             child: const Text('Continue'),
           ),
           secondary: TextButton(
-            onPressed: _openInvitesWeb,
+            onPressed: _contactsLoading ? null : _openInvitesWeb,
             child: const Text('Invite on the web'),
           ),
           tertiary: TextButton(
-            onPressed: _copyInvitePage,
+            onPressed: _contactsLoading ? null : _copyInvitePage,
             child: const Text('Copy link'),
           ),
         ),
@@ -978,33 +982,17 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
       );
     }
 
-    if (_hostsLoading) {
-      return const Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          OnboardingHeading(
-            variant: OnboardingHeadingVariant.display,
-            title: 'Pick a host to connect.',
-            subtitle:
-                'One is enough — mutande wires the relay, '
-                'then hands it the collaboration skill.',
-          ),
-          SizedBox(height: OnboardingSpace.lg),
-          OnboardingHostSkeleton(),
-        ],
-      );
-    }
+    final installed = _hostsLoading
+        ? const <AiHostPresence>[]
+        : _hosts.where((h) => h.installed).toList();
+    final missing = _hostsLoading
+        ? const <AiHostPresence>[]
+        : _hosts.where((h) => !h.installed).toList();
+    final linked = _hostsLoading
+        ? const <AiHostPresence>[]
+        : installed.where((h) => h.linked && h.agentRegistered).toList();
 
-    // Hierarchy by detection state: what you can actually connect gets the
-    // weight, the rest is one quiet line.
-    final installed = _hosts.where((h) => h.installed).toList();
-    final missing = _hosts.where((h) => !h.installed).toList();
-    final linked = installed
-        .where((h) => h.linked && h.agentRegistered)
-        .toList();
-
-    // The goal, stated as the thing to do — and once it's done, said so.
-    final heading = linked.isEmpty
+    final heading = _hostsLoading || linked.isEmpty
         ? const OnboardingHeading(
             variant: OnboardingHeadingVariant.display,
             title: 'Pick a host to connect.',
@@ -1020,41 +1008,77 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
             subtitle: 'Continue to your first ping, or connect another host.',
           );
 
+    final showContinue = _hostsLoading || linked.isNotEmpty;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         heading,
         const SizedBox(height: OnboardingSpace.lg),
-        for (final host in installed)
-          Padding(
-            padding: const EdgeInsets.only(bottom: OnboardingSpace.xs),
-            child: _HostTile(
-              presence: host,
-              isDefault: _isDefaultHost(host.slug),
-              settingDefault: _settingDefault,
-              onTap: () => _beginConnectHost(host.slug),
-              onSetDefault: host.linked && host.agentRegistered
-                  ? () => _setDefaultHost(host.slug)
-                  : null,
-            ),
+        SizedBox(
+          height: kOnboardingHostPanelHeight,
+          child: _hostsLoading
+              ? const OnboardingHostSkeleton()
+              : SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      for (final host in installed)
+                        Padding(
+                          padding: const EdgeInsets.only(
+                            bottom: OnboardingSpace.xs,
+                          ),
+                          child: _HostTile(
+                            presence: host,
+                            isDefault: _isDefaultHost(host.slug),
+                            settingDefault: _settingDefault,
+                            onTap: () => _beginConnectHost(host.slug),
+                            onSetDefault: host.linked && host.agentRegistered
+                                ? () => _setDefaultHost(host.slug)
+                                : null,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+        ),
+        SizedBox(
+          height: kOnboardingConnectHelperHeight,
+          child: Align(
+            alignment: Alignment.topLeft,
+            child: _hostsLoading
+                ? null
+                : Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (linked.isNotEmpty)
+                        Text(
+                          _defaultAgentId == null
+                              ? 'Set Default so mail to your address goes to one host.'
+                              : 'Mail to your address goes to Default.',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            height: 1.35,
+                            color: MutandeColors.stone400,
+                          ),
+                        ),
+                      if (missing.isNotEmpty) ...[
+                        if (linked.isNotEmpty)
+                          const SizedBox(height: OnboardingSpace.sm),
+                        Text(
+                          '${_hostNames(missing)} '
+                          '${missing.length == 1 ? 'isn\'t' : 'aren\'t'} installed on this Mac.',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            height: 1.35,
+                            color: MutandeColors.stone400,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
           ),
-        if (linked.isNotEmpty) ...[
-          const SizedBox(height: OnboardingSpace.sm),
-          Text(
-            _defaultAgentId == null
-                ? 'Set Default so mail to your address goes to one host.'
-                : 'Mail to your address goes to Default.',
-            style: const TextStyle(fontSize: 12, color: MutandeColors.stone400),
-          ),
-        ],
-        if (missing.isNotEmpty) ...[
-          const SizedBox(height: OnboardingSpace.sm),
-          Text(
-            '${_hostNames(missing)} '
-            '${missing.length == 1 ? 'isn\'t' : 'aren\'t'} installed on this Mac.',
-            style: const TextStyle(fontSize: 12, color: MutandeColors.stone400),
-          ),
-        ],
+        ),
         if (_error != null) ...[
           const SizedBox(height: OnboardingSpace.md),
           OnboardingErrorBanner(message: _error!),
@@ -1067,11 +1091,13 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
               child: const Text('Retry'),
             ),
           )
-        else if (linked.isNotEmpty)
+        else if (showContinue)
           OnboardingActions(
             topSpacing: OnboardingSpace.md,
             primary: FilledButton(
-              onPressed: () => _continueWithLinkedHost(linked.first.slug),
+              onPressed: _hostsLoading || linked.isEmpty
+                  ? null
+                  : () => _continueWithLinkedHost(linked.first.slug),
               child: const Text('Continue'),
             ),
           ),

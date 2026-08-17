@@ -537,6 +537,26 @@ Deno.test("add_learning authorized to creator side only; hosted rejected on e2e"
   });
 });
 
+Deno.test("get_collab cards include app_envelope last_subject", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth } = await setupOrg(store);
+    await store.connectAgent(aliceAuth, "mcp", { slug: "chatgpt" });
+    const collab = await store.createCollab(aliceAuth, {
+      name: "Titles",
+      roster_addresses: ["@chatgpt"],
+      instructions: "",
+    });
+    await store.createThread(aliceAuth, {
+      to: "alice@acme",
+      app_envelope: { version: 1, subject: "Ship landing copy" },
+      collab_id: collab.id,
+    });
+    const got = await store.getCollab(aliceAuth, collab.id);
+    assertEquals(got.cards.length, 1);
+    assertEquals(got.cards[0].last_subject, "Ship landing copy");
+  });
+});
+
 Deno.test("card_count is derived from indexed threads", async () => {
   await withTestStore(async ({ store }) => {
     const { aliceAuth } = await setupOrg(store);

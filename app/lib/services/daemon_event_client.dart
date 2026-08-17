@@ -7,6 +7,7 @@ import 'package:flutter/widgets.dart';
 
 import '../platform/user_home.dart';
 import 'daemon_client.dart';
+import 'sentry_report.dart';
 
 /// Metadata-only inbox change from mutande-core WebSocket (`GET /ws`).
 class InboxChangedEvent {
@@ -81,7 +82,8 @@ class DaemonEventClient {
         while (!_stopped && _ws != null) {
           await Future<void>.delayed(const Duration(seconds: 1));
         }
-      } catch (_) {
+      } catch (e, st) {
+        reportHandledError(e, stackTrace: st, surface: 'daemon_event_client');
         connected.value = false;
       }
       if (_stopped) break;
@@ -122,13 +124,16 @@ class DaemonEventClient {
               _events.add(InboxChangedEvent.fromJson(map));
             }
           }
-        } catch (_) {}
+        } catch (e, st) {
+          reportHandledError(e, stackTrace: st, surface: 'daemon_event_client');
+        }
       },
       onDone: () {
         connected.value = false;
         _ws = null;
       },
-      onError: (_) {
+      onError: (e, st) {
+        reportHandledError(e, stackTrace: st, surface: 'daemon_event_client');
         connected.value = false;
         _ws = null;
       },

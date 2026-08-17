@@ -23,17 +23,23 @@ import 'services/daemon_event_client.dart';
 import 'services/first_run_store.dart';
 import 'services/host_link_store.dart';
 import 'services/inbox_watch_service.dart';
+import 'services/notification_history_store.dart';
 import 'services/notification_prefs_store.dart';
 import 'services/thread_list_cache_store.dart';
 import 'services/transport_prefs_store.dart';
+import 'services/update_gate.dart';
 import 'theme/mutande_macos_theme.dart';
 import 'widgets/daemon_error_screen.dart';
+import 'widgets/feedback_dialog.dart';
 import 'widgets/home_chrome_pills.dart';
 import 'widgets/home_chrome_strip.dart';
+import 'widgets/mutande_sheet.dart';
 import 'widgets/mutande_error_widget.dart';
+import 'widgets/notifications_panel.dart';
 import 'widgets/search_dialog.dart';
 import 'widgets/thinking_orb.dart';
 import 'widgets/onboarding_chrome.dart';
+import 'widgets/update_required_screen.dart';
 import 'widgets/welcome_splash.dart';
 
 /// Back-compat alias for content Material theme.
@@ -51,6 +57,7 @@ class MutandeApp extends StatefulWidget {
     this.appVersion = AppConfig.appVersion,
     this.startupRetryAttempts = 15,
     this.onRestartCourier,
+    this.updateGate,
   });
 
   final AppConfig config;
@@ -79,20 +86,73 @@ class MutandeApp extends StatefulWidget {
   /// When set (macOS shell), error screen can restart the bundled sidecar.
   final Future<String?> Function()? onRestartCourier;
 
+  /// Injectable for tests; defaults to web `/api/desktop-version` in release builds.
+  final UpdateGateClient? updateGate;
+
   @override
   State<MutandeApp> createState() => _MutandeAppState();
 }
 
 class _MutandeAppState extends State<MutandeApp> {
+  static const _skipUpdateGateFlag = bool.fromEnvironment('SKIP_UPDATE_GATE');
+  static const _forceUpdateGateFlag = bool.fromEnvironment('FORCE_UPDATE_GATE');
+  static const _previewUpdateGateFlag = bool.fromEnvironment(
+    'PREVIEW_UPDATE_GATE',
+  );
+
   /// Welcome splash stays up until bootstrap finishes (covers Keychain prompts).
   final ValueNotifier<bool> _sessionReady = ValueNotifier(false);
   final ValueNotifier<String?> _splashStatus = ValueNotifier(null);
   int _shellGen = 0;
 
+  UpdateGateClient? _updateGate;
+  bool _updateChecking = false;
+  DesktopVersionInfo? _updateRequired;
+  String? _updateRecheckError;
+  bool _trackedUpdateRequired = false;
+
+  bool get _inWidgetTest =>
+      WidgetsBinding.instance.runtimeType.toString().contains('Test');
+
+  /// Opt-in UI preview (`--dart-define=PREVIEW_UPDATE_GATE=true`).
+  bool get _shouldPreviewUpdateGate =>
+      _previewUpdateGateFlag &&
+      !_skipUpdateGateFlag &&
+      kDebugMode &&
+      !_inWidgetTest;
+
+  bool get _shouldRunUpdateGate =>
+      !_skipUpdateGateFlag &&
+      !_shouldPreviewUpdateGate &&
+      (widget.updateGate != null ||
+          (!kDebugMode || _forceUpdateGateFlag) && !_inWidgetTest);
+
+  DesktopVersionInfo _previewUpdateInfo() {
+    final base = widget.config.webAppUrl.replaceAll(RegExp(r'/+$'), '');
+    return DesktopVersionInfo(
+      version: '9.9.9',
+      channel: 'alpha',
+      downloadUrl: '$base/download',
+      macArm64Url: 'https://downloads.mutande.online/mutande-alpha.dmg',
+      macIntelUrl: 'https://downloads.mutande.online/mutande-alpha-intel.dmg',
+      winUrl:
+          'https://downloads.mutande.online/mutande-alpha-windows-setup.exe',
+    );
+  }
+
   @override
   void initState() {
     super.initState();
     MutandeErrorWidget.bindRetry(_retryFromErrorWidget);
+    if (_shouldPreviewUpdateGate) {
+      _updateRequired = _previewUpdateInfo();
+      _updateChecking = false;
+    } else if (_shouldRunUpdateGate) {
+      _updateGate = widget.updateGate ??
+          UpdateGateClient(webAppUrl: widget.config.webAppUrl);
+      _updateChecking = true;
+      unawaited(_checkForUpdate());
+    }
   }
 
   void _retryFromErrorWidget() {
@@ -100,43 +160,79 @@ class _MutandeAppState extends State<MutandeApp> {
     setState(() => _shellGen++);
   }
 
+  Future<void> _checkForUpdate({bool recheck = false}) async {
+    if (_shouldPreviewUpdateGate) {
+      if (!mounted) return;
+      setState(() {
+        _updateChecking = false;
+        _updateRequired = _previewUpdateInfo();
+        _updateRecheckError = null;
+      });
+      return;
+    }
+    final gate = _updateGate;
+    if (gate == null) return;
+    if (recheck && mounted) {
+      setState(() {
+        _updateRecheckError = null;
+        _updateChecking = true;
+      });
+    }
+    try {
+      final latest = await gate.fetchLatest();
+      if (!mounted) return;
+      if (latest == null) {
+        setState(() {
+          _updateChecking = false;
+          if (recheck) {
+            _updateRecheckError = 'Could not reach mutande.online.';
+          }
+        });
+        return;
+      }
+      final required = gate.gateTarget(
+        currentVersion: widget.appVersion,
+        latest: latest,
+      );
+      if (!mounted) return;
+      setState(() {
+        _updateChecking = false;
+        _updateRequired = required;
+        _updateRecheckError = null;
+      });
+      if (required != null && !_trackedUpdateRequired) {
+        _trackedUpdateRequired = true;
+        Analytics.track(
+          AnalyticsEvent.updateRequired,
+          {
+            'current': widget.appVersion,
+            'latest': required.version,
+          },
+        );
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _updateChecking = false;
+        if (recheck) {
+          _updateRecheckError = 'Could not reach mutande.online.';
+        }
+      });
+    }
+  }
+
   @override
   void dispose() {
     MutandeErrorWidget.bindRetry(null);
     _sessionReady.dispose();
     _splashStatus.dispose();
+    if (widget.updateGate == null) {
+      _updateGate?.close();
+    }
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final home = WelcomeSplash(
-      duration: widget.welcomeDuration,
-      appVersion: widget.appVersion,
-      dismissWhen: _sessionReady,
-      statusLabel: _splashStatus,
-      child: RootScreen(
-        key: ValueKey<int>(_shellGen),
-        config: widget.config,
-        daemon: widget.daemon,
-        seedStatus: widget.seedStatus,
-        hostLinkStore: widget.hostLinkStore,
-        firstRunStore: widget.firstRunStore,
-        startupRetryAttempts: widget.startupRetryAttempts,
-        appVersion: widget.appVersion,
-        onRestartCourier: widget.onRestartCourier,
-        onBootstrapPhase: (ready, status) {
-          // Defer — RootScreen may emit from initState while splash is mounting.
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted) return;
-            _sessionReady.value = ready;
-            _splashStatus.value = status;
-          });
-        },
-      ),
-    );
-
-    // Windows alpha: Material shell (macos_ui is macOS-only).
+  Widget _appShell(Widget home) {
     final useMaterial = !kIsWeb && Platform.isWindows;
     if (useMaterial) {
       return MaterialApp(
@@ -163,6 +259,69 @@ class _MutandeAppState extends State<MutandeApp> {
       },
       home: home,
     );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_updateRequired != null) {
+      return _appShell(
+        UpdateRequiredScreen(
+          currentVersion: widget.appVersion,
+          latest: _updateRequired!,
+          rechecking: _updateChecking,
+          recheckError: _updateRecheckError,
+          onRecheck: () => _checkForUpdate(recheck: true),
+        ),
+      );
+    }
+
+    if (_updateChecking) {
+      return _appShell(
+        const Scaffold(
+          body: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                MutandeOrb.standard(semanticLabel: 'Loading…'),
+                SizedBox(height: 20),
+                Text(
+                  'Checking for updates',
+                  style: TextStyle(color: Color(0xFF78716C)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    final home = WelcomeSplash(
+      duration: widget.welcomeDuration,
+      appVersion: widget.appVersion,
+      dismissWhen: _sessionReady,
+      statusLabel: _splashStatus,
+      child: RootScreen(
+        key: ValueKey<int>(_shellGen),
+        config: widget.config,
+        daemon: widget.daemon,
+        seedStatus: widget.seedStatus,
+        hostLinkStore: widget.hostLinkStore,
+        firstRunStore: widget.firstRunStore,
+        startupRetryAttempts: widget.startupRetryAttempts,
+        appVersion: widget.appVersion,
+        onRestartCourier: widget.onRestartCourier,
+        onBootstrapPhase: (ready, status) {
+          // Defer — RootScreen may emit from initState while splash is mounting.
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            _sessionReady.value = ready;
+            _splashStatus.value = status;
+          });
+        },
+      ),
+    );
+
+    return _appShell(home);
   }
 }
 
@@ -211,6 +370,7 @@ class _RootScreenState extends State<RootScreen> {
   late final HostLinkStore _hostLinkStore;
   late final FirstRunStore _firstRunStore;
   late final NotificationPrefsStore _notificationPrefs;
+  late final NotificationHistoryStore _notificationHistory;
   late final TransportPrefsStore _transportPrefs;
   InboxWatchService? _inboxWatch;
   bool _loading = true;
@@ -273,6 +433,7 @@ class _RootScreenState extends State<RootScreen> {
     _daemon = widget.daemon ?? DaemonClient();
     _hostLinkStore = widget.hostLinkStore ?? HostLinkStore();
     _notificationPrefs = NotificationPrefsStore();
+    _notificationHistory = NotificationHistoryStore();
     _transportPrefs = TransportPrefsStore(daemon: _daemon);
     // Widget tests that seed status skip the gate unless they inject a store.
     _firstRunStore =
@@ -368,7 +529,11 @@ class _RootScreenState extends State<RootScreen> {
   void _ensureInboxWatch() {
     if (_inboxWatch != null) return;
     if (widget.seedStatus != null || _inWidgetTest) return;
-    _inboxWatch = InboxWatchService(daemon: _daemon, prefs: _notificationPrefs);
+    _inboxWatch = InboxWatchService(
+      daemon: _daemon,
+      prefs: _notificationPrefs,
+      history: _notificationHistory,
+    );
     unawaited(_inboxWatch!.start());
   }
 
@@ -718,6 +883,7 @@ class _RootScreenState extends State<RootScreen> {
       onSignedOut: _onSignedOut,
       hostLinkStore: _hostLinkStore,
       notificationPrefs: _notificationPrefs,
+      notificationHistory: _notificationHistory,
       transportPrefs: _transportPrefs,
       initialThreadId: _openThreadId,
       appVersion: widget.appVersion,
@@ -741,6 +907,7 @@ class HomeScreen extends StatefulWidget {
     this.onSignedOut,
     this.hostLinkStore,
     this.notificationPrefs,
+    this.notificationHistory,
     this.transportPrefs,
     this.initialThreadId,
     this.appVersion = AppConfig.appVersion,
@@ -759,6 +926,7 @@ class HomeScreen extends StatefulWidget {
   final ValueChanged<DaemonStatusResult>? onSignedOut;
   final HostLinkStore? hostLinkStore;
   final NotificationPrefsStore? notificationPrefs;
+  final NotificationHistoryStore? notificationHistory;
   final TransportPrefsStore? transportPrefs;
   final String? initialThreadId;
   final String appVersion;
@@ -784,6 +952,8 @@ class _HomeScreenState extends State<HomeScreen> {
   late final DaemonEventClient _inboxEvents;
 
   bool _searchOpen = false;
+  bool _notificationsOpen = false;
+  int _unreadNotifications = 0;
   final List<String> _recentQueries = [];
 
   void _registerThreadsReload(VoidCallback? reload) {
@@ -812,11 +982,20 @@ class _HomeScreenState extends State<HomeScreen> {
     );
     _inboxEvents.start();
     _checkDaemon();
+    widget.notificationHistory?.addListener(_onNotificationHistoryChanged);
+    unawaited(_refreshUnreadNotifications());
   }
 
   @override
   void didUpdateWidget(covariant HomeScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.notificationHistory != widget.notificationHistory) {
+      oldWidget.notificationHistory?.removeListener(
+        _onNotificationHistoryChanged,
+      );
+      widget.notificationHistory?.addListener(_onNotificationHistoryChanged);
+      unawaited(_refreshUnreadNotifications());
+    }
     final next = widget.initialThreadId?.trim();
     final prev = oldWidget.initialThreadId?.trim();
     if (next != null && next.isNotEmpty && next != prev) {
@@ -829,8 +1008,24 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    widget.notificationHistory?.removeListener(_onNotificationHistoryChanged);
     unawaited(_inboxEvents.dispose());
     super.dispose();
+  }
+
+  void _onNotificationHistoryChanged() {
+    if (!mounted) return;
+    setState(() {
+      _unreadNotifications = widget.notificationHistory?.unreadCount ?? 0;
+    });
+  }
+
+  Future<void> _refreshUnreadNotifications() async {
+    final history = widget.notificationHistory;
+    if (history == null) return;
+    await history.load();
+    if (!mounted) return;
+    setState(() => _unreadNotifications = history.unreadCount);
   }
 
   void _rememberQuery(String q) {
@@ -911,47 +1106,72 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  Future<void> _openSettings({SettingsOpenTarget? openTo}) async {
-    await showMacosSheet<void>(
+  Future<void> _openSettings() async {
+    await showMutandeFullscreen<void>(
       context: context,
-      barrierDismissible: true,
-      builder: (sheetContext) {
-        return MacosSheet(
-          child: SizedBox(
-            width: 720,
-            height: 720,
-            child: SettingsScreen(
-              daemon: widget.daemon,
-              checking: _checking,
-              connecting: widget.connecting,
-              health: _health,
-              connectError: widget.connectError,
-              onCheckDaemon: _checkDaemon,
-              handle: widget.status.handle,
-              appVersion: widget.appVersion,
-              onRestartCourier: widget.onRestartCourier,
-              hostLinkStore: widget.hostLinkStore,
-              notificationPrefs: widget.notificationPrefs,
-              transportPrefs: widget.transportPrefs,
-              openTo: openTo,
-              onOpenThreads: () {
-                Navigator.of(sheetContext).pop();
-                _selectTab(0);
-              },
-              onOpenAgents: () {
-                Navigator.of(sheetContext).pop();
-                _selectTab(2);
-              },
-              onSignedOut: widget.onSignedOut == null
-                  ? null
-                  : (status) {
-                      Navigator.of(sheetContext).pop();
-                      widget.onSignedOut!(status);
-                    },
-            ),
+      barrierLabel: 'Settings',
+      builder: (ctx) {
+        return SizedBox.expand(
+          child: SettingsScreen(
+            daemon: widget.daemon,
+            checking: _checking,
+            connecting: widget.connecting,
+            health: _health,
+            connectError: widget.connectError,
+            onCheckDaemon: _checkDaemon,
+            handle: widget.status.handle,
+            appVersion: widget.appVersion,
+            onRestartCourier: widget.onRestartCourier,
+            hostLinkStore: widget.hostLinkStore,
+            notificationPrefs: widget.notificationPrefs,
+            transportPrefs: widget.transportPrefs,
+            onOpenThreads: () {
+              Navigator.of(ctx, rootNavigator: true).pop();
+              _selectTab(0);
+            },
+            onOpenAgents: () {
+              Navigator.of(ctx, rootNavigator: true).pop();
+              _selectTab(2);
+            },
+            onSignedOut: widget.onSignedOut == null
+                ? null
+                : (status) {
+                    Navigator.of(ctx, rootNavigator: true).pop();
+                    widget.onSignedOut!(status);
+                  },
           ),
         );
       },
+    );
+  }
+
+  Future<void> _openNotificationsPanel() async {
+    final history = widget.notificationHistory;
+    if (history == null || _notificationsOpen) return;
+    _notificationsOpen = true;
+    try {
+      final threadId = await showNotificationsPanel(
+        context: context,
+        history: history,
+      );
+      if (!mounted) return;
+      await _refreshUnreadNotifications();
+      if (threadId != null && threadId.isNotEmpty) {
+        setState(() {
+          _tab = 0;
+          _openThreadId = threadId;
+        });
+      }
+    } finally {
+      _notificationsOpen = false;
+    }
+  }
+
+  Future<void> _openFeedback() async {
+    await showFeedbackDialog(
+      context: context,
+      daemon: widget.daemon,
+      appVersion: widget.appVersion,
     );
   }
 
@@ -1041,8 +1261,8 @@ class _HomeScreenState extends State<HomeScreen> {
         HomeChromeIconButton(
           icon: CupertinoIcons.bell,
           tooltip: 'Notifications',
-          onPressed: () =>
-              _openSettings(openTo: SettingsOpenTarget.notifications),
+          badge: _unreadNotifications,
+          onPressed: () => unawaited(_openNotificationsPanel()),
         ),
         const SizedBox(width: HomeChrome.pillGap),
         HomeChromeIconCluster(
@@ -1050,13 +1270,12 @@ class _HomeScreenState extends State<HomeScreen> {
             HomeChromeIconAction(
               icon: CupertinoIcons.question_circle,
               tooltip: 'Support',
-              onPressed: () =>
-                  _openSettings(openTo: SettingsOpenTarget.feedback),
+              onPressed: () => unawaited(_openFeedback()),
             ),
             HomeChromeIconAction(
               icon: CupertinoIcons.settings,
               tooltip: 'Settings',
-              onPressed: _openSettings,
+              onPressed: () => unawaited(_openSettings()),
             ),
           ],
         ),
@@ -1179,19 +1398,15 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         ToolbarOverflowMenuItem(
                           label: 'Notifications',
-                          onPressed: () => _openSettings(
-                            openTo: SettingsOpenTarget.notifications,
-                          ),
+                          onPressed: () => unawaited(_openNotificationsPanel()),
                         ),
                         ToolbarOverflowMenuItem(
                           label: 'Support',
-                          onPressed: () => _openSettings(
-                            openTo: SettingsOpenTarget.feedback,
-                          ),
+                          onPressed: () => unawaited(_openFeedback()),
                         ),
                         ToolbarOverflowMenuItem(
                           label: 'Settings',
-                          onPressed: _openSettings,
+                          onPressed: () => unawaited(_openSettings()),
                         ),
                       ],
                     ),

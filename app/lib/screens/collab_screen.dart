@@ -208,7 +208,6 @@ class _CollabPanelState extends State<CollabPanel> {
     final empty = !_loading && _error == null && _collabs.isEmpty;
     final failed = !_loading && _error != null && _collabs.isEmpty;
     child = Padding(
-      key: ValueKey(_loading ? 'dash-sk' : 'dash'),
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -261,7 +260,7 @@ class _CollabPanelState extends State<CollabPanel> {
                           ),
                         ),
                         const SliverToBoxAdapter(child: SizedBox(height: 12)),
-                        SliverToBoxAdapter(child: _chartsRow()),
+                        SliverToBoxAdapter(child: _chartsRow(loading: _loading)),
                         const SliverToBoxAdapter(child: SizedBox(height: 12)),
                       ],
                       SliverToBoxAdapter(
@@ -300,26 +299,38 @@ class _CollabPanelState extends State<CollabPanel> {
     );
   }
 
-  Widget _chartsRow() {
+  Widget _chartsRow({required bool loading}) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final calendar = CollabActivityCalendar(
-          key: const Key('collab-activity-calendar'),
-          activity: _portfolio.activity,
-          recent: _portfolio.recent,
-          myHandle: widget.handle,
-          onOpenThread: (item) {
-            if (item.collabId.isEmpty) return;
-            setState(() {
-              _openId = item.collabId;
-              _pendingCardId = item.threadId;
-            });
-          },
-        );
-        final donut = CollabLaneDonut(
-          key: const Key('collab-lane-donut'),
-          lanes: _portfolio.laneTotals,
-        );
+        final calendar = loading
+            ? const CollabActivitySkeleton(
+                key: Key('collab-activity-calendar'),
+              )
+            : MutandeArrive(
+                order: 5,
+                child: CollabActivityCalendar(
+                  key: const Key('collab-activity-calendar'),
+                  activity: _portfolio.activity,
+                  recent: _portfolio.recent,
+                  myHandle: widget.handle,
+                  onOpenThread: (item) {
+                    if (item.collabId.isEmpty) return;
+                    setState(() {
+                      _openId = item.collabId;
+                      _pendingCardId = item.threadId;
+                    });
+                  },
+                ),
+              );
+        final donut = loading
+            ? const CollabLanesSkeleton(key: Key('collab-lane-donut'))
+            : MutandeArrive(
+                order: 6,
+                child: CollabLaneDonut(
+                  key: const Key('collab-lane-donut'),
+                  lanes: _portfolio.laneTotals,
+                ),
+              );
         if (constraints.maxWidth < 720) {
           return Column(
             children: [calendar, const SizedBox(height: 12), donut],

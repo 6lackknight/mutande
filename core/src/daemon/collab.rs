@@ -1,16 +1,18 @@
 //! Collab boards — daemon RPC glue (wrap cards to all steerers).
 
 use anyhow::{Context, Result, bail};
+use futures::future::join_all;
 use serde_json::Value;
 
 use crate::crypto::DevicePubKey;
 use crate::hub_client::{
-    Collab, CollabArtifactSummary, CollabChecklistItem, CollabLane, ListCollabsResponse,
+    Collab, CollabArtifactSummary, CollabCardSummary, CollabChecklistItem, CollabLane,
+    ListCollabsResponse,
 };
 
 use super::state::{
-    bundle_for_blob_artifact, BundleResource, DaemonState, MutandeBundle, TurnActor, TurnEntry,
-    TurnReason,
+    bundle_for_blob_artifact, BundleResource, DaemonState, MutandeBundle, OpenedThreadDetail,
+    TurnActor, TurnEntry, TurnReason,
 };
 
 /// Flutter/RPC draft — `path` is read by RPC; this carries bytes, never a hub path.
@@ -62,73 +64,100 @@ impl DaemonState {
             .context("not signed in — call auth_login first")?;
         let mut collab = hub.get_collab(collab_id).await?;
         self.open_hub_collab_artifacts(&mut collab).await;
-        let mut artifacts = collab.artifacts;
-        for card in &mut collab.cards {
-            let Ok(detail) = self.fetch_and_open_thread(&card.id).await else {
-                continue;
-            };
-            let root_subject = detail
-                .messages
-                .iter()
-                .find(|message| message.parent_message_id.is_none())
-                .and_then(|message| message.bundle.as_ref())
-                .and_then(|bundle| bundle.subject.as_deref())
-                .map(str::trim)
-                .filter(|subject| !subject.is_empty())
-                .map(str::to_string);
-            if root_subject.is_some() {
-                card.last_subject = root_subject;
-            }
-            let card_title = card
-                .last_subject
-                .clone()
-                .or_else(|| card.audience.clone())
-                .unwrap_or_else(|| "Card".into());
-            for message in detail.messages {
-                let Some(bundle) = message.bundle else {
-                    continue;
-                };
-                if card.tags.as_ref().map(|t| t.is_empty()).unwrap_or(true) && !bundle.tags.is_empty()
-                {
-                    card.tags = Some(bundle.tags.clone());
-                }
-                if card.due_on.as_ref().map(|s| s.is_empty()).unwrap_or(true) {
-                    if let Some(due) = bundle.due_on.clone() {
-                        card.due_on = Some(due);
-                    }
-                }
-                if card.checklist.as_ref().map(|c| c.is_empty()).unwrap_or(true)
-                    && !bundle.checklist.is_empty()
-                {
-                    card.checklist = Some(bundle.checklist.clone());
-                }
-                for resource in bundle.resources {
-                    if resource.name.trim().is_empty() {
-                        continue;
-                    }
-                    let is_link = resource.mime.eq_ignore_ascii_case("text/uri-list");
-                    artifacts.push(CollabArtifactSummary {
-                        kind: if is_link { "link".into() } else { "file".into() },
-                        label: Some(resource.name.clone()),
-                        url: if is_link { resource.content.clone() } else { None },
-                        name: resource.name,
-                        mime: resource.mime,
-                        size: resource.size,
-                        path: resource.path,
-                        content: if is_link { None } else { resource.content },
-                        envelope: None,
-                        thread_id: card.id.clone(),
-                        message_id: message.id.clone(),
-                        card_title: card_title.clone(),
-                        from_handle: message.from_handle.clone(),
-                        created_at: message.created_at.clone(),
-                    });
-                }
-            }
+        if collab.encryption_mode == "app_envelope"
+            && collab.cards.iter().all(|c| {
+                c.last_subject
+                    .as_ref()
+                    .is_some_and(|s| !s.trim().is_empty())
+            })
+        {
+            return Ok(collab);
         }
+        let mut artifacts = std::mem::take(&mut collab.artifacts);
+        self.enrich_collab_cards(&mut collab.cards, &mut artifacts)
+            .await;
         artifacts.sort_by(|a, b| b.created_at.cmp(&a.created_at));
         collab.artifacts = artifacts;
         Ok(collab)
+    }
+
+    async fn enrich_collab_cards(
+        &self,
+        cards: &mut [CollabCardSummary],
+        artifacts: &mut Vec<CollabArtifactSummary>,
+    ) {
+        let ids: Vec<String> = cards.iter().map(|c| c.id.clone()).collect();
+        let details = join_all(ids.iter().map(|id| self.fetch_and_open_thread(id))).await;
+        for (card, detail_res) in cards.iter_mut().zip(details) {
+            let Ok(detail) = detail_res else {
+                continue;
+            };
+            Self::apply_opened_thread_to_card(card, &detail, artifacts);
+        }
+    }
+
+    fn apply_opened_thread_to_card(
+        card: &mut CollabCardSummary,
+        detail: &OpenedThreadDetail,
+        artifacts: &mut Vec<CollabArtifactSummary>,
+    ) {
+        let root_subject = detail
+            .messages
+            .iter()
+            .find(|message| message.parent_message_id.is_none())
+            .and_then(|message| message.bundle.as_ref())
+            .and_then(|bundle| bundle.subject.as_deref())
+            .map(str::trim)
+            .filter(|subject| !subject.is_empty())
+            .map(str::to_string);
+        if root_subject.is_some() {
+            card.last_subject = root_subject;
+        }
+        let card_title = card
+            .last_subject
+            .clone()
+            .or_else(|| card.audience.clone())
+            .unwrap_or_else(|| "Card".into());
+        for message in &detail.messages {
+            let Some(bundle) = message.bundle.as_ref() else {
+                continue;
+            };
+            if card.tags.as_ref().map(|t| t.is_empty()).unwrap_or(true) && !bundle.tags.is_empty() {
+                card.tags = Some(bundle.tags.clone());
+            }
+            if card.due_on.as_ref().map(|s| s.is_empty()).unwrap_or(true) {
+                if let Some(due) = bundle.due_on.clone() {
+                    card.due_on = Some(due);
+                }
+            }
+            if card.checklist.as_ref().map(|c| c.is_empty()).unwrap_or(true)
+                && !bundle.checklist.is_empty()
+            {
+                card.checklist = Some(bundle.checklist.clone());
+            }
+            for resource in &bundle.resources {
+                if resource.name.trim().is_empty() {
+                    continue;
+                }
+                let is_link = resource.mime.eq_ignore_ascii_case("text/uri-list");
+                artifacts.push(CollabArtifactSummary {
+                    kind: if is_link { "link".into() } else { "file".into() },
+                    label: Some(resource.name.clone()),
+                    url: if is_link { resource.content.clone() } else { None },
+                    name: resource.name.clone(),
+                    mime: resource.mime.clone(),
+                    size: resource.size,
+                    path: resource.path.clone(),
+                    content: if is_link { None } else { resource.content.clone() },
+                    envelope: None,
+                    thread_id: card.id.clone(),
+                    message_id: message.id.clone(),
+                    card_title: card_title.clone(),
+                    from_handle: message.from_handle.clone(),
+                    created_at: message.created_at.clone(),
+                });
+            }
+        }
     }
 
     pub async fn create_collab(

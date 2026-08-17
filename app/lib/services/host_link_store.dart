@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../platform/user_home.dart';
 import 'daemon_client.dart';
+import 'sentry_report.dart';
 
 /// Skill install outcome persisted next to MCP link.
 enum SkillLinkStatus {
@@ -175,6 +176,7 @@ class HostLinkStore {
       }
       return out;
     } catch (e, st) {
+      reportHandledError(e, stackTrace: st, surface: 'host_link_store');
       if (kDebugMode) {
         debugPrint('HostLinkStore.load failed: $e\n$st');
       }

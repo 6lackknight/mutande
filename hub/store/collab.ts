@@ -986,6 +986,26 @@ export async function getCollab(
   return viewCollab(ctx, auth, collab);
 }
 
+async function cardLastSubject(
+  ctx: CollabKvCtx,
+  threadId: string,
+  encryptionMode: Collab["encryption_mode"],
+): Promise<string | undefined> {
+  if (encryptionMode !== "app_envelope") return undefined;
+  const iter = ctx.kv.list<ThreadMessage>({
+    prefix: ctx.messagesPrefix(threadId),
+  });
+  for await (const entry of iter) {
+    const msg = entry.value;
+    if (msg.parent_message_id) continue;
+    const subject = typeof msg.app_envelope?.subject === "string"
+      ? msg.app_envelope.subject.trim()
+      : "";
+    return subject || undefined;
+  }
+  return undefined;
+}
+
 async function listCards(
   ctx: CollabKvCtx,
   auth: AuthContext,
@@ -1002,6 +1022,11 @@ async function listCards(
     const inbox = await ctx.kv.get<InboxEntry>(
       ctx.inboxKey(auth.userId, thread.id),
     );
+    const lastSubject = await cardLastSubject(
+      ctx,
+      thread.id,
+      collab.encryption_mode,
+    );
     cards.push({
       id: thread.id,
       lane_id: thread.lane_id,
@@ -1016,6 +1041,7 @@ async function listCards(
       audience: thread.audience,
       updated_at: thread.updated_at,
       your_status: inbox.value?.your_status,
+      last_subject: lastSubject,
     });
   }
   cards.sort((a, b) => (a.lane_position ?? 0) - (b.lane_position ?? 0));

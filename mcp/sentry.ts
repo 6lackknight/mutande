@@ -127,6 +127,7 @@ export async function initMcpSentry(opts?: {
     if (!Sentry) return false;
     Sentry.init(mcpSentryOptions(Sentry, { smoke: opts?.smoke, dsn, env }));
     sentryReady = true;
+    installMcpGlobalHandlers();
     return true;
   } catch (err) {
     console.error(
@@ -148,6 +149,21 @@ export function captureMcpException(err: unknown): void {
     sentryMod.captureException(err);
   } catch (captureErr) {
     console.error("[mutande-mcp] Sentry.captureException failed", captureErr);
+  }
+}
+
+/** Capture unhandled rejections and global errors outside Hono routes. */
+export function installMcpGlobalHandlers(): void {
+  try {
+    if (!sentryReady || !sentryMod?.getClient?.()) return;
+    globalThis.addEventListener("unhandledrejection", (ev) => {
+      captureMcpException(ev.reason);
+    });
+    globalThis.addEventListener("error", (ev) => {
+      captureMcpException(ev.error ?? ev.message);
+    });
+  } catch (err) {
+    console.error("[mutande-mcp] global error handlers skipped", err);
   }
 }
 

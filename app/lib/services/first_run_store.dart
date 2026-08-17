@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 import '../platform/user_home.dart';
+import 'sentry_report.dart';
 
 /// First-run gate flags under `~/.mutande/first_run.json`.
 class FirstRunStore {
@@ -75,6 +76,7 @@ class FirstRunStore {
         }
       }
     } catch (e, st) {
+      reportHandledError(e, stackTrace: st, surface: 'first_run_store');
       if (kDebugMode) {
         debugPrint('FirstRunStore.load failed: $e\n$st');
       }

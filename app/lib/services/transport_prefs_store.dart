@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import '../models/agent_transport.dart';
 import '../platform/user_home.dart';
 import 'daemon_client.dart';
+import 'sentry_report.dart';
 
 /// Default-transport prefs per display slug.
 ///
@@ -107,6 +108,7 @@ class TransportPrefsStore {
       _cached = TransportPrefs.fromJson(raw);
       return _cached;
     } catch (e, st) {
+      reportHandledError(e, stackTrace: st, surface: 'transport_prefs_store');
       if (kDebugMode) {
         debugPrint('TransportPrefsStore.load failed: $e\n$st');
       }
@@ -141,6 +143,7 @@ class TransportPrefsStore {
       await _saveLocal(remote);
       return remote;
     } catch (e, st) {
+      reportHandledError(e, stackTrace: st, surface: 'transport_prefs_store');
       if (kDebugMode) {
         debugPrint('TransportPrefsStore.syncFromHub failed: $e\n$st');
       }
@@ -169,6 +172,7 @@ class TransportPrefsStore {
         await _saveLocal(remote);
         return remote;
       } catch (e, st) {
+        reportHandledError(e, stackTrace: st, surface: 'transport_prefs_store');
         if (kDebugMode) {
           debugPrint('TransportPrefsStore.setDefault hub push failed: $e\n$st');
         }

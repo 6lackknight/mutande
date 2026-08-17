@@ -7,6 +7,8 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../util/address_display.dart';
 import 'app_actions.dart';
 import 'daemon_client.dart';
+import 'sentry_report.dart';
+import 'notification_history_store.dart';
 import 'notification_prefs_store.dart';
 
 /// Polls hub threads and shows local macOS notifications for new pending mail.
@@ -14,12 +16,15 @@ class InboxWatchService {
   InboxWatchService({
     required DaemonClient daemon,
     NotificationPrefsStore? prefs,
+    NotificationHistoryStore? history,
     this.pollInterval = const Duration(seconds: 30),
   })  : _daemon = daemon,
-        _prefs = prefs ?? NotificationPrefsStore();
+        _prefs = prefs ?? NotificationPrefsStore(),
+        _history = history;
 
   final DaemonClient _daemon;
   final NotificationPrefsStore _prefs;
+  final NotificationHistoryStore? _history;
   final Duration pollInterval;
 
   final FlutterLocalNotificationsPlugin _plugin =
@@ -146,6 +151,7 @@ class InboxWatchService {
 
       _notified.removeWhere((id, _) => !openIds.contains(id));
     } catch (e, st) {
+      reportHandledError(e, stackTrace: st, surface: 'inbox_watch');
       if (kDebugMode) {
         debugPrint('InboxWatchService tick failed: $e\n$st');
       }
@@ -185,6 +191,13 @@ class InboxWatchService {
         ),
       ),
       payload: t.id,
+    );
+    await _history?.record(
+      threadId: t.id,
+      title: 'mutande',
+      body: body,
+      needsYou: needsYou,
+      agentSlug: agentSlug,
     );
   }
 }

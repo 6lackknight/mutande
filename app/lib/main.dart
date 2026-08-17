@@ -26,6 +26,7 @@ Future<void> main() async {
       options.tracesSampleRate = smoke ? 1.0 : 0.01;
       options.enableAutoSessionTracking = false;
       options.sendDefaultPii = false;
+      options.attachStacktrace = true;
       if (smoke) {
         options.debug = true;
       }

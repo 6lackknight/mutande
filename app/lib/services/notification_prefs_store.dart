@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 import '../platform/user_home.dart';
+import 'sentry_report.dart';
 
 /// Local notification + mute prefs under `~/.mutande/notification_prefs.json`.
 class NotificationPrefs {
@@ -130,6 +131,7 @@ class NotificationPrefsStore {
       _cached = NotificationPrefs.fromJson(raw);
       return _cached;
     } catch (e, st) {
+      reportHandledError(e, stackTrace: st, surface: 'notification_prefs_store');
       if (kDebugMode) {
         debugPrint('NotificationPrefsStore.load failed: $e\n$st');
       }

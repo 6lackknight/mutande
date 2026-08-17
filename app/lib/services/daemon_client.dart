@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../models/agent_transport.dart';
 import '../platform/user_home.dart';
 import 'daemon_errors.dart';
+import 'sentry_report.dart';
 
 /// Local IPC client for `mutande-core serve`.
 ///
@@ -744,7 +745,11 @@ class DaemonClient {
   }
 
   Future<CollabDetail> getCollab(String collabId) async {
-    final result = await _call('get_collab', {'collab_id': collabId});
+    final result = await _callWithTimeout(
+      'get_collab',
+      {'collab_id': collabId},
+      const Duration(seconds: 45),
+    );
     final map = result as Map<String, dynamic>? ?? {};
     final collab = map['collab'] as Map<String, dynamic>? ?? map;
     return CollabDetail.fromJson(collab);
@@ -994,62 +999,68 @@ class DaemonClient {
     Map<String, dynamic>? params,
     Duration? timeout,
   ) async {
-    final id = ++_jsonRpcId;
-    final payload = <String, dynamic>{
-      'jsonrpc': '2.0',
-      'id': id,
-      'method': method,
-    };
-    if (params != null) {
-      payload['params'] = params;
+    try {
+      final id = ++_jsonRpcId;
+      final payload = <String, dynamic>{
+        'jsonrpc': '2.0',
+        'id': id,
+        'method': method,
+      };
+      if (params != null) {
+        payload['params'] = params;
+      }
+      final body = jsonEncode(payload);
+
+      final token = _resolveHttpToken();
+      if (token == null || token.isEmpty) {
+        throw DaemonException(
+          'Missing HTTP token at $httpTokenPath '
+          '(start mutande-core serve to create it)',
+        );
+      }
+
+      final uri = Uri.parse('$httpBaseUrl/rpc');
+      final response = await _http
+          .post(
+            uri,
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+            body: body,
+          )
+          .timeout(timeout ?? requestTimeout);
+
+      if (response.statusCode == 401) {
+        _cachedHttpToken = null;
+        throw DaemonException(
+          'HTTP 401 unauthorized — check $httpTokenPath matches the running daemon',
+        );
+      }
+
+      if (response.statusCode != 200) {
+        throw DaemonException(
+          'HTTP ${response.statusCode} from daemon at $httpBaseUrl',
+        );
+      }
+
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map<String, dynamic>) {
+        throw DaemonException('Invalid JSON-RPC response');
+      }
+
+      if (decoded.containsKey('error')) {
+        final err = decoded['error'];
+        final message =
+            err is Map ? err['message']?.toString() : err.toString();
+        throw DaemonException(message ?? 'Daemon error');
+      }
+
+      return decoded['result'];
+    } catch (e, st) {
+      reportDaemonRpcError(e, stackTrace: st, method: method);
+      rethrow;
     }
-    final body = jsonEncode(payload);
-
-    final token = _resolveHttpToken();
-    if (token == null || token.isEmpty) {
-      throw DaemonException(
-        'Missing HTTP token at $httpTokenPath '
-        '(start mutande-core serve to create it)',
-      );
-    }
-
-    final uri = Uri.parse('$httpBaseUrl/rpc');
-    final response = await _http
-        .post(
-          uri,
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer $token',
-          },
-          body: body,
-        )
-        .timeout(timeout ?? requestTimeout);
-
-    if (response.statusCode == 401) {
-      _cachedHttpToken = null;
-      throw DaemonException(
-        'HTTP 401 unauthorized — check $httpTokenPath matches the running daemon',
-      );
-    }
-
-    if (response.statusCode != 200) {
-      throw DaemonException(
-        'HTTP ${response.statusCode} from daemon at $httpBaseUrl',
-      );
-    }
-
-    final decoded = jsonDecode(response.body);
-    if (decoded is! Map<String, dynamic>) {
-      throw DaemonException('Invalid JSON-RPC response');
-    }
-
-    if (decoded.containsKey('error')) {
-      final err = decoded['error'];
-      final message = err is Map ? err['message']?.toString() : err.toString();
-      throw DaemonException(message ?? 'Daemon error');
-    }
-
-    return decoded['result'];
   }
 
   String? _resolveHttpToken() {

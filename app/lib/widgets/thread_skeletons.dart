@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/mutande_macos_theme.dart';
+import 'collab/collab_dash_card.dart';
 
 /// Quiet bone for a loading bar — same stone as the list, no shine stripe.
 class _Bone extends StatelessWidget {
@@ -82,8 +83,9 @@ class _BreathState extends State<_Breath> with SingleTickerProviderStateMixin {
   }
 }
 
-class _Arrive extends StatelessWidget {
-  const _Arrive({required this.order, required this.child});
+/// Fade + slight rise for staggered dashboard / list entrances.
+class MutandeArrive extends StatelessWidget {
+  const MutandeArrive({super.key, required this.order, required this.child});
 
   final int order;
   final Widget child;
@@ -92,13 +94,17 @@ class _Arrive extends StatelessWidget {
   Widget build(BuildContext context) {
     final reduced = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
     if (reduced) return child;
+    final duration = MutandeMotion.of(
+      context,
+      Duration(milliseconds: 320 + order * 50),
+    );
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0, end: 1),
-      duration: Duration(milliseconds: 320 + order * 50),
+      duration: duration,
       curve: Interval(
         (order * 0.08).clamp(0.0, 0.55),
         1,
-        curve: Curves.easeOutQuart,
+        curve: MutandeMotion.easeOut,
       ),
       builder: (context, t, child) => Opacity(
         opacity: t,
@@ -136,7 +142,7 @@ class ThreadListSkeleton extends StatelessWidget {
           itemCount: rows,
           itemBuilder: (context, i) {
             final titleW = _widths[i % _widths.length];
-            return _Arrive(
+            return MutandeArrive(
               order: i,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(10, 9, 12, 11),
@@ -194,7 +200,7 @@ class ThreadReadingSkeleton extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const _Arrive(
+              const MutandeArrive(
                 order: 0,
                 child: Row(
                   children: [
@@ -205,10 +211,10 @@ class ThreadReadingSkeleton extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 16),
-              const _Arrive(order: 1, child: _Bone(width: 220, height: 11)),
+              const MutandeArrive(order: 1, child: _Bone(width: 220, height: 11)),
               const SizedBox(height: 10),
               for (final w in [1.0, 0.92, 0.74]) ...[
-                _Arrive(
+                MutandeArrive(
                   order: 2,
                   child: FractionallySizedBox(
                     widthFactor: w,
@@ -218,7 +224,7 @@ class ThreadReadingSkeleton extends StatelessWidget {
                 const SizedBox(height: 8),
               ],
               const SizedBox(height: 18),
-              const _Arrive(
+              const MutandeArrive(
                 order: 3,
                 child: Row(
                   children: [
@@ -229,7 +235,7 @@ class ThreadReadingSkeleton extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 12),
-              const _Arrive(
+              const MutandeArrive(
                 order: 4,
                 child: FractionallySizedBox(
                   widthFactor: 0.86,
@@ -237,7 +243,7 @@ class ThreadReadingSkeleton extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 8),
-              const _Arrive(
+              const MutandeArrive(
                 order: 5,
                 child: FractionallySizedBox(
                   widthFactor: 0.64,
@@ -281,6 +287,161 @@ class CollabMetricValueSkeleton extends StatelessWidget {
   }
 }
 
+/// Activity chart bones — title and subtitle stay on [CollabActivityCalendar].
+class CollabActivitySkeleton extends StatelessWidget {
+  const CollabActivitySkeleton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'Loading activity',
+      child: CollabDashCard(
+        height: kCollabChartCardHeight,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Activity',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: MutandeColors.stone800,
+              ),
+            ),
+            const SizedBox(height: 2),
+            const Text(
+              'Card updates across all collabs',
+              style: TextStyle(fontSize: 11, color: MutandeColors.stone500),
+            ),
+            const SizedBox(height: 14),
+            Expanded(
+              child: _Breath(
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Align(
+                        alignment: Alignment.center,
+                        child: Wrap(
+                          spacing: 3,
+                          runSpacing: 3,
+                          children: [
+                            for (var i = 0; i < 28; i++)
+                              _Bone(width: 11, height: 11),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: DecoratedBox(
+                        decoration: const BoxDecoration(
+                          border: Border(
+                            left: BorderSide(color: MutandeColors.stone200),
+                          ),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.only(left: 16),
+                          child: Column(
+                            children: [
+                              for (var i = 0; i < 3; i++) ...[
+                                if (i > 0) const SizedBox(height: 8),
+                                const Row(
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          _Bone(width: 96, height: 9),
+                                          SizedBox(height: 4),
+                                          _Bone(width: 72, height: 8),
+                                        ],
+                                      ),
+                                    ),
+                                    _Bone(width: 24, height: 8),
+                                  ],
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Lanes chart bones — title and subtitle stay on [CollabLaneDonut].
+class CollabLanesSkeleton extends StatelessWidget {
+  const CollabLanesSkeleton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'Loading lanes',
+      child: CollabDashCard(
+        height: kCollabChartCardHeight,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Lanes',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: MutandeColors.stone800,
+              ),
+            ),
+            const SizedBox(height: 2),
+            const Text(
+              'Open cards by lane',
+              style: TextStyle(fontSize: 11, color: MutandeColors.stone500),
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: _Breath(
+                child: Row(
+                  children: [
+                    const _Bone(width: 108, height: 108, circle: true),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          for (var i = 0; i < 3; i++) ...[
+                            if (i > 0) const SizedBox(height: 8),
+                            const Row(
+                              children: [
+                                _Bone(width: 8, height: 8, circle: true),
+                                SizedBox(width: 8),
+                                Expanded(
+                                  child: _Bone(width: 48, height: 9),
+                                ),
+                                _Bone(width: 16, height: 9),
+                              ],
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Collab table rows only — heading and column labels stay on the table.
 class CollabTableRowsSkeleton extends StatelessWidget {
   const CollabTableRowsSkeleton({super.key, this.rows = 4});
@@ -295,7 +456,7 @@ class CollabTableRowsSkeleton extends StatelessWidget {
         child: Column(
           children: [
             for (var i = 0; i < rows; i++) ...[
-              _Arrive(
+              MutandeArrive(
                 order: i,
                 child: const Padding(
                   padding: EdgeInsets.symmetric(vertical: 13),
@@ -327,44 +488,77 @@ class CollabTableRowsSkeleton extends StatelessWidget {
   }
 }
 
-/// Onboarding team roster rows — heading and actions stay on the step.
-class OnboardingRosterSkeleton extends StatelessWidget {
-  const OnboardingRosterSkeleton({super.key, this.rows = 3});
+/// Fixed roster panel — loading wrap and loaded wrap share this height.
+const kOnboardingRosterPanelHeight = 168.0;
 
-  final int rows;
+/// Fixed host list — three [_HostTileBone] rows plus gaps.
+const kOnboardingHostPanelHeight = 268.0;
+
+/// Two helper lines (12px) plus [OnboardingSpace.sm] between them.
+const kOnboardingConnectHelperHeight = 52.0;
+
+/// Onboarding team roster chips — heading and actions stay on the step.
+class OnboardingRosterSkeleton extends StatelessWidget {
+  const OnboardingRosterSkeleton({super.key});
+
+  static const _chipWidths = [148.0, 128.0, 110.0, 136.0];
 
   @override
   Widget build(BuildContext context) {
     return Semantics(
       label: 'Loading team',
       child: _Breath(
-        child: Column(
-          children: [
-            for (var i = 0; i < rows; i++)
-              _Arrive(
-                order: i,
-                child: const Padding(
-                  padding: EdgeInsets.only(bottom: 12),
-                  child: Row(
-                    children: [
-                      _Bone(width: 32, height: 32, circle: true),
-                      SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _Bone(width: 128, height: 11),
-                            SizedBox(height: 6),
-                            _Bone(width: 96, height: 8),
-                          ],
-                        ),
-                      ),
-                    ],
+        child: SizedBox(
+          height: kOnboardingRosterPanelHeight,
+          child: SingleChildScrollView(
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (var i = 0; i < _chipWidths.length; i++)
+                  MutandeArrive(
+                    order: i,
+                    child: _PersonChipBone(width: _chipWidths[i]),
                   ),
-                ),
-              ),
-          ],
+              ],
+            ),
+          ),
         ),
+      ),
+    );
+  }
+}
+
+/// One host tile bone — matches onboarding [_HostTile] padding and icon size.
+class _HostTileBone extends StatelessWidget {
+  const _HostTileBone();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+      decoration: BoxDecoration(
+        color: MutandeColors.stone50,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: MutandeColors.stone200),
+      ),
+      child: const Row(
+        children: [
+          _Bone(width: 44, height: 44, circle: true),
+          SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _Bone(width: 88, height: 12),
+                SizedBox(height: 8),
+                _Bone(width: 64, height: 8),
+              ],
+            ),
+          ),
+          SizedBox(width: 10),
+          _Bone(width: 72, height: 32),
+        ],
       ),
     );
   }
@@ -381,34 +575,24 @@ class OnboardingHostSkeleton extends StatelessWidget {
     return Semantics(
       label: 'Detecting hosts',
       child: _Breath(
-        child: Column(
-          children: [
-            for (var i = 0; i < tiles; i++)
-              _Arrive(
-                order: i,
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: _DashPlate(
-                    child: const Row(
-                      children: [
-                        _Bone(width: 44, height: 44, circle: true),
-                        SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _Bone(width: 88, height: 12),
-                              SizedBox(height: 8),
-                              _Bone(width: 64, height: 8),
-                            ],
-                          ),
-                        ),
-                      ],
+        child: SizedBox(
+          height: kOnboardingHostPanelHeight,
+          child: SingleChildScrollView(
+            child: Column(
+              children: [
+                for (var i = 0; i < tiles; i++)
+                  MutandeArrive(
+                    order: i,
+                    child: Padding(
+                      padding: EdgeInsets.only(
+                        bottom: i < tiles - 1 ? 8 : 0,
+                      ),
+                      child: const _HostTileBone(),
                     ),
                   ),
-                ),
-              ),
-          ],
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -429,7 +613,7 @@ class CollabDossierListsSkeleton extends StatelessWidget {
           children: [
             const SizedBox(height: 16),
             for (var i = 0; i < 2; i++)
-              _Arrive(
+              MutandeArrive(
                 order: i,
                 child: const Padding(
                   padding: EdgeInsets.only(bottom: 11),
@@ -467,7 +651,7 @@ class CollabBoardSkeleton extends StatelessWidget {
               for (var i = 0; i < 3; i++) ...[
                 if (i > 0) const SizedBox(width: 10),
                 Expanded(
-                  child: _Arrive(
+                  child: MutandeArrive(
                     order: i,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -524,7 +708,7 @@ class CreateCollabChipSkeleton extends StatelessWidget {
             runSpacing: 6,
             children: [
               for (var i = 0; i < widths.length; i++)
-                _Arrive(
+                MutandeArrive(
                   order: i,
                   child: people
                       ? _PersonChipBone(width: widths[i])

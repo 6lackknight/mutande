@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/daemon_client.dart';
 import '../../theme/mutande_macos_theme.dart';
+import '../thread_skeletons.dart';
 import 'collab_dash_card.dart';
 
 /// Open-card mix across Backlog / Doing / Done.
@@ -37,22 +38,37 @@ class CollabLaneDonut extends StatelessWidget {
           Expanded(
             child: Row(
               children: [
-                SizedBox(
-                  width: 108,
-                  height: 108,
-                  child: CustomPaint(
-                    painter: _DonutPainter(
-                      backlog: lanes.backlog,
-                      doing: lanes.doing,
-                      done: lanes.done,
-                    ),
-                    child: Center(
-                      child: Text(
-                        total == 0 ? '—' : '$total',
-                        style: const TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w600,
-                          color: MutandeColors.stone800,
+                MutandeArrive(
+                  order: 0,
+                  child: SizedBox(
+                    width: 108,
+                    height: 108,
+                    child: TweenAnimationBuilder<double>(
+                      tween: Tween(begin: 0, end: 1),
+                      duration: MutandeMotion.of(
+                        context,
+                        const Duration(milliseconds: 520),
+                      ),
+                      curve: MutandeMotion.easeOut,
+                      builder: (context, progress, child) {
+                        return CustomPaint(
+                          painter: _DonutPainter(
+                            backlog: lanes.backlog,
+                            doing: lanes.doing,
+                            done: lanes.done,
+                            progress: progress,
+                          ),
+                          child: child,
+                        );
+                      },
+                      child: Center(
+                        child: Text(
+                          total == 0 ? '—' : '$total',
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w600,
+                            color: MutandeColors.stone800,
+                          ),
                         ),
                       ),
                     ),
@@ -64,22 +80,31 @@ class CollabLaneDonut extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _Legend(
-                        color: MutandeColors.stone400,
-                        label: 'Backlog',
-                        count: lanes.backlog,
+                      MutandeArrive(
+                        order: 1,
+                        child: _Legend(
+                          color: MutandeColors.stone400,
+                          label: 'Backlog',
+                          count: lanes.backlog,
+                        ),
                       ),
                       const SizedBox(height: 8),
-                      _Legend(
-                        color: MutandeColors.bronze,
-                        label: 'Doing',
-                        count: lanes.doing,
+                      MutandeArrive(
+                        order: 2,
+                        child: _Legend(
+                          color: MutandeColors.bronze,
+                          label: 'Doing',
+                          count: lanes.doing,
+                        ),
                       ),
                       const SizedBox(height: 8),
-                      _Legend(
-                        color: MutandeColors.stone800,
-                        label: 'Done',
-                        count: lanes.done,
+                      MutandeArrive(
+                        order: 3,
+                        child: _Legend(
+                          color: MutandeColors.stone800,
+                          label: 'Done',
+                          count: lanes.done,
+                        ),
                       ),
                     ],
                   ),
@@ -141,11 +166,13 @@ class _DonutPainter extends CustomPainter {
     required this.backlog,
     required this.doing,
     required this.done,
+    this.progress = 1,
   });
 
   final int backlog;
   final int doing;
   final int done;
+  final double progress;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -158,16 +185,22 @@ class _DonutPainter extends CustomPainter {
     final total = backlog + doing + done;
     if (total == 0) {
       paint.color = MutandeColors.stone200;
-      canvas.drawArc(inset, 0, math.pi * 2, false, paint);
+      canvas.drawArc(inset, 0, math.pi * 2 * progress, false, paint);
       return;
     }
+    final sweepCap = math.pi * 2 * progress;
     var start = -math.pi / 2;
+    var remaining = sweepCap;
     void slice(int n, Color color) {
-      if (n <= 0) return;
-      final sweep = math.pi * 2 * n / total;
+      if (n <= 0 || remaining <= 0) return;
+      final sliceSweep = math.pi * 2 * n / total;
+      final sweep = sliceSweep < remaining ? sliceSweep : remaining;
       paint.color = color;
-      canvas.drawArc(inset, start, sweep - 0.02, false, paint);
-      start += sweep;
+      if (sweep > 0.01) {
+        canvas.drawArc(inset, start, sweep - 0.02, false, paint);
+      }
+      start += sliceSweep;
+      remaining -= sliceSweep;
     }
 
     slice(backlog, MutandeColors.stone400);
@@ -177,6 +210,9 @@ class _DonutPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _DonutPainter old) {
-    return old.backlog != backlog || old.doing != doing || old.done != done;
+    return old.backlog != backlog ||
+        old.doing != doing ||
+        old.done != done ||
+        old.progress != progress;
   }
 }

@@ -4,6 +4,7 @@ import '../../services/daemon_client.dart';
 import '../../theme/mutande_macos_theme.dart';
 import '../../util/address_display.dart';
 import '../../util/clock_format.dart';
+import '../thread_skeletons.dart';
 import 'collab_dash_card.dart';
 
 /// Git-style heatmap of card `updated_at` counts, with a latest-thread feed.
@@ -63,37 +64,43 @@ class CollabActivityCalendar extends StatelessWidget {
             child: Row(
               children: [
                 Expanded(
-                  child: SizedBox.expand(
-                    key: const Key('collab-activity-heatmap-pane'),
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        return Center(
-                          child: _Heatmap(
-                            counts: counts,
-                            cells: cells,
-                            cell: _cellFor(constraints),
-                          ),
-                        );
-                      },
+                  child: MutandeArrive(
+                    order: 0,
+                    child: SizedBox.expand(
+                      key: const Key('collab-activity-heatmap-pane'),
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          return Center(
+                            child: _Heatmap(
+                              counts: counts,
+                              cells: cells,
+                              cell: _cellFor(constraints),
+                            ),
+                          );
+                        },
+                      ),
                     ),
                   ),
                 ),
                 Expanded(
-                  child: SizedBox.expand(
-                    key: const Key('collab-activity-feed-pane'),
-                    child: DecoratedBox(
-                      decoration: const BoxDecoration(
-                        border: Border(
-                          left: BorderSide(color: MutandeColors.stone200),
+                  child: MutandeArrive(
+                    order: 1,
+                    child: SizedBox.expand(
+                      key: const Key('collab-activity-feed-pane'),
+                      child: DecoratedBox(
+                        decoration: const BoxDecoration(
+                          border: Border(
+                            left: BorderSide(color: MutandeColors.stone200),
+                          ),
                         ),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.only(left: 16),
-                        child: _ThreadFeed(
-                          items: feed,
-                          myHandle: myHandle,
-                          now: now,
-                          onOpen: onOpenThread,
+                        child: Padding(
+                          padding: const EdgeInsets.only(left: 16),
+                          child: _ThreadFeed(
+                            items: feed,
+                            myHandle: myHandle,
+                            now: now,
+                            onOpen: onOpenThread,
+                          ),
                         ),
                       ),
                     ),
@@ -227,11 +234,14 @@ class _ThreadFeed extends StatelessWidget {
       itemCount: items.length,
       itemBuilder: (context, i) {
         final item = items[i];
-        return _FeedRow(
-          item: item,
-          myHandle: myHandle,
-          now: now,
-          onTap: onOpen == null ? null : () => onOpen!(item),
+        return MutandeArrive(
+          order: i,
+          child: _FeedRow(
+            item: item,
+            myHandle: myHandle,
+            now: now,
+            onTap: onOpen == null ? null : () => onOpen!(item),
+          ),
         );
       },
     );

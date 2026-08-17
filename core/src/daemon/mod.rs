@@ -2,6 +2,7 @@
 
 mod auth0_defaults;
 mod sentry_defaults;
+mod sentry_report;
 mod config;
 mod connect_host;
 mod detect_ai_hosts;

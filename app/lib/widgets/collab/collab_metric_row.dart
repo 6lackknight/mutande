@@ -25,36 +25,51 @@ class CollabMetricRow extends StatelessWidget {
         return _collabMetricTileRow(
           width: constraints.maxWidth,
           tiles: [
-            _MetricTile(
-              key: const Key('collab-metric-collabs'),
-              label: 'Collabs',
-              value: '${totals.collabs}',
-              hint: 'you steer',
-              loading: loading,
+            MutandeArrive(
+              order: 0,
+              child: _MetricTile(
+                key: const Key('collab-metric-collabs'),
+                label: 'Collabs',
+                value: '${totals.collabs}',
+                hint: 'you steer',
+                loading: loading,
+              ),
             ),
-            _MetricTile(
-              key: const Key('collab-metric-open'),
-              label: 'Open cards',
-              value: '${totals.open}',
-              hint: 'across boards',
-              loading: loading,
+            MutandeArrive(
+              order: 1,
+              child: _MetricTile(
+                key: const Key('collab-metric-open'),
+                label: 'Open cards',
+                value: '${totals.open}',
+                hint: 'across boards',
+                loading: loading,
+              ),
             ),
-            _MetricTile(
-              key: const Key('collab-metric-doing'),
-              label: 'In Doing',
-              value: '${totals.doing}',
-              hint: 'in progress',
-              loading: loading,
+            MutandeArrive(
+              order: 2,
+              child: _MetricTile(
+                key: const Key('collab-metric-doing'),
+                label: 'In Doing',
+                value: '${totals.doing}',
+                hint: 'in progress',
+                loading: loading,
+              ),
             ),
-            _MetricTile(
-              key: const Key('collab-metric-needs-you'),
-              label: 'Needs you',
-              value: '${totals.needsYou}',
-              hint: 'awaiting a reply',
-              accent: totals.needsYou > 0,
-              loading: loading,
+            MutandeArrive(
+              order: 3,
+              child: _MetricTile(
+                key: const Key('collab-metric-needs-you'),
+                label: 'Needs you',
+                value: '${totals.needsYou}',
+                hint: 'awaiting a reply',
+                accent: totals.needsYou > 0,
+                loading: loading,
+              ),
             ),
-            _CreateTile(onTap: onCreate),
+            MutandeArrive(
+              order: 4,
+              child: _CreateTile(onTap: onCreate),
+            ),
           ],
         );
       },

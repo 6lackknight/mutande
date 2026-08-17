@@ -171,11 +171,13 @@ class HomeChromeIconButton extends StatelessWidget {
     required this.icon,
     required this.tooltip,
     required this.onPressed,
+    this.badge,
   });
 
   final IconData icon;
   final String tooltip;
   final VoidCallback onPressed;
+  final int? badge;
 
   @override
   Widget build(BuildContext context) {
@@ -184,6 +186,7 @@ class HomeChromeIconButton extends StatelessWidget {
         icon: icon,
         tooltip: tooltip,
         onPressed: onPressed,
+        badge: badge,
       ),
     );
   }
@@ -225,14 +228,46 @@ class _ChromeIconHit extends StatefulWidget {
     required this.icon,
     required this.tooltip,
     required this.onPressed,
+    this.badge,
   });
 
   final IconData icon;
   final String tooltip;
   final VoidCallback onPressed;
+  final int? badge;
 
   @override
   State<_ChromeIconHit> createState() => _ChromeIconHitState();
+}
+
+class _ChromeBadge extends StatelessWidget {
+  const _ChromeBadge({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = count > 99 ? '99+' : '$count';
+    return Container(
+      constraints: const BoxConstraints(minWidth: 14, minHeight: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 3),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: MutandeColors.bronze,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: MutandeColors.stone50, width: 1.5),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 9,
+          fontWeight: FontWeight.w700,
+          height: 1,
+        ),
+      ),
+    );
+  }
 }
 
 class _ChromeIconHitState extends State<_ChromeIconHit> {
@@ -255,14 +290,24 @@ class _ChromeIconHitState extends State<_ChromeIconHit> {
             child: SizedBox(
               width: HomeChrome.iconSize + HomeChrome.thumbPadX * 2,
               height: HomeChrome.thumbHeight,
-              child: Center(
-                child: Icon(
-                  widget.icon,
-                  size: 16,
-                  color: _hover
-                      ? MutandeColors.stone600
-                      : HomeChrome.muteForeground,
-                ),
+              child: Stack(
+                clipBehavior: Clip.none,
+                alignment: Alignment.center,
+                children: [
+                  Icon(
+                    widget.icon,
+                    size: 16,
+                    color: _hover
+                        ? MutandeColors.stone600
+                        : HomeChrome.muteForeground,
+                  ),
+                  if (widget.badge != null && widget.badge! > 0)
+                    Positioned(
+                      top: 6,
+                      right: 6,
+                      child: _ChromeBadge(count: widget.badge!),
+                    ),
+                ],
               ),
             ),
           ),

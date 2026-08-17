@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use super::sentry_report::capture_rpc_error;
 use super::state::{HumanDecision, MutandeBundle, PingKind, ResourceRequest};
 use super::DaemonState;
 
@@ -70,7 +71,10 @@ pub async fn handle_request(state: &Arc<DaemonState>, req: JsonRpcRequest) -> Js
     let id = req.id.clone();
     match dispatch(state, &req.method, req.params).await {
         Ok(result) => JsonRpcResponse::success(id, result),
-        Err(err) => JsonRpcResponse::error(id, INTERNAL_ERROR, err.to_string()),
+        Err(err) => {
+            capture_rpc_error(&req.method, err.as_ref());
+            JsonRpcResponse::error(id, INTERNAL_ERROR, err.to_string())
+        }
     }
 }
 

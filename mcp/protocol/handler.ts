@@ -20,6 +20,7 @@ import {
 } from "../hub/collabs.ts";
 import type { ThreadFilter } from "../hub/types.ts";
 import type { McpSession } from "../session/bind.ts";
+import { captureMcpException } from "../sentry.ts";
 import { toolDefinitions, IMPLEMENTED_TOOLS } from "./tools.ts";
 import {
   mcpError,
@@ -96,6 +97,7 @@ export async function handleMcpRequest(
         const result = await callTool(name, params.arguments ?? {}, ctx);
         return mcpSuccess(id, result);
       } catch (e) {
+        captureMcpException(e);
         const message = e instanceof Error ? e.message : String(e);
         const status =
           e && typeof e === "object" && "status" in e
@@ -433,6 +435,7 @@ async function callTool(
       );
       return toolTextResult(JSON.stringify(result, null, 2));
     } catch (e) {
+      captureMcpException(e);
       return toolTextResult(
         e instanceof Error ? e.message : "add_learning failed",
         true,

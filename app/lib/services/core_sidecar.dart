@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'daemon_client.dart';
+import 'sentry_report.dart';
 
 /// Starts and stops the bundled `mutande-core serve` sidecar.
 ///
@@ -195,7 +196,8 @@ class CoreSidecar {
       final spawn = spawnServe ?? _defaultSpawn;
       _process = await spawn(path);
       _startedByUs = true;
-    } catch (e) {
+    } catch (e, st) {
+      reportHandledError(e, stackTrace: st, surface: 'core_sidecar');
       return CoreSidecarStartResult(
         alreadyRunning: false,
         path: path,

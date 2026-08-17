@@ -3,11 +3,7 @@
  * User-visible changes only — no internal tooling, infra, or implementation detail.
  *
  * --- unreleased (internal; fold into next cut or discard) ---
- * v1.1.4 (2026-08-13): Mixpanel on Mac/Windows desktop — onboarding funnel
- * (sign-in, create/join, connect host, ping wizard, home). Web identify wired
- * so same Auth0 account stitches web ↔ desktop in Mixpanel (Auth0 sub only;
- * no email/handle in events). Not user-facing — no changelog bullet unless we
- * disclose analytics in privacy copy first.
+ * Mixpanel desktop funnel (v1.1.4) stays internal until privacy copy discloses analytics.
  */
 
 export type ChangelogEntry = {
@@ -19,29 +15,44 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "2.0.2",
+    date: "2026-08-17",
+    title: "Collab dashboard & updates",
+    notes: [
+      "Collab home dashboard with project dossiers, activity, and a shared brain pane.",
+      "Manage collab members, agent roster, and archive from the Mac app.",
+      "Notifications panel shows recent inbox banners; tap to open the thread.",
+      "App prompts you to reinstall when you're behind the published alpha.",
+      "Improved crash and error reporting for faster fixes during alpha.",
+    ],
+  },
+  {
     version: "2.0.1",
     date: "2026-08-16",
-    title: "Patch release",
+    title: "Collab on Windows",
     notes: [
-      "Bug fixes and stability improvements across the Mac app and courier.",
+      "Collab boards and cards work on the Windows alpha.",
+      "Stability fixes for collab sync on desktop.",
     ],
   },
   {
     version: "2.0.0",
     date: "2026-08-16",
-    title: "Collab 2.0",
+    title: "Collab",
     notes: [
-      "Collab home dashboard, project dossiers, and agent brain pane on desktop.",
-      "Manage collab settings and cards from the Mac app.",
+      "New Collab tab: kanban boards where each card is a thread.",
+      "Create collabs with steerers, agents, and standing instructions.",
+      "Collab threads still appear in Threads with Collab / Unfiled filters.",
+      "Agents can list boards, open cards, move lanes, and add learnings via MCP.",
     ],
   },
   {
     version: "1.1.4",
     date: "2026-08-13",
-    title: "Network inspect & mail split",
+    title: "Network & reading layout",
     notes: [
-      "Network Org and External show real teammates and orgs; tap someone to unfold destinations and start a thread.",
-      "Threads reading is a mail split with Relay and a quiet inspector.",
+      "Network shows org teammates and external contacts; tap someone to see destinations and start a thread.",
+      "Threads reading uses a resizable split with a sidebar inspector.",
     ],
   },
   {
@@ -49,7 +60,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     date: "2026-08-12",
     title: "Windows sign-in fix",
     notes: [
-      "Windows Sign in opens the full Auth0 login URL again (browser was dropping parameters).",
+      "Windows Sign in opens the full browser login page again.",
     ],
   },
   {
@@ -74,7 +85,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     date: "2026-08-11",
     title: "Network & external contacts",
     notes: [
-      "Network tab: zoom between Me, your org, and external contacts to see how mail routes.",
+      "Network tab: browse Me, your org, and external contacts to see how mail routes.",
       "Add external contacts with a pairing PIN; warnings when a thread is no longer end-to-end encrypted.",
       "Compose moved to the toolbar; clearer Needs you labels in the thread list.",
     ],
@@ -94,7 +105,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     title: "Stability & Windows installer",
     notes: [
       "Improved crash and error reporting for faster fixes during alpha.",
-      "Windows alpha now ships as an installer alongside Mac.",
+      "Windows alpha ships as an installer alongside Mac.",
     ],
   },
   {
@@ -128,9 +139,8 @@ export const CHANGELOG: ChangelogEntry[] = [
   {
     version: "1.0.7",
     date: "2026-08-05",
-    title: "Mac & Windows alpha",
+    title: "Download & join polish",
     notes: [
-      "Mac and Windows alphas available from Download.",
       "Smoother join flow if you already have a team from the web.",
       "Clearer sign-out and onboarding error messages.",
     ],
@@ -146,7 +156,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
   {
     version: "1.0.5",
-    date: "2026-08-05",
+    date: "2026-08-04",
     title: "Notifications & Windows",
     notes: [
       "Connect AI hosts in two steps: link the host, then install the collaboration skill.",
@@ -188,7 +198,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     title: "Host picker & routing",
     notes: [
       "Connect AI hosts one at a time with a clearer picker.",
-      "Agents and routing improvements.",
+      "Clearer agent addresses and routing in Network.",
     ],
   },
 ];

@@ -1117,7 +1117,7 @@ dependencies = [
 
 [[package]]
 name = "mutande-core"
-version = "2.0.1"
+version = "2.0.2"
 dependencies = [
  "anyhow",
  "base64",
@@ -1125,6 +1125,7 @@ dependencies = [
  "clap",
  "crypto_box",
  "dirs",
+ "futures",
  "hex",
  "libc",
  "rand 0.8.7",

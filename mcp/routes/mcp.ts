@@ -8,6 +8,7 @@ import {
 } from "../auth/oauth.ts";
 import { HubClient, HubClientError } from "../hub/client.ts";
 import { bindWebSession } from "../session/bind.ts";
+import { captureMcpException } from "../sentry.ts";
 import { handleMcpRequest } from "../protocol/handler.ts";
 import type { McpRequest } from "../protocol/types.ts";
 import {
@@ -196,6 +197,7 @@ export function createMcpRoutes(
       }
       const message = e instanceof Error ? e.message : "session bind failed";
       const status = message.toLowerCase().includes("onboarding") ? 403 : 502;
+      if (status === 502) captureMcpException(e);
       return c.json({ error: "bind_failed", message }, status);
     }
   }

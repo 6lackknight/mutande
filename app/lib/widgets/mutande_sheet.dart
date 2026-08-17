@@ -1,7 +1,24 @@
+import 'dart:io' show Platform;
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:macos_ui/macos_ui.dart';
 
 import '../theme/mutande_macos_theme.dart';
+import 'home_chrome_strip.dart';
+
+/// Top inset for modal chrome under macOS traffic lights — header row only.
+EdgeInsets macosModalHeaderPadding(BuildContext context) {
+  if (kIsWeb || !Platform.isMacOS) {
+    return const EdgeInsets.fromLTRB(20, 0, 12, 0);
+  }
+  return const EdgeInsets.fromLTRB(
+    20,
+    HomeChrome.titlebarInset,
+    12,
+    0,
+  );
+}
 
 /// Screen rect of the control that opened a sheet.
 Rect? mutandeSheetOrigin(BuildContext context) {

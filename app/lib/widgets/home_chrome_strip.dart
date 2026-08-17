@@ -42,6 +42,12 @@ abstract final class HomeChrome {
   static BorderRadius get stadium => BorderRadius.circular(height / 2);
   static BorderRadius get thumbStadium =>
       BorderRadius.circular(thumbHeight / 2);
+
+  /// Leading inset for overlay modals — matches macos_ui [ToolBar] traffic lights.
+  static const trafficLightInset = 70.0;
+
+  /// Top inset below the traffic-light row ([kTitleBarHeight] in macos_ui).
+  static const titlebarInset = 28.0;
 }
 
 /// Inset muted surface for Threads · Collab · Network — same fill as the

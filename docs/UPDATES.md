@@ -99,6 +99,10 @@ Installer packs Flutter `Release/` + `mutande-core.exe` sidecar into
 ## Until Sparkle
 
 - Ship fixes by redistributing a new `.dmg`.
+- Release builds poll `https://mutande.online/api/desktop-version` on launch;
+  when the published alpha semver is newer, the shell blocks until reinstall
+  (`SKIP_UPDATE_GATE=1` skips; debug `flutter run` skips unless
+  `PREVIEW_UPDATE_GATE=1` or `FORCE_UPDATE_GATE=1`).
 - `mutande-core` is bundled as a sidecar in `Contents/Resources/mutande-core`
   (see `app/macos/Runner/Scripts/bundle_mutande_core.sh`); bump both app and
   core together.
