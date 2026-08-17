@@ -33,12 +33,6 @@ export function createThreadRoutes(store: HubStore) {
     return c.json(result, 201);
   });
 
-  /** L5: list pending downgrade proposals for the caller (sidecar approver). */
-  threadRoutes.get("/downgrade-proposals/pending", async (c) => {
-    const result = await store.listPendingThreadDowngrades(c.get("auth"));
-    return c.json(result);
-  });
-
   threadRoutes.get("/:id", async (c) => {
     const result = await store.getThread(c.get("auth"), c.req.param("id"));
     return c.json(result);
@@ -108,28 +102,8 @@ export function createThreadRoutes(store: HubStore) {
     return c.json(result);
   });
 
-  /** L5: propose adding a web agent to an E2E thread. */
-  threadRoutes.post("/:id/downgrade-proposals", async (c) => {
-    const body = await c.req.json<{ agent_slug: string; from_agent?: string }>();
-    const result = await store.proposeThreadDowngrade(
-      c.get("auth"),
-      c.req.param("id"),
-      body,
-    );
-    return c.json(result, 201);
-  });
-
   threadRoutes.post("/:id/downgrade-proposals/:proposalId/approve", async (c) => {
     const result = await store.approveThreadDowngrade(
-      c.get("auth"),
-      c.req.param("id"),
-      c.req.param("proposalId"),
-    );
-    return c.json(result);
-  });
-
-  threadRoutes.post("/:id/downgrade-proposals/:proposalId/deny", async (c) => {
-    const result = await store.denyThreadDowngrade(
       c.get("auth"),
       c.req.param("id"),
       c.req.param("proposalId"),

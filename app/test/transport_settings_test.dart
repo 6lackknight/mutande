@@ -1,49 +1,21 @@
-import 'dart:async';
-import 'dart:convert';
-
 import 'package:app/models/agent_transport.dart';
 import 'package:app/screens/settings_screen.dart';
 import 'package:app/services/daemon_client.dart';
+import 'fake_daemon_client.dart';
 import 'package:app/services/host_link_store.dart';
 import 'package:app/services/notification_prefs_store.dart';
 import 'package:app/services/transport_prefs_store.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:http/http.dart' as http;
-import 'package:http/testing.dart';
-
-http.Response _rpcOk(Object? id, Object result) {
-  return http.Response(
-    jsonEncode({
-      'jsonrpc': '2.0',
-      'id': id,
-      'result': result,
-    }),
-    200,
-    headers: {'content-type': 'application/json'},
-  );
-}
-
-DaemonClient _mockDaemon(
-  FutureOr<http.Response> Function(http.Request) handler,
-) {
-  return DaemonClient(
-    httpClient: MockClient((request) async => handler(request)),
-    httpToken: 'test-token',
-    requestTimeout: const Duration(milliseconds: 200),
-  );
-}
 
 void main() {
   testWidgets('Settings default transport picker when dual slots present', (
     tester,
   ) async {
     final transportPrefs = TransportPrefsStore.memory();
-    final daemon = _mockDaemon((request) async {
-      final body = jsonDecode(request.body) as Map<String, dynamic>;
-      final method = body['method'] as String?;
+    final daemon = rpcDaemon((method, params) async {
       if (method == 'list_agents') {
-        return _rpcOk(body['id'], {
+        return {
           'agents': [
             {
               'id': 'sidecar-1',
@@ -58,33 +30,32 @@ void main() {
             {'id': 'claude-1', 'slug': 'claude', 'transport': 'sidecar'},
           ],
           'default_agent_id': 'sidecar-1',
-        });
+        };
       }
       if (method == 'get_transport_defaults') {
-        return _rpcOk(body['id'], {
+        return {
           'defaults': {'chatgpt': 'sidecar'},
-        });
+        };
       }
       if (method == 'set_transport_default') {
-        final params = body['params'] as Map<String, dynamic>? ?? {};
-        return _rpcOk(body['id'], {
-          'defaults': {
-            params['slug']: params['transport'],
-          },
-        });
+        final slug = params?['slug'];
+        final transport = params?['transport'];
+        return {
+          'defaults': {slug: transport},
+        };
       }
       if (method == 'get_safety_number') {
-        return _rpcOk(body['id'], {
+        return {
           'handle': 'alice@acme',
           'fingerprint': 'aa',
           'uri': 'mutande:aa',
-        });
+        };
       }
-      return _rpcOk(body['id'], {
+      return {
         'ok': true,
         'service': 'mutande-core',
         'version': '0.0.0',
-      });
+      };
     });
     transportPrefs.daemon = daemon;
 
@@ -125,30 +96,28 @@ void main() {
   testWidgets('Settings hides default transport when API omits transport', (
     tester,
   ) async {
-    final daemon = _mockDaemon((request) async {
-      final body = jsonDecode(request.body) as Map<String, dynamic>;
-      final method = body['method'] as String?;
+    final daemon = rpcDaemon((method, params) async {
       if (method == 'list_agents') {
-        return _rpcOk(body['id'], {
+        return {
           'agents': [
             {'id': 'a1', 'slug': 'chatgpt'},
             {'id': 'a2', 'slug': 'claude'},
           ],
           'default_agent_id': 'a1',
-        });
+        };
       }
       if (method == 'get_safety_number') {
-        return _rpcOk(body['id'], {
+        return {
           'handle': 'alice@acme',
           'fingerprint': 'aa',
           'uri': 'mutande:aa',
-        });
+        };
       }
-      return _rpcOk(body['id'], {
+      return {
         'ok': true,
         'service': 'mutande-core',
         'version': '0.0.0',
-      });
+      };
     });
 
     await tester.pumpWidget(

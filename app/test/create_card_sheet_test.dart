@@ -1,7 +1,8 @@
-import 'dart:convert';
 
 import 'package:app/screens/collab_screen.dart';
 import 'package:app/services/daemon_client.dart';
+import 'package:app/services/daemon_errors.dart';
+import 'fake_daemon_client.dart';
 import 'package:app/theme/mutande_macos_theme.dart';
 import 'package:app/widgets/create_card_sheet.dart';
 import 'package:app/widgets/create_collab_sheet.dart';
@@ -9,41 +10,7 @@ import 'package:app/widgets/mutande_sheet.dart';
 import 'package:app/widgets/thread_skeletons.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:http/http.dart' as http;
-import 'package:http/testing.dart';
 import 'package:macos_ui/macos_ui.dart';
-
-http.Response _rpcOk(Object? id, Object result) {
-  return http.Response(
-    jsonEncode({'jsonrpc': '2.0', 'id': id, 'result': result}),
-    200,
-    headers: {'content-type': 'application/json'},
-  );
-}
-
-http.Response _rpcErr(Object? id, String message, {int code = -32000}) {
-  return http.Response(
-    jsonEncode({
-      'jsonrpc': '2.0',
-      'id': id,
-      'error': {'code': code, 'message': message},
-    }),
-    200,
-    headers: {'content-type': 'application/json'},
-  );
-}
-
-DaemonClient _mockDaemon(Future<http.Response> Function(http.Request) handler) {
-  return DaemonClient(
-    httpClient: MockClient((request) async => handler(request)),
-    httpToken: 'test-token',
-    requestTimeout: const Duration(seconds: 2),
-  );
-}
-
-Map<String, dynamic> _rpc(http.Request request) {
-  return jsonDecode(request.body) as Map<String, dynamic>;
-}
 
 Future<void> _pumpSheet(
   WidgetTester tester, {
@@ -107,9 +74,8 @@ void main() {
   testWidgets('chrome is visible immediately — title is not a bone', (
     tester,
   ) async {
-    final daemon = _mockDaemon((request) async {
-      final body = _rpc(request);
-      return _rpcOk(body['id'], {'ok': true});
+    final daemon = rpcDaemon((method, params) async {
+      return {'ok': true};
     });
 
     await _pumpSheet(tester, daemon: daemon);
@@ -134,13 +100,12 @@ void main() {
     tester,
   ) async {
     Map<String, dynamic>? created;
-    final daemon = _mockDaemon((request) async {
-      final body = _rpc(request);
-      if (body['method'] == 'create_collab_card') {
-        created = body['params'] as Map<String, dynamic>?;
-        return _rpcOk(body['id'], {'thread_id': 'th-card-1'});
+    final daemon = rpcDaemon((method, params) async {
+      if (method == 'create_collab_card') {
+        created = params;
+        return {'thread_id': 'th-card-1'};
       }
-      return _rpcOk(body['id'], {'ok': true});
+      return {'ok': true};
     });
 
     await _pumpSheet(
@@ -171,15 +136,11 @@ void main() {
   });
 
   testWidgets('create failure keeps title and shows copy', (tester) async {
-    final daemon = _mockDaemon((request) async {
-      final body = _rpc(request);
-      if (body['method'] == 'create_collab_card') {
-        return _rpcErr(
-          body['id'],
-          'hub error 404 Not Found: {"error":"not_found"}',
-        );
+    final daemon = rpcDaemon((method, params) async {
+      if (method == 'create_collab_card') {
+        throw DaemonException('hub error 404 Not Found: {"error":"not_found"}');
       }
-      return _rpcOk(body['id'], {'ok': true});
+      return {'ok': true};
     });
 
     await _pumpSheet(tester, daemon: daemon);
@@ -199,9 +160,8 @@ void main() {
   testWidgets('disableAnimations snaps inner stagger without throw', (
     tester,
   ) async {
-    final daemon = _mockDaemon((request) async {
-      final body = _rpc(request);
-      return _rpcOk(body['id'], {'ok': true});
+    final daemon = rpcDaemon((method, params) async {
+      return {'ok': true};
     });
 
     await _pumpSheet(tester, daemon: daemon, reduce: true);
@@ -217,10 +177,9 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    final daemon = _mockDaemon((request) async {
-      final body = _rpc(request);
-      if (body['method'] == 'get_collab') {
-        return _rpcOk(body['id'], {
+    final daemon = rpcDaemon((method, params) async {
+      if (method == 'get_collab') {
+        return {
           'collab': {
             'id': 'c1',
             'name': 'Launch',
@@ -243,9 +202,9 @@ void main() {
             ],
             'cards': [],
           },
-        });
+        };
       }
-      return _rpcOk(body['id'], {'collabs': [], 'portfolio': {}});
+      return {'collabs': [], 'portfolio': {}};
     });
 
     await tester.pumpWidget(
@@ -317,9 +276,8 @@ void main() {
   testWidgets('assignee chips are this collab only — eve is absent', (
     tester,
   ) async {
-    final daemon = _mockDaemon((request) async {
-      final body = _rpc(request);
-      return _rpcOk(body['id'], {'ok': true});
+    final daemon = rpcDaemon((method, params) async {
+      return {'ok': true};
     });
     await _pumpSheet(tester, daemon: daemon);
     expect(find.byKey(const Key('card-assignee-alice@acme')), findsOneWidget);
@@ -336,13 +294,12 @@ void main() {
     tester,
   ) async {
     Map<String, dynamic>? created;
-    final daemon = _mockDaemon((request) async {
-      final body = _rpc(request);
-      if (body['method'] == 'create_collab_card') {
-        created = body['params'] as Map<String, dynamic>?;
-        return _rpcOk(body['id'], {'thread_id': 'th-card-1'});
+    final daemon = rpcDaemon((method, params) async {
+      if (method == 'create_collab_card') {
+        created = params;
+        return {'thread_id': 'th-card-1'};
       }
-      return _rpcOk(body['id'], {'ok': true});
+      return {'ok': true};
     });
 
     await _pumpSheet(tester, daemon: daemon, collabId: 'c-launch');
@@ -366,13 +323,12 @@ void main() {
 
   testWidgets('create sends file artifact path with notes', (tester) async {
     Map<String, dynamic>? created;
-    final daemon = _mockDaemon((request) async {
-      final body = _rpc(request);
-      if (body['method'] == 'create_collab_card') {
-        created = body['params'] as Map<String, dynamic>?;
-        return _rpcOk(body['id'], {'thread_id': 'th-card-2'});
+    final daemon = rpcDaemon((method, params) async {
+      if (method == 'create_collab_card') {
+        created = params;
+        return {'thread_id': 'th-card-2'};
       }
-      return _rpcOk(body['id'], {'ok': true});
+      return {'ok': true};
     });
 
     await _pumpSheet(

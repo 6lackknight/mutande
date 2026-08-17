@@ -1,8 +1,9 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:app/screens/collab_screen.dart';
 import 'package:app/services/daemon_client.dart';
+import 'package:app/services/daemon_errors.dart';
+import 'fake_daemon_client.dart';
 import 'package:app/theme/mutande_macos_theme.dart';
 import 'package:app/widgets/collab/collab_activity_calendar.dart';
 import 'package:app/widgets/collab/collab_dash_card.dart';
@@ -14,8 +15,6 @@ import 'package:app/widgets/home_chrome_pills.dart';
 import 'package:app/widgets/thread_skeletons.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:http/http.dart' as http;
-import 'package:http/testing.dart';
 
 List<CollabSummary> _collabs() {
   return [
@@ -430,15 +429,9 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     final gate = Completer<void>();
-    final daemon = DaemonClient(
-      httpClient: MockClient((request) async {
-        final body = jsonDecode(request.body) as Map<String, dynamic>;
+    final daemon = rpcDaemon((method, params) async {
         await gate.future;
-        return http.Response(
-          jsonEncode({
-            'jsonrpc': '2.0',
-            'id': body['id'],
-            'result': {
+        return {
               'collabs': [
                 {
                   'id': 'c1',
@@ -457,15 +450,8 @@ void main() {
               },
               'threads': <Object?>[],
               'contacts': <Object?>[],
-            },
-          }),
-          200,
-          headers: {'content-type': 'application/json'},
-        );
-      }),
-      httpToken: 'test-token',
-      requestTimeout: const Duration(seconds: 2),
-    );
+            };
+      });
     await tester.pumpWidget(
       MaterialApp(
         theme: mutandeMaterialTheme(),
@@ -505,14 +491,8 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    final daemon = DaemonClient(
-      httpClient: MockClient((request) async {
-        final body = jsonDecode(request.body) as Map<String, dynamic>;
-        return http.Response(
-          jsonEncode({
-            'jsonrpc': '2.0',
-            'id': body['id'],
-            'result': {
+    final daemon = rpcDaemon((method, params) async {
+        return {
               'collabs': [
                 {
                   'id': 'c-b',
@@ -537,15 +517,8 @@ void main() {
               },
               'threads': <Object?>[],
               'contacts': <Object?>[],
-            },
-          }),
-          200,
-          headers: {'content-type': 'application/json'},
-        );
-      }),
-      httpToken: 'test-token',
-      requestTimeout: const Duration(seconds: 2),
-    );
+            };
+      });
     await tester.pumpWidget(
       MaterialApp(
         theme: mutandeMaterialTheme(),
@@ -581,18 +554,10 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    final daemon = DaemonClient(
-      httpClient: MockClient((request) async {
-        final body = jsonDecode(request.body) as Map<String, dynamic>;
-        final method = body['method'] as String?;
+    final daemon = rpcDaemon((method, params) async {
         if (method == 'list_collabs') {
-          final params = body['params'] as Map<String, dynamic>? ?? {};
-          final archived = params['include_archived'] == true;
-          return http.Response(
-            jsonEncode({
-              'jsonrpc': '2.0',
-              'id': body['id'],
-              'result': {
+          final archived = params?['include_archived'] == true;
+          return {
                 'collabs': [
                   {
                     'id': archived ? 'c-old' : 'c1',
@@ -610,27 +575,12 @@ void main() {
                     'needs_you': 0,
                   },
                 },
-              },
-            }),
-            200,
-            headers: {'content-type': 'application/json'},
-          );
+              };
         }
-        return http.Response(
-          jsonEncode({
-            'jsonrpc': '2.0',
-            'id': body['id'],
-            'result': method == 'list_threads'
+        return method == 'list_threads'
                 ? {'threads': []}
-                : {'contacts': []},
-          }),
-          200,
-          headers: {'content-type': 'application/json'},
-        );
-      }),
-      httpToken: 'test-token',
-      requestTimeout: const Duration(seconds: 2),
-    );
+                : {'contacts': []};
+      });
     await tester.pumpWidget(
       MaterialApp(
         theme: mutandeMaterialTheme(),

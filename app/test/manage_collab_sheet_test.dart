@@ -1,48 +1,23 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:app/services/daemon_client.dart';
+import 'package:app/services/daemon_errors.dart';
+import 'fake_daemon_client.dart';
 import 'package:app/theme/mutande_macos_theme.dart';
 import 'package:app/widgets/manage_collab_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:http/http.dart' as http;
-import 'package:http/testing.dart';
-
-http.Response _rpcOk(Object? id, Object result) {
-  return http.Response(
-    jsonEncode({'jsonrpc': '2.0', 'id': id, 'result': result}),
-    200,
-    headers: {'content-type': 'application/json'},
-  );
-}
-
-DaemonClient _mockDaemon(
-  FutureOr<http.Response> Function(http.Request) handler,
-) {
-  return DaemonClient(
-    httpClient: MockClient((request) async => handler(request)),
-    httpToken: 'test-token',
-    requestTimeout: const Duration(seconds: 2),
-  );
-}
 
 DaemonClient _listOnlyDaemon() {
-  return _mockDaemon((request) async {
-    final body = _rpc(request);
-    final method = body['method'] as String?;
+  return rpcDaemon((method, params) async {
     if (method == 'list_contacts' || method == 'list_external_contacts') {
-      return _rpcOk(body['id'], {'contacts': []});
+      return {'contacts': []};
     }
     if (method == 'list_agents') {
-      return _rpcOk(body['id'], {'agents': []});
+      return {'agents': []};
     }
-    return _rpcOk(body['id'], {'ok': true});
+    return {'ok': true};
   });
-}
-
-Map<String, dynamic> _rpc(http.Request request) {
-  return jsonDecode(request.body) as Map<String, dynamic>;
 }
 
 Map<String, dynamic> _collabJson({
@@ -138,36 +113,34 @@ void main() {
       {'user_id': 'u-alice', 'handle': 'alice@acme'},
       {'user_id': 'u-bob', 'handle': 'bob@acme'},
     ];
-    final daemon = _mockDaemon((request) async {
-      final body = _rpc(request);
-      final method = body['method'] as String?;
+    final daemon = rpcDaemon((method, params) async {
       calls.add(method ?? '');
       if (method == 'list_contacts') {
-        return _rpcOk(body['id'], {
+        return {
           'contacts': [
             {'handle': 'bob@acme', 'display_name': 'Bob', 'kind': 'org'},
             {'handle': 'cara@acme', 'display_name': 'Cara', 'kind': 'org'},
           ],
-        });
+        };
       }
       if (method == 'list_external_contacts') {
-        return _rpcOk(body['id'], {'contacts': []});
+        return {'contacts': []};
       }
       if (method == 'list_agents') {
-        return _rpcOk(body['id'], {'agents': []});
+        return {'agents': []};
       }
       if (method == 'add_collab_steerer') {
         steerers = [
           ...steerers,
           {'user_id': 'u-cara', 'handle': 'cara@acme'},
         ];
-        return _rpcOk(body['id'], {'collab': _collabJson(steerers: steerers)});
+        return {'collab': _collabJson(steerers: steerers)};
       }
       if (method == 'remove_collab_steerer') {
         steerers = steerers.where((s) => s['user_id'] != 'u-bob').toList();
-        return _rpcOk(body['id'], {'collab': _collabJson(steerers: steerers)});
+        return {'collab': _collabJson(steerers: steerers)};
       }
-      return _rpcOk(body['id'], {'ok': true});
+      return {'ok': true};
     });
 
     await _pumpSheet(tester, daemon: daemon);
@@ -209,18 +182,16 @@ void main() {
   testWidgets('picking an external on an E2E board shows hub-mail copy', (
     tester,
   ) async {
-    final daemon = _mockDaemon((request) async {
-      final body = _rpc(request);
-      final method = body['method'] as String?;
+    final daemon = rpcDaemon((method, params) async {
       if (method == 'list_contacts') {
-        return _rpcOk(body['id'], {
+        return {
           'contacts': [
             {'handle': 'bob@acme', 'kind': 'org'},
           ],
-        });
+        };
       }
       if (method == 'list_external_contacts') {
-        return _rpcOk(body['id'], {
+        return {
           'contacts': [
             {
               'handle': 'orinea@tbhco',
@@ -228,12 +199,12 @@ void main() {
               'kind': 'external',
             },
           ],
-        });
+        };
       }
       if (method == 'list_agents') {
-        return _rpcOk(body['id'], {'agents': []});
+        return {'agents': []};
       }
-      return _rpcOk(body['id'], {'ok': true});
+      return {'ok': true};
     });
 
     await _pumpSheet(tester, daemon: daemon);
@@ -254,20 +225,18 @@ void main() {
     tester,
   ) async {
     final calls = <String>[];
-    final daemon = _mockDaemon((request) async {
-      final body = _rpc(request);
-      final method = body['method'] as String?;
+    final daemon = rpcDaemon((method, params) async {
       calls.add(method ?? '');
       if (method == 'list_contacts' || method == 'list_external_contacts') {
-        return _rpcOk(body['id'], {'contacts': []});
+        return {'contacts': []};
       }
       if (method == 'list_agents') {
-        return _rpcOk(body['id'], {'agents': []});
+        return {'agents': []};
       }
       if (method == 'archive_collab') {
-        return _rpcOk(body['id'], {'collab': _collabJson(status: 'archived')});
+        return {'collab': _collabJson(status: 'archived')};
       }
-      return _rpcOk(body['id'], {'ok': true});
+      return {'ok': true};
     });
 
     await _pumpSheet(tester, daemon: daemon);
@@ -304,18 +273,16 @@ void main() {
 
   testWidgets('adds external person with normalized handle', (tester) async {
     String? addedHandle;
-    final daemon = _mockDaemon((request) async {
-      final body = _rpc(request);
-      final method = body['method'] as String?;
+    final daemon = rpcDaemon((method, params) async {
       if (method == 'list_contacts') {
-        return _rpcOk(body['id'], {
+        return {
           'contacts': [
             {'handle': 'alice@acme', 'kind': 'org'},
           ],
-        });
+        };
       }
       if (method == 'list_external_contacts') {
-        return _rpcOk(body['id'], {
+        return {
           'contacts': [
             {
               'handle': 'Orinea@tbhco',
@@ -323,23 +290,23 @@ void main() {
               'kind': 'external',
             },
           ],
-        });
+        };
       }
       if (method == 'list_agents') {
-        return _rpcOk(body['id'], {'agents': []});
+        return {'agents': []};
       }
       if (method == 'add_collab_steerer') {
-        addedHandle = (body['params'] as Map?)?['handle'] as String?;
-        return _rpcOk(body['id'], {
+        addedHandle = params?['handle'] as String?;
+        return {
           'collab': _collabJson(
             steerers: [
               {'user_id': 'u-alice', 'handle': 'alice@acme'},
               {'user_id': 'u-orinea', 'handle': 'orinea@tbhco'},
             ],
           ),
-        });
+        };
       }
-      return _rpcOk(body['id'], {'ok': true});
+      return {'ok': true};
     });
 
     await _pumpSheet(tester, daemon: daemon);

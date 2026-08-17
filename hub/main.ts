@@ -16,6 +16,7 @@ import { createOrgRoutes } from "./routes/orgs.ts";
 import { createRegistryRoutes } from "./routes/registry.ts";
 import { createThreadRoutes } from "./routes/threads.ts";
 import { createCollabRoutes } from "./routes/collabs.ts";
+import { createPassthroughRoutes } from "./routes/rpc_passthrough.g.ts";
 import { assertR2ConfiguredForDeploy } from "./store/r2.ts";
 import {
   initHubSentry,
@@ -37,6 +38,9 @@ export async function createApp(
   app.onError((err) => handleHubError(err));
 
   app.route("/", healthRoutes);
+  // Catalog passthroughs first so static suffixes (e.g. downgrade-proposals/pending)
+  // are not captured by /:id on the nested routers.
+  app.route("/", createPassthroughRoutes(store));
   app.route("/v1/auth", createAuthRoutes(store));
   app.route("/v1/me", createMeRoutes(store));
   app.route("/v1/orgs", createOrgRoutes(store));

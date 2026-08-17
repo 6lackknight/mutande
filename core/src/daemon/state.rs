@@ -989,30 +989,6 @@ impl DaemonState {
         hub.list_agents_for_handle(handle).await
     }
 
-    pub async fn set_default_agent(&self, agent_id: &str) -> Result<Agent> {
-        let hub = self.hub_client().context("hub not configured")?;
-        hub.set_default_agent(agent_id).await
-    }
-
-    pub async fn rename_agent(&self, agent_id: &str, slug: &str) -> Result<Agent> {
-        let hub = self.hub_client().context("hub not configured")?;
-        hub.rename_agent(agent_id, slug).await
-    }
-
-    pub async fn get_router(&self) -> Result<crate::hub_client::RouterConfig> {
-        let hub = self.hub_client().context("hub not configured")?;
-        hub.get_router().await
-    }
-
-    pub async fn set_router(
-        &self,
-        default_agent_id: Option<&str>,
-        rules: Option<Vec<crate::hub_client::RoutingRule>>,
-    ) -> Result<crate::hub_client::RouterConfig> {
-        let hub = self.hub_client().context("hub not configured")?;
-        hub.set_router(default_agent_id, rules).await
-    }
-
     pub async fn get_transport_defaults(&self) -> Result<crate::hub_client::AgentTransportPrefs> {
         let hub = self.hub_client().context("hub not configured")?;
         hub.get_transport_defaults().await
@@ -1255,108 +1231,6 @@ impl DaemonState {
         hub.list_external_contacts().await
     }
 
-    /// Public enterprise listing + warn banner for Flutter (§7.2).
-    pub async fn get_registry_listing(
-        &self,
-        id_or_address: &str,
-    ) -> Result<crate::hub_client::RegistryListingPublic> {
-        let hub = self
-            .hub_client()
-            .context("not signed in — call auth_login first")?;
-        hub.get_registry_listing(id_or_address).await
-    }
-
-    pub async fn issue_pairing_pin(&self) -> Result<crate::hub_client::PairingPin> {
-        let hub = self
-            .hub_client()
-            .context("not signed in — call auth_login first")?;
-        hub.issue_pairing_pin().await
-    }
-
-    pub async fn get_pairing_pin(&self) -> Result<Option<crate::hub_client::PairingPin>> {
-        let hub = self
-            .hub_client()
-            .context("not signed in — call auth_login first")?;
-        hub.get_pairing_pin().await
-    }
-
-    pub async fn rotate_pairing_pin(&self) -> Result<crate::hub_client::PairingPin> {
-        let hub = self
-            .hub_client()
-            .context("not signed in — call auth_login first")?;
-        hub.rotate_pairing_pin().await
-    }
-
-    pub async fn submit_pair_request(
-        &self,
-        handle: &str,
-        pin: &str,
-        intro: Option<&str>,
-    ) -> Result<crate::hub_client::PairRequest> {
-        let hub = self
-            .hub_client()
-            .context("not signed in — call auth_login first")?;
-        hub.submit_pair_request(handle, pin, intro).await
-    }
-
-    pub async fn list_pending_pair_requests(
-        &self,
-    ) -> Result<crate::hub_client::PendingPairRequests> {
-        let hub = self
-            .hub_client()
-            .context("not signed in — call auth_login first")?;
-        hub.list_pending_pair_requests().await
-    }
-
-    pub async fn approve_pair_request(
-        &self,
-        request_id: &str,
-    ) -> Result<crate::hub_client::ApprovePairResponse> {
-        let hub = self
-            .hub_client()
-            .context("not signed in — call auth_login first")?;
-        hub.approve_pair_request(request_id).await
-    }
-
-    pub async fn deny_pair_request(&self, request_id: &str) -> Result<()> {
-        let hub = self
-            .hub_client()
-            .context("not signed in — call auth_login first")?;
-        hub.deny_pair_request(request_id).await
-    }
-
-    pub async fn unpair_external_contact(
-        &self,
-        link_id: &str,
-    ) -> Result<crate::hub_client::UnpairResponse> {
-        let hub = self
-            .hub_client()
-            .context("not signed in — call auth_login first")?;
-        hub.unpair_external_contact(link_id).await
-    }
-
-    pub async fn propose_thread_downgrade(
-        &self,
-        thread_id: &str,
-        agent_slug: &str,
-        from_agent: Option<&str>,
-    ) -> Result<crate::hub_client::ProposeDowngradeResponse> {
-        let hub = self
-            .hub_client()
-            .context("not signed in — call auth_login first")?;
-        hub.propose_thread_downgrade(thread_id, agent_slug, from_agent)
-            .await
-    }
-
-    pub async fn list_pending_thread_downgrades(
-        &self,
-    ) -> Result<crate::hub_client::PendingDowngradeProposals> {
-        let hub = self
-            .hub_client()
-            .context("not signed in — call auth_login first")?;
-        hub.list_pending_thread_downgrades().await
-    }
-
     pub async fn approve_thread_downgrade(
         &self,
         thread_id: &str,
@@ -1368,17 +1242,6 @@ impl DaemonState {
         let result = hub.approve_thread_downgrade(thread_id, proposal_id).await?;
         self.notify_inbox_changed();
         Ok(result)
-    }
-
-    pub async fn deny_thread_downgrade(
-        &self,
-        thread_id: &str,
-        proposal_id: &str,
-    ) -> Result<crate::hub_client::ThreadDowngradeProposal> {
-        let hub = self
-            .hub_client()
-            .context("not signed in — call auth_login first")?;
-        hub.deny_thread_downgrade(thread_id, proposal_id).await
     }
 
     pub async fn submit_feedback(

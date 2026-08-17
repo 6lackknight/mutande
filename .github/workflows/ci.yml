@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  rpc-catalog:
+    name: RPC catalog drift + freshness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Catalog drift tests (dispatch, Dart calls, generated freshness)
+        working-directory: proto
+        run: deno task test
+
+  hub:
+    name: Hub tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Hub suite (includes catalog route golden)
+        working-directory: hub
+        run: deno task test

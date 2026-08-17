@@ -1,10 +1,7 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:http/http.dart' as http;
-import 'package:http/testing.dart';
 
 import 'package:app/app.dart';
 import 'package:app/config/app_config.dart';
@@ -12,58 +9,43 @@ import 'package:app/screens/agents_screen.dart';
 import 'package:app/screens/collab_screen.dart';
 import 'package:app/screens/first_run_ping_wizard.dart';
 import 'package:app/services/daemon_client.dart';
+import 'package:app/services/daemon_errors.dart';
 import 'package:app/services/first_run_store.dart';
 import 'package:app/services/host_link_store.dart';
+import 'fake_daemon_client.dart';
 
-DaemonClient _mockDaemon(Future<http.Response> Function(http.Request) handler) {
-  return DaemonClient(
-    httpClient: MockClient((request) async {
-      final body = jsonDecode(request.body) as Map<String, dynamic>;
-      final method = body['method'] as String?;
-      if (method == 'install_skill') {
-        final params = body['params'] as Map<String, dynamic>? ?? {};
-        final host = params['host'] as String? ?? 'cursor';
-        return _rpcOk(body['id'], {
-          'host': host,
-          'ok': true,
-          'mode': 'auto',
-          'path': '/tmp/.cursor/skills/mutande/SKILL.md',
-          'hint': 'Skill ready',
-        });
-      }
-      if (method == 'list_threads') {
-        // Inbox watch may call this; default empty unless handler overrides.
-        final override = await handler(request);
-        final overrideBody = jsonDecode(override.body) as Map<String, dynamic>;
-        if (overrideBody['result'] is Map &&
-            (overrideBody['result'] as Map).containsKey('threads')) {
-          return override;
-        }
-        return _rpcOk(body['id'], {'threads': []});
-      }
-      if (method == 'list_collabs') {
-        final override = await handler(request);
-        final overrideBody = jsonDecode(override.body) as Map<String, dynamic>;
-        if (overrideBody['result'] is Map &&
-            (overrideBody['result'] as Map).containsKey('collabs')) {
-          return override;
-        }
-        return _rpcOk(body['id'], {'collabs': []});
-      }
-      if (method == 'list_contacts' || method == 'list_external_contacts') {
-        final override = await handler(request);
-        final overrideBody = jsonDecode(override.body) as Map<String, dynamic>;
-        if (overrideBody['result'] is Map &&
-            (overrideBody['result'] as Map).containsKey('contacts')) {
-          return override;
-        }
-        return _rpcOk(body['id'], {'contacts': []});
-      }
-      return handler(request);
-    }),
-    httpToken: 'test-token',
-    requestTimeout: const Duration(milliseconds: 200),
-  );
+DaemonClient _appDaemon(
+  Future<dynamic> Function(String method, Map<String, dynamic>? params) handler,
+) {
+  return rpcDaemon((method, params) async {
+    if (method == 'install_skill') {
+      final host = params?['host'] as String? ?? 'cursor';
+      return {
+        'host': host,
+        'ok': true,
+        'mode': 'auto',
+        'path': '/tmp/.cursor/skills/mutande/SKILL.md',
+        'hint': 'Skill ready',
+      };
+    }
+    final override = await handler(method, params);
+    if (override is Map &&
+        method == 'list_threads' &&
+        !override.containsKey('threads')) {
+      return {'threads': []};
+    }
+    if (override is Map &&
+        method == 'list_collabs' &&
+        !override.containsKey('collabs')) {
+      return {'collabs': []};
+    }
+    if (override is Map &&
+        (method == 'list_contacts' || method == 'list_external_contacts') &&
+        !override.containsKey('contacts')) {
+      return {'contacts': []};
+    }
+    return override;
+  }, timeout: const Duration(milliseconds: 200));
 }
 
 Future<void> _finishConnectHostFlow(WidgetTester tester) async {
@@ -97,17 +79,6 @@ Future<void> _finishConnectHostFlow(WidgetTester tester) async {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
   }
-}
-
-http.Response _rpcOk(Object? id, Map<String, dynamic> result) {
-  final body = utf8.encode(
-    jsonEncode({'jsonrpc': '2.0', 'id': id, 'result': result}),
-  );
-  return http.Response.bytes(
-    body,
-    200,
-    headers: {'Content-Type': 'application/json; charset=utf-8'},
-  );
 }
 
 Future<void> _tapGraphAgent(WidgetTester tester, String slug) async {
@@ -144,11 +115,9 @@ Future<void> _openNetworkPeople(WidgetTester tester) async {
 
 void main() {
   testWidgets('home shell shows threads tab', (WidgetTester tester) async {
-    final daemon = _mockDaemon((request) async {
-      final body = jsonDecode(request.body) as Map<String, dynamic>;
-      final method = body['method'] as String?;
+    final daemon = _appDaemon((method, params) async {
       if (method == 'list_threads') {
-        return _rpcOk(body['id'], {
+        return {
           'threads': [
             {
               'id': 't1',
@@ -160,13 +129,13 @@ void main() {
               'reply_count': 0,
             },
           ],
-        });
+        };
       }
-      return _rpcOk(body['id'], {
+      return {
         'ok': true,
         'service': 'mutande-core',
         'version': '0.0.0',
-      });
+      };
     });
 
     await tester.pumpWidget(
@@ -202,31 +171,29 @@ void main() {
   testWidgets('mail timeout blocks home with starting screen', (
     WidgetTester tester,
   ) async {
-    final daemon = _mockDaemon((request) async {
-      final body = jsonDecode(request.body) as Map<String, dynamic>;
-      final method = body['method'] as String?;
+    final daemon = _appDaemon((method, params) async {
       if (method == 'list_threads') {
         throw TimeoutException('Future not completed');
       }
       if (method == 'get_status') {
-        return _rpcOk(body['id'], {
+        return {
           'configured': true,
           'hub_url': 'http://localhost:8000',
           'handle': 'alice@acme',
-        });
+        };
       }
       if (method == 'health') {
-        return _rpcOk(body['id'], {
+        return {
           'ok': true,
           'service': 'mutande-core',
           'version': '0.0.0',
-        });
+        };
       }
-      return _rpcOk(body['id'], {
+      return {
         'ok': true,
         'service': 'mutande-core',
         'version': '0.0.0',
-      });
+      };
     });
 
     await tester.pumpWidget(
@@ -256,25 +223,23 @@ void main() {
   });
 
   testWidgets('settings has Check daemon', (WidgetTester tester) async {
-    final daemon = _mockDaemon((request) async {
-      final body = jsonDecode(request.body) as Map<String, dynamic>;
-      final method = body['method'] as String?;
+    final daemon = _appDaemon((method, params) async {
       if (method == 'list_threads') {
-        return _rpcOk(body['id'], {'threads': []});
+        return {'threads': []};
       }
       if (method == 'get_safety_number') {
-        return _rpcOk(body['id'], {
+        return {
           'handle': 'me',
           'fingerprint':
               '11111 22222 33333 44444 55555 66666 77777 88888 99999 00000',
           'uri': 'mutande:safety:me:11111 22222',
-        });
+        };
       }
-      return _rpcOk(body['id'], {
+      return {
         'ok': true,
         'service': 'mutande-core',
         'version': '0.0.0',
-      });
+      };
     });
 
     await tester.pumpWidget(
@@ -313,35 +278,32 @@ void main() {
   testWidgets('connect AI host via picker shows Linked status', (
     WidgetTester tester,
   ) async {
-    final daemon = _mockDaemon((request) async {
-      final body = jsonDecode(request.body) as Map<String, dynamic>;
-      final method = body['method'] as String?;
+    final daemon = _appDaemon((method, params) async {
       if (method == 'list_threads') {
-        return _rpcOk(body['id'], {'threads': []});
+        return {'threads': []};
       }
       if (method == 'get_safety_number') {
-        return _rpcOk(body['id'], {
+        return {
           'handle': 'me',
           'fingerprint': '11111 22222 33333 44444 55555 66666',
           'uri': 'mutande:safety:me:11111 22222',
-        });
+        };
       }
       if (method == 'connect_host') {
-        final params = body['params'] as Map<String, dynamic>? ?? {};
-        final host = params['host'] as String? ?? 'cursor';
-        return _rpcOk(body['id'], {
+        final host = params?['host'] as String? ?? 'cursor';
+        return {
           'command': '/Users/dev/bin/mutande-core',
           'args': ['mcp'],
           'hosts': [
             {'host': host, 'path': '/Users/dev/.cursor/mcp.json', 'ok': true},
           ],
-        });
+        };
       }
-      return _rpcOk(body['id'], {
+      return {
         'ok': true,
         'service': 'mutande-core',
         'version': '0.0.0',
-      });
+      };
     });
 
     await tester.pumpWidget(
@@ -381,36 +343,33 @@ void main() {
 
   testWidgets('agents Add opens idle host picker', (WidgetTester tester) async {
     String? connectedHost;
-    final daemon = _mockDaemon((request) async {
-      final body = jsonDecode(request.body) as Map<String, dynamic>;
-      final method = body['method'] as String?;
+    final daemon = _appDaemon((method, params) async {
       if (method == 'list_threads') {
-        return _rpcOk(body['id'], {'threads': []});
+        return {'threads': []};
       }
       if (method == 'list_contacts') {
-        return _rpcOk(body['id'], {'contacts': []});
+        return {'contacts': []};
       }
       if (method == 'list_external_contacts') {
-        return _rpcOk(body['id'], {'contacts': []});
+        return {'contacts': []};
       }
       if (method == 'list_agents') {
         if (connectedHost == null) {
-          return _rpcOk(body['id'], {
+          return {
             'agents': <Map<String, dynamic>>[],
             'default_agent_id': null,
-          });
+          };
         }
-        return _rpcOk(body['id'], {
+        return {
           'agents': [
             {'id': 'a1', 'slug': connectedHost},
           ],
           'default_agent_id': 'a1',
-        });
+        };
       }
       if (method == 'connect_host') {
-        final params = body['params'] as Map<String, dynamic>? ?? {};
-        connectedHost = params['host'] as String? ?? 'cursor';
-        return _rpcOk(body['id'], {
+        connectedHost = params?['host'] as String? ?? 'cursor';
+        return {
           'command': '/Users/dev/bin/mutande-core',
           'args': ['mcp'],
           'hosts': [
@@ -420,13 +379,13 @@ void main() {
               'ok': true,
             },
           ],
-        });
+        };
       }
-      return _rpcOk(body['id'], {
+      return {
         'ok': true,
         'service': 'mutande-core',
         'version': '0.0.0',
-      });
+      };
     });
 
     await tester.pumpWidget(
@@ -468,30 +427,28 @@ void main() {
   });
 
   testWidgets('settings shows verify UI', (WidgetTester tester) async {
-    final daemon = _mockDaemon((request) async {
-      final body = jsonDecode(request.body) as Map<String, dynamic>;
-      final method = body['method'] as String?;
+    final daemon = _appDaemon((method, params) async {
       if (method == 'list_threads') {
-        return _rpcOk(body['id'], {'threads': []});
+        return {'threads': []};
       }
       if (method == 'get_safety_number') {
-        return _rpcOk(body['id'], {
+        return {
           'handle': 'me',
           'fingerprint':
               '11111 22222 33333 44444 55555 66666 77777 88888 99999 00000 12345 67890',
           'uri': 'mutande:safety:me:11111 22222',
           'pubkey':
               '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
-        });
+        };
       }
       if (method == 'register_device') {
-        return _rpcOk(body['id'], {
+        return {
           'ok': true,
           'pubkey':
               '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
-        });
+        };
       }
-      return _rpcOk(body['id'], {'ok': true});
+      return {'ok': true};
     });
 
     await tester.pumpWidget(
@@ -545,14 +502,13 @@ void main() {
   testWidgets('onboarding choose step when signed in', (
     WidgetTester tester,
   ) async {
-    final daemon = _mockDaemon((request) async {
-      final body = jsonDecode(request.body) as Map<String, dynamic>;
-      return _rpcOk(body['id'], {
+    final daemon = _appDaemon((method, params) async {
+      return {
         'configured': false,
         'signed_in': true,
         'needs_onboarding': true,
         'email': 'a@x.com',
-      });
+      };
     });
 
     await tester.pumpWidget(
@@ -578,16 +534,15 @@ void main() {
   testWidgets('web-joined user refreshes past create/join', (
     WidgetTester tester,
   ) async {
-    final daemon = _mockDaemon((request) async {
-      final body = jsonDecode(request.body) as Map<String, dynamic>;
-      return _rpcOk(body['id'], {
+    final daemon = _appDaemon((method, params) async {
+      return {
         'configured': true,
         'signed_in': true,
         'needs_onboarding': false,
         'handle': 'alice@acme',
         'org_id': 'org-1',
         'email': 'a@x.com',
-      });
+      };
     });
 
     await tester.pumpWidget(
@@ -650,7 +605,7 @@ void main() {
   testWidgets('daemon transport failure shows error not Join', (
     WidgetTester tester,
   ) async {
-    final daemon = _mockDaemon((request) async {
+    final daemon = _appDaemon((method, params) async {
       throw Exception('connection refused');
     });
 
@@ -674,7 +629,7 @@ void main() {
   testWidgets('daemon error shows restart courier when handler set', (
     WidgetTester tester,
   ) async {
-    final daemon = _mockDaemon((request) async {
+    final daemon = _appDaemon((method, params) async {
       throw Exception('connection refused');
     });
 
@@ -695,15 +650,13 @@ void main() {
   testWidgets('slow get_status with healthy daemon is not unreachable', (
     WidgetTester tester,
   ) async {
-    final daemon = _mockDaemon((request) async {
-      final body = jsonDecode(request.body) as Map<String, dynamic>;
-      final method = body['method'] as String?;
+    final daemon = _appDaemon((method, params) async {
       if (method == 'health') {
-        return _rpcOk(body['id'], {
+        return {
           'ok': true,
           'service': 'mutande-core',
           'version': '0.0.0',
-        });
+        };
       }
       throw Exception(
         'TimeoutException after 0:00:03.000000: Future not completed',
@@ -731,15 +684,13 @@ void main() {
   testWidgets('hub 401 shows sign in not courier starting', (
     WidgetTester tester,
   ) async {
-    final daemon = _mockDaemon((request) async {
-      final body = jsonDecode(request.body) as Map<String, dynamic>;
-      final method = body['method'] as String?;
+    final daemon = _appDaemon((method, params) async {
       if (method == 'health') {
-        return _rpcOk(body['id'], {
+        return {
           'ok': true,
           'service': 'mutande-core',
           'version': '0.0.0',
-        });
+        };
       }
       throw Exception('GET /v1/me for status: hub error 401 Unauthorized');
     });
@@ -767,39 +718,37 @@ void main() {
     WidgetTester tester,
   ) async {
     var signedIn = false;
-    final daemon = _mockDaemon((request) async {
-      final body = jsonDecode(request.body) as Map<String, dynamic>;
-      final method = body['method'] as String?;
+    final daemon = _appDaemon((method, params) async {
       if (method == 'health') {
-        return _rpcOk(body['id'], {
+        return {
           'ok': true,
           'service': 'mutande-core',
           'version': '0.0.0',
-        });
+        };
       }
       if (method == 'auth_login') {
         signedIn = true;
-        return _rpcOk(body['id'], {
+        return {
           'configured': true,
           'signed_in': true,
           'needs_onboarding': false,
           'handle': 'alice@acme',
           'hub_url': 'http://localhost:8000',
-        });
+        };
       }
       if (!signedIn) {
         throw Exception('GET /v1/me for status: hub error 401 Unauthorized');
       }
       if (method == 'list_threads') {
-        return _rpcOk(body['id'], {'threads': []});
+        return {'threads': []};
       }
-      return _rpcOk(body['id'], {
+      return {
         'configured': true,
         'signed_in': true,
         'needs_onboarding': false,
         'handle': 'alice@acme',
         'hub_url': 'http://localhost:8000',
-      });
+      };
     });
 
     await tester.pumpWidget(
@@ -832,15 +781,13 @@ void main() {
   testWidgets('error screen Sign in failure shows banner and stays', (
     WidgetTester tester,
   ) async {
-    final daemon = _mockDaemon((request) async {
-      final body = jsonDecode(request.body) as Map<String, dynamic>;
-      final method = body['method'] as String?;
+    final daemon = _appDaemon((method, params) async {
       if (method == 'health') {
-        return _rpcOk(body['id'], {
+        return {
           'ok': true,
           'service': 'mutande-core',
           'version': '0.0.0',
-        });
+        };
       }
       if (method == 'auth_login') {
         throw Exception('hub error 401: expired');
@@ -1087,41 +1034,38 @@ void main() {
   testWidgets('agent inspector harden paths', (WidgetTester tester) async {
     String claudeSlug = 'claude';
     String? renamedTo;
-    final daemon = _mockDaemon((request) async {
-      final body = jsonDecode(request.body) as Map<String, dynamic>;
-      final method = body['method'] as String?;
+    final daemon = _appDaemon((method, params) async {
       if (method == 'list_threads') {
-        return _rpcOk(body['id'], {'threads': []});
+        return {'threads': []};
       }
       if (method == 'list_contacts') {
-        return _rpcOk(body['id'], {'contacts': []});
+        return {'contacts': []};
       }
       if (method == 'list_external_contacts') {
-        return _rpcOk(body['id'], {'contacts': []});
+        return {'contacts': []};
       }
       if (method == 'list_agents') {
-        return _rpcOk(body['id'], {
+        return {
           'agents': [
             {'id': 'a-default', 'slug': 'cursor'},
             {'id': 'a-claude', 'slug': claudeSlug},
           ],
           'default_agent_id': 'a-default',
-        });
+        };
       }
       if (method == 'rename_agent') {
-        final params = body['params'] as Map<String, dynamic>? ?? {};
-        renamedTo = params['slug'] as String?;
+        renamedTo = params?['slug'] as String?;
         claudeSlug = renamedTo ?? claudeSlug;
-        return _rpcOk(body['id'], {
-          'id': params['agent_id'],
+        return {
+          'id': params?['agent_id'],
           'slug': claudeSlug,
-        });
+        };
       }
-      return _rpcOk(body['id'], {
+      return {
         'ok': true,
         'service': 'mutande-core',
         'version': '0.0.0',
-      });
+      };
     });
 
     await tester.pumpWidget(
@@ -1181,31 +1125,28 @@ void main() {
     WidgetTester tester,
   ) async {
     String? connectedHost;
-    final daemon = _mockDaemon((request) async {
-      final body = jsonDecode(request.body) as Map<String, dynamic>;
-      final method = body['method'] as String?;
+    final daemon = _appDaemon((method, params) async {
       if (method == 'list_threads') {
-        return _rpcOk(body['id'], {'threads': []});
+        return {'threads': []};
       }
       if (method == 'list_contacts') {
-        return _rpcOk(body['id'], {'contacts': []});
+        return {'contacts': []};
       }
       if (method == 'list_external_contacts') {
-        return _rpcOk(body['id'], {'contacts': []});
+        return {'contacts': []};
       }
       if (method == 'list_agents') {
-        return _rpcOk(body['id'], {
+        return {
           'agents': [
             {'id': 'a-default', 'slug': 'cursor'},
             {'id': 'a-claude', 'slug': 'claude'},
           ],
           'default_agent_id': 'a-default',
-        });
+        };
       }
       if (method == 'connect_host') {
-        final params = body['params'] as Map<String, dynamic>? ?? {};
-        connectedHost = params['host'] as String? ?? 'claude';
-        return _rpcOk(body['id'], {
+        connectedHost = params?['host'] as String? ?? 'claude';
+        return {
           'command': '/Users/dev/bin/mutande-core',
           'args': ['mcp'],
           'hosts': [
@@ -1216,9 +1157,9 @@ void main() {
               'ok': true,
             },
           ],
-        });
+        };
       }
-      return _rpcOk(body['id'], {'ok': true});
+      return {'ok': true};
     });
 
     final hostLinks = HostLinkStore.memory();
@@ -1262,33 +1203,30 @@ void main() {
     await hostLinks.record(
       const HostWriteResult(host: 'claude', path: '/tmp/claude.json', ok: true),
     );
-    final daemon = _mockDaemon((request) async {
-      final body = jsonDecode(request.body) as Map<String, dynamic>;
-      final method = body['method'] as String?;
+    final daemon = _appDaemon((method, params) async {
       if (method == 'list_threads') {
-        return _rpcOk(body['id'], {'threads': []});
+        return {'threads': []};
       }
       if (method == 'list_contacts') {
-        return _rpcOk(body['id'], {'contacts': []});
+        return {'contacts': []};
       }
       if (method == 'list_external_contacts') {
-        return _rpcOk(body['id'], {'contacts': []});
+        return {'contacts': []};
       }
       if (method == 'list_agents') {
-        return _rpcOk(body['id'], {
+        return {
           'agents': [
             {'id': 'a-default', 'slug': 'cursor'},
             {'id': 'a-claude', 'slug': 'claude'},
           ],
           'default_agent_id': 'a-default',
-        });
+        };
       }
       if (method == 'set_default_agent') {
-        final params = body['params'] as Map<String, dynamic>? ?? {};
-        setDefaultId = params['agent_id'] as String?;
-        return _rpcOk(body['id'], {'id': setDefaultId, 'slug': 'claude'});
+        setDefaultId = params?['agent_id'] as String?;
+        return {'id': setDefaultId, 'slug': 'claude'};
       }
-      return _rpcOk(body['id'], {'ok': true});
+      return {'ok': true};
     });
 
     await tester.pumpWidget(
@@ -1325,27 +1263,25 @@ void main() {
     await hostLinks.record(
       const HostWriteResult(host: 'cursor', path: '/tmp/cursor.json', ok: true),
     );
-    final daemon = _mockDaemon((request) async {
-      final body = jsonDecode(request.body) as Map<String, dynamic>;
-      final method = body['method'] as String?;
+    final daemon = _appDaemon((method, params) async {
       if (method == 'list_threads') {
-        return _rpcOk(body['id'], {'threads': []});
+        return {'threads': []};
       }
       if (method == 'list_contacts') {
-        return _rpcOk(body['id'], {'contacts': []});
+        return {'contacts': []};
       }
       if (method == 'list_external_contacts') {
-        return _rpcOk(body['id'], {'contacts': []});
+        return {'contacts': []};
       }
       if (method == 'list_agents') {
-        return _rpcOk(body['id'], {
+        return {
           'agents': [
             {'id': 'a1', 'slug': 'cursor'},
           ],
           'default_agent_id': 'a1',
-        });
+        };
       }
-      return _rpcOk(body['id'], {'ok': true});
+      return {'ok': true};
     });
 
     await tester.pumpWidget(
@@ -1376,24 +1312,22 @@ void main() {
   testWidgets('contacts tab loads hub list and solo invite', (
     WidgetTester tester,
   ) async {
-    final daemon = _mockDaemon((request) async {
-      final body = jsonDecode(request.body) as Map<String, dynamic>;
-      final method = body['method'] as String?;
+    final daemon = _appDaemon((method, params) async {
       if (method == 'list_threads') {
-        return _rpcOk(body['id'], {'threads': []});
+        return {'threads': []};
       }
       if (method == 'list_contacts') {
-        return _rpcOk(body['id'], {
+        return {
           'contacts': [
             {'handle': '@all@acme', 'pubkey': null, 'devices': []},
           ],
-        });
+        };
       }
-      return _rpcOk(body['id'], {
+      return {
         'ok': true,
         'service': 'mutande-core',
         'version': '0.0.0',
-      });
+      };
     });
 
     await tester.pumpWidget(
@@ -1427,14 +1361,12 @@ void main() {
   testWidgets('contacts tab shows teammate display name', (
     WidgetTester tester,
   ) async {
-    final daemon = _mockDaemon((request) async {
-      final body = jsonDecode(request.body) as Map<String, dynamic>;
-      final method = body['method'] as String?;
+    final daemon = _appDaemon((method, params) async {
       if (method == 'list_threads') {
-        return _rpcOk(body['id'], {'threads': []});
+        return {'threads': []};
       }
       if (method == 'list_contacts') {
-        return _rpcOk(body['id'], {
+        return {
           'contacts': [
             {'handle': '@all@acme', 'pubkey': null, 'devices': []},
             {
@@ -1450,13 +1382,13 @@ void main() {
               'devices': [],
             },
           ],
-        });
+        };
       }
-      return _rpcOk(body['id'], {
+      return {
         'ok': true,
         'service': 'mutande-core',
         'version': '0.0.0',
-      });
+      };
     });
 
     await tester.pumpWidget(
@@ -1485,26 +1417,24 @@ void main() {
   testWidgets('first-run connect gate shows when incomplete', (
     WidgetTester tester,
   ) async {
-    final daemon = _mockDaemon((request) async {
-      final body = jsonDecode(request.body) as Map<String, dynamic>;
-      final method = body['method'] as String?;
+    final daemon = _appDaemon((method, params) async {
       if (method == 'list_contacts') {
-        return _rpcOk(body['id'], {
+        return {
           'contacts': [
             {'handle': 'alice@acme', 'kind': 'member'},
           ],
-        });
+        };
       }
       if (method == 'detect_ai_hosts') {
-        return _rpcOk(body['id'], {
+        return {
           'hosts': [
             {'host': 'cursor', 'installed': true, 'config_present': false},
             {'host': 'claude', 'installed': false, 'config_present': false},
             {'host': 'chatgpt', 'installed': false, 'config_present': false},
           ],
-        });
+        };
       }
-      return _rpcOk(body['id'], {'ok': true});
+      return {'ok': true};
     });
 
     await tester.pumpWidget(
@@ -1540,13 +1470,11 @@ void main() {
   testWidgets('first-run ping wizard shows after connect complete', (
     WidgetTester tester,
   ) async {
-    final daemon = _mockDaemon((request) async {
-      final body = jsonDecode(request.body) as Map<String, dynamic>;
-      final method = body['method'] as String?;
+    final daemon = _appDaemon((method, params) async {
       if (method == 'list_threads') {
-        return _rpcOk(body['id'], {'threads': []});
+        return {'threads': []};
       }
-      return _rpcOk(body['id'], {'ok': true});
+      return {'ok': true};
     });
 
     await tester.pumpWidget(
@@ -1579,13 +1507,11 @@ void main() {
   testWidgets('ping wizard skip marks complete and shows home', (
     WidgetTester tester,
   ) async {
-    final daemon = _mockDaemon((request) async {
-      final body = jsonDecode(request.body) as Map<String, dynamic>;
-      final method = body['method'] as String?;
+    final daemon = _appDaemon((method, params) async {
       if (method == 'list_threads') {
-        return _rpcOk(body['id'], {'threads': []});
+        return {'threads': []};
       }
-      return _rpcOk(body['id'], {'ok': true});
+      return {'ok': true};
     });
 
     final firstRun = FirstRunStore.memory(
@@ -1623,12 +1549,12 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    final daemon = _mockDaemon((request) async {
-      return _rpcOk(jsonDecode(request.body)['id'], {
+    final daemon = _appDaemon((method, params) async {
+      return {
         'ok': true,
         'service': 'mutande-core',
         'version': '0.0.0',
-      });
+      };
     });
     await tester.pumpWidget(
       MutandeApp(
@@ -1661,16 +1587,15 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    final daemon = _mockDaemon((request) async {
-      final body = jsonDecode(request.body) as Map<String, dynamic>;
-      if (body['method'] == 'list_collabs') {
+    final daemon = _appDaemon((method, params) async {
+      if (method == 'list_collabs') {
         throw TimeoutException('Future not completed');
       }
-      return _rpcOk(body['id'], {
+      return {
         'ok': true,
         'service': 'mutande-core',
         'version': '0.0.0',
-      });
+      };
     });
     await tester.pumpWidget(
       MutandeApp(
@@ -1707,28 +1632,26 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    final daemon = _mockDaemon((request) async {
-      final body = jsonDecode(request.body) as Map<String, dynamic>;
-      final method = body['method'] as String?;
+    final daemon = _appDaemon((method, params) async {
       if (method == 'list_contacts') {
-        return _rpcOk(body['id'], {
+        return {
           'contacts': [
             {'handle': 'bob@acme'},
           ],
-        });
+        };
       }
       if (method == 'list_agents') {
-        return _rpcOk(body['id'], {
+        return {
           'agents': [
             {'id': 'a1', 'slug': 'cursor', 'transport': 'sidecar'},
           ],
-        });
+        };
       }
-      return _rpcOk(body['id'], {
+      return {
         'ok': true,
         'service': 'mutande-core',
         'version': '0.0.0',
-      });
+      };
     });
     await tester.pumpWidget(
       MutandeApp(
@@ -1765,17 +1688,15 @@ void main() {
   testWidgets('network people segment shows contacts', (
     WidgetTester tester,
   ) async {
-    final daemon = _mockDaemon((request) async {
-      final body = jsonDecode(request.body) as Map<String, dynamic>;
-      final method = body['method'] as String?;
+    final daemon = _appDaemon((method, params) async {
       if (method == 'list_contacts') {
-        return _rpcOk(body['id'], {
+        return {
           'contacts': [
             {'handle': '@all@acme', 'pubkey': null, 'devices': []},
           ],
-        });
+        };
       }
-      return _rpcOk(body['id'], {'ok': true});
+      return {'ok': true};
     });
     await tester.pumpWidget(
       MutandeApp(

@@ -4,6 +4,7 @@ import { handleHubError } from "../middleware/auth.ts";
 import { createAdminRoutes } from "./admin.ts";
 import { createOrgRoutes } from "./orgs.ts";
 import { createRegistryRoutes } from "./registry.ts";
+import { createPassthroughRoutes } from "./rpc_passthrough.g.ts";
 import { createStoreWithTestAuth } from "../store/store.ts";
 import { HubError } from "../store/errors.ts";
 
@@ -13,6 +14,7 @@ async function testApp() {
   const app = new Hono();
   app.onError((err) => handleHubError(err));
   app.route("/v1/orgs", createOrgRoutes(store));
+  app.route("/", createPassthroughRoutes(store));
   app.route("/v1/registry", createRegistryRoutes(store));
   app.route("/v1/admin", createAdminRoutes(store));
   return { app, store, signToken, kv };

@@ -1230,10 +1230,67 @@ impl HubClient {
             ));
         }
     }
+
+    /// Generic hub exchange for catalog passthroughs. GET/DELETE ignore `body`.
+    pub async fn exchange(
+        &self,
+        verb: &str,
+        path: &str,
+        body: Option<&serde_json::Value>,
+    ) -> Result<serde_json::Value> {
+        let empty = serde_json::json!({});
+        match verb {
+            "GET" => self.get_json(path).await,
+            "POST" => self.post_json(path, body.unwrap_or(&empty), true).await,
+            "PUT" => self.put_json(path, body.unwrap_or(&empty)).await,
+            "PATCH" => self.patch_json(path, body.unwrap_or(&empty)).await,
+            "DELETE" => self.delete_json(path).await,
+            other => anyhow::bail!("unsupported hub verb {other}"),
+        }
+    }
+
+    async fn delete_json(&self, path: &str) -> Result<serde_json::Value> {
+        let mut attempted_refresh = false;
+        loop {
+            let token = self.access_token();
+            let resp = self
+                .client
+                .delete(self.url(path))
+                .bearer_auth(&token)
+                .send()
+                .await
+                .with_context(|| format!("DELETE {path}"))?;
+            if resp.status().is_success() {
+                if resp.status() == StatusCode::NO_CONTENT {
+                    return Ok(serde_json::Value::Null);
+                }
+                let bytes = resp
+                    .bytes()
+                    .await
+                    .with_context(|| format!("read DELETE {path}"))?;
+                if bytes.is_empty() {
+                    return Ok(serde_json::Value::Null);
+                }
+                return serde_json::from_slice(&bytes)
+                    .with_context(|| format!("decode DELETE {path}"));
+            }
+            if resp.status() == StatusCode::UNAUTHORIZED
+                && !attempted_refresh
+                && self.try_refresh_after_unauthorized().await
+            {
+                attempted_refresh = true;
+                continue;
+            }
+            return Err(hub_error(
+                resp.status(),
+                resp.text().await.unwrap_or_default(),
+            ));
+        }
+    }
 }
 
 /// Percent-encode a single URL path segment (enterprise addresses contain `@`).
-fn encode_path_segment(s: &str) -> String {
+pub(crate) fn encode_path_segment(s: &str) -> String {
     let mut out = String::with_capacity(s.len() * 3);
     for b in s.bytes() {
         match b {
@@ -1306,6 +1363,12 @@ mod tests {
     fn hub_config_trims_trailing_slash() {
         let cfg = HubConfig::new("https://hub.example.com/", "tok");
         assert_eq!(cfg.hub_url, "https://hub.example.com");
+    }
+
+    #[test]
+    fn encode_path_segment_percent_encodes_at_sign() {
+        assert_eq!(encode_path_segment("assistant@openai"), "assistant%40openai");
+        assert_eq!(encode_path_segment("abc-_.~XYZ"), "abc-_.~XYZ");
     }
 
     #[test]
