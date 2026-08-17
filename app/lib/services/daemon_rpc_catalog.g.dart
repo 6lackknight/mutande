@@ -1,6 +1,5 @@
 // GENERATED FILE — do not edit. Source: proto/rpc-catalog.json (deno task generate in proto/).
-// Daemon JSON-RPC method/param metadata. Not yet imported by the app —
-// stage 4 of the RPC collapse swaps DaemonClient stubs onto it.
+// Daemon JSON-RPC method/param metadata used by FakeDaemonClient.
 
 /// kind: passthrough = mechanical hub forward; core = daemon logic; stub = removed.
 class DaemonRpcMethod {
@@ -25,7 +24,7 @@ const Map<String, DaemonRpcMethod> daemonRpcCatalog = {
   'join_org': DaemonRpcMethod(kind: 'core', aliases: ['onboard'], requiredParams: ['invite_code'], optionalParams: ['handle']),
   'register': DaemonRpcMethod(kind: 'stub'),
   'get_status': DaemonRpcMethod(kind: 'core', aliases: ['me']),
-  'list_contacts': DaemonRpcMethod(kind: 'passthrough'),
+  'list_contacts': DaemonRpcMethod(kind: 'core'),
   'list_external_contacts': DaemonRpcMethod(kind: 'passthrough'),
   'get_registry_listing': DaemonRpcMethod(kind: 'passthrough', requiredParams: ['id_or_address']),
   'issue_pairing_pin': DaemonRpcMethod(kind: 'passthrough'),

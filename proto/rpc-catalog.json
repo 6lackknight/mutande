@@ -62,16 +62,21 @@
     },
     {
       "name": "list_contacts",
-      "kind": "passthrough",
+      "kind": "core",
       "params": [],
-      "hub": { "verb": "GET", "path": "/v1/contacts", "unwrap": "contacts" },
-      "result": { "wrap": "contacts" }
+      "result": { "wrap": "contacts" },
+      "notes": "Returns [] when unsigned; used internally for recipient resolution."
     },
     {
       "name": "list_external_contacts",
       "kind": "passthrough",
       "params": [],
-      "hub": { "verb": "GET", "path": "/v1/contacts/external", "unwrap": "contacts" },
+      "hub": {
+        "verb": "GET",
+        "path": "/v1/contacts/external",
+        "unwrap": "contacts",
+        "store": "listExternalContacts"
+      },
       "result": { "wrap": "contacts" }
     },
     {
@@ -80,26 +85,46 @@
       "params": [
         { "name": "id_or_address", "type": "string", "required": true, "aliases": ["address"] }
       ],
-      "hub": { "verb": "GET", "path": "/v1/registry/listing/{id_or_address}", "auth": "public" }
+      "hub": {
+        "verb": "GET",
+        "path": "/v1/registry/listing/{id_or_address}",
+        "auth": "public",
+        "store": "enterprise.getListingPublic"
+      }
     },
     {
       "name": "issue_pairing_pin",
       "kind": "passthrough",
       "params": [],
-      "hub": { "verb": "POST", "path": "/v1/contacts/pairing/pin" }
+      "hub": {
+        "verb": "POST",
+        "path": "/v1/contacts/pairing/pin",
+        "status": 201,
+        "store": "issuePairingPin"
+      }
     },
     {
       "name": "get_pairing_pin",
       "kind": "passthrough",
       "params": [],
-      "hub": { "verb": "GET", "path": "/v1/contacts/pairing/pin", "unwrap": "pin" },
+      "hub": {
+        "verb": "GET",
+        "path": "/v1/contacts/pairing/pin",
+        "unwrap": "pin",
+        "reply_wrap": "pin",
+        "store": "getPairingPin"
+      },
       "result": { "wrap": "pin" }
     },
     {
       "name": "rotate_pairing_pin",
       "kind": "passthrough",
       "params": [],
-      "hub": { "verb": "POST", "path": "/v1/contacts/pairing/pin/rotate" }
+      "hub": {
+        "verb": "POST",
+        "path": "/v1/contacts/pairing/pin/rotate",
+        "store": "rotatePairingPin"
+      }
     },
     {
       "name": "submit_pair_request",
@@ -113,7 +138,9 @@
         "verb": "POST",
         "path": "/v1/contacts/pairing/request",
         "body": ["handle", "pin", "intro"],
-        "unwrap": "request"
+        "unwrap": "request",
+        "status": 201,
+        "store": "submitPairRequest"
       },
       "result": { "wrap": "request" }
     },
@@ -121,26 +148,42 @@
       "name": "list_pending_pair_requests",
       "kind": "passthrough",
       "params": [],
-      "hub": { "verb": "GET", "path": "/v1/contacts/pairing/pending" }
+      "hub": {
+        "verb": "GET",
+        "path": "/v1/contacts/pairing/pending",
+        "store": "listPendingPairRequests"
+      }
     },
     {
       "name": "approve_pair_request",
       "kind": "passthrough",
       "params": [{ "name": "request_id", "type": "string", "required": true }],
-      "hub": { "verb": "POST", "path": "/v1/contacts/pairing/{request_id}/approve" }
+      "hub": {
+        "verb": "POST",
+        "path": "/v1/contacts/pairing/{request_id}/approve",
+        "store": "approvePairRequest"
+      }
     },
     {
       "name": "deny_pair_request",
       "kind": "passthrough",
       "params": [{ "name": "request_id", "type": "string", "required": true }],
-      "hub": { "verb": "POST", "path": "/v1/contacts/pairing/{request_id}/deny" },
+      "hub": {
+        "verb": "POST",
+        "path": "/v1/contacts/pairing/{request_id}/deny",
+        "store": "denyPairRequest"
+      },
       "result": { "ok": true }
     },
     {
       "name": "unpair_external_contact",
       "kind": "passthrough",
       "params": [{ "name": "link_id", "type": "string", "required": true }],
-      "hub": { "verb": "DELETE", "path": "/v1/contacts/external/{link_id}" }
+      "hub": {
+        "verb": "DELETE",
+        "path": "/v1/contacts/external/{link_id}",
+        "store": "unpairExternalContact"
+      }
     },
     {
       "name": "propose_thread_downgrade",
@@ -153,14 +196,20 @@
       "hub": {
         "verb": "POST",
         "path": "/v1/threads/{thread_id}/downgrade-proposals",
-        "body": ["agent_slug", "from_agent"]
+        "body": ["agent_slug", "from_agent"],
+        "status": 201,
+        "store": "proposeThreadDowngrade"
       }
     },
     {
       "name": "list_pending_thread_downgrades",
       "kind": "passthrough",
       "params": [],
-      "hub": { "verb": "GET", "path": "/v1/threads/downgrade-proposals/pending" }
+      "hub": {
+        "verb": "GET",
+        "path": "/v1/threads/downgrade-proposals/pending",
+        "store": "listPendingThreadDowngrades"
+      }
     },
     {
       "name": "approve_thread_downgrade",
@@ -180,7 +229,9 @@
       ],
       "hub": {
         "verb": "POST",
-        "path": "/v1/threads/{thread_id}/downgrade-proposals/{proposal_id}/deny"
+        "path": "/v1/threads/{thread_id}/downgrade-proposals/{proposal_id}/deny",
+        "unwrap": "proposal",
+        "store": "denyThreadDowngrade"
       },
       "result": { "wrap": "proposal" }
     },
@@ -224,7 +275,8 @@
       "hub": {
         "verb": "GET",
         "path": "/v1/collabs",
-        "query_flags": { "archived": "include_archived" }
+        "query_flags": { "archived": "include_archived" },
+        "store": "listCollabs"
       }
     },
     {
@@ -287,7 +339,14 @@
         { "name": "collab_id", "type": "string", "required": true },
         { "name": "handle", "type": "string", "required": true }
       ],
-      "hub": { "verb": "POST", "path": "/v1/collabs/{collab_id}/steerers", "body": ["handle"] },
+      "hub": {
+        "verb": "POST",
+        "path": "/v1/collabs/{collab_id}/steerers",
+        "body": ["handle"],
+        "unwrap": "collab",
+        "reply_wrap": "collab",
+        "store": "addCollabSteerer"
+      },
       "result": { "wrap": "collab" }
     },
     {
@@ -300,7 +359,10 @@
       "hub": {
         "verb": "POST",
         "path": "/v1/collabs/{collab_id}/steerers/remove",
-        "body": ["user_id"]
+        "body": ["user_id"],
+        "unwrap": "collab",
+        "reply_wrap": "collab",
+        "store": "removeCollabSteerer"
       },
       "result": { "wrap": "collab" }
     },
@@ -311,7 +373,14 @@
         { "name": "collab_id", "type": "string", "required": true },
         { "name": "address", "type": "string", "required": true }
       ],
-      "hub": { "verb": "POST", "path": "/v1/collabs/{collab_id}/roster", "body": ["address"] },
+      "hub": {
+        "verb": "POST",
+        "path": "/v1/collabs/{collab_id}/roster",
+        "body": ["address"],
+        "unwrap": "collab",
+        "reply_wrap": "collab",
+        "store": "addCollabRoster"
+      },
       "result": { "wrap": "collab" }
     },
     {
@@ -324,7 +393,10 @@
       "hub": {
         "verb": "POST",
         "path": "/v1/collabs/{collab_id}/roster/remove",
-        "body": ["agent_id"]
+        "body": ["agent_id"],
+        "unwrap": "collab",
+        "reply_wrap": "collab",
+        "store": "removeCollabRoster"
       },
       "result": { "wrap": "collab" }
     },
@@ -332,28 +404,52 @@
       "name": "archive_collab",
       "kind": "passthrough",
       "params": [{ "name": "collab_id", "type": "string", "required": true }],
-      "hub": { "verb": "POST", "path": "/v1/collabs/{collab_id}/archive" },
+      "hub": {
+        "verb": "POST",
+        "path": "/v1/collabs/{collab_id}/archive",
+        "unwrap": "collab",
+        "reply_wrap": "collab",
+        "store": "archiveCollab"
+      },
       "result": { "wrap": "collab" }
     },
     {
       "name": "unarchive_collab",
       "kind": "passthrough",
       "params": [{ "name": "collab_id", "type": "string", "required": true }],
-      "hub": { "verb": "POST", "path": "/v1/collabs/{collab_id}/unarchive" },
+      "hub": {
+        "verb": "POST",
+        "path": "/v1/collabs/{collab_id}/unarchive",
+        "unwrap": "collab",
+        "reply_wrap": "collab",
+        "store": "unarchiveCollab"
+      },
       "result": { "wrap": "collab" }
     },
     {
       "name": "approve_collab_pending_membership",
       "kind": "passthrough",
       "params": [{ "name": "collab_id", "type": "string", "required": true }],
-      "hub": { "verb": "POST", "path": "/v1/collabs/{collab_id}/downgrade/approve" },
+      "hub": {
+        "verb": "POST",
+        "path": "/v1/collabs/{collab_id}/downgrade/approve",
+        "unwrap": "collab",
+        "reply_wrap": "collab",
+        "store": "approveCollabPendingMembership"
+      },
       "result": { "wrap": "collab" }
     },
     {
       "name": "deny_collab_pending_membership",
       "kind": "passthrough",
       "params": [{ "name": "collab_id", "type": "string", "required": true }],
-      "hub": { "verb": "POST", "path": "/v1/collabs/{collab_id}/downgrade/deny" },
+      "hub": {
+        "verb": "POST",
+        "path": "/v1/collabs/{collab_id}/downgrade/deny",
+        "unwrap": "collab",
+        "reply_wrap": "collab",
+        "store": "denyCollabPendingMembership"
+      },
       "result": { "wrap": "collab" }
     },
     {
@@ -491,7 +587,14 @@
       "name": "set_default_agent",
       "kind": "passthrough",
       "params": [{ "name": "agent_id", "type": "string", "required": true }],
-      "hub": { "verb": "PUT", "path": "/v1/agents/default", "body": ["agent_id"], "unwrap": "agent" }
+      "hub": {
+        "verb": "PUT",
+        "path": "/v1/agents/default",
+        "body": ["agent_id"],
+        "unwrap": "agent",
+        "reply_wrap": "agent",
+        "store": "setDefaultAgent"
+      }
     },
     {
       "name": "rename_agent",
@@ -500,13 +603,20 @@
         { "name": "agent_id", "type": "string", "required": true },
         { "name": "slug", "type": "string", "required": true }
       ],
-      "hub": { "verb": "PATCH", "path": "/v1/agents/{agent_id}", "body": ["slug"] }
+      "hub": {
+        "verb": "PATCH",
+        "path": "/v1/agents/{agent_id}",
+        "body": ["slug"],
+        "unwrap": "agent",
+        "reply_wrap": "agent",
+        "store": "renameAgent"
+      }
     },
     {
       "name": "get_router",
       "kind": "passthrough",
       "params": [],
-      "hub": { "verb": "GET", "path": "/v1/agents/router" }
+      "hub": { "verb": "GET", "path": "/v1/agents/router", "store": "getRouter" }
     },
     {
       "name": "set_router",
@@ -515,13 +625,22 @@
         { "name": "default_agent_id", "type": "string", "required": false },
         { "name": "rules", "type": "json[]", "required": false }
       ],
-      "hub": { "verb": "PUT", "path": "/v1/agents/router", "body": ["default_agent_id", "rules"] }
+      "hub": {
+        "verb": "PUT",
+        "path": "/v1/agents/router",
+        "body": ["default_agent_id", "rules"],
+        "store": "setRouter"
+      }
     },
     {
       "name": "get_transport_defaults",
       "kind": "passthrough",
       "params": [],
-      "hub": { "verb": "GET", "path": "/v1/agents/transport-defaults" }
+      "hub": {
+        "verb": "GET",
+        "path": "/v1/agents/transport-defaults",
+        "store": "getTransportPrefs"
+      }
     },
     {
       "name": "set_transport_default",

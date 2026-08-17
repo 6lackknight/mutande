@@ -2,12 +2,6 @@
   "comment": "GENERATED FILE — do not edit. Source: proto/rpc-catalog.json (deno task generate in proto/).",
   "routes": [
     {
-      "rpc": "list_contacts",
-      "verb": "GET",
-      "path": "/v1/contacts",
-      "auth": "bearer"
-    },
-    {
       "rpc": "list_external_contacts",
       "verb": "GET",
       "path": "/v1/contacts/external",

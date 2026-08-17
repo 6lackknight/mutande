@@ -1,50 +1,15 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:app/models/agent_transport.dart';
 import 'package:app/services/daemon_client.dart';
+import 'package:app/services/daemon_errors.dart';
+import 'fake_daemon_client.dart';
 import 'package:app/theme/mutande_macos_theme.dart';
 import 'package:app/widgets/create_collab_sheet.dart';
 import 'package:app/widgets/mutande_stagger.dart';
 import 'package:app/widgets/thread_skeletons.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:http/http.dart' as http;
-import 'package:http/testing.dart';
-
-http.Response _rpcOk(Object? id, Object result) {
-  return http.Response(
-    jsonEncode({'jsonrpc': '2.0', 'id': id, 'result': result}),
-    200,
-    headers: {'content-type': 'application/json'},
-  );
-}
-
-http.Response _rpcErr(Object? id, String message, {int code = -32000}) {
-  return http.Response(
-    jsonEncode({
-      'jsonrpc': '2.0',
-      'id': id,
-      'error': {'code': code, 'message': message},
-    }),
-    200,
-    headers: {'content-type': 'application/json'},
-  );
-}
-
-DaemonClient _mockDaemon(
-  FutureOr<http.Response> Function(http.Request) handler,
-) {
-  return DaemonClient(
-    httpClient: MockClient((request) async => handler(request)),
-    httpToken: 'test-token',
-    requestTimeout: const Duration(seconds: 2),
-  );
-}
-
-Map<String, dynamic> _rpc(http.Request request) {
-  return jsonDecode(request.body) as Map<String, dynamic>;
-}
 
 Future<void> _pumpSheet(
   WidgetTester tester, {
@@ -232,35 +197,33 @@ void main() {
   testWidgets('sheet picks people and agents as chips, not typed roster', (
     tester,
   ) async {
-    final daemon = _mockDaemon((request) async {
-      final body = _rpc(request);
-      final method = body['method'] as String?;
+    final daemon = rpcDaemon((method, params) async {
       if (method == 'list_contacts') {
-        return _rpcOk(body['id'], {
+        return {
           'contacts': [
             {'handle': '@all@acme', 'kind': 'broadcast'},
             {'handle': 'bob@acme', 'display_name': 'Bob Builder'},
           ],
-        });
+        };
       }
       if (method == 'list_agents') {
-        final handle = (body['params'] as Map?)?['handle'] as String?;
+        final handle = params?['handle'] as String?;
         if (handle == 'bob@acme') {
-          return _rpcOk(body['id'], {
+          return {
             'agents': [
               {'id': 'b1', 'slug': 'claude', 'transport': 'sidecar'},
             ],
-          });
+          };
         }
-        return _rpcOk(body['id'], {
+        return {
           'agents': [
             {'id': 'a1', 'slug': 'cursor', 'transport': 'sidecar'},
             {'id': 'a2', 'slug': 'chatgpt', 'transport': 'mcp'},
             {'id': 'a3', 'slug': 'default', 'transport': 'sidecar'},
           ],
-        });
+        };
       }
-      return _rpcOk(body['id'], {'ok': true});
+      return {'ok': true};
     });
 
     await _pumpSheet(tester, daemon: daemon);
@@ -297,22 +260,20 @@ void main() {
   });
 
   testWidgets('dual chatgpt collapses to one web chip', (tester) async {
-    final daemon = _mockDaemon((request) async {
-      final body = _rpc(request);
-      final method = body['method'] as String?;
+    final daemon = rpcDaemon((method, params) async {
       if (method == 'list_contacts') {
-        return _rpcOk(body['id'], {'contacts': []});
+        return {'contacts': []};
       }
       if (method == 'list_agents') {
-        return _rpcOk(body['id'], {
+        return {
           'agents': [
             {'id': 's1', 'slug': 'chatgpt', 'transport': 'sidecar'},
             {'id': 'w1', 'slug': 'chatgpt', 'transport': 'mcp'},
             {'id': 'c1', 'slug': 'cursor', 'transport': 'sidecar'},
           ],
-        });
+        };
       }
-      return _rpcOk(body['id'], {'ok': true});
+      return {'ok': true};
     });
 
     await _pumpSheet(tester, daemon: daemon);
@@ -331,20 +292,18 @@ void main() {
   });
 
   testWidgets('validates name and roster and keeps fields', (tester) async {
-    final daemon = _mockDaemon((request) async {
-      final body = _rpc(request);
-      final method = body['method'] as String?;
+    final daemon = rpcDaemon((method, params) async {
       if (method == 'list_contacts') {
-        return _rpcOk(body['id'], {'contacts': []});
+        return {'contacts': []};
       }
       if (method == 'list_agents') {
-        return _rpcOk(body['id'], {
+        return {
           'agents': [
             {'id': 'a1', 'slug': 'cursor', 'transport': 'sidecar'},
           ],
-        });
+        };
       }
-      return _rpcOk(body['id'], {'ok': true});
+      return {'ok': true};
     });
 
     await _pumpSheet(tester, daemon: daemon);
@@ -375,43 +334,41 @@ void main() {
     tester,
   ) async {
     Map<String, dynamic>? created;
-    final daemon = _mockDaemon((request) async {
-      final body = _rpc(request);
-      final method = body['method'] as String?;
+    final daemon = rpcDaemon((method, params) async {
       if (method == 'list_contacts') {
-        return _rpcOk(body['id'], {
+        return {
           'contacts': [
             {'handle': 'bob@acme'},
           ],
-        });
+        };
       }
       if (method == 'list_agents') {
-        final handle = (body['params'] as Map?)?['handle'] as String?;
+        final handle = params?['handle'] as String?;
         if (handle == 'bob@acme') {
-          return _rpcOk(body['id'], {
+          return {
             'agents': [
               {'id': 'b1', 'slug': 'claude', 'transport': 'sidecar'},
             ],
-          });
+          };
         }
-        return _rpcOk(body['id'], {
+        return {
           'agents': [
             {'id': 'a2', 'slug': 'chatgpt', 'transport': 'mcp'},
           ],
-        });
+        };
       }
       if (method == 'create_collab') {
-        created = body['params'] as Map<String, dynamic>?;
-        return _rpcOk(body['id'], {
+        created = params;
+        return {
           'collab': {
             'id': 'c1',
             'name': 'Board',
             'encryption_mode': 'app_envelope',
             'lists': <Map<String, dynamic>>[],
           },
-        });
+        };
       }
-      return _rpcOk(body['id'], {'ok': true});
+      return {'ok': true};
     });
 
     await _pumpSheet(tester, daemon: daemon);
@@ -441,11 +398,9 @@ void main() {
   testWidgets('approved externals sit in People with a quiet mark', (
     tester,
   ) async {
-    final daemon = _mockDaemon((request) async {
-      final body = _rpc(request);
-      final method = body['method'] as String?;
+    final daemon = rpcDaemon((method, params) async {
       if (method == 'list_contacts') {
-        return _rpcOk(body['id'], {
+        return {
           'contacts': [
             {
               'handle': 'bob@acme',
@@ -453,10 +408,10 @@ void main() {
               'kind': 'org',
             },
           ],
-        });
+        };
       }
       if (method == 'list_external_contacts') {
-        return _rpcOk(body['id'], {
+        return {
           'contacts': [
             {
               'handle': 'orinea@tbhco',
@@ -465,35 +420,27 @@ void main() {
               'external_link_id': 'link-1',
             },
           ],
-        });
+        };
       }
       if (method == 'list_agents') {
-        final handle = (body['params'] as Map?)?['handle'] as String?;
+        final handle = params?['handle'] as String?;
         if (handle == 'bob@acme') {
-          return _rpcOk(body['id'], {
+          return {
             'agents': [
               {'id': 'b1', 'slug': 'claude', 'transport': 'sidecar'},
             ],
-          });
+          };
         }
         if (handle == 'orinea@tbhco') {
-          return http.Response(
-            jsonEncode({
-              'jsonrpc': '2.0',
-              'id': body['id'],
-              'error': {'code': -32000, 'message': 'not same org'},
-            }),
-            200,
-            headers: {'content-type': 'application/json'},
-          );
+          throw DaemonException('not same org');
         }
-        return _rpcOk(body['id'], {
+        return {
           'agents': [
             {'id': 'a1', 'slug': 'cursor', 'transport': 'sidecar'},
           ],
-        });
+        };
       }
-      return _rpcOk(body['id'], {'ok': true});
+      return {'ok': true};
     });
 
     await _pumpSheet(tester, daemon: daemon);
@@ -521,14 +468,12 @@ void main() {
   testWidgets('external agents appear when list_agents allows them', (
     tester,
   ) async {
-    final daemon = _mockDaemon((request) async {
-      final body = _rpc(request);
-      final method = body['method'] as String?;
+    final daemon = rpcDaemon((method, params) async {
       if (method == 'list_contacts') {
-        return _rpcOk(body['id'], {'contacts': []});
+        return {'contacts': []};
       }
       if (method == 'list_external_contacts') {
-        return _rpcOk(body['id'], {
+        return {
           'contacts': [
             {
               'handle': 'orinea@tbhco',
@@ -536,24 +481,24 @@ void main() {
               'kind': 'external',
             },
           ],
-        });
+        };
       }
       if (method == 'list_agents') {
-        final handle = (body['params'] as Map?)?['handle'] as String?;
+        final handle = params?['handle'] as String?;
         if (handle == 'orinea@tbhco') {
-          return _rpcOk(body['id'], {
+          return {
             'agents': [
               {'id': 'e1', 'slug': 'chatgpt', 'transport': 'mcp'},
             ],
-          });
+          };
         }
-        return _rpcOk(body['id'], {
+        return {
           'agents': [
             {'id': 'a1', 'slug': 'cursor', 'transport': 'sidecar'},
           ],
-        });
+        };
       }
-      return _rpcOk(body['id'], {'ok': true});
+      return {'ok': true};
     });
 
     await _pumpSheet(tester, daemon: daemon);
@@ -567,33 +512,23 @@ void main() {
   ) async {
     var creates = 0;
     final gate = Completer<void>();
-    final daemon = _mockDaemon((request) async {
-      final body = _rpc(request);
-      final method = body['method'] as String?;
+    final daemon = rpcDaemon((method, params) async {
       if (method == 'list_contacts') {
-        return _rpcOk(body['id'], {'contacts': []});
+        return {'contacts': []};
       }
       if (method == 'list_agents') {
-        return _rpcOk(body['id'], {
+        return {
           'agents': [
             {'id': 'a1', 'slug': 'cursor', 'transport': 'sidecar'},
           ],
-        });
+        };
       }
       if (method == 'create_collab') {
         creates += 1;
         await gate.future;
-        return http.Response(
-          jsonEncode({
-            'jsonrpc': '2.0',
-            'id': body['id'],
-            'error': {'code': -32000, 'message': 'hub down'},
-          }),
-          200,
-          headers: {'content-type': 'application/json'},
-        );
+        throw DaemonException('hub down');
       }
-      return _rpcOk(body['id'], {'ok': true});
+      return {'ok': true};
     });
 
     await _pumpSheet(tester, daemon: daemon);
@@ -619,53 +554,45 @@ void main() {
     tester,
   ) async {
     String? agentsHandle;
-    final daemon = _mockDaemon((request) async {
-      final body = _rpc(request);
-      final method = body['method'] as String?;
+    final daemon = rpcDaemon((method, params) async {
       if (method == 'list_contacts') {
-        return _rpcOk(body['id'], {
+        return {
           'contacts': [
             {'handle': 'Orinea@tbhco', 'display_name': 'Orinea'},
             {'handle': 'bob@acme', 'display_name': 'Bob Builder'},
           ],
-        });
+        };
       }
       if (method == 'list_external_contacts') {
-        return _rpcErr(
-          body['id'],
-          'hub error 404 Not Found: {"error":"not_found"}',
-        );
+        throw DaemonException('hub error 404 Not Found: {"error":"not_found"}');
       }
       if (method == 'list_agents') {
-        final handle = (body['params'] as Map?)?['handle'] as String?;
+        final handle = params?['handle'] as String?;
         if (handle != null) agentsHandle ??= handle;
         if (handle == 'orinea@tbhco') {
-          return _rpcOk(body['id'], {
+          return {
             'agents': [
               {'id': 'o1', 'slug': 'claude', 'transport': 'sidecar'},
             ],
-          });
+          };
         }
         if (handle == 'Orinea@tbhco') {
-          return _rpcErr(
-            body['id'],
-            'hub error 404 Not Found: {"error":"not_found","message":"User not found"}',
-          );
+          throw DaemonException('hub error 404 Not Found: {"error":"not_found","message":"User not found"}');
         }
         if (handle == 'bob@acme') {
-          return _rpcOk(body['id'], {
+          return {
             'agents': [
               {'id': 'b1', 'slug': 'cursor', 'transport': 'sidecar'},
             ],
-          });
+          };
         }
-        return _rpcOk(body['id'], {
+        return {
           'agents': [
             {'id': 'a1', 'slug': 'cursor', 'transport': 'sidecar'},
           ],
-        });
+        };
       }
-      return _rpcOk(body['id'], {'ok': true});
+      return {'ok': true};
     });
 
     await _pumpSheet(tester, daemon: daemon, handle: 'tawanda@tbhco');
@@ -687,28 +614,26 @@ void main() {
   testWidgets('contacts ok and own agents fail still shows people chips', (
     tester,
   ) async {
-    final daemon = _mockDaemon((request) async {
-      final body = _rpc(request);
-      final method = body['method'] as String?;
+    final daemon = rpcDaemon((method, params) async {
       if (method == 'list_contacts') {
-        return _rpcOk(body['id'], {
+        return {
           'contacts': [
             {'handle': 'bob@acme', 'display_name': 'Bob Builder'},
           ],
-        });
+        };
       }
       if (method == 'list_agents') {
-        final handle = (body['params'] as Map?)?['handle'] as String?;
+        final handle = params?['handle'] as String?;
         if (handle == null) {
-          return _rpcErr(body['id'], 'hub error 503 Service Unavailable');
+          throw DaemonException('hub error 503 Service Unavailable');
         }
-        return _rpcOk(body['id'], {
+        return {
           'agents': [
             {'id': 'b1', 'slug': 'claude', 'transport': 'sidecar'},
           ],
-        });
+        };
       }
-      return _rpcOk(body['id'], {'ok': true});
+      return {'ok': true};
     });
 
     await _pumpSheet(tester, daemon: daemon);
@@ -722,26 +647,21 @@ void main() {
   testWidgets('create_collab 404 says hub has no collab, not sign-in', (
     tester,
   ) async {
-    final daemon = _mockDaemon((request) async {
-      final body = _rpc(request);
-      final method = body['method'] as String?;
+    final daemon = rpcDaemon((method, params) async {
       if (method == 'list_contacts') {
-        return _rpcOk(body['id'], {'contacts': []});
+        return {'contacts': []};
       }
       if (method == 'list_agents') {
-        return _rpcOk(body['id'], {
+        return {
           'agents': [
             {'id': 'a1', 'slug': 'cursor', 'transport': 'sidecar'},
           ],
-        });
+        };
       }
       if (method == 'create_collab') {
-        return _rpcErr(
-          body['id'],
-          'hub error 404 Not Found: {"error":"not_found"}',
-        );
+        throw DaemonException('hub error 404 Not Found: {"error":"not_found"}');
       }
-      return _rpcOk(body['id'], {'ok': true});
+      return {'ok': true};
     });
 
     await _pumpSheet(tester, daemon: daemon);
@@ -762,26 +682,21 @@ void main() {
   testWidgets('create_collab user-not-found is not load Create collab', (
     tester,
   ) async {
-    final daemon = _mockDaemon((request) async {
-      final body = _rpc(request);
-      final method = body['method'] as String?;
+    final daemon = rpcDaemon((method, params) async {
       if (method == 'list_contacts') {
-        return _rpcOk(body['id'], {'contacts': []});
+        return {'contacts': []};
       }
       if (method == 'list_agents') {
-        return _rpcOk(body['id'], {
+        return {
           'agents': [
             {'id': 'a1', 'slug': 'cursor', 'transport': 'sidecar'},
           ],
-        });
+        };
       }
       if (method == 'create_collab') {
-        return _rpcErr(
-          body['id'],
-          'hub error 404 Not Found: {"error":"not_found","message":"User not found"}',
-        );
+        throw DaemonException('hub error 404 Not Found: {"error":"not_found","message":"User not found"}');
       }
-      return _rpcOk(body['id'], {'ok': true});
+      return {'ok': true};
     });
 
     await _pumpSheet(tester, daemon: daemon);
@@ -805,28 +720,26 @@ void main() {
 
   testWidgets('load 401 shows Sign in; retry keeps name', (tester) async {
     var contactsCalls = 0;
-    final daemon = _mockDaemon((request) async {
-      final body = _rpc(request);
-      final method = body['method'] as String?;
+    final daemon = rpcDaemon((method, params) async {
       if (method == 'list_contacts') {
         contactsCalls += 1;
         if (contactsCalls == 1) {
-          return _rpcErr(body['id'], 'hub error 401 Unauthorized');
+          throw DaemonException('hub error 401 Unauthorized');
         }
-        return _rpcOk(body['id'], {
+        return {
           'contacts': [
             {'handle': 'bob@acme', 'display_name': 'Bob Builder'},
           ],
-        });
+        };
       }
       if (method == 'list_agents') {
-        return _rpcOk(body['id'], {
+        return {
           'agents': [
             {'id': 'a1', 'slug': 'cursor', 'transport': 'sidecar'},
           ],
-        });
+        };
       }
-      return _rpcOk(body['id'], {'ok': true});
+      return {'ok': true};
     });
 
     await _pumpSheet(tester, daemon: daemon);
@@ -845,26 +758,24 @@ void main() {
 
   testWidgets('stone skeleton while people and agents load', (tester) async {
     final gate = Completer<void>();
-    final daemon = _mockDaemon((request) async {
-      final body = _rpc(request);
-      final method = body['method'] as String?;
+    final daemon = rpcDaemon((method, params) async {
       if (method == 'list_contacts' || method == 'list_external_contacts') {
         await gate.future;
-        return _rpcOk(body['id'], {
+        return {
           'contacts': [
             {'handle': 'bob@acme', 'display_name': 'Bob Builder'},
           ],
-        });
+        };
       }
       if (method == 'list_agents') {
         await gate.future;
-        return _rpcOk(body['id'], {
+        return {
           'agents': [
             {'id': 'a1', 'slug': 'cursor', 'transport': 'sidecar'},
           ],
-        });
+        };
       }
-      return _rpcOk(body['id'], {'ok': true});
+      return {'ok': true};
     });
 
     await _pumpSheet(tester, daemon: daemon, waitForForm: false);
@@ -916,25 +827,23 @@ void main() {
 
   testWidgets('chips fade and rise when pickers resolve', (tester) async {
     final gate = Completer<void>();
-    final daemon = _mockDaemon((request) async {
-      final body = _rpc(request);
-      final method = body['method'] as String?;
+    final daemon = rpcDaemon((method, params) async {
       if (method == 'list_contacts') {
         await gate.future;
-        return _rpcOk(body['id'], {
+        return {
           'contacts': [
             {'handle': 'bob@acme', 'display_name': 'Bob Builder'},
           ],
-        });
+        };
       }
       if (method == 'list_agents') {
-        return _rpcOk(body['id'], {
+        return {
           'agents': [
             {'id': 'a1', 'slug': 'cursor', 'transport': 'sidecar'},
           ],
-        });
+        };
       }
-      return _rpcOk(body['id'], {'ok': true});
+      return {'ok': true};
     });
 
     await _pumpSheet(tester, daemon: daemon, waitForForm: false);
@@ -960,21 +869,19 @@ void main() {
     tester,
   ) async {
     final gate = Completer<void>();
-    final daemon = _mockDaemon((request) async {
-      final body = _rpc(request);
-      final method = body['method'] as String?;
+    final daemon = rpcDaemon((method, params) async {
       if (method == 'list_contacts') {
         await gate.future;
-        return _rpcOk(body['id'], {'contacts': []});
+        return {'contacts': []};
       }
       if (method == 'list_agents') {
-        return _rpcOk(body['id'], {
+        return {
           'agents': [
             {'id': 'a1', 'slug': 'cursor', 'transport': 'sidecar'},
           ],
-        });
+        };
       }
-      return _rpcOk(body['id'], {'ok': true});
+      return {'ok': true};
     });
 
     await _pumpSheet(tester, daemon: daemon, reduce: true, waitForForm: false);
@@ -1010,22 +917,20 @@ void main() {
 
   testWidgets('create collab sends a link artifact', (tester) async {
     Map<String, dynamic>? created;
-    final daemon = _mockDaemon((request) async {
-      final body = _rpc(request);
-      final method = body['method'] as String?;
+    final daemon = rpcDaemon((method, params) async {
       if (method == 'list_contacts') {
-        return _rpcOk(body['id'], {'contacts': []});
+        return {'contacts': []};
       }
       if (method == 'list_agents') {
-        return _rpcOk(body['id'], {
+        return {
           'agents': [
             {'id': 'a1', 'slug': 'cursor', 'transport': 'sidecar'},
           ],
-        });
+        };
       }
       if (method == 'create_collab') {
-        created = body['params'] as Map<String, dynamic>?;
-        return _rpcOk(body['id'], {
+        created = params;
+        return {
           'collab': {
             'id': 'c1',
             'name': 'Launch',
@@ -1039,9 +944,9 @@ void main() {
               },
             ],
           },
-        });
+        };
       }
-      return _rpcOk(body['id'], {'ok': true});
+      return {'ok': true};
     });
 
     await _pumpSheet(tester, daemon: daemon);
@@ -1080,22 +985,20 @@ void main() {
     tester,
   ) async {
     Map<String, dynamic>? created;
-    final daemon = _mockDaemon((request) async {
-      final body = _rpc(request);
-      final method = body['method'] as String?;
+    final daemon = rpcDaemon((method, params) async {
       if (method == 'list_contacts') {
-        return _rpcOk(body['id'], {'contacts': []});
+        return {'contacts': []};
       }
       if (method == 'list_agents') {
-        return _rpcOk(body['id'], {
+        return {
           'agents': [
             {'id': 'a1', 'slug': 'cursor', 'transport': 'sidecar'},
           ],
-        });
+        };
       }
       if (method == 'create_collab') {
-        created = body['params'] as Map<String, dynamic>?;
-        return _rpcOk(body['id'], {
+        created = params;
+        return {
           'collab': {
             'id': 'c1',
             'name': 'Launch',
@@ -1105,9 +1008,9 @@ void main() {
               {'kind': 'file', 'name': 'brief.md', 'path': '/tmp/brief.md'},
             ],
           },
-        });
+        };
       }
-      return _rpcOk(body['id'], {'ok': true});
+      return {'ok': true};
     });
 
     await _pumpSheet(
@@ -1157,22 +1060,20 @@ void main() {
     tester,
   ) async {
     Map<String, dynamic>? created;
-    final daemon = _mockDaemon((request) async {
-      final body = _rpc(request);
-      final method = body['method'] as String?;
+    final daemon = rpcDaemon((method, params) async {
       if (method == 'list_contacts') {
-        return _rpcOk(body['id'], {'contacts': []});
+        return {'contacts': []};
       }
       if (method == 'list_agents') {
-        return _rpcOk(body['id'], {
+        return {
           'agents': [
             {'id': 'a1', 'slug': 'cursor', 'transport': 'sidecar'},
           ],
-        });
+        };
       }
       if (method == 'create_collab') {
-        created = body['params'] as Map<String, dynamic>?;
-        return _rpcOk(body['id'], {
+        created = params;
+        return {
           'collab': {
             'id': 'c1',
             'name': 'Launch',
@@ -1180,9 +1081,9 @@ void main() {
             'lists': <Map<String, dynamic>>[],
             'artifacts': <Map<String, dynamic>>[],
           },
-        });
+        };
       }
-      return _rpcOk(body['id'], {'ok': true});
+      return {'ok': true};
     });
 
     await _pumpSheet(

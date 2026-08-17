@@ -30,7 +30,7 @@ Deno.test("catalog passes structural validation", () => {
   validateCatalog(catalog);
 });
 
-Deno.test("catalog matches core rpc.rs dispatch exactly", () => {
+Deno.test("catalog matches core rpc.rs dispatch + passthrough interpreter", () => {
   const src = Deno.readTextFileSync(`${root}/core/src/daemon/rpc.rs`);
   const start = src.indexOf("match method {");
   const end = src.indexOf("unknown method:");
@@ -45,11 +45,26 @@ Deno.test("catalog matches core rpc.rs dispatch exactly", () => {
   }
   assert(dispatchKeys.size > 0, "no dispatch keys parsed from rpc.rs");
 
-  const names = catalogNames();
-  const missingFromCatalog = [...dispatchKeys].filter((k) => !names.has(k)).sort();
-  const missingFromDispatch = [...names].filter((k) => !dispatchKeys.has(k)).sort();
-  assertEquals(missingFromCatalog, [], "rpc.rs methods missing from catalog");
-  assertEquals(missingFromDispatch, [], "catalog methods missing from rpc.rs dispatch");
+  const passthrough = new Set(
+    catalog.methods.filter((m) => m.kind === "passthrough").map((m) => m.name),
+  );
+  const coreAndStub = new Set<string>();
+  for (const m of catalog.methods) {
+    if (m.kind === "passthrough") continue;
+    coreAndStub.add(m.name);
+    for (const a of m.aliases ?? []) coreAndStub.add(a);
+  }
+
+  const leakedPassthrough = [...dispatchKeys].filter((k) => passthrough.has(k)).sort();
+  assertEquals(
+    leakedPassthrough,
+    [],
+    "passthrough methods must go through PASSTHROUGH_SPECS, not match arms",
+  );
+  const missingFromCatalog = [...dispatchKeys].filter((k) => !coreAndStub.has(k)).sort();
+  const missingFromDispatch = [...coreAndStub].filter((k) => !dispatchKeys.has(k)).sort();
+  assertEquals(missingFromCatalog, [], "rpc.rs core/stub methods missing from catalog");
+  assertEquals(missingFromDispatch, [], "catalog core/stub methods missing from rpc.rs dispatch");
 });
 
 Deno.test("every DaemonClient RPC call is in the catalog", () => {
@@ -90,6 +105,7 @@ Deno.test("passthrough kinds match the deepening decision record", () => {
     "close_thread",
     "delete_thread",
     "toggle_message_upvote",
+    "list_contacts", // unsigned → [] fallback; used internally
   ];
   for (const name of coreOnly) {
     const m = catalog.methods.find((x) => x.name === name);

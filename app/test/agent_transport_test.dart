@@ -1,15 +1,13 @@
-import 'dart:convert';
 
 import 'package:app/models/agent_transport.dart';
 import 'package:app/services/daemon_client.dart';
+import 'fake_daemon_client.dart';
 import 'package:app/services/transport_prefs_store.dart';
 import 'package:app/util/compose_transport.dart';
 import 'package:app/widgets/enterprise_warn_banner.dart';
 import 'package:app/widgets/transport_chip.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:http/http.dart' as http;
-import 'package:http/testing.dart';
 
 void main() {
   group('AgentTransport', () {
@@ -245,15 +243,9 @@ void main() {
 
   group('DaemonClient enterprise plumbing', () {
     test('getThread parses enterprise_listing_id', () async {
-      final daemon = DaemonClient(
-        httpClient: MockClient((request) async {
-          final body = jsonDecode(request.body) as Map<String, dynamic>;
-          expect(body['method'], 'get_thread');
-          return http.Response(
-            jsonEncode({
-              'jsonrpc': '2.0',
-              'id': body['id'],
-              'result': {
+      final daemon = rpcDaemon((method, params) async {
+          expect(method, 'get_thread');
+          return {
                 'thread': {
                   'id': 't-ent',
                   'kind': 'direct',
@@ -263,30 +255,17 @@ void main() {
                   'enterprise_listing_id': 'listing-42',
                 },
                 'messages': [],
-              },
-            }),
-            200,
-            headers: {'content-type': 'application/json'},
-          );
-        }),
-        httpToken: 'test-token',
-        requestTimeout: const Duration(milliseconds: 200),
-      );
+              };
+        });
       final detail = await daemon.getThread('t-ent');
       expect(detail.enterpriseListingId, 'listing-42');
       expect(detail.isEnterpriseThread, isTrue);
     });
 
     test('getRegistryListing returns warn for published listing', () async {
-      final daemon = DaemonClient(
-        httpClient: MockClient((request) async {
-          final body = jsonDecode(request.body) as Map<String, dynamic>;
-          expect(body['method'], 'get_registry_listing');
-          return http.Response(
-            jsonEncode({
-              'jsonrpc': '2.0',
-              'id': body['id'],
-              'result': {
+      final daemon = rpcDaemon((method, params) async {
+          expect(method, 'get_registry_listing');
+          return {
                 'listing': {
                   'id': 'L1',
                   'address': 'assistant@openai',
@@ -297,15 +276,8 @@ void main() {
                   'trust_tier': 'enterprise',
                   'message': kEnterpriseWarnBannerMessage,
                 },
-              },
-            }),
-            200,
-            headers: {'content-type': 'application/json'},
-          );
-        }),
-        httpToken: 'test-token',
-        requestTimeout: const Duration(milliseconds: 200),
-      );
+              };
+        });
       final listing = await daemon.getRegistryListing('assistant@openai');
       expect(listing?.showBanner, isTrue);
       expect(listing?.message, kEnterpriseWarnBannerMessage);
@@ -330,25 +302,12 @@ void main() {
     });
 
     test('syncFromHub pulls hub and caches', () async {
-      final daemon = DaemonClient(
-        httpClient: MockClient((request) async {
-          final body = jsonDecode(request.body) as Map<String, dynamic>;
-          expect(body['method'], 'get_transport_defaults');
-          return http.Response(
-            jsonEncode({
-              'jsonrpc': '2.0',
-              'id': body['id'],
-              'result': {
+      final daemon = rpcDaemon((method, params) async {
+          expect(method, 'get_transport_defaults');
+          return {
                 'defaults': {'chatgpt': 'mcp'},
-              },
-            }),
-            200,
-            headers: {'content-type': 'application/json'},
-          );
-        }),
-        httpToken: 'test-token',
-        requestTimeout: const Duration(milliseconds: 200),
-      );
+              };
+        });
       final store = TransportPrefsStore.memory();
       store.daemon = daemon;
       final prefs = await store.syncFromHub();
@@ -357,27 +316,15 @@ void main() {
 
     test('setDefault pushes to hub when daemon attached', () async {
       String? pushedTransport;
-      final daemon = DaemonClient(
-        httpClient: MockClient((request) async {
-          final body = jsonDecode(request.body) as Map<String, dynamic>;
-          expect(body['method'], 'set_transport_default');
-          final params = body['params'] as Map<String, dynamic>;
-          pushedTransport = params['transport'] as String?;
-          return http.Response(
-            jsonEncode({
-              'jsonrpc': '2.0',
-              'id': body['id'],
-              'result': {
-                'defaults': {params['slug']: params['transport']},
-              },
-            }),
-            200,
-            headers: {'content-type': 'application/json'},
-          );
-        }),
-        httpToken: 'test-token',
-        requestTimeout: const Duration(milliseconds: 200),
-      );
+      final daemon = rpcDaemon((method, params) async {
+          expect(method, 'set_transport_default');
+          pushedTransport = params?['transport'] as String?;
+          final slug = params?['slug'];
+          final transport = params?['transport'];
+          return {
+                'defaults': {slug: transport},
+              };
+        });
       final store = TransportPrefsStore(daemon: daemon, memory: const TransportPrefs());
       final prefs = await store.setDefault('chatgpt', AgentTransport.mcp);
       expect(pushedTransport, 'mcp');

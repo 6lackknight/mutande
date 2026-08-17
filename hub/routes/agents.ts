@@ -4,9 +4,6 @@ import type { HubStore } from "../store/store.ts";
 import type {
   ConnectAgentInput,
   RegisterAgentInput,
-  RenameAgentInput,
-  SetDefaultAgentInput,
-  SetRouterInput,
   SetTransportDefaultInput,
 } from "../store/types.ts";
 
@@ -21,23 +18,6 @@ export function createAgentRoutes(store: HubStore) {
       return c.json(result);
     }
     const result = await store.listAgents(c.get("auth"));
-    return c.json(result);
-  });
-
-  agentRoutes.get("/router", async (c) => {
-    const result = await store.getRouter(c.get("auth"));
-    return c.json(result);
-  });
-
-  agentRoutes.put("/router", async (c) => {
-    const body = await c.req.json<SetRouterInput>();
-    const result = await store.setRouter(c.get("auth"), body);
-    return c.json(result);
-  });
-
-  /** Preferred transport per display slug (Settings). */
-  agentRoutes.get("/transport-defaults", async (c) => {
-    const result = await store.getTransportPrefs(c.get("auth"));
     return c.json(result);
   });
 
@@ -86,18 +66,6 @@ export function createAgentRoutes(store: HubStore) {
     const body = await c.req.json<RegisterAgentInput>();
     const agent = await store.registerAgent(c.get("auth"), body);
     return c.json({ agent }, 201);
-  });
-
-  agentRoutes.put("/default", async (c) => {
-    const body = await c.req.json<SetDefaultAgentInput>();
-    const agent = await store.setDefaultAgent(c.get("auth"), body);
-    return c.json({ agent });
-  });
-
-  agentRoutes.patch("/:agentId", async (c) => {
-    const body = await c.req.json<RenameAgentInput>();
-    const agent = await store.renameAgent(c.get("auth"), c.req.param("agentId"), body);
-    return c.json({ agent });
   });
 
   return agentRoutes;

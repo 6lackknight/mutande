@@ -65,12 +65,5 @@ export function createRegistryRoutes(store: HubStore) {
     return c.json(result);
   });
 
-  routes.get("/listing/:idOrAddress", async (c) => {
-    const raw = c.req.param("idOrAddress")!;
-    return c.json(
-      await store.enterprise.getListingPublic(decodeURIComponent(raw)),
-    );
-  });
-
   return routes;
 }

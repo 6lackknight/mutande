@@ -60,8 +60,11 @@ class DaemonClient {
     String? httpToken,
     // Hub RPCs + Keychain bootstrap routinely exceed a few seconds on first open.
     this.requestTimeout = const Duration(seconds: 15),
+    Future<dynamic> Function(String method, Map<String, dynamic>? params)?
+    invokeRpc,
   }) : _http = httpClient ?? http.Client(),
-       _httpTokenOverride = httpToken;
+       _httpTokenOverride = httpToken,
+       _invokeRpc = invokeRpc;
 
   /// Dev HTTP bridge (current Flutter transport).
   static const defaultHttpBaseUrl = 'http://127.0.0.1:3847';
@@ -78,6 +81,8 @@ class DaemonClient {
   final String httpTokenPath;
   final String? _httpTokenOverride;
   final Duration requestTimeout;
+  final Future<dynamic> Function(String method, Map<String, dynamic>? params)?
+  _invokeRpc;
 
   int _jsonRpcId = 0;
   String? _cachedHttpToken;
@@ -977,6 +982,9 @@ class DaemonClient {
     Map<String, dynamic>? params,
     Duration? timeout,
   ) async {
+    if (_invokeRpc != null) {
+      return _invokeRpc!(method, params);
+    }
     final id = ++_jsonRpcId;
     final payload = <String, dynamic>{
       'jsonrpc': '2.0',

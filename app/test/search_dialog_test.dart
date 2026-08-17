@@ -1,33 +1,14 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:app/services/daemon_client.dart';
+import 'package:app/services/daemon_errors.dart';
+import 'fake_daemon_client.dart';
 import 'package:app/theme/mutande_macos_theme.dart';
 import 'package:app/widgets/home_chrome_pills.dart';
 import 'package:app/widgets/search_dialog.dart';
 import 'package:app/widgets/thread_skeletons.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:http/http.dart' as http;
-import 'package:http/testing.dart';
-
-http.Response _rpcOk(Object? id, Object result) {
-  return http.Response(
-    jsonEncode({'jsonrpc': '2.0', 'id': id, 'result': result}),
-    200,
-    headers: {'content-type': 'application/json'},
-  );
-}
-
-DaemonClient _mockDaemon(
-  FutureOr<http.Response> Function(http.Request) handler,
-) {
-  return DaemonClient(
-    httpClient: MockClient((request) async => handler(request)),
-    httpToken: 'test-token',
-    requestTimeout: const Duration(seconds: 2),
-  );
-}
 
 ThreadSummary _thread({
   required String id,
@@ -133,11 +114,10 @@ void main() {
   });
 
   testWidgets('typing filters results as the query changes', (tester) async {
-    final daemon = _mockDaemon((request) async {
-      final body = jsonDecode(request.body) as Map<String, dynamic>;
-      switch (body['method'] as String?) {
+    final daemon = rpcDaemon((method, params) async {
+      switch (method) {
         case 'list_threads':
-          return _rpcOk(body['id'], {
+          return {
             'threads': [
               {
                 'id': 't1',
@@ -156,23 +136,23 @@ void main() {
                 'last_subject': 'Lunch',
               },
             ],
-          });
+          };
         case 'list_collabs':
-          return _rpcOk(body['id'], {
+          return {
             'collabs': [
               {'id': 'c1', 'name': 'Alpha board', 'encryption_mode': 'e2e'},
             ],
-          });
+          };
         case 'list_contacts':
-          return _rpcOk(body['id'], {
+          return {
             'contacts': [
               {'handle': 'dana@acme', 'display_name': 'Dana'},
             ],
-          });
+          };
         case 'list_external_contacts':
-          return _rpcOk(body['id'], {'contacts': []});
+          return {'contacts': []};
         default:
-          return _rpcOk(body['id'], {});
+          return {};
       }
     });
 
@@ -199,22 +179,21 @@ void main() {
   });
 
   testWidgets('empty collab chip lists all collabs', (tester) async {
-    final daemon = _mockDaemon((request) async {
-      final body = jsonDecode(request.body) as Map<String, dynamic>;
-      switch (body['method'] as String?) {
+    final daemon = rpcDaemon((method, params) async {
+      switch (method) {
         case 'list_threads':
-          return _rpcOk(body['id'], {'threads': []});
+          return {'threads': []};
         case 'list_collabs':
-          return _rpcOk(body['id'], {
+          return {
             'collabs': [
               {'id': 'c1', 'name': 'Launch', 'encryption_mode': 'e2e'},
             ],
-          });
+          };
         case 'list_contacts':
         case 'list_external_contacts':
-          return _rpcOk(body['id'], {'contacts': []});
+          return {'contacts': []};
         default:
-          return _rpcOk(body['id'], {});
+          return {};
       }
     });
 
@@ -273,11 +252,10 @@ void main() {
   testWidgets('sort toggles sit across from filters and reorder hits', (
     tester,
   ) async {
-    final daemon = _mockDaemon((request) async {
-      final body = jsonDecode(request.body) as Map<String, dynamic>;
-      switch (body['method'] as String?) {
+    final daemon = rpcDaemon((method, params) async {
+      switch (method) {
         case 'list_threads':
-          return _rpcOk(body['id'], {
+          return {
             'threads': [
               {
                 'id': 't-old',
@@ -298,14 +276,14 @@ void main() {
                 'updated_at': '2026-08-16T12:00:00Z',
               },
             ],
-          });
+          };
         case 'list_collabs':
-          return _rpcOk(body['id'], {'collabs': []});
+          return {'collabs': []};
         case 'list_contacts':
         case 'list_external_contacts':
-          return _rpcOk(body['id'], {'contacts': []});
+          return {'contacts': []};
         default:
-          return _rpcOk(body['id'], {});
+          return {};
       }
     });
 
@@ -333,14 +311,13 @@ void main() {
     tester,
   ) async {
     final gate = Completer<void>();
-    final daemon = _mockDaemon((request) async {
-      final body = jsonDecode(request.body) as Map<String, dynamic>;
+    final daemon = rpcDaemon((method, params) async {
       await gate.future;
-      return _rpcOk(body['id'], {
+      return {
         'threads': <Object?>[],
         'collabs': <Object?>[],
         'contacts': <Object?>[],
-      });
+      };
     });
 
     await tester.pumpWidget(

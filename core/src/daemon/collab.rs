@@ -5,7 +5,7 @@ use serde_json::Value;
 
 use crate::crypto::DevicePubKey;
 use crate::hub_client::{
-    Collab, CollabArtifactSummary, CollabChecklistItem, CollabLane, ListCollabsResponse,
+    Collab, CollabArtifactSummary, CollabChecklistItem, CollabLane,
 };
 
 use super::state::{
@@ -49,13 +49,6 @@ pub fn resolve_collab_lane_id(
 }
 
 impl DaemonState {
-    pub async fn list_collabs(&self, archived: bool) -> Result<ListCollabsResponse> {
-        let hub = self
-            .hub_client()
-            .context("not signed in — call auth_login first")?;
-        hub.list_collabs(archived).await
-    }
-
     pub async fn get_collab(&self, collab_id: &str) -> Result<Collab> {
         let hub = self
             .hub_client()
@@ -241,62 +234,6 @@ impl DaemonState {
         }
         hub.update_collab_instructions(collab_id, Some(instructions))
             .await
-    }
-
-    pub async fn add_collab_steerer(&self, collab_id: &str, handle: &str) -> Result<Collab> {
-        let hub = self
-            .hub_client()
-            .context("not signed in — call auth_login first")?;
-        hub.add_collab_steerer(collab_id, handle).await
-    }
-
-    pub async fn remove_collab_steerer(&self, collab_id: &str, user_id: &str) -> Result<Collab> {
-        let hub = self
-            .hub_client()
-            .context("not signed in — call auth_login first")?;
-        hub.remove_collab_steerer(collab_id, user_id).await
-    }
-
-    pub async fn add_collab_roster(&self, collab_id: &str, address: &str) -> Result<Collab> {
-        let hub = self
-            .hub_client()
-            .context("not signed in — call auth_login first")?;
-        hub.add_collab_roster(collab_id, address).await
-    }
-
-    pub async fn remove_collab_roster(&self, collab_id: &str, agent_id: &str) -> Result<Collab> {
-        let hub = self
-            .hub_client()
-            .context("not signed in — call auth_login first")?;
-        hub.remove_collab_roster(collab_id, agent_id).await
-    }
-
-    pub async fn archive_collab(&self, collab_id: &str) -> Result<Collab> {
-        let hub = self
-            .hub_client()
-            .context("not signed in — call auth_login first")?;
-        hub.archive_collab(collab_id).await
-    }
-
-    pub async fn unarchive_collab(&self, collab_id: &str) -> Result<Collab> {
-        let hub = self
-            .hub_client()
-            .context("not signed in — call auth_login first")?;
-        hub.unarchive_collab(collab_id).await
-    }
-
-    pub async fn approve_collab_pending_membership(&self, collab_id: &str) -> Result<Collab> {
-        let hub = self
-            .hub_client()
-            .context("not signed in — call auth_login first")?;
-        hub.approve_collab_pending_membership(collab_id).await
-    }
-
-    pub async fn deny_collab_pending_membership(&self, collab_id: &str) -> Result<Collab> {
-        let hub = self
-            .hub_client()
-            .context("not signed in — call auth_login first")?;
-        hub.deny_collab_pending_membership(collab_id).await
     }
 
     /// New board card: seal once to every steerer device, then POST with collab_id.

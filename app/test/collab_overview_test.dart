@@ -1,9 +1,10 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:app/screens/collab_screen.dart';
 import 'package:app/screens/threads_screen.dart';
 import 'package:app/services/daemon_client.dart';
+import 'package:app/services/daemon_errors.dart';
+import 'fake_daemon_client.dart';
 import 'package:app/theme/mutande_macos_theme.dart';
 import 'package:app/util/clock_format.dart';
 import 'package:app/widgets/ai_host_icon.dart';
@@ -15,8 +16,6 @@ import 'package:app/widgets/thread_skeletons.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:http/http.dart' as http;
-import 'package:http/testing.dart';
 
 CollabDetail _detail({
   List<Map<String, dynamic>> lists = const [
@@ -93,15 +92,9 @@ void main() {
   });
 
   test('collab artifacts keep resource and card provenance', () async {
-    final daemon = DaemonClient(
-      httpClient: MockClient((request) async {
-        final body = jsonDecode(request.body) as Map<String, dynamic>;
-        expect(body['method'], 'get_collab');
-        return http.Response(
-          jsonEncode({
-            'jsonrpc': '2.0',
-            'id': body['id'],
-            'result': {
+    final daemon = rpcDaemon((method, params) async {
+        expect(method, 'get_collab');
+        return {
               'collab': {
                 'id': 't1',
                 'name': 'Pilot',
@@ -120,14 +113,8 @@ void main() {
                   },
                 ],
               },
-            },
-          }),
-          200,
-          headers: {'content-type': 'application/json'},
-        );
-      }),
-      httpToken: 'test-token',
-    );
+            };
+      });
     final artifacts = (await daemon.getCollab('t1')).artifacts;
     expect(artifacts, hasLength(1));
     expect(artifacts.single.resource.name, 'pilot-feedback.md');
@@ -211,16 +198,9 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    final daemon = DaemonClient(
-      httpClient: MockClient((request) async {
-        final body = jsonDecode(request.body) as Map<String, dynamic>;
-        final method = body['method'] as String?;
+    final daemon = rpcDaemon((method, params) async {
         if (method == 'get_collab') {
-          return http.Response(
-            jsonEncode({
-              'jsonrpc': '2.0',
-              'id': body['id'],
-              'result': {
+          return {
                 'id': 'c1',
                 'name': 'Launch',
                 'encryption_mode': 'e2e',
@@ -250,25 +230,10 @@ void main() {
                     'address': 'alice@acme/claude',
                   },
                 ],
-              },
-            }),
-            200,
-            headers: {'content-type': 'application/json'},
-          );
+              };
         }
-        return http.Response(
-          jsonEncode({
-            'jsonrpc': '2.0',
-            'id': body['id'],
-            'result': {'collabs': [], 'portfolio': {}},
-          }),
-          200,
-          headers: {'content-type': 'application/json'},
-        );
-      }),
-      httpToken: 'test-token',
-      requestTimeout: const Duration(seconds: 2),
-    );
+        return {'collabs': [], 'portfolio': {}};
+      });
     await tester.pumpWidget(
       MaterialApp(
         theme: mutandeMaterialTheme(),
@@ -359,15 +324,9 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    final daemon = DaemonClient(
-      httpClient: MockClient((request) async {
-        final body = jsonDecode(request.body) as Map<String, dynamic>;
-        if (body['method'] == 'get_collab') {
-          return http.Response(
-            jsonEncode({
-              'jsonrpc': '2.0',
-              'id': body['id'],
-              'result': {
+    final daemon = rpcDaemon((method, params) async {
+        if (method == 'get_collab') {
+          return {
                 'collab': {
                   'id': 'c1',
                   'name': 'Launch',
@@ -377,25 +336,10 @@ void main() {
                   ],
                   'artifacts': null,
                 },
-              },
-            }),
-            200,
-            headers: {'content-type': 'application/json'},
-          );
+              };
         }
-        return http.Response(
-          jsonEncode({
-            'jsonrpc': '2.0',
-            'id': body['id'],
-            'result': {'collabs': [], 'portfolio': {}},
-          }),
-          200,
-          headers: {'content-type': 'application/json'},
-        );
-      }),
-      httpToken: 'test-token',
-      requestTimeout: const Duration(seconds: 2),
-    );
+        return {'collabs': [], 'portfolio': {}};
+      });
     await tester.pumpWidget(
       MaterialApp(
         theme: mutandeMaterialTheme(),
@@ -474,16 +418,9 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    final daemon = DaemonClient(
-      httpClient: MockClient((request) async {
-        final body = jsonDecode(request.body) as Map<String, dynamic>;
-        final method = body['method'] as String?;
+    final daemon = rpcDaemon((method, params) async {
         if (method == 'get_collab') {
-          return http.Response(
-            jsonEncode({
-              'jsonrpc': '2.0',
-              'id': body['id'],
-              'result': {
+          return {
                 'id': 'c1',
                 'name': 'Launch',
                 'encryption_mode': 'e2e',
@@ -501,18 +438,10 @@ void main() {
                     'last_subject': 'Pilot brief',
                   },
                 ],
-              },
-            }),
-            200,
-            headers: {'content-type': 'application/json'},
-          );
+              };
         }
         if (method == 'get_thread') {
-          return http.Response(
-            jsonEncode({
-              'jsonrpc': '2.0',
-              'id': body['id'],
-              'result': {
+          return {
                 'thread': {
                   'id': 't1',
                   'kind': 'direct',
@@ -521,25 +450,10 @@ void main() {
                   'audience': 'alice@acme/claude',
                 },
                 'messages': [],
-              },
-            }),
-            200,
-            headers: {'content-type': 'application/json'},
-          );
+              };
         }
-        return http.Response(
-          jsonEncode({
-            'jsonrpc': '2.0',
-            'id': body['id'],
-            'result': {'collabs': [], 'portfolio': {}, 'contacts': []},
-          }),
-          200,
-          headers: {'content-type': 'application/json'},
-        );
-      }),
-      httpToken: 'test-token',
-      requestTimeout: const Duration(seconds: 2),
-    );
+        return {'collabs': [], 'portfolio': {}, 'contacts': []};
+      });
     await tester.pumpWidget(
       MaterialApp(
         theme: mutandeMaterialTheme(),
@@ -582,15 +496,9 @@ void main() {
         .toUtc()
         .subtract(const Duration(days: 2))
         .toIso8601String();
-    final daemon = DaemonClient(
-      httpClient: MockClient((request) async {
-        final body = jsonDecode(request.body) as Map<String, dynamic>;
-        if (body['method'] == 'get_collab') {
-          return http.Response(
-            jsonEncode({
-              'jsonrpc': '2.0',
-              'id': body['id'],
-              'result': {
+    final daemon = rpcDaemon((method, params) async {
+        if (method == 'get_collab') {
+          return {
                 'id': 'c1',
                 'name': 'Launch',
                 'encryption_mode': 'e2e',
@@ -617,25 +525,10 @@ void main() {
                     ],
                   },
                 ],
-              },
-            }),
-            200,
-            headers: {'content-type': 'application/json'},
-          );
+              };
         }
-        return http.Response(
-          jsonEncode({
-            'jsonrpc': '2.0',
-            'id': body['id'],
-            'result': {'collabs': [], 'portfolio': {}},
-          }),
-          200,
-          headers: {'content-type': 'application/json'},
-        );
-      }),
-      httpToken: 'test-token',
-      requestTimeout: const Duration(seconds: 2),
-    );
+        return {'collabs': [], 'portfolio': {}};
+      });
     await tester.pumpWidget(
       MaterialApp(
         theme: mutandeMaterialTheme(),
@@ -671,16 +564,10 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     final gate = Completer<void>();
-    final daemon = DaemonClient(
-      httpClient: MockClient((request) async {
-        final body = jsonDecode(request.body) as Map<String, dynamic>;
-        if (body['method'] == 'get_collab') {
+    final daemon = rpcDaemon((method, params) async {
+        if (method == 'get_collab') {
           await gate.future;
-          return http.Response(
-            jsonEncode({
-              'jsonrpc': '2.0',
-              'id': body['id'],
-              'result': {
+          return {
                 'id': 'c1',
                 'name': 'Launch',
                 'encryption_mode': 'e2e',
@@ -691,25 +578,10 @@ void main() {
                   {'id': 'l3', 'name': 'Done', 'position': 2},
                 ],
                 'cards': const [],
-              },
-            }),
-            200,
-            headers: {'content-type': 'application/json'},
-          );
+              };
         }
-        return http.Response(
-          jsonEncode({
-            'jsonrpc': '2.0',
-            'id': body['id'],
-            'result': {'collabs': [], 'portfolio': {}},
-          }),
-          200,
-          headers: {'content-type': 'application/json'},
-        );
-      }),
-      httpToken: 'test-token',
-      requestTimeout: const Duration(seconds: 2),
-    );
+        return {'collabs': [], 'portfolio': {}};
+      });
     await tester.pumpWidget(
       MaterialApp(
         theme: mutandeMaterialTheme(),
@@ -894,16 +766,9 @@ void main() {
 }
 
 DaemonClient _brainDaemon({required bool creator}) {
-  return DaemonClient(
-    httpClient: MockClient((request) async {
-      final body = jsonDecode(request.body) as Map<String, dynamic>;
-      final method = body['method'] as String?;
+  return rpcDaemon((method, params) async {
       if (method == 'get_collab') {
-        return http.Response(
-          jsonEncode({
-            'jsonrpc': '2.0',
-            'id': body['id'],
-            'result': {
+        return {
               'id': 'c1',
               'name': 'Launch',
               'encryption_mode': 'app_envelope',
@@ -934,23 +799,8 @@ DaemonClient _brainDaemon({required bool creator}) {
                   'address': creator ? 'alice@acme/chatgpt' : 'bob@acme/claude',
                 },
               ],
-            },
-          }),
-          200,
-          headers: {'content-type': 'application/json'},
-        );
+            };
       }
-      return http.Response(
-        jsonEncode({
-          'jsonrpc': '2.0',
-          'id': body['id'],
-          'result': {'collabs': [], 'portfolio': {}},
-        }),
-        200,
-        headers: {'content-type': 'application/json'},
-      );
-    }),
-    httpToken: 'test-token',
-    requestTimeout: const Duration(seconds: 2),
-  );
+      return {'collabs': [], 'portfolio': {}};
+    });
 }

@@ -6,6 +6,11 @@ use serde_json::Value;
 
 use super::state::{HumanDecision, MutandeBundle, PingKind, ResourceRequest};
 use super::DaemonState;
+use crate::hub_client::encode_path_segment;
+
+#[path = "rpc_passthrough.g.rs"]
+mod rpc_passthrough;
+use rpc_passthrough::{ParamSpec, PassthroughSpec, PASSTHROUGH_SPECS};
 
 pub const PARSE_ERROR: i32 = -32700;
 pub const METHOD_NOT_FOUND: i32 = -32601;
@@ -75,6 +80,9 @@ pub async fn handle_request(state: &Arc<DaemonState>, req: JsonRpcRequest) -> Js
 }
 
 async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Result<Value> {
+    if let Some(spec) = PASSTHROUGH_SPECS.iter().find(|s| s.name == method) {
+        return dispatch_passthrough(state, spec, &params).await;
+    }
     match method {
         "health" => Ok(serde_json::json!({
             "ok": true,
@@ -137,69 +145,6 @@ async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Resu
             let contacts = state.list_contacts().await?;
             Ok(serde_json::to_value(serde_json::json!({ "contacts": contacts }))?)
         }
-        "list_external_contacts" => {
-            let contacts = state.list_external_contacts().await?;
-            Ok(serde_json::to_value(serde_json::json!({ "contacts": contacts }))?)
-        }
-        "get_registry_listing" => {
-            let id_or_address = param_str(&params, "id_or_address")
-                .or_else(|_| param_str(&params, "address"))?;
-            let result = state.get_registry_listing(&id_or_address).await?;
-            Ok(serde_json::to_value(result)?)
-        }
-        "issue_pairing_pin" => {
-            let pin = state.issue_pairing_pin().await?;
-            Ok(serde_json::to_value(pin)?)
-        }
-        "get_pairing_pin" => {
-            let pin = state.get_pairing_pin().await?;
-            Ok(serde_json::json!({ "pin": pin }))
-        }
-        "rotate_pairing_pin" => {
-            let pin = state.rotate_pairing_pin().await?;
-            Ok(serde_json::to_value(pin)?)
-        }
-        "submit_pair_request" => {
-            let handle = param_str(&params, "handle")?;
-            let pin = param_str(&params, "pin")?;
-            let intro = optional_str(&params, "intro");
-            let request = state
-                .submit_pair_request(&handle, &pin, intro.as_deref())
-                .await?;
-            Ok(serde_json::json!({ "request": request }))
-        }
-        "list_pending_pair_requests" => {
-            let pending = state.list_pending_pair_requests().await?;
-            Ok(serde_json::to_value(pending)?)
-        }
-        "approve_pair_request" => {
-            let request_id = param_str(&params, "request_id")?;
-            let result = state.approve_pair_request(&request_id).await?;
-            Ok(serde_json::to_value(result)?)
-        }
-        "deny_pair_request" => {
-            let request_id = param_str(&params, "request_id")?;
-            state.deny_pair_request(&request_id).await?;
-            Ok(serde_json::json!({ "ok": true }))
-        }
-        "unpair_external_contact" => {
-            let link_id = param_str(&params, "link_id")?;
-            let result = state.unpair_external_contact(&link_id).await?;
-            Ok(serde_json::to_value(result)?)
-        }
-        "propose_thread_downgrade" => {
-            let thread_id = param_str(&params, "thread_id")?;
-            let agent_slug = param_str(&params, "agent_slug")?;
-            let from_agent = optional_str(&params, "from_agent");
-            let result = state
-                .propose_thread_downgrade(&thread_id, &agent_slug, from_agent.as_deref())
-                .await?;
-            Ok(serde_json::to_value(result)?)
-        }
-        "list_pending_thread_downgrades" => {
-            let result = state.list_pending_thread_downgrades().await?;
-            Ok(serde_json::to_value(result)?)
-        }
         "approve_thread_downgrade" => {
             let thread_id = param_str(&params, "thread_id")?;
             let proposal_id = param_str(&params, "proposal_id")?;
@@ -207,14 +152,6 @@ async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Resu
                 .approve_thread_downgrade(&thread_id, &proposal_id)
                 .await?;
             Ok(serde_json::to_value(result)?)
-        }
-        "deny_thread_downgrade" => {
-            let thread_id = param_str(&params, "thread_id")?;
-            let proposal_id = param_str(&params, "proposal_id")?;
-            let proposal = state
-                .deny_thread_downgrade(&thread_id, &proposal_id)
-                .await?;
-            Ok(serde_json::json!({ "proposal": proposal }))
         }
         "submit_feedback" => {
             let message = param_str(&params, "message")?;
@@ -248,12 +185,6 @@ async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Resu
                 .get_thread(&thread_id, agent_slug.as_deref())
                 .await?;
             Ok(serde_json::to_value(detail)?)
-        }
-        "list_collabs" => {
-            let archived = optional_bool(&params, "include_archived")
-                || optional_bool(&params, "archived");
-            let listed = state.list_collabs(archived).await?;
-            Ok(serde_json::to_value(listed)?)
         }
         "get_collab" => {
             let collab_id = param_str(&params, "collab_id")?;
@@ -310,50 +241,6 @@ async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Resu
             let collab = state
                 .update_collab_instructions(&collab_id, &instructions)
                 .await?;
-            Ok(serde_json::to_value(serde_json::json!({ "collab": collab }))?)
-        }
-        "add_collab_steerer" => {
-            let collab_id = param_str(&params, "collab_id")?;
-            let handle = param_str(&params, "handle")?;
-            let collab = state.add_collab_steerer(&collab_id, &handle).await?;
-            Ok(serde_json::to_value(serde_json::json!({ "collab": collab }))?)
-        }
-        "remove_collab_steerer" => {
-            let collab_id = param_str(&params, "collab_id")?;
-            let user_id = param_str(&params, "user_id")?;
-            let collab = state.remove_collab_steerer(&collab_id, &user_id).await?;
-            Ok(serde_json::to_value(serde_json::json!({ "collab": collab }))?)
-        }
-        "add_collab_roster" => {
-            let collab_id = param_str(&params, "collab_id")?;
-            let address = param_str(&params, "address")?;
-            let collab = state.add_collab_roster(&collab_id, &address).await?;
-            Ok(serde_json::to_value(serde_json::json!({ "collab": collab }))?)
-        }
-        "remove_collab_roster" => {
-            let collab_id = param_str(&params, "collab_id")?;
-            let agent_id = param_str(&params, "agent_id")?;
-            let collab = state.remove_collab_roster(&collab_id, &agent_id).await?;
-            Ok(serde_json::to_value(serde_json::json!({ "collab": collab }))?)
-        }
-        "archive_collab" => {
-            let collab_id = param_str(&params, "collab_id")?;
-            let collab = state.archive_collab(&collab_id).await?;
-            Ok(serde_json::to_value(serde_json::json!({ "collab": collab }))?)
-        }
-        "unarchive_collab" => {
-            let collab_id = param_str(&params, "collab_id")?;
-            let collab = state.unarchive_collab(&collab_id).await?;
-            Ok(serde_json::to_value(serde_json::json!({ "collab": collab }))?)
-        }
-        "approve_collab_pending_membership" => {
-            let collab_id = param_str(&params, "collab_id")?;
-            let collab = state.approve_collab_pending_membership(&collab_id).await?;
-            Ok(serde_json::to_value(serde_json::json!({ "collab": collab }))?)
-        }
-        "deny_collab_pending_membership" => {
-            let collab_id = param_str(&params, "collab_id")?;
-            let collab = state.deny_collab_pending_membership(&collab_id).await?;
             Ok(serde_json::to_value(serde_json::json!({ "collab": collab }))?)
         }
         "create_collab_card" => {
@@ -515,35 +402,6 @@ async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Resu
                 let list = state.list_agents().await?;
                 Ok(serde_json::to_value(list)?)
             }
-        }
-        "set_default_agent" => {
-            let agent_id = param_str(&params, "agent_id")?;
-            let agent = state.set_default_agent(&agent_id).await?;
-            Ok(serde_json::to_value(agent)?)
-        }
-        "rename_agent" => {
-            let agent_id = param_str(&params, "agent_id")?;
-            let slug = param_str(&params, "slug")?;
-            let agent = state.rename_agent(&agent_id, &slug).await?;
-            Ok(serde_json::to_value(agent)?)
-        }
-        "get_router" => {
-            let router = state.get_router().await?;
-            Ok(serde_json::to_value(router)?)
-        }
-        "set_router" => {
-            let default_agent_id = optional_str(&params, "default_agent_id");
-            let rules = params.get("rules").and_then(|v| {
-                serde_json::from_value::<Vec<crate::hub_client::RoutingRule>>(v.clone()).ok()
-            });
-            let router = state
-                .set_router(default_agent_id.as_deref(), rules)
-                .await?;
-            Ok(serde_json::to_value(router)?)
-        }
-        "get_transport_defaults" => {
-            let prefs = state.get_transport_defaults().await?;
-            Ok(serde_json::to_value(prefs)?)
         }
         "set_transport_default" => {
             let slug = param_str(&params, "slug")?;
@@ -718,14 +576,123 @@ fn read_blob_file(path: &str) -> Result<(Vec<u8>, Option<String>)> {
     Ok((bytes, name))
 }
 
-fn optional_bool(params: &Value, key: &str) -> bool {
-    match params.get(key) {
+async fn dispatch_passthrough(
+    state: &Arc<DaemonState>,
+    spec: &PassthroughSpec,
+    params: &Value,
+) -> Result<Value> {
+    let hub = state
+        .hub_client()
+        .context("not signed in — call auth_login first")?;
+    let mut path = spec.path.to_string();
+    for p in spec.path_params {
+        let val = required_param_str(params, p)?;
+        path = path.replace(&format!("{{{}}}", p.name), &encode_path_segment(&val));
+    }
+    let mut qs = Vec::new();
+    for (key, pspec) in spec.query_flags {
+        if param_truthy(params, pspec) {
+            qs.push(format!("{key}=1"));
+        }
+    }
+    if !qs.is_empty() {
+        path.push('?');
+        path.push_str(&qs.join("&"));
+    }
+    let body = build_passthrough_body(spec, params)?;
+    let send_body = match spec.verb {
+        "GET" | "DELETE" => None,
+        _ => Some(body.unwrap_or_else(|| serde_json::json!({}))),
+    };
+    let json = hub
+        .exchange(spec.verb, &path, send_body.as_ref())
+        .await?;
+    Ok(shape_passthrough_result(spec, json))
+}
+
+fn lookup_param<'a>(params: &'a Value, spec: &ParamSpec) -> Option<&'a Value> {
+    if let Some(v) = params.get(spec.name) {
+        return Some(v);
+    }
+    for alias in spec.aliases {
+        if let Some(v) = params.get(*alias) {
+            return Some(v);
+        }
+    }
+    None
+}
+
+fn required_param_str(params: &Value, spec: &ParamSpec) -> Result<String> {
+    lookup_param(params, spec)
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| anyhow::anyhow!("missing param: {}", spec.name))
+}
+
+fn param_truthy(params: &Value, spec: &ParamSpec) -> bool {
+    match lookup_param(params, spec) {
         Some(Value::Bool(b)) => *b,
         Some(Value::String(s)) => {
             matches!(s.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes")
         }
         Some(Value::Number(n)) => n.as_i64() == Some(1),
         _ => false,
+    }
+}
+
+fn build_passthrough_body(spec: &PassthroughSpec, params: &Value) -> Result<Option<Value>> {
+    if spec.body_params.is_empty() {
+        return Ok(None);
+    }
+    let mut map = serde_json::Map::new();
+    for p in spec.body_params {
+        let Some(v) = lookup_param(params, p) else {
+            if p.required {
+                anyhow::bail!("missing param: {}", p.name);
+            }
+            continue;
+        };
+        match p.ty {
+            "string" => {
+                if let Some(s) = v.as_str().map(str::trim).filter(|s| !s.is_empty()) {
+                    map.insert(p.name.to_string(), Value::String(s.to_string()));
+                } else if p.required {
+                    anyhow::bail!("missing param: {}", p.name);
+                }
+            }
+            "bool" => {
+                if let Some(b) = v.as_bool() {
+                    map.insert(p.name.to_string(), Value::Bool(b));
+                } else if p.required {
+                    anyhow::bail!("missing param: {}", p.name);
+                }
+            }
+            _ => {
+                map.insert(p.name.to_string(), v.clone());
+            }
+        }
+    }
+    Ok(Some(Value::Object(map)))
+}
+
+fn shape_passthrough_result(spec: &PassthroughSpec, json: Value) -> Value {
+    if spec.result_ok {
+        return serde_json::json!({ "ok": true });
+    }
+    let mut value = json;
+    if let Some(field) = spec.hub_unwrap {
+        if let Some(inner) = value.get(field).cloned() {
+            value = inner;
+        }
+    }
+    if let Some(wrap) = spec.result_wrap {
+        let mut map = serde_json::Map::new();
+        map.insert(wrap.to_string(), value);
+        Value::Object(map)
+    } else {
+        value
     }
 }
 
@@ -901,6 +868,27 @@ mod tests {
             "got: {}",
             err.message
         );
+    }
+
+    #[test]
+    fn shape_passthrough_unwrap_then_wrap_keeps_contacts() {
+        let spec = PASSTHROUGH_SPECS
+            .iter()
+            .find(|s| s.name == "list_external_contacts")
+            .expect("list_external_contacts spec");
+        let hub = serde_json::json!({ "contacts": [{"handle": "bob@acme"}] });
+        let out = shape_passthrough_result(spec, hub);
+        assert_eq!(out["contacts"][0]["handle"], "bob@acme");
+    }
+
+    #[test]
+    fn shape_passthrough_result_ok_ignores_hub_body() {
+        let spec = PASSTHROUGH_SPECS
+            .iter()
+            .find(|s| s.result_ok)
+            .expect("at least one result.ok passthrough");
+        let out = shape_passthrough_result(spec, serde_json::json!({ "pin": "secret" }));
+        assert_eq!(out, serde_json::json!({ "ok": true }));
     }
 
     #[tokio::test]

@@ -10,11 +10,13 @@ methods — the hub route it forwards to. The wire is frozen; the catalog is
 bootstrapped from the live dispatch and drift-checked against it.
 
 - `deno task generate` (run in `proto/`) emits checked-in artifacts:
-  `core/src/daemon/rpc_passthrough.g.rs`, `app/lib/services/daemon_rpc_catalog.g.dart`,
-  `proto/generated/rpc-routes.g.json`.
+  `core/src/daemon/rpc_passthrough.g.rs`, `hub/routes/rpc_passthrough.g.ts`,
+  `app/lib/services/daemon_rpc_catalog.g.dart`, `proto/generated/rpc-routes.g.json`.
+  Passthrough methods generate end-to-end: hub Hono router, core interpreter, Dart catalog.
 - `deno task test` (run in `proto/`) fails when the catalog and
-  `core/src/daemon/rpc.rs` dispatch disagree, when Flutter's `DaemonClient`
-  calls an unknown method, or when generated output is stale.
+  `core/src/daemon/rpc.rs` dispatch disagree (core/stub match arms + passthrough
+  interpreter), when Flutter's `DaemonClient` calls an unknown method, or when
+  generated output is stale.
 - `hub/routes/rpc_catalog_routes_test.ts` asserts every passthrough route
   exists on the mounted hub app.
 

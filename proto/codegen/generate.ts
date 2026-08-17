@@ -1,14 +1,12 @@
 /**
  * RPC catalog codegen — reads ../rpc-catalog.json and emits checked-in artifacts:
  *
- *   core/src/daemon/rpc_passthrough.g.rs   declarative passthrough spec table (Rust)
- *   app/lib/services/daemon_rpc_catalog.g.dart   method/param metadata (Dart)
- *   proto/generated/rpc-routes.g.json      passthrough route table (hub golden tests)
+ *   core/src/daemon/rpc_passthrough.g.rs          passthrough spec table (Rust)
+ *   hub/routes/rpc_passthrough.g.ts               Hono passthrough router
+ *   app/lib/services/daemon_rpc_catalog.g.dart    method/param metadata (Dart)
+ *   proto/generated/rpc-routes.g.json             passthrough route table (hub golden tests)
  *
- * Stage 1 of the RPC chain collapse: artifacts are generated and drift-checked
- * but not yet wired into builds. Stages 2–4 swap each band onto them.
- *
- * Run: deno task generate   (from proto/; or --out <repo-root> for a dry run)
+ * The wire is frozen. Run: deno task generate (from proto/).
  */
 
 interface CatalogParam {
@@ -26,6 +24,12 @@ interface CatalogHub {
   unwrap?: string;
   /** Route auth: "bearer" (default) or "public" (no auth middleware). */
   auth?: "bearer" | "public";
+  /** HubStore method, e.g. "listCollabs" or "enterprise.getListingPublic". */
+  store?: string;
+  /** HTTP status (default 200). */
+  status?: number;
+  /** Wrap the store return as `{ [reply_wrap]: result }`. */
+  reply_wrap?: string;
 }
 
 interface CatalogMethod {
@@ -45,7 +49,12 @@ interface Catalog {
   methods: CatalogMethod[];
 }
 
-const HEADER = "GENERATED FILE — do not edit. Source: proto/rpc-catalog.json (deno task generate in proto/).";
+const HEADER =
+  "GENERATED FILE — do not edit. Source: proto/rpc-catalog.json (deno task generate in proto/).";
+
+function pathParamsOf(path: string): string[] {
+  return [...path.matchAll(/\{([a-z_]+)\}/g)].map((x) => x[1]);
+}
 
 export function validateCatalog(catalog: Catalog): void {
   const seen = new Set<string>();
@@ -57,8 +66,10 @@ export function validateCatalog(catalog: Catalog): void {
     const paramNames = new Set(m.params.map((p) => p.name));
     if (m.kind === "passthrough") {
       if (!m.hub) throw new Error(`passthrough ${m.name} missing hub mapping`);
-      const pathParams = [...m.hub.path.matchAll(/\{([a-z_]+)\}/g)].map((x) => x[1]);
-      for (const p of pathParams) {
+      if (!m.hub.store) {
+        throw new Error(`passthrough ${m.name} missing hub.store binding`);
+      }
+      for (const p of pathParamsOf(m.hub.path)) {
         if (!paramNames.has(p)) {
           throw new Error(`${m.name}: hub path param {${p}} not declared in params`);
         }
@@ -70,7 +81,9 @@ export function validateCatalog(catalog: Catalog): void {
       }
       for (const flagParam of Object.values(m.hub.query_flags ?? {})) {
         if (!paramNames.has(flagParam)) {
-          throw new Error(`${m.name}: query flag param ${flagParam} not declared in params`);
+          throw new Error(
+            `${m.name}: query flag param ${flagParam} not declared in params`,
+          );
         }
       }
     } else if (m.hub) {
@@ -92,7 +105,7 @@ function paramSpec(m: CatalogMethod, name: string): CatalogParam {
 function rustParamSpec(p: CatalogParam): string {
   return `ParamSpec { name: ${JSON.stringify(p.name)}, aliases: ${
     rustStrArray(p.aliases ?? [])
-  }, required: ${p.required} }`;
+  }, required: ${p.required}, ty: ${JSON.stringify(p.type)} }`;
 }
 
 export function emitRust(catalog: Catalog): string {
@@ -100,13 +113,14 @@ export function emitRust(catalog: Catalog): string {
   const lines: string[] = [];
   lines.push(`// ${HEADER}`);
   lines.push(`// Declarative hub-passthrough specs for the daemon JSON-RPC dispatch.`);
-  lines.push(`// Not yet part of the module tree — wired in at stage 3 of the RPC collapse.`);
   lines.push(``);
-  lines.push(`/// One RPC param: canonical name, accepted aliases, requiredness.`);
+  lines.push(`/// One RPC param: canonical name, accepted aliases, requiredness, wire type.`);
   lines.push(`pub struct ParamSpec {`);
   lines.push(`    pub name: &'static str,`);
   lines.push(`    pub aliases: &'static [&'static str],`);
   lines.push(`    pub required: bool,`);
+  lines.push(`    /// Catalog type: string, bool, json, json[], string[].`);
+  lines.push(`    pub ty: &'static str,`);
   lines.push(`}`);
   lines.push(``);
   lines.push(`/// One hub-passthrough RPC: verb + templated path + param routing + result shaping.`);
@@ -117,7 +131,7 @@ export function emitRust(catalog: Catalog): string {
   lines.push(`    pub path_params: &'static [ParamSpec],`);
   lines.push(`    pub body_params: &'static [ParamSpec],`);
   lines.push(`    /// (query_key, bool param) — appended as ?key=1 when the param is truthy.`);
-  lines.push(`    pub query_flags: &'static [(&'static str, &'static str)],`);
+  lines.push(`    pub query_flags: &'static [(&'static str, ParamSpec)],`);
   lines.push(`    /// Field plucked from the hub response before shaping the RPC result.`);
   lines.push(`    pub hub_unwrap: Option<&'static str>,`);
   lines.push(`    /// RPC result is wrapped as {wrap: value} when set.`);
@@ -129,7 +143,7 @@ export function emitRust(catalog: Catalog): string {
   lines.push(`pub const PASSTHROUGH_SPECS: &[PassthroughSpec] = &[`);
   for (const m of passthroughs) {
     const hub = m.hub!;
-    const pathParams = [...hub.path.matchAll(/\{([a-z_]+)\}/g)].map((x) => x[1]);
+    const pathParams = pathParamsOf(hub.path);
     const flags = Object.entries(hub.query_flags ?? {});
     lines.push(`    PassthroughSpec {`);
     lines.push(`        name: ${JSON.stringify(m.name)},`);
@@ -153,7 +167,10 @@ export function emitRust(catalog: Catalog): string {
       `        query_flags: ${
         flags.length === 0
           ? "&[]"
-          : `&[${flags.map(([k, v]) => `(${JSON.stringify(k)}, ${JSON.stringify(v)})`).join(", ")}]`
+          : `&[${
+            flags.map(([k, v]) => `(${JSON.stringify(k)}, ${rustParamSpec(paramSpec(m, v))})`)
+              .join(", ")
+          }]`
       },`,
     );
     lines.push(
@@ -173,8 +190,7 @@ export function emitRust(catalog: Catalog): string {
 export function emitDart(catalog: Catalog): string {
   const lines: string[] = [];
   lines.push(`// ${HEADER}`);
-  lines.push(`// Daemon JSON-RPC method/param metadata. Not yet imported by the app —`);
-  lines.push(`// stage 4 of the RPC collapse swaps DaemonClient stubs onto it.`);
+  lines.push(`// Daemon JSON-RPC method/param metadata used by FakeDaemonClient.`);
   lines.push(``);
   lines.push(`/// kind: passthrough = mechanical hub forward; core = daemon logic; stub = removed.`);
   lines.push(`class DaemonRpcMethod {`);
@@ -224,6 +240,75 @@ export function emitRoutes(catalog: Catalog): string {
   return JSON.stringify({ comment: HEADER, routes }, null, 2) + "\n";
 }
 
+function honoVerb(verb: string): string {
+  const v = verb.toLowerCase();
+  if (!["get", "post", "put", "patch", "delete"].includes(v)) {
+    throw new Error(`unsupported hub verb ${verb}`);
+  }
+  return v;
+}
+
+export function emitHub(catalog: Catalog): string {
+  const passthroughs = catalog.methods.filter((m) => m.kind === "passthrough");
+  const lines: string[] = [];
+  lines.push(`// ${HEADER}`);
+  lines.push(`import { Hono } from "hono";`);
+  lines.push(`import { authMiddleware, type HubEnv } from "../middleware/auth.ts";`);
+  lines.push(`import type { HubStore } from "../store/store.ts";`);
+  lines.push(``);
+  lines.push(`/** Mechanical hub forwards declared in proto/rpc-catalog.json. */`);
+  lines.push(`export function createPassthroughRoutes(store: HubStore) {`);
+  lines.push(`  const routes = new Hono<HubEnv>();`);
+  lines.push(`  const auth = authMiddleware(store);`);
+  lines.push(``);
+  for (const m of passthroughs) {
+    const hub = m.hub!;
+    const honoPath = hub.path.replaceAll(/\{([a-z_]+)\}/g, ":$1");
+    const verb = honoVerb(hub.verb);
+    const pathParams = pathParamsOf(hub.path);
+    const needsAuth = hub.auth !== "public";
+    const hasBody = (hub.body ?? []).length > 0;
+    const flags = Object.entries(hub.query_flags ?? {});
+    const status = hub.status ?? 200;
+    const mw = needsAuth ? "auth, " : "";
+
+    const args: string[] = [];
+    if (needsAuth) args.push(`c.get("auth")`);
+    for (const p of pathParams) {
+      args.push(`decodeURIComponent(c.req.param(${JSON.stringify(p)})!)`);
+    }
+    if (hasBody) args.push("body");
+    if (flags.length > 0) {
+      const fields = flags.map(([queryKey]) =>
+        `${queryKey}: c.req.query(${JSON.stringify(queryKey)}) === "1" || c.req.query(${
+          JSON.stringify(queryKey)
+        }) === "true"`
+      );
+      args.push(`{ ${fields.join(", ")} }`);
+    }
+
+    const call = `await store.${hub.store}(${args.join(", ")})`;
+    const payload = hub.reply_wrap
+      ? `{ ${hub.reply_wrap}: result }`
+      : "result";
+    const statusArg = status !== 200 ? `, ${status}` : "";
+
+    lines.push(`  // ${m.name}`);
+    lines.push(`  routes.${verb}(${JSON.stringify(honoPath)}, ${mw}async (c) => {`);
+    if (hasBody) {
+      lines.push(`    const body = await c.req.json();`);
+    }
+    lines.push(`    const result = ${call};`);
+    lines.push(`    return c.json(${payload}${statusArg});`);
+    lines.push(`  });`);
+    lines.push(``);
+  }
+  lines.push(`  return routes;`);
+  lines.push(`}`);
+  lines.push(``);
+  return lines.join("\n");
+}
+
 export interface GeneratedOutputs {
   [relPath: string]: string;
 }
@@ -232,6 +317,7 @@ export function generateAll(catalog: Catalog): GeneratedOutputs {
   validateCatalog(catalog);
   return {
     "core/src/daemon/rpc_passthrough.g.rs": emitRust(catalog),
+    "hub/routes/rpc_passthrough.g.ts": emitHub(catalog),
     "app/lib/services/daemon_rpc_catalog.g.dart": emitDart(catalog),
     "proto/generated/rpc-routes.g.json": emitRoutes(catalog),
   };

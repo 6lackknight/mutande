@@ -1,45 +1,12 @@
-import 'dart:convert';
 
 import 'package:app/screens/collab_screen.dart';
 import 'package:app/services/daemon_client.dart';
+import 'package:app/services/daemon_errors.dart';
+import 'fake_daemon_client.dart';
 import 'package:app/theme/mutande_macos_theme.dart';
 import 'package:app/widgets/pane_quiet_state.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:http/http.dart' as http;
-import 'package:http/testing.dart';
-
-http.Response _rpcOk(Object? id, Map<String, dynamic> result) {
-  return http.Response(
-    jsonEncode({'jsonrpc': '2.0', 'id': id, 'result': result}),
-    200,
-    headers: {'content-type': 'application/json'},
-  );
-}
-
-http.Response _rpcErr(Object? id, String message) {
-  return http.Response(
-    jsonEncode({
-      'jsonrpc': '2.0',
-      'id': id,
-      'error': {'code': -32000, 'message': message},
-    }),
-    200,
-    headers: {'content-type': 'application/json'},
-  );
-}
-
-DaemonClient _daemon(
-  Future<http.Response> Function(Map<String, dynamic> body) onRpc,
-) {
-  return DaemonClient(
-    httpClient: MockClient((request) async {
-      final body = jsonDecode(request.body) as Map<String, dynamic>;
-      return onRpc(body);
-    }),
-    httpToken: 'test-token',
-  );
-}
 
 bool _isSlopRed(Color? color) {
   if (color == null) return false;
@@ -126,11 +93,11 @@ void main() {
   testWidgets('empty collab list failure shows human copy, not the hub path', (
     WidgetTester tester,
   ) async {
-    final daemon = _daemon((body) async {
-      if (body['method'] == 'list_collabs') {
-        return _rpcErr(body['id'], 'GET /v1/collabs');
+    final daemon = rpcDaemon((method, params) async {
+      if (method == 'list_collabs') {
+        throw DaemonException('GET /v1/collabs');
       }
-      return _rpcOk(body['id'], {'ok': true});
+      return {'ok': true};
     });
     await _pump(tester, CollabPanel(daemon: daemon));
     await tester.pumpAndSettle();
@@ -147,11 +114,11 @@ void main() {
   ) async {
     var lists = 0;
     VoidCallback? reload;
-    final daemon = _daemon((body) async {
-      if (body['method'] == 'list_collabs') {
+    final daemon = rpcDaemon((method, params) async {
+      if (method == 'list_collabs') {
         lists++;
         if (lists == 1) {
-          return _rpcOk(body['id'], {
+          return {
             'collabs': [
               {
                 'id': 'c1',
@@ -160,11 +127,11 @@ void main() {
                 'card_count': 1,
               },
             ],
-          });
+          };
         }
-        return _rpcErr(body['id'], 'GET /v1/collabs');
+        throw DaemonException('GET /v1/collabs');
       }
-      return _rpcOk(body['id'], {'ok': true});
+      return {'ok': true};
     });
     await _pump(
       tester,
