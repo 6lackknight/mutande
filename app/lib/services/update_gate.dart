@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Platform;
 
@@ -83,13 +84,22 @@ class UpdateGateClient {
   }
 
   Future<DesktopVersionInfo?> fetchLatest() async {
-    final response = await _http.get(_endpoint).timeout(timeout);
-    if (response.statusCode != 200) return null;
-    final decoded = jsonDecode(response.body);
-    if (decoded is! Map<String, dynamic>) return null;
-    final version = DesktopVersionInfo.publishedVersionFromJson(decoded);
-    if (version == null) return null;
-    return DesktopVersionInfo.fromJson({...decoded, 'version': version});
+    try {
+      final response = await _http.get(_endpoint).timeout(
+        timeout,
+        onTimeout: () => throw TimeoutException('desktop-version timed out'),
+      );
+      if (response.statusCode != 200) return null;
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map<String, dynamic>) return null;
+      final version = DesktopVersionInfo.publishedVersionFromJson(decoded);
+      if (version == null) return null;
+      return DesktopVersionInfo.fromJson({...decoded, 'version': version});
+    } on TimeoutException {
+      return null;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// When [latest] is newer than [currentVersion], returns [latest] to gate.

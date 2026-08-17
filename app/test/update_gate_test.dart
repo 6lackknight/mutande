@@ -1,6 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Platform;
 
+import 'package:app/app.dart';
+import 'package:app/config/app_config.dart';
+import 'package:app/services/daemon_client.dart';
+import 'package:app/services/first_run_store.dart';
 import 'package:app/services/update_gate.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -86,6 +91,85 @@ void main() {
       addTearDown(client.close);
 
       expect(await client.fetchLatest(), isNull);
+    });
+
+    test('fetchLatest fails open on timeout', () async {
+      final client = UpdateGateClient(
+        webAppUrl: 'https://mutande.online',
+        timeout: const Duration(milliseconds: 50),
+        httpClient: MockClient((_) async {
+          await Future<void>.delayed(const Duration(seconds: 5));
+          return http.Response('', 200);
+        }),
+      );
+      addTearDown(client.close);
+
+      expect(await client.fetchLatest(), isNull);
+    });
+  });
+
+  group('MutandeApp update gate', () {
+    testWidgets('does not block startup on slow version check', (
+      WidgetTester tester,
+    ) async {
+      final gate = UpdateGateClient(
+        webAppUrl: 'https://mutande.online',
+        timeout: const Duration(milliseconds: 50),
+        httpClient: MockClient(
+          (_) => Completer<http.Response>().future,
+        ),
+      );
+      addTearDown(gate.close);
+
+      await tester.pumpWidget(
+        MutandeApp(
+          config: const AppConfig(hubUrl: 'http://localhost:8000'),
+          appVersion: '2.0.5',
+          updateGate: gate,
+          welcomeDuration: Duration.zero,
+          seedStatus: const DaemonStatusResult(
+            configured: true,
+            hubUrl: 'http://localhost:8000',
+            handle: 'alice@acme',
+          ),
+          firstRunStore: FirstRunStore.memory(
+            connectComplete: true,
+            pingComplete: true,
+            notificationsComplete: true,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('Checking for updates'), findsNothing);
+      expect(find.bySemanticsLabel('mutande'), findsOneWidget);
+
+      // Background check times out and fails open.
+      await tester.pump(const Duration(milliseconds: 200));
+    });
+
+    test('gateTarget marks newer published alpha as required', () async {
+      final gate = UpdateGateClient(
+        webAppUrl: 'https://mutande.online',
+        httpClient: MockClient((_) async {
+          return http.Response(
+            jsonEncode({
+              'channel': 'alpha',
+              'version': '9.9.9',
+              'download_url': 'https://mutande.online/download',
+            }),
+            200,
+          );
+        }),
+      );
+      addTearDown(gate.close);
+
+      final latest = await gate.fetchLatest();
+      expect(latest, isNotNull);
+      expect(
+        gate.gateTarget(currentVersion: '2.0.5', latest: latest!)?.version,
+        '9.9.9',
+      );
     });
   });
 }

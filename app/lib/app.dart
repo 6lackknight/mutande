@@ -121,11 +121,12 @@ class _MutandeAppState extends State<MutandeApp> {
       kDebugMode &&
       !_inWidgetTest;
 
+  /// Release update gate deferred until network check is reliable.
+  /// Runs only when forced (`FORCE_UPDATE_GATE`) or [MutandeApp.updateGate] is injected (tests).
   bool get _shouldRunUpdateGate =>
       !_skipUpdateGateFlag &&
       !_shouldPreviewUpdateGate &&
-      (widget.updateGate != null ||
-          (!kDebugMode || _forceUpdateGateFlag) && !_inWidgetTest);
+      (widget.updateGate != null || _forceUpdateGateFlag);
 
   DesktopVersionInfo _previewUpdateInfo() {
     final base = widget.config.webAppUrl.replaceAll(RegExp(r'/+$'), '');
@@ -150,7 +151,7 @@ class _MutandeAppState extends State<MutandeApp> {
     } else if (_shouldRunUpdateGate) {
       _updateGate = widget.updateGate ??
           UpdateGateClient(webAppUrl: widget.config.webAppUrl);
-      _updateChecking = true;
+      // Non-blocking: splash/bootstrap proceed while we poll mutande.online.
       unawaited(_checkForUpdate());
     }
   }
@@ -281,26 +282,6 @@ class _MutandeAppState extends State<MutandeApp> {
           rechecking: _updateChecking,
           recheckError: _updateRecheckError,
           onRecheck: () => _checkForUpdate(recheck: true),
-        ),
-      );
-    }
-
-    if (_updateChecking) {
-      return _appShell(
-        const Scaffold(
-          body: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                MutandeOrb.standard(semanticLabel: 'Loading…'),
-                SizedBox(height: 20),
-                Text(
-                  'Checking for updates',
-                  style: TextStyle(color: Color(0xFF78716C)),
-                ),
-              ],
-            ),
-          ),
         ),
       );
     }
