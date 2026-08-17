@@ -15,6 +15,15 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "2.0.5",
+    date: "2026-08-17",
+    title: "Startup & download polish",
+    notes: [
+      "Fix rare startup hang while checking for updates — the app continues if mutande.online is unreachable.",
+      "Download page shows platform choices before starting your download.",
+    ],
+  },
+  {
     version: "2.0.4",
     date: "2026-08-17",
     title: "Collab dashboard & updates",

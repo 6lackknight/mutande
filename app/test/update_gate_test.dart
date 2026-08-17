@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io' show Platform;
 
 import 'package:app/services/update_gate.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -47,6 +48,34 @@ void main() {
         client.gateTarget(currentVersion: '2.0.2', latest: latest),
         isNull,
       );
+    });
+
+    test('fetchLatest prefers windows_version on Windows payloads', () async {
+      final client = UpdateGateClient(
+        webAppUrl: 'https://mutande.online',
+        httpClient: MockClient((_) async {
+          return http.Response(
+            jsonEncode({
+              'channel': 'alpha',
+              'version': '2.0.4',
+              'windows_version': '2.0.2',
+              'download_url': 'https://mutande.online/download',
+            }),
+            200,
+          );
+        }),
+      );
+      addTearDown(client.close);
+
+      final latest = await client.fetchLatest();
+      expect(
+        DesktopVersionInfo.publishedVersionFromJson({
+          'version': '2.0.4',
+          'windows_version': '2.0.2',
+        }),
+        Platform.isWindows ? '2.0.2' : '2.0.4',
+      );
+      expect(latest?.version, isNotNull);
     });
 
     test('fetchLatest fails open on non-200', () async {

@@ -171,7 +171,10 @@ class _MutandeAppState extends State<MutandeApp> {
       return;
     }
     final gate = _updateGate;
-    if (gate == null) return;
+    if (gate == null) {
+      if (mounted) setState(() => _updateChecking = false);
+      return;
+    }
     if (recheck && mounted) {
       setState(() {
         _updateRecheckError = null;
@@ -179,7 +182,10 @@ class _MutandeAppState extends State<MutandeApp> {
       });
     }
     try {
-      final latest = await gate.fetchLatest();
+      final latest = await gate.fetchLatest().timeout(
+        gate.timeout + const Duration(seconds: 1),
+        onTimeout: () => null,
+      );
       if (!mounted) return;
       if (latest == null) {
         setState(() {
@@ -218,6 +224,10 @@ class _MutandeAppState extends State<MutandeApp> {
           _updateRecheckError = 'Could not reach mutande.online.';
         }
       });
+    } finally {
+      if (mounted && _updateChecking) {
+        setState(() => _updateChecking = false);
+      }
     }
   }
 

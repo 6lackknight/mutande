@@ -18,8 +18,12 @@ class DesktopVersionInfo {
   });
 
   factory DesktopVersionInfo.fromJson(Map<String, dynamic> json) {
+    final published =
+        VersionCompare.normalize(json['version'] as String?) ??
+        publishedVersionFromJson(json) ??
+        '';
     return DesktopVersionInfo(
-      version: json['version'] as String? ?? '',
+      version: published,
       channel: json['channel'] as String? ?? 'alpha',
       downloadUrl: json['download_url'] as String? ??
           'https://mutande.online/download',
@@ -27,6 +31,15 @@ class DesktopVersionInfo {
       macIntelUrl: json['mac_intel_url'] as String?,
       winUrl: json['win_url'] as String?,
     );
+  }
+
+  /// Platform-specific semver from `/api/desktop-version`.
+  static String? publishedVersionFromJson(Map<String, dynamic> json) {
+    if (!kIsWeb && Platform.isWindows) {
+      return VersionCompare.normalize(json['windows_version'] as String?) ??
+          VersionCompare.normalize(json['version'] as String?);
+    }
+    return VersionCompare.normalize(json['version'] as String?);
   }
 
   final String version;
@@ -57,7 +70,7 @@ class UpdateGateClient {
   UpdateGateClient({
     required this.webAppUrl,
     http.Client? httpClient,
-    this.timeout = const Duration(seconds: 8),
+    this.timeout = const Duration(seconds: 5),
   }) : _http = httpClient ?? http.Client();
 
   final String webAppUrl;
@@ -74,7 +87,7 @@ class UpdateGateClient {
     if (response.statusCode != 200) return null;
     final decoded = jsonDecode(response.body);
     if (decoded is! Map<String, dynamic>) return null;
-    final version = VersionCompare.normalize(decoded['version'] as String?);
+    final version = DesktopVersionInfo.publishedVersionFromJson(decoded);
     if (version == null) return null;
     return DesktopVersionInfo.fromJson({...decoded, 'version': version});
   }

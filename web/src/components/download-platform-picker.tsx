@@ -29,9 +29,6 @@ function triggerDownload(href: string) {
   a.remove();
 }
 
-/** Survives React Strict Mode remount so autodetect only fires once per page load. */
-let autodetectStarted = false;
-
 export function DownloadPlatformPicker({
   macArm64Url,
   macIntelUrl,
@@ -104,9 +101,21 @@ export function DownloadPlatformPicker({
     [options],
   );
 
-  // SSR + first paint: silicon (always published). Client effect upgrades.
   const [selected, setSelected] = useState<DownloadPlatform>("mac_arm64");
   const [confirmed, setConfirmed] = useState<PlatformOption | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const raw = await detectDownloadPlatform();
+      if (cancelled) return;
+      const id = resolvePublishedPlatform(raw, available);
+      setSelected(id);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [available]);
 
   const startFor = (option: PlatformOption, surface: string) => {
     setSelected(option.id);
@@ -120,31 +129,14 @@ export function DownloadPlatformPicker({
     triggerDownload(option.href);
   };
 
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      const raw = await detectDownloadPlatform();
-      if (cancelled || autodetectStarted) return;
-      autodetectStarted = true;
-      const id = resolvePublishedPlatform(raw, available);
-      const option =
-        options.find((o) => o.id === id && o.published) ??
-        options.find((o) => o.published)!;
-      startFor(option, "autodetect");
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // Intentionally once after mount (module flag blocks Strict Mode double-start).
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- autodetect boot
-  }, [available, options]);
-
   const current =
     confirmed ??
     options.find((o) => o.id === selected && o.published) ??
     options.find((o) => o.published)!;
 
-  const switchTargets = published.filter((o) => o.id !== current.id);
+  const switchTargets = confirmed
+    ? published.filter((o) => o.id !== current.id)
+    : [];
 
   return (
     <div className="space-y-3">
@@ -154,22 +146,57 @@ export function DownloadPlatformPicker({
         beamsPerSide={2}
         beamDuration={4}
       >
-        {/* Inner flex: grid/flex on WarpBackground collapses @container-[size] beams. */}
         <div className="flex min-h-[calc(40vh-2rem)] items-center justify-center sm:min-h-[calc(40vh-2.5rem)]">
-          <div
-            className={`h-fit w-fit max-w-full rounded-md border px-4 py-3.5 text-sm leading-relaxed shadow-sm sm:px-5 sm:py-4 ${
-              current.alertTone === "ok"
-                ? "border-accent/30 bg-accent-soft/95 text-stone-800"
-                : "border-amber-300/50 bg-amber-50/90 text-stone-800"
-            }`}
-          >
-            <p className="font-medium text-stone-900">
-              {confirmed
-                ? `Download started — ${current.title}`
-                : `Preparing download — ${current.title}`}
-            </p>
-            <p className="mt-1.5 max-w-prose">{current.alert}</p>
-          </div>
+          {confirmed ? (
+            <div
+              className={`h-fit w-fit max-w-full rounded-md border px-4 py-3.5 text-sm leading-relaxed shadow-sm sm:px-5 sm:py-4 ${
+                current.alertTone === "ok"
+                  ? "border-accent/30 bg-accent-soft/95 text-stone-800"
+                  : "border-amber-300/50 bg-amber-50/90 text-stone-800"
+              }`}
+            >
+              <p className="font-medium text-stone-900">
+                Download started — {current.title}
+              </p>
+              <p className="mt-1.5 max-w-prose">{current.alert}</p>
+            </div>
+          ) : (
+            <div className="w-full max-w-md space-y-4 text-center">
+              <div>
+                <p className="font-display text-lg font-semibold tracking-tight text-stone-900">
+                  Choose your platform
+                </p>
+                <p className="mt-1.5 text-sm text-muted">
+                  Pick the build for your computer, then check your downloads
+                  folder.
+                </p>
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-center">
+                {published.map((option) => {
+                  const recommended = option.id === selected;
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => startFor(option, "platform_picker")}
+                      className={`rounded-full border px-4 py-2.5 text-sm font-medium transition ${
+                        recommended
+                          ? "border-stone-900 bg-stone-900 text-white hover:bg-stone-800"
+                          : "border-stone-300/80 bg-white/80 text-stone-800 hover:border-stone-400 hover:bg-white"
+                      }`}
+                    >
+                      {option.title}
+                      {recommended ? (
+                        <span className="ml-1.5 text-xs font-normal opacity-80">
+                          suggested
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </WarpBackground>
 
