@@ -1,6 +1,6 @@
 [package]
 name = "mutande-core"
-version = "2.0.2"
+version = "2.0.4"
 edition = "2021"
 description = "Mutande desktop core: E2E crypto, daemon, MCP stdio"
 license = "MIT"
