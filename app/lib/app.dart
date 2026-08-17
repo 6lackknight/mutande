@@ -86,7 +86,7 @@ class MutandeApp extends StatefulWidget {
   /// When set (macOS shell), error screen can restart the bundled sidecar.
   final Future<String?> Function()? onRestartCourier;
 
-  /// Injectable for tests; null in production (automatic gate disabled).
+  /// Injectable for tests; defaults to web `/api/desktop-version` in release.
   final UpdateGateClient? updateGate;
 
   @override
@@ -121,15 +121,14 @@ class _MutandeAppState extends State<MutandeApp> {
       kDebugMode &&
       !_inWidgetTest;
 
-  /// Automatic `/api/desktop-version` poll — opt-in only (tests or `FORCE_UPDATE_GATE`).
+  /// Release builds poll `/api/desktop-version` in the background (debug skips
+  /// unless `FORCE_UPDATE_GATE`). Splash is never blocked; UpdateRequiredScreen
+  /// appears only after a successful “behind published” result.
   bool get _shouldRunUpdateGate =>
       !_skipUpdateGateFlag &&
       !_shouldPreviewUpdateGate &&
-      (widget.updateGate != null || _forceUpdateGateFlag);
-
-  /// Production must never block on update metadata; only explicit preview/force paths may.
-  bool get _mayBlockForUpdate =>
-      _shouldPreviewUpdateGate || _shouldRunUpdateGate;
+      (widget.updateGate != null ||
+          ((!kDebugMode || _forceUpdateGateFlag) && !_inWidgetTest));
 
   DesktopVersionInfo _previewUpdateInfo() {
     final base = widget.config.webAppUrl.replaceAll(RegExp(r'/+$'), '');
@@ -248,8 +247,14 @@ class _MutandeAppState extends State<MutandeApp> {
 
   Widget _appShell(Widget home) {
     final useMaterial = !kIsWeb && Platform.isWindows;
+    // WidgetsApp only honors `home` on first mount — key so the update gate
+    // can replace splash after a background `/api/desktop-version` hit.
+    final shellKey = ValueKey(
+      _updateRequired == null ? 'mutande-shell' : 'mutande-update-gate',
+    );
     if (useMaterial) {
       return MaterialApp(
+        key: shellKey,
         title: 'mutande',
         theme: mutandeMaterialTheme(),
         debugShowCheckedModeBanner: false,
@@ -258,6 +263,7 @@ class _MutandeAppState extends State<MutandeApp> {
     }
 
     return MacosApp(
+      key: shellKey,
       title: 'mutande',
       theme: mutandeMacosTheme(),
       darkTheme: MacosThemeData.dark(),
@@ -277,7 +283,7 @@ class _MutandeAppState extends State<MutandeApp> {
 
   @override
   Widget build(BuildContext context) {
-    if (_updateRequired != null && _mayBlockForUpdate) {
+    if (_updateRequired != null) {
       return _appShell(
         UpdateRequiredScreen(
           currentVersion: widget.appVersion,

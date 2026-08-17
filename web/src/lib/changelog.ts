@@ -17,9 +17,9 @@ export const CHANGELOG: ChangelogEntry[] = [
   {
     version: "2.0.7",
     date: "2026-08-17",
-    title: "Startup gate removed",
+    title: "Startup no longer blocks",
     notes: [
-      "Production builds no longer run the startup version check — the app opens immediately every time.",
+      "Update check no longer blocks startup — the app opens immediately, then prompts to reinstall if you're behind the published alpha.",
     ],
   },
   {
