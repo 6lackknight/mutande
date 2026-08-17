@@ -15,6 +15,14 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "2.0.7",
+    date: "2026-08-17",
+    title: "Startup gate removed",
+    notes: [
+      "Production builds no longer run the startup version check — the app opens immediately every time.",
+    ],
+  },
+  {
     version: "2.0.6",
     date: "2026-08-17",
     title: "Startup fix",

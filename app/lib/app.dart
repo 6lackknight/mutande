@@ -86,7 +86,7 @@ class MutandeApp extends StatefulWidget {
   /// When set (macOS shell), error screen can restart the bundled sidecar.
   final Future<String?> Function()? onRestartCourier;
 
-  /// Injectable for tests; defaults to web `/api/desktop-version` in release builds.
+  /// Injectable for tests; null in production (automatic gate disabled).
   final UpdateGateClient? updateGate;
 
   @override
@@ -121,12 +121,15 @@ class _MutandeAppState extends State<MutandeApp> {
       kDebugMode &&
       !_inWidgetTest;
 
-  /// Release update gate deferred until network check is reliable.
-  /// Runs only when forced (`FORCE_UPDATE_GATE`) or [MutandeApp.updateGate] is injected (tests).
+  /// Automatic `/api/desktop-version` poll — opt-in only (tests or `FORCE_UPDATE_GATE`).
   bool get _shouldRunUpdateGate =>
       !_skipUpdateGateFlag &&
       !_shouldPreviewUpdateGate &&
       (widget.updateGate != null || _forceUpdateGateFlag);
+
+  /// Production must never block on update metadata; only explicit preview/force paths may.
+  bool get _mayBlockForUpdate =>
+      _shouldPreviewUpdateGate || _shouldRunUpdateGate;
 
   DesktopVersionInfo _previewUpdateInfo() {
     final base = widget.config.webAppUrl.replaceAll(RegExp(r'/+$'), '');
@@ -274,7 +277,7 @@ class _MutandeAppState extends State<MutandeApp> {
 
   @override
   Widget build(BuildContext context) {
-    if (_updateRequired != null) {
+    if (_updateRequired != null && _mayBlockForUpdate) {
       return _appShell(
         UpdateRequiredScreen(
           currentVersion: widget.appVersion,

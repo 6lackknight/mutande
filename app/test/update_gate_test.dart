@@ -109,6 +109,34 @@ void main() {
   });
 
   group('MutandeApp update gate', () {
+    testWidgets('production shell never runs update gate without injection', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        MutandeApp(
+          config: const AppConfig(hubUrl: 'http://localhost:8000'),
+          appVersion: '2.0.6',
+          welcomeDuration: Duration.zero,
+          seedStatus: const DaemonStatusResult(
+            configured: true,
+            hubUrl: 'http://localhost:8000',
+            handle: 'alice@acme',
+          ),
+          firstRunStore: FirstRunStore.memory(
+            connectComplete: true,
+            pingComplete: true,
+            notificationsComplete: true,
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(find.text('Checking for updates'), findsNothing);
+      expect(find.text('Update required'), findsNothing);
+      expect(find.bySemanticsLabel('mutande'), findsOneWidget);
+    });
+
     testWidgets('does not block startup on slow version check', (
       WidgetTester tester,
     ) async {

@@ -241,15 +241,16 @@ build_one_arch() {
   echo "==> mutande-core --version ${core_ver} (matches app ${VERSION})"
 
   # Flutter produces a universal (or host) app; we thin + swap sidecar per arch.
+  # Always rebuild — stale Products/Release has shipped wrong gate/UI after version bumps.
   built_app="$APP_DIR/build/macos/Build/Products/Release/${APP_NAME}"
-  if [[ ! -x "$built_app/Contents/MacOS/mutande" ]]; then
+  if [[ "$arch_key" == "arm64" || ! -x "$built_app/Contents/MacOS/mutande" ]]; then
     echo "==> flutter build macos --release"
     (cd "$APP_DIR" && flutter build macos --release \
       --build-name="${VERSION}" \
       --build-number="${BUILD_NUMBER}" \
       --dart-define="APP_VERSION=${VERSION}")
   else
-    echo "==> reuse flutter Release app (already built this run)"
+    echo "==> reuse flutter Release app (second arch, same dart build)"
   fi
 
   if [[ ! -x "$built_app/Contents/MacOS/mutande" ]]; then
