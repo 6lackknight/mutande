@@ -43,6 +43,7 @@ impl TrustedContacts {
         self.save()
     }
 
+    #[allow(dead_code)]
     pub fn untrust(&mut self, handle: &str) -> Result<()> {
         self.data.handles.remove(&normalize_handle(handle));
         self.save()

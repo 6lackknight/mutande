@@ -156,6 +156,7 @@ fn spawn_device_register(state: Arc<DaemonState>) {
     });
 }
 
+#[cfg(unix)]
 fn spawn_http_bridge(state: Arc<DaemonState>, bind: &str) -> Result<()> {
     let token = config::ensure_http_token().context("ensure HTTP bridge token")?;
     tracing::info!(
@@ -250,14 +251,11 @@ fn ensure_mutande_dir(socket_path: &Path) -> Result<()> {
 }
 
 /// Owner-only socket after bind (macOS/unix). Best-effort if the FS ignores mode.
+#[cfg(unix)]
 fn restrict_socket_permissions(socket_path: &Path) -> Result<()> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(socket_path, std::fs::Permissions::from_mode(0o600))
-            .with_context(|| format!("chmod 0600 {}", socket_path.display()))?;
-    }
-    let _ = socket_path;
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(socket_path, std::fs::Permissions::from_mode(0o600))
+        .with_context(|| format!("chmod 0600 {}", socket_path.display()))?;
     Ok(())
 }
 

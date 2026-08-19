@@ -8,11 +8,12 @@ use serde::{Deserialize, Serialize};
 use crate::hub_client::{ThreadMeta, YourStatus};
 
 use super::state::{
-    BundleAnswer, HumanDecision, MessageIntent, MutandeBundle, OpenedThreadDetail, OpenedThreadMessage,
+    BundleAnswer, HumanDecision, MessageIntent, MutandeBundle, OpenedThreadDetail,
     TurnActor, TurnEntry, TurnReason,
 };
 
 /// Hub mirror row: post-merge awaiting holder (blind courier).
+#[allow(dead_code)]
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct HubTurnMirror {
     pub user_id: String,
@@ -228,6 +229,7 @@ pub fn derive_next_turn(
 
 /// Map awaiting TurnEntry addresses to hub `{user_id, actor}` using thread participants.
 /// Caller supplies a resolver from bare handle → user_id.
+#[allow(dead_code)]
 pub fn hub_turns_mirror(
     awaiting: &[TurnEntry],
     resolve_user_id: impl Fn(&str) -> Option<String>,
@@ -384,6 +386,7 @@ pub fn prepare_outgoing_bundle(
 }
 
 /// Resolve held question turns for the sender from prior awaiting.
+#[allow(dead_code)]
 pub fn held_by_address<'a>(awaiting: &'a [TurnEntry], address: &str) -> Vec<&'a TurnEntry> {
     let norm = normalize_address(address);
     awaiting
@@ -435,6 +438,7 @@ pub fn task_gate_decision(from_handle: &str, objective: &str, message_id: &str) 
 mod tests {
     use super::*;
     use crate::hub_client::{ThreadKind, ThreadStatus};
+    use super::state::OpenedThreadMessage;
 
     fn empty_thread() -> OpenedThreadDetail {
         OpenedThreadDetail {

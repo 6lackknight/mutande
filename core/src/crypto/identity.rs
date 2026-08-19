@@ -1,5 +1,6 @@
 use std::sync::Mutex;
 
+#[cfg(target_os = "macos")]
 use super::seal::device_public_from_secret;
 use super::types::{DevicePubKey, DeviceSecretKey};
 

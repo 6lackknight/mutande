@@ -51,6 +51,7 @@ impl ThreadListEnrichmentCache {
         Self { path, data }
     }
 
+    #[cfg(test)]
     pub fn load_in_memory() -> Self {
         Self {
             path: PathBuf::from("/dev/null"),

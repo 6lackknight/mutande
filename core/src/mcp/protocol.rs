@@ -3,6 +3,7 @@ use serde_json::Value;
 
 #[derive(Debug, Deserialize)]
 pub struct McpRequest {
+    #[allow(dead_code)]
     pub jsonrpc: Option<String>,
     pub id: Option<Value>,
     pub method: String,
