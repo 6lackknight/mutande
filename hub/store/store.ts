@@ -119,7 +119,9 @@ import type {
   SubmitPairRequestInput,
   ExternalContactLink,
   HandshakeInput,
+  OpsCensus,
 } from "./types.ts";
+import { computeOpsCensus } from "./census.ts";
 import { sanitizeHandshake } from "./handshake.ts";
 import { createBlobUrls } from "./r2.ts";
 import {
@@ -1723,6 +1725,11 @@ export class HubStore {
           );
         }
         recipientIds = [auth.userId];
+        extraParticipants = await this.siblingSlots(
+          auth.userId,
+          toAgent.slug,
+          toAgent.id,
+        );
       } else if (parsedTo.kind === "user") {
         const bareTo = formatDisplayAddress(parsedTo.local, parsedTo.orgSlug);
         // L4: public enterprise address — billing gate, no contact/same-org required.
@@ -1780,6 +1787,11 @@ export class HubStore {
             }
           }
           recipientIds = [recipient.id];
+          extraParticipants = await this.siblingSlots(
+            recipient.id,
+            toAgent.slug,
+            toAgent.id,
+          );
         }
       } else {
         throw new HubError("Invalid recipient address", "invalid_handle");
@@ -2896,6 +2908,31 @@ export class HubStore {
     return null;
   }
 
+  /** Sidecar + mcp rows for one display slug (dual-slot identity). */
+  private async listAgentSlotsForSlug(
+    userId: string,
+    slug: string,
+  ): Promise<Agent[]> {
+    const out: Agent[] = [];
+    for (const transport of ["sidecar", "mcp"] as const) {
+      const id = await this.lookupAgentSlotId(userId, slug, transport);
+      if (!id) continue;
+      const agent = await this.getAgent(id);
+      if (agent) out.push(agent);
+    }
+    return out;
+  }
+
+  /** Other transport row(s) for the same slug — mail to `@chatgpt` reaches both. */
+  private async siblingSlots(
+    userId: string,
+    slug: string,
+    exceptId: string,
+  ): Promise<Agent[]> {
+    const slots = await this.listAgentSlotsForSlug(userId, slug);
+    return slots.filter((a) => a.id !== exceptId);
+  }
+
   private async ensureSlotIndex(userId: string, agent: Agent): Promise<void> {
     await this.kv.set(this.userAgentSlotKey(userId, agent.slug, agent.transport), agent.id);
     if (agent.transport === "sidecar") {
@@ -3342,6 +3379,14 @@ export class HubStore {
     }
     items.sort((a, b) => b.created_at.localeCompare(a.created_at));
     return { waitlist: items };
+  }
+
+  /** Product-owner ops: Phase 1 evidence scoreboard + KV wipe watch. */
+  async listOpsCensus(auth: AuthContext): Promise<OpsCensus> {
+    if (!isPlatformOpsAdmin(auth.auth0Roles)) {
+      throw forbidden("Platform admin required");
+    }
+    return computeOpsCensus(this.kv);
   }
 
   async listInvitesAsAdmin(auth: AuthContext): Promise<{ invites: Invite[] }> {

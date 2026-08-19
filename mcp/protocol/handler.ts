@@ -272,6 +272,7 @@ async function callTool(
       ctx.session.agent.id,
       filter,
       typeof args.collab_id === "string" ? args.collab_id : undefined,
+      ctx.session.slug,
     );
     // Skill pattern: empty / caught up → quiet payload.
     // needs_action omits threads you already sent (your_status=replied) —
@@ -314,6 +315,7 @@ async function callTool(
       ctx.session.accessToken,
       ctx.session.agent.id,
       threadId,
+      ctx.session.slug,
     );
     return toolTextResult(JSON.stringify(detail, null, 2));
   }

@@ -28,6 +28,9 @@ export function createAdminRoutes(store: HubStore) {
   adminRoutes.get("/waitlist", async (c) => {
     return c.json(await store.listWaitlist(c.get("auth")));
   });
+  adminRoutes.get("/census", async (c) => {
+    return c.json(await store.listOpsCensus(c.get("auth")));
+  });
   adminRoutes.get("/pairing-flags", async (c) => {
     return c.json(await store.listPairingOpsFlags(c.get("auth")));
   });

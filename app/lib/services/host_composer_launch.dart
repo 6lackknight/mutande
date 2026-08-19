@@ -27,8 +27,12 @@ abstract final class HostComposerLaunch {
         return 'Cursor';
       case 'chatgpt':
         return 'ChatGPT';
+      case 'chatgpt-web':
+        return 'ChatGPT Web';
       case 'claude':
         return 'Claude';
+      case 'claude-web':
+        return 'Claude Web';
       default:
         return null;
     }
@@ -36,6 +40,22 @@ abstract final class HostComposerLaunch {
 
   static bool canPrefill(String? slug) =>
       composerUrls(slug ?? '', 'x').isNotEmpty;
+
+  /// Desktop composer or web home — enough to show an Open CTA.
+  static bool canOpen(String? slug) =>
+      canPrefill(slug) || webHomeUrls(slug ?? '').isNotEmpty;
+
+  /// ChatGPT / Claude in the browser (hosted MCP). Prompt stays on the clipboard.
+  static List<String> webHomeUrls(String slug) {
+    switch (slug.trim().toLowerCase()) {
+      case 'chatgpt-web':
+        return const ['https://chatgpt.com'];
+      case 'claude-web':
+        return const ['https://claude.ai'];
+      default:
+        return const [];
+    }
+  }
 
   /// Documented composer deep links. Values are percent-encoded.
   static List<String> composerUrls(String slug, String prompt) {
@@ -75,13 +95,16 @@ abstract final class HostComposerLaunch {
   }) async {
     final urls = composerUrls(slug, prompt);
     if (run == null && Platform.environment.containsKey('FLUTTER_TEST')) {
-      return urls.isEmpty
-          ? HostComposerOpenResult.failed
-          : HostComposerOpenResult.prefilled;
+      if (urls.isNotEmpty) return HostComposerOpenResult.prefilled;
+      if (webHomeUrls(slug).isNotEmpty) return HostComposerOpenResult.appOpened;
+      return HostComposerOpenResult.failed;
     }
     final runner = run ?? (exe, args) => Process.run(exe, args);
     for (final url in urls) {
       if (await _openUrl(url, runner)) return HostComposerOpenResult.prefilled;
+    }
+    for (final url in webHomeUrls(slug)) {
+      if (await _openUrl(url, runner)) return HostComposerOpenResult.appOpened;
     }
     if (Platform.isMacOS) {
       for (final app in macAppNames(slug)) {

@@ -3613,35 +3613,18 @@ fn bundle_checklist(
 fn resolved_agent_is_mcp(
     agents: &[crate::hub_client::Agent],
     default_agent_id: Option<&str>,
-    transport_defaults: Option<&std::collections::BTreeMap<String, String>>,
+    _transport_defaults: Option<&std::collections::BTreeMap<String, String>>,
     slug: Option<&str>,
 ) -> bool {
     let pick = |id: &str| agents.iter().find(|a| a.id == id);
-    let by_slot = |s: &str, transport: &str| {
-        agents
-            .iter()
-            .find(|a| a.slug == s && a.transport.as_deref().unwrap_or("sidecar") == transport)
-    };
 
     if let Some(raw) = slug.map(str::trim).filter(|s| !s.is_empty()) {
         let s = raw.strip_prefix('@').unwrap_or(raw).to_ascii_lowercase();
-        let preferred = transport_defaults
-            .and_then(|d| d.get(&s))
-            .map(|t| t.as_str())
-            .unwrap_or("sidecar");
-        if let Some(a) = by_slot(&s, preferred) {
-            return a.transport.as_deref() == Some("mcp");
-        }
-        let fallback = if preferred == "sidecar" { "mcp" } else { "sidecar" };
-        if let Some(a) = by_slot(&s, fallback) {
-            return a.transport.as_deref() == Some("mcp");
-        }
-        // Any row for slug (legacy single-row).
+        // Dual-slot identity: any mcp row for this slug → app_envelope so web
+        // and sidecar both receive `@chatgpt` mail.
         return agents
             .iter()
-            .find(|a| a.slug == s)
-            .and_then(|a| a.transport.as_deref())
-            == Some("mcp");
+            .any(|a| a.slug == s && a.transport.as_deref() == Some("mcp"));
     }
 
     if let Some(id) = default_agent_id {
@@ -4283,7 +4266,7 @@ mod tests {
     }
 
     #[test]
-    fn resolved_agent_is_mcp_respects_transport_defaults() {
+    fn resolved_agent_is_mcp_if_any_slot_is_web() {
         use crate::hub_client::Agent;
         let agents = vec![
             Agent {
@@ -4313,7 +4296,7 @@ mod tests {
         ];
         let mut defaults = std::collections::BTreeMap::new();
         defaults.insert("chatgpt".into(), "sidecar".into());
-        assert!(!resolved_agent_is_mcp(
+        assert!(resolved_agent_is_mcp(
             &agents,
             Some("s1"),
             Some(&defaults),

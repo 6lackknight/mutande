@@ -11,6 +11,7 @@ import {
   joinOrg,
   listEnterpriseMetrics,
   listFeedback,
+  listOpsCensus,
   listRegistryAdmin,
   listWaitlistAdmin,
   publishRegistryListing,
@@ -26,7 +27,7 @@ import {
 } from "@/lib/hub";
 import { sendInviteEmail } from "@/lib/plunk";
 import { joinUrlForCode, requireSession } from "@/lib/session";
-import type { Feedback, WaitlistEntry } from "@/lib/types";
+import type { Feedback, OpsCensus, WaitlistEntry } from "@/lib/types";
 
 export type ActionState = {
   error?: string;
@@ -328,21 +329,24 @@ export async function refreshOpsAction(): Promise<{
   waitlist?: WaitlistEntry[];
   listings?: import("@/lib/types").RegistryListing[];
   metrics?: import("@/lib/types").EnterpriseDeliveryMetric[];
+  census?: OpsCensus;
   error?: string;
 }> {
   await requireSession("/admin/ops");
   try {
-    const [fb, wl, reg, metrics] = await Promise.all([
+    const [fb, wl, reg, metrics, census] = await Promise.all([
       listFeedback(),
       listWaitlistAdmin(),
       listRegistryAdmin().catch(() => ({ listings: [] })),
       listEnterpriseMetrics().catch(() => ({ metrics: [] })),
+      listOpsCensus().catch(() => undefined),
     ]);
     return {
       feedback: fb.feedback,
       waitlist: wl.waitlist,
       listings: reg.listings,
       metrics: metrics.metrics,
+      census,
     };
   } catch (err) {
     return { error: formatHubError(err) };

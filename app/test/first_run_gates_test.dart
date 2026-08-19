@@ -1,3 +1,4 @@
+import 'package:app/models/agent_transport.dart';
 import 'package:app/services/daemon_client.dart';
 import 'package:app/services/first_run_gates.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -34,6 +35,30 @@ void main() {
         ownAgents: [const AgentInfo(id: '1', slug: 'cursor')],
       ),
       isNull,
+    );
+  });
+
+  test('dual chatgpt slots prefer web for the first-run target', () {
+    const agents = [
+      AgentInfo(id: '1', slug: 'cursor', transport: AgentTransport.sidecar),
+      AgentInfo(id: '2', slug: 'chatgpt', transport: AgentTransport.sidecar),
+      AgentInfo(id: '3', slug: 'chatgpt', transport: AgentTransport.mcp),
+    ];
+    expect(
+      firstRunHandoffTarget(ownAgents: agents, sendingSlug: 'cursor'),
+      '@chatgpt',
+    );
+    expect(
+      firstRunHandoffTransport(ownAgents: agents, target: '@chatgpt'),
+      AgentTransport.mcp,
+    );
+    expect(
+      firstRunComposerId(slug: 'chatgpt', transport: AgentTransport.mcp),
+      'chatgpt-web',
+    );
+    expect(
+      firstRunSendingTransport(ownAgents: agents, sendingSlug: 'chatgpt'),
+      AgentTransport.sidecar,
     );
   });
 
@@ -76,8 +101,17 @@ void main() {
       isFirstRunHandoffCandidate(
         summary: summary,
         waitStarted: DateTime.parse('2026-08-19T16:00:01Z'),
+        target: '@chatgpt',
       ),
       isFalse,
+    );
+    expect(
+      isFirstRunOutboundCandidate(
+        summary: summary,
+        waitStarted: DateTime.parse('2026-08-19T16:00:01Z'),
+        target: '@chatgpt',
+      ),
+      isTrue,
     );
   });
 
@@ -95,8 +129,30 @@ void main() {
       isFirstRunHandoffCandidate(
         summary: summary,
         waitStarted: DateTime.parse('2026-08-19T16:00:01Z'),
+        target: '@chatgpt',
       ),
       isTrue,
+    );
+  });
+
+  test('first-run watch ignores collab threads', () {
+    const summary = ThreadSummary(
+      id: 'c1',
+      kind: 'collab',
+      status: 'open',
+      from: 'alice@acme/cursor',
+      audience: 'alice@acme/chatgpt',
+      replyCount: 1,
+      updatedAt: '2026-08-19T16:00:08Z',
+      collabId: 'collab-1',
+    );
+    expect(
+      isFirstRunOutboundCandidate(
+        summary: summary,
+        waitStarted: DateTime.parse('2026-08-19T16:00:01Z'),
+        target: '@chatgpt',
+      ),
+      isFalse,
     );
   });
 
@@ -153,5 +209,6 @@ void main() {
       contains('/handshake'),
     );
     expect(firstRunHandshakePrompt('@claude'), contains('@claude'));
+    expect(firstRunHandshakeReplyPrompt(), contains('/handshake'));
   });
 }

@@ -308,6 +308,12 @@ export async function listEnterpriseMetrics(): Promise<{
   return hubFetch("/v1/admin/enterprise/metrics?limit=100");
 }
 
+export async function listOpsCensus(): Promise<
+  import("@/lib/types").OpsCensus
+> {
+  return hubFetch("/v1/admin/census");
+}
+
 export function formatHubError(err: unknown): string {
   if (err instanceof HubError) {
     if (err.status === 503) {

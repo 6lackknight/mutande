@@ -2,7 +2,7 @@
 
 Status for `directory.prd` layers **L0–L5** (web agents, app_envelope, external contacts, enterprise registry, thread downgrade). See the PRD for product rules; this doc is a ship checklist.
 
-**Storage backend:** hub persistence today is Deno KV. Postgres migration spec: [`docs/HUB-POSTGRES-PRD.md`](HUB-POSTGRES-PRD.md) (Prisma Postgres + Prisma ORM, fresh-start cutover) — not started in tree yet.
+**Storage backend:** hub persistence today is Deno KV. Postgres migration spec: [`postgres.prd`](../postgres.prd) (Prisma Postgres + Prisma ORM, fresh-start cutover) — not started in tree yet. Cutover trigger is ops `GET /v1/admin/census` (`migrate_before_keep` when a team org, published listing, or ledger appears). Stay on KV through the Phase 1 20×100 proof.
 
 ## Done (L0–L5)
 

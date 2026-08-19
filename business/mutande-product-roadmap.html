@@ -459,7 +459,7 @@
         </div>
         <div class="step">
           <div class="step-num">03</div>
-          <p><strong>Instrument the magic event.</strong> <span>Track: hosts connected, first work handoff (not ping), successful handoffs/week, manual interventions, Day 7 / Day 30 return, failures. Mixpanel already exists — point it at this funnel, not vanity opens.</span></p>
+          <p><strong>Instrument the magic event.</strong> <span>Track: hosts connected, first work handoff (not ping), successful handoffs/week, manual interventions, Day 7 / Day 30 return, failures. Mixpanel is the work-vs-ping split. Ops Overview is the hub census beside it: users/20, multi-host, replied threads/100 (pings included), Day 7/30, team orgs. Do not treat waitlist or ping-Pong as proof.</span></p>
         </div>
         <div class="step">
           <div class="step-num">04</div>
@@ -651,6 +651,10 @@
   <div class="watch-item">
     <span class="watch-icon">⚠</span>
     <span><strong>Ando BYO agents</strong> — <span>They are closer than “replaces your tools.” They are still team-chat-first. Don’t wander into rebuilding Slack.</span></span>
+  </div>
+  <div class="watch-item">
+    <span class="watch-icon">⚠</span>
+    <span><strong>KV fresh-start window</strong> — <span>Stay on Deno KV through Phase 1. Ops storage strip flips when a 2+ member org, a published listing, or a non-zero ledger appears. Then run <code style="font-size:11px;background:#1a1a1a;padding:1px 5px;">postgres.prd</code> before Stripe — do not migrate as part of proving the wedge.</span></span>
   </div>
   <div class="watch-item">
     <span class="watch-icon">⚠</span>

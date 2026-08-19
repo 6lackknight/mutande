@@ -86,14 +86,14 @@ void main() {
 
     expect(find.text('Open this in Cursor.'), findsOneWidget);
     expect(find.text('Open Cursor'), findsOneWidget);
-    expect(find.text('I’ve pasted it — wait for the reply'), findsOneWidget);
+    expect(find.text('I’ve pasted it'), findsOneWidget);
 
     await tester.ensureVisible(find.text('Open Cursor'));
     await tester.tap(find.widgetWithText(FilledButton, 'Open Cursor'));
     await tester.pump();
 
     expect(openedPrompt, FirstRunPingWizard.promptFor('@claude'));
-    expect(find.text('Waiting for their handshake…'), findsOneWidget);
+    expect(find.text('Open this in Claude.'), findsOneWidget);
   });
 
   testWidgets('paste fallback still waits without opening', (tester) async {
@@ -124,14 +124,12 @@ void main() {
         onComplete: (_) {},
       ),
     );
-    await tester.ensureVisible(
-      find.text('I’ve pasted it — wait for the reply'),
-    );
-    await tester.tap(find.text('I’ve pasted it — wait for the reply'));
+    await tester.ensureVisible(find.text('I’ve pasted it'));
+    await tester.tap(find.text('I’ve pasted it'));
     await tester.pump();
 
     expect(opened, isFalse);
-    expect(find.text('Waiting for their handshake…'), findsOneWidget);
+    expect(find.text('Open this in Claude.'), findsOneWidget);
   });
 
   testWidgets('wait poll timeout stays quiet and keeps watching', (
@@ -167,14 +165,282 @@ void main() {
         onComplete: (_) {},
       ),
     );
-    await tester.ensureVisible(
-      find.text('I’ve pasted it — wait for the reply'),
-    );
-    await tester.tap(find.text('I’ve pasted it — wait for the reply'));
+    await tester.ensureVisible(find.text('I’ve pasted it'));
+    await tester.tap(find.text('I’ve pasted it'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
 
     expect(find.textContaining('TimeoutException'), findsNothing);
-    expect(find.text('Waiting for their handshake…'), findsOneWidget);
+    expect(find.text('Open this in ChatGPT.'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('handshake reply shows the thread and Finish', (tester) async {
+    var completed = false;
+    final daemon = _mockDaemon((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      final method = body['method'] as String?;
+      if (method == 'list_threads') {
+        return _rpcOk(body['id'], {
+          'threads': [
+            {
+              'id': 't1',
+              'kind': 'direct',
+              'status': 'open',
+              'from': 'alice@acme/cursor',
+              'audience': 'alice@acme/claude',
+              'reply_count': 1,
+              'updated_at': DateTime.now().toUtc().toIso8601String(),
+            },
+          ],
+        });
+      }
+      if (method == 'get_thread') {
+        return _rpcOk(body['id'], {
+          'thread': {
+            'id': 't1',
+            'kind': 'direct',
+            'status': 'open',
+            'from': 'alice@acme/cursor',
+            'audience': 'alice@acme/claude',
+          },
+          'messages': [
+            {
+              'id': 'm1',
+              'from_handle': 'alice@acme/cursor',
+              'created_at': '2026-08-19T10:00:00Z',
+              'bundle': {
+                'subject': 'Handshake',
+                'notes': 'Hi — introduce yourself on mutande?',
+              },
+            },
+            {
+              'id': 'm2',
+              'from_handle': 'alice@acme/claude',
+              'created_at': '2026-08-19T10:00:08Z',
+              'parent_message_id': 'm1',
+              'bundle': {
+                'notes': 'I’m Claude. Ask me about shipping.',
+                'handshake': {'host': 'claude'},
+              },
+            },
+          ],
+        });
+      }
+      return _rpcOk(body['id'], {'ok': true});
+    });
+    final store = FirstRunStore.memory(notificationsComplete: true)
+      ..loadMemorySync();
+
+    await _pumpWizard(
+      tester,
+      child: FirstRunPingWizard(
+        daemon: daemon,
+        firstRunStore: store,
+        address: const OnboardingAddress(
+          name: 'alice',
+          org: 'acme',
+          agent: 'cursor',
+        ),
+        target: '@claude',
+        openComposer: ({required slug, required prompt}) async {
+          return HostComposerOpenResult.prefilled;
+        },
+        onComplete: (_) => completed = true,
+      ),
+    );
+    await tester.ensureVisible(find.text('I’ve pasted it'));
+    await tester.tap(find.text('I’ve pasted it'));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('they introduced themselves.'), findsOneWidget);
+    expect(find.text('I’m Claude. Ask me about shipping.'), findsOneWidget);
+    expect(find.text('Finish'), findsOneWidget);
+    expect(completed, isFalse);
+    expect(store.pingComplete, isFalse);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Finish'));
+    await tester.pump();
+
+    expect(completed, isTrue);
+    expect(store.pingComplete, isTrue);
+  });
+
+  testWidgets('debug waiting still polls through to Finish', (tester) async {
+    final daemon = _mockDaemon((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      final method = body['method'] as String?;
+      if (method == 'list_threads') {
+        return _rpcOk(body['id'], {
+          'threads': [
+            {
+              'id': 't1',
+              'kind': 'direct',
+              'status': 'open',
+              'from': 'alice@acme/cursor',
+              'audience': 'alice@acme/claude',
+              'reply_count': 1,
+              'updated_at': DateTime.now().toUtc().toIso8601String(),
+            },
+          ],
+        });
+      }
+      if (method == 'get_thread') {
+        return _rpcOk(body['id'], {
+          'thread': {
+            'id': 't1',
+            'kind': 'direct',
+            'status': 'open',
+            'from': 'alice@acme/cursor',
+            'audience': 'alice@acme/claude',
+          },
+          'messages': [
+            {
+              'id': 'm1',
+              'from_handle': 'alice@acme/cursor',
+              'created_at': '2026-08-19T10:00:00Z',
+              'bundle': {'notes': 'Please /handshake'},
+            },
+            {
+              'id': 'm2',
+              'from_handle': 'alice@acme/claude',
+              'created_at': '2026-08-19T10:00:08Z',
+              'parent_message_id': 'm1',
+              'bundle': {
+                'notes': 'I’m Claude.',
+                'handshake': {'host': 'claude'},
+              },
+            },
+          ],
+        });
+      }
+      return _rpcOk(body['id'], {'ok': true});
+    });
+    final store = FirstRunStore.memory(notificationsComplete: true)
+      ..loadMemorySync();
+
+    await _pumpWizard(
+      tester,
+      child: FirstRunPingWizard(
+        daemon: daemon,
+        firstRunStore: store,
+        address: const OnboardingAddress(
+          name: 'alice',
+          org: 'acme',
+          agent: 'cursor',
+        ),
+        target: '@claude',
+        preview: PingPreview.waiting,
+        onComplete: (_) {},
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Finish'), findsOneWidget);
+    expect(store.pingComplete, isFalse);
+  });
+
+  testWidgets('teammate step asks the human, not a second host', (
+    tester,
+  ) async {
+    final daemon = _mockDaemon((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      return _rpcOk(body['id'], {'threads': <Object>[]});
+    });
+    final store = FirstRunStore.memory(notificationsComplete: true)
+      ..loadMemorySync();
+
+    await _pumpWizard(
+      tester,
+      child: FirstRunPingWizard(
+        daemon: daemon,
+        firstRunStore: store,
+        address: const OnboardingAddress(
+          name: 'alice',
+          org: 'acme',
+          agent: 'cursor',
+        ),
+        target: 'orinea@tbhco',
+        preview: PingPreview.copy,
+        openComposer: ({required slug, required prompt}) async {
+          return HostComposerOpenResult.prefilled;
+        },
+        onComplete: (_) {},
+      ),
+    );
+    await tester.tap(find.text('I’ve pasted it'));
+    await tester.pump();
+
+    expect(find.text('Ask orinea@tbhco to reply.'), findsOneWidget);
+    expect(find.text('Open Claude'), findsNothing);
+  });
+
+  testWidgets('timeout Keep waiting watches the same thread', (tester) async {
+    final daemon = _mockDaemon((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      return _rpcOk(body['id'], {'threads': <Object>[]});
+    });
+    final store = FirstRunStore.memory(notificationsComplete: true)
+      ..loadMemorySync();
+
+    await _pumpWizard(
+      tester,
+      child: FirstRunPingWizard(
+        daemon: daemon,
+        firstRunStore: store,
+        address: const OnboardingAddress(
+          name: 'alice',
+          org: 'acme',
+          agent: 'cursor',
+        ),
+        target: '@claude',
+        preview: PingPreview.timeout,
+        onComplete: (_) {},
+      ),
+    );
+
+    expect(find.text('Still waiting for a reply'), findsOneWidget);
+    expect(find.text('Retry'), findsNothing);
+    expect(find.text('Keep waiting'), findsOneWidget);
+    expect(find.text('Start over'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Keep waiting'));
+    await tester.pump();
+
+    expect(find.text('Open this in Claude.'), findsOneWidget);
+    expect(find.text('Still waiting for a reply'), findsNothing);
+  });
+
+  testWidgets('timeout Start over returns to the prompt', (tester) async {
+    final daemon = _mockDaemon((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      return _rpcOk(body['id'], {'threads': <Object>[]});
+    });
+    final store = FirstRunStore.memory(notificationsComplete: true)
+      ..loadMemorySync();
+
+    await _pumpWizard(
+      tester,
+      child: FirstRunPingWizard(
+        daemon: daemon,
+        firstRunStore: store,
+        address: const OnboardingAddress(
+          name: 'alice',
+          org: 'acme',
+          agent: 'cursor',
+        ),
+        target: '@claude',
+        preview: PingPreview.timeout,
+        onComplete: (_) {},
+      ),
+    );
+
+    await tester.tap(find.text('Start over'));
+    await tester.pump();
+
+    expect(find.text('Open this in Cursor.'), findsOneWidget);
+    expect(find.text('Still waiting for a reply'), findsNothing);
   });
 }

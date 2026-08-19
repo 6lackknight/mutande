@@ -40,6 +40,7 @@ deno task check
 | GET/POST | `/v1/admin/invites` | Auth0 Bearer + hub `org_admin` |
 | GET | `/v1/admin/feedback` | Auth0 Bearer + Auth0 role `SuperAdmin` |
 | GET | `/v1/admin/waitlist` | Auth0 Bearer + Auth0 role `SuperAdmin` |
+| GET | `/v1/admin/census` | Auth0 SuperAdmin — Phase 1 evidence counts + KV wipe watch (no PII) |
 | GET | `/v1/admin/registry` | Auth0 SuperAdmin — all registry listings |
 | POST | `/v1/admin/registry/:id/verify` | Auth0 SuperAdmin — domain/brand verify + reserve org slug |
 | POST | `/v1/admin/registry/:id/publish` | Auth0 SuperAdmin — publish (after verify; SLA target 5 business days) |

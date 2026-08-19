@@ -210,6 +210,28 @@ export interface BillingLedger {
   updated_at: string;
 }
 
+export type OpsStorageStatus = "fresh_start_ok" | "migrate_before_keep";
+
+export interface OpsCensus {
+  users: number;
+  orgs: number;
+  devices: number;
+  agents: number;
+  multi_host_users: number;
+  orgs_with_2plus_members: number;
+  users_active_7d: number;
+  users_active_30d: number;
+  threads: number;
+  replied_threads: number;
+  published_listings: number;
+  ledger_orgs_nonzero: number;
+  credits_outstanding_cents: number;
+  billed_deliveries: number;
+  pairing_flags_open: number;
+  storage_status: OpsStorageStatus;
+  targets: { users: number; replied_threads: number };
+}
+
 export interface EnterpriseDeliveryMetric {
   id: string;
   created_at: string;

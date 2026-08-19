@@ -92,6 +92,32 @@ export interface Feedback {
   platform: "macos" | "ios" | "web";
 }
 
+/** SuperAdmin census — Phase 1 evidence + KV wipe watch. Counts only, no PII. */
+export type OpsStorageStatus = "fresh_start_ok" | "migrate_before_keep";
+
+export interface OpsCensus {
+  users: number;
+  orgs: number;
+  devices: number;
+  agents: number;
+  /** Users with ≥2 distinct agent slugs (multi-tool ICP proxy). */
+  multi_host_users: number;
+  /** Team orgs — Phase 2 invite signal; also closes the KV fresh-start window. */
+  orgs_with_2plus_members: number;
+  users_active_7d: number;
+  users_active_30d: number;
+  threads: number;
+  /** Threads with a reply. Includes pings; Mixpanel splits work vs ping. */
+  replied_threads: number;
+  published_listings: number;
+  ledger_orgs_nonzero: number;
+  credits_outstanding_cents: number;
+  billed_deliveries: number;
+  pairing_flags_open: number;
+  storage_status: OpsStorageStatus;
+  targets: { users: number; replied_threads: number };
+}
+
 /** Marketing waitlist survey (public; not agent mail). */
 export interface WaitlistEntry {
   id: string;

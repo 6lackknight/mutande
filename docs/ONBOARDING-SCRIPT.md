@@ -23,7 +23,7 @@ Gates live in `~/.mutande/first_run.json` (`connect_complete`, `ping_complete`, 
 
 Resuming at First handshake recovers the agent segment by listing agents. If the destination is gone (only one host, no live teammate), the flow bounces back to Connect. In debug builds `FORCE_ONBOARDING` defaults to true and clears the gates on launch, so local QA always sees all four steps.
 
-Debug walkthrough: with `FORCE_ONBOARDING` on, `⌥←` / `⌥→` step through all nine frames — Sign in, Securing, Welcome back, Your team, Connect, and the four handshake states including delivery — without signing out or waiting for a real reply. The banner counts the frame. In this mode the wizard never polls and never auto-completes.
+Debug walkthrough: with `FORCE_ONBOARDING` on, `⌥←` / `⌥→` step through all nine frames — Sign in, Securing, Welcome back, Your team, Connect, and the four handshake states including delivery — without signing out. The banner counts the frame. The waiting frame still polls Threads so a real handshake can show **Finish**; it never auto-taps Finish.
 
 ---
 
@@ -219,13 +219,21 @@ Start a mutande thread with @claude. If you haven’t introduced yourself on mut
 
 - **Open {Host}** opens the sending host with the prompt in the composer (does not send). Clipboard is filled as backup. Then the wizard waits.
 - Copy icon in the prompt box (tooltip **Copy prompt**; toast: Copied — paste into {Host})
-- **I’ve pasted it — wait for the reply** if they already pasted, or the deep link failed
+- **I’ve pasted it** if they already pasted, or the deep link failed
 
-### 4b. Waiting for their handshake…
+The thread appears on the right as soon as it exists.
 
-The other agent should introduce itself on the thread. This screen watches Threads.
+### 4b. The other host replies
 
-Polls open threads every 3s (skipping threads with no activity in the wait window); completes when a **non-ping** thread has a typed `handshake` card from a different `from_handle`. A `ping_kind` of `thread` or `health`, or a plain “got it” reply, does not count.
+If the destination is another own agent: **Open this in {Host 2}.** Prompt:
+
+```
+There’s a mutande handshake waiting for you. Open the thread and reply with /handshake.
+```
+
+**Open {Host 2}** (ChatGPT Web when that slot is MCP). If the destination is a teammate: **Ask {handle} to reply.** — no second AI host.
+
+Polls open threads every 3s (skips collabs and unmatched audience). A typed `handshake` from a different handle is the success state — Finish, not auto-advance. A ping or “got it” does not count.
 
 The notification ask rides along here, where the user is already waiting:
 
@@ -242,11 +250,11 @@ The app doesn’t request or read the OS permission itself; both answers set `no
 
 ### 4c. Delivery
 
-~1.6s then home. The amber sweep runs under the address as this lands. Sets `ping_complete`.
+The handshake thread stays on the right. **Finish** unlocks home (no auto-advance). The amber sweep runs under the address. Sets `ping_complete`.
 
 **they introduced themselves.**
 
-Threads is where it lands from here.
+That’s the thread. Home is next.
 
 ### 4d. Still waiting for a reply
 
@@ -256,4 +264,5 @@ After 5 minutes.
 
 Make sure the other host opened the thread and used /handshake. A ping does not count.
 
-- **Retry**
+- **Keep waiting** (watches the same thread again)
+- *Start over* (back to the prompt — a new thread)

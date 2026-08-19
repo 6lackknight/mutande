@@ -773,11 +773,12 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
       _connectWaiting = true;
       _connectHint = result.mcpNote;
     });
-    await _waitForRegistration(spec.agentSlug);
+    await _waitForRegistration(spec);
   }
 
-  Future<void> _waitForRegistration(String host) async {
+  Future<void> _waitForRegistration(AiHostSpec spec) async {
     _connectPoll?.cancel();
+    final host = spec.agentSlug;
     final deadline = DateTime.now().add(const Duration(seconds: 60));
     while (DateTime.now().isBefore(deadline)) {
       try {
@@ -785,6 +786,14 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
         if (agents.agents.any(
           (a) => a.slug.toLowerCase() == host.toLowerCase(),
         )) {
+          if (spec.isWeb) {
+            try {
+              await widget.daemon.setTransportDefault(
+                slug: host.toLowerCase(),
+                transport: AgentTransport.mcp,
+              );
+            } catch (_) {}
+          }
           if (!mounted) return;
           setState(() {
             _connectWaiting = false;
@@ -939,6 +948,14 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
           firstRunStore: widget.firstRunStore,
           address: _address,
           target: target ?? '@claude',
+          sendingTransport: firstRunSendingTransport(
+            ownAgents: _agents,
+            sendingSlug: _agentSlug,
+          ),
+          targetTransport: firstRunHandoffTransport(
+            ownAgents: _agents,
+            target: target ?? '@claude',
+          ),
           debugBanner: debugBanner,
           preview: frame == null ? null : _debugFrames[frame].ping,
           onComplete: (threadId) {

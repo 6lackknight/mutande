@@ -95,6 +95,18 @@ Deno.test("filter empty when no matches", () => {
   assertEquals(threadForWebAgent(threads[0], "web"), false);
 });
 
+Deno.test("threadForWebAgent matches dual-slot audience slug", () => {
+  const thread = baseMeta({
+    id: "t-dual",
+    audience: "u@acme/chatgpt",
+    audience_agent_id: "sidecar-chatgpt",
+    encryption_mode: "app_envelope",
+  });
+  assertEquals(threadForWebAgent(thread, "web-chatgpt"), false);
+  assertEquals(threadForWebAgent(thread, "web-chatgpt", "chatgpt"), true);
+  assertEquals(threadForWebAgent(thread, "web-chatgpt", "claude"), false);
+});
+
 Deno.test("isE2eWireError detects hub E2E refusals", () => {
   assertEquals(
     isE2eWireError(new Error("E2E threads require envelope (not app_envelope)")),

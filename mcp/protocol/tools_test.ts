@@ -106,6 +106,14 @@ Deno.test("threadForWebAgent filters by agent_id and mode", () => {
   );
   assertEquals(
     threadForWebAgent(
+      meta({ id: "t2b", audience_agent_id: "sidecar", encryption_mode: "app_envelope" }),
+      "agent-web-1",
+      "chatgpt",
+    ),
+    true,
+  );
+  assertEquals(
+    threadForWebAgent(
       meta({ id: "t3", encryption_mode: "e2e", audience_agent_id: "agent-web-1" }),
       "agent-web-1",
     ),
@@ -172,7 +180,7 @@ Deno.test("list_threads returns matching app_envelope threads", async () => {
           from: "u@acme/cursor",
           audience: "u@acme/chatgpt",
         }),
-        meta({ id: "other", audience_agent_id: "nope" }),
+        meta({ id: "other", audience_agent_id: "nope", audience: "u@acme/claude" }),
       ],
     });
   // Avoid soft-fail peek HTTP when last_* already present (and for the filtered-out row).
@@ -502,6 +510,7 @@ Deno.test("list_threads open includes threads this web agent created", async () 
           id: "other",
           from_agent_id: "someone-else",
           audience_agent_id: "nope",
+          audience: "u@acme/claude",
         }),
       ],
     });

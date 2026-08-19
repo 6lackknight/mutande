@@ -301,6 +301,8 @@ hub/
 
 P1–P4 can proceed in parallel once P0 lands; P5 waits for full store parity.
 
+**When to start (ops, not a calendar).** Stay on KV through the Phase 1 courier proof (20 users × 100 work handoffs — [`business/mutande-product-roadmap.html`](business/mutande-product-roadmap.html)). Hub `GET /v1/admin/census` + Ops Overview storage strip flip to `migrate_before_keep` when any of: a 2+ member org, a published listing, or a non-zero ledger. That is the last cheap fresh-start window. Do not start P0–P5 as part of proving the wedge. Run this PRD before Stripe.
+
 ---
 
 ## 11. Cutover Plan (fresh start)
@@ -389,5 +391,6 @@ No dual-read, no backfill script, no KV export.
 |---|---|
 | [`directory.prd`](directory.prd) | Product rules (encryption, pairing, billing, registry) — **unchanged**; this PRD replaces only the storage engine |
 | [`docs/DIRECTORY-IMPLEMENTATION.md`](docs/DIRECTORY-IMPLEMENTATION.md) | L0–L5 feature checklist — still authoritative for product ship status |
+| [`business/mutande-product-roadmap.html`](business/mutande-product-roadmap.html) | Phase 1 is the 20×100 courier proof; KV→Postgres is a watch item, not the experiment |
 | [`hub/README.md`](hub/README.md) | Update env table + local dev when P0 lands |
 | [`docs/AUTH0.md`](docs/AUTH0.md) | No changes |

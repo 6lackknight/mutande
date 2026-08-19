@@ -48,6 +48,7 @@ class OnboardingShell extends StatelessWidget {
     super.key,
     required this.step,
     required this.child,
+    this.sideChild,
     this.address = const OnboardingAddress(),
     this.delivered = false,
     this.debugBanner,
@@ -57,6 +58,10 @@ class OnboardingShell extends StatelessWidget {
 
   final OnboardingStep step;
   final Widget child;
+
+  /// Optional right pane (first-handshake thread). When set, [child] stays
+  /// the left column and this fills the letterhead’s empty side.
+  final Widget? sideChild;
 
   /// Drives the marquee — segments fill in as the flow earns them.
   final OnboardingAddress address;
@@ -116,25 +121,64 @@ class OnboardingShell extends StatelessWidget {
               color: MutandeColors.stone200,
             ),
             Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(
-                  OnboardingSpace.xl,
-                  OnboardingSpace.xl,
-                  OnboardingSpace.xl,
-                  OnboardingSpace.xl,
-                ),
-                child: Align(
-                  alignment: centerContent
-                      ? Alignment.topCenter
-                      : Alignment.topLeft,
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(maxWidth: contentMaxWidth),
-                    child: child,
-                  ),
-                ),
-              ),
+              child: sideChild == null
+                  ? _OnboardingBodyColumn(
+                      contentMaxWidth: contentMaxWidth,
+                      centerContent: centerContent,
+                      child: child,
+                    )
+                  : Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        SizedBox(
+                          width: contentMaxWidth + OnboardingSpace.xl * 2,
+                          child: _OnboardingBodyColumn(
+                            contentMaxWidth: contentMaxWidth,
+                            centerContent: false,
+                            child: child,
+                          ),
+                        ),
+                        const VerticalDivider(
+                          width: 1,
+                          thickness: 1,
+                          color: MutandeColors.stone200,
+                        ),
+                        Expanded(child: sideChild!),
+                      ],
+                    ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _OnboardingBodyColumn extends StatelessWidget {
+  const _OnboardingBodyColumn({
+    required this.child,
+    required this.contentMaxWidth,
+    required this.centerContent,
+  });
+
+  final Widget child;
+  final double contentMaxWidth;
+  final bool centerContent;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(
+        OnboardingSpace.xl,
+        OnboardingSpace.xl,
+        OnboardingSpace.xl,
+        OnboardingSpace.xl,
+      ),
+      child: Align(
+        alignment: centerContent ? Alignment.topCenter : Alignment.topLeft,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: contentMaxWidth),
+          child: child,
         ),
       ),
     );

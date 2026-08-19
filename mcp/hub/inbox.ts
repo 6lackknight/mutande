@@ -23,7 +23,11 @@ export const E2E_REFUSAL =
   "Hosted MCP can only start app_envelope threads (never E2E). This recipient resolves to an E2E path — use the mutande Mac sidecar MCP for E2E mail, or address a web (mcp) agent.";
 
 /** Thread is relevant to this web agent slot. */
-export function threadForWebAgent(thread: ThreadMeta, agentId: string): boolean {
+export function threadForWebAgent(
+  thread: ThreadMeta,
+  agentId: string,
+  slug?: string,
+): boolean {
   const mode = thread.encryption_mode ?? "e2e";
   if (mode !== "app_envelope") return false;
 
@@ -36,14 +40,23 @@ export function threadForWebAgent(thread: ThreadMeta, agentId: string): boolean 
     return true;
   }
 
+  // Dual-slot identity: `alice@acme/chatgpt` is one address. Web may work a
+  // thread whose audience is that slug even when audience_agent_id is sidecar.
+  const s = slug?.trim().toLowerCase() ?? "";
+  if (s) {
+    const aud = (thread.audience ?? "").trim().toLowerCase();
+    if (aud.endsWith(`/${s}`) || aud === `@${s}`) return true;
+  }
+
   return false;
 }
 
 export function filterThreadsForWebAgent(
   threads: ThreadMeta[],
   agentId: string,
+  slug?: string,
 ): ThreadMeta[] {
-  return threads.filter((t) => threadForWebAgent(t, agentId));
+  return threads.filter((t) => threadForWebAgent(t, agentId, slug));
 }
 
 /** Concise agent/handle label for list rows (e.g. `cursor`, `chatgpt`, `@all`). */
@@ -271,6 +284,7 @@ export async function listWebAgentThreads(
   agentId: string,
   filter?: ThreadFilter,
   collabId?: string,
+  slug?: string,
 ): Promise<{
   threads: ReturnType<typeof presentThreadListItem>[];
   caught_up: boolean;
@@ -278,7 +292,7 @@ export async function listWebAgentThreads(
   // Default skill check: needs_action. Empty → stay quiet.
   const effective: ThreadFilter | undefined = filter ?? "needs_action";
   const { threads } = await hub.listThreads(accessToken, effective);
-  let mine = filterThreadsForWebAgent(threads, agentId);
+  let mine = filterThreadsForWebAgent(threads, agentId, slug);
   if (collabId) {
     mine = mine.filter((t) => t.collab_id === collabId);
   }
@@ -296,9 +310,10 @@ export async function getWebAgentThread(
   accessToken: string,
   agentId: string,
   threadId: string,
+  slug?: string,
 ): Promise<ThreadDetail> {
   const detail = await hub.fetchAppMessages(accessToken, threadId, agentId);
-  if (!threadForWebAgent(detail.thread, agentId)) {
+  if (!threadForWebAgent(detail.thread, agentId, slug)) {
     throw new Error(
       "Thread is not addressed to this web agent (or is E2E-only)",
     );
@@ -315,7 +330,7 @@ export async function replyAsWebAgent(
   bundle: Record<string, unknown>,
 ): Promise<{ message_id: string }> {
   // Ensure the thread is an app_envelope thread this agent can see.
-  await getWebAgentThread(hub, accessToken, agentId, threadId);
+  await getWebAgentThread(hub, accessToken, agentId, threadId, slug);
   const prepared = prepareBundleResources(bundle);
   const parent =
     typeof prepared.in_reply_to === "string" ? prepared.in_reply_to : undefined;

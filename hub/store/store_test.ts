@@ -1038,14 +1038,15 @@ Deno.test("L1 transport default prefers configured slot", async () => {
     const { aliceAuth, bobAuth } = await setupOrgWithUsers(store);
     const sidecar = await store.connectAgent(aliceAuth, "sidecar", { slug: "dual" });
     const mcp = await store.connectAgent(aliceAuth, "mcp", { slug: "dual" });
-    // Default is sidecar until Settings says otherwise.
+    // Dual slots share an identity — sibling mcp forces app_envelope even when
+    // the preferred audience row is still sidecar.
     const { thread: t1 } = await store.createThread(bobAuth, {
       to: "alice@acme/dual",
-      envelope: sampleEnvelope("pref-sidecar"),
+      app_envelope: { version: 1, notes: "both-slots" },
       from_agent: "claude",
     });
     assertEquals(t1.audience_agent_id, sidecar.id);
-    assertEquals(t1.encryption_mode, "e2e");
+    assertEquals(t1.encryption_mode, "app_envelope");
 
     await store.setTransportDefault(aliceAuth, { slug: "dual", transport: "mcp" });
     const prefs = await store.getTransportPrefs(aliceAuth);

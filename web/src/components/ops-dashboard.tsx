@@ -29,6 +29,7 @@ import { Alert, Button, Input } from "@/components/ui";
 import type {
   EnterpriseDeliveryMetric,
   Feedback,
+  OpsCensus,
   RegistryListing,
   WaitlistEntry,
 } from "@/lib/types";
@@ -343,18 +344,21 @@ export function OpsDashboard({
   initialWaitlist,
   initialListings = [],
   initialMetrics = [],
+  initialCensus = null,
   loadError,
 }: {
   initialFeedback: Feedback[];
   initialWaitlist: WaitlistEntry[];
   initialListings?: RegistryListing[];
   initialMetrics?: EnterpriseDeliveryMetric[];
+  initialCensus?: OpsCensus | null;
   loadError?: string | null;
 }) {
   const [feedback, setFeedback] = useState(initialFeedback);
   const [waitlist, setWaitlist] = useState(initialWaitlist);
   const [listings, setListings] = useState(initialListings);
   const [metrics, setMetrics] = useState(initialMetrics);
+  const [census, setCensus] = useState(initialCensus);
   const [error, setError] = useState(loadError ?? "");
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<Tab>("overview");
@@ -419,6 +423,7 @@ export function OpsDashboard({
       setWaitlist(res.waitlist ?? []);
       setListings(res.listings ?? []);
       setMetrics(res.metrics ?? []);
+      setCensus(res.census ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -487,7 +492,9 @@ export function OpsDashboard({
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-muted">Pilot feedback & waitlist · SuperAdmin</p>
+        <p className="text-sm text-muted">
+          Phase 1 courier proof · SuperAdmin
+        </p>
         <Button type="button" variant="secondary" disabled={busy} onClick={refresh}>
           {busy ? "Refreshing…" : "Refresh"}
         </Button>
@@ -495,9 +502,14 @@ export function OpsDashboard({
 
       {error ? <Alert tone="danger">{error}</Alert> : null}
 
+      {census ? <EvidenceScoreboard census={census} /> : null}
+
+      <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted">
+        Intake · not the experiment
+      </p>
       <section
         className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"
-        aria-label="Summary"
+        aria-label="Intake"
       >
         {kpis.map((k) => (
           <div
@@ -922,5 +934,82 @@ function ChipList({ items }: { items?: string[] }) {
         </span>
       ))}
     </span>
+  );
+}
+
+function EvidenceScoreboard({ census }: { census: OpsCensus }) {
+  const migrate = census.storage_status === "migrate_before_keep";
+  const creditsUsd = (census.credits_outstanding_cents / 100).toFixed(2);
+  const cells = [
+    {
+      label: "Users",
+      value: `${census.users} / ${census.targets.users}`,
+      hint: "Qualified cohort",
+    },
+    {
+      label: "Multi-host",
+      value: String(census.multi_host_users),
+      hint: "≥2 agent slugs",
+    },
+    {
+      label: "Replied threads",
+      value: `${census.replied_threads} / ${census.targets.replied_threads}`,
+      hint: "Includes pings",
+    },
+    {
+      label: "Active 7d / 30d",
+      value: `${census.users_active_7d} / ${census.users_active_30d}`,
+      hint: "Mail activity",
+    },
+    {
+      label: "Team orgs",
+      value: String(census.orgs_with_2plus_members),
+      hint: "Phase 2 gate",
+    },
+  ];
+
+  return (
+    <div className="space-y-3">
+      <section
+        className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"
+        aria-label="Phase 1 evidence"
+      >
+        {cells.map((k) => (
+          <div
+            key={k.label}
+            className="rounded-md border border-stone-300/70 bg-white/60 px-4 py-3"
+          >
+            <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted">
+              {k.label}
+            </div>
+            <div className="mt-1 font-display text-2xl font-semibold tracking-tight text-stone-900">
+              {k.value}
+            </div>
+            <div className="mt-0.5 text-[12px] text-muted">{k.hint}</div>
+          </div>
+        ))}
+      </section>
+      <div
+        className={`rounded-md border px-4 py-3 text-sm ${
+          migrate
+            ? "border-amber-400/70 bg-amber-50/80 text-stone-900"
+            : "border-stone-300/70 bg-white/60 text-stone-800"
+        }`}
+      >
+        <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted">
+          Storage watch · not Phase 1
+        </div>
+        <p className="mt-1">
+          {migrate
+            ? `Migrate off KV before the next teammate or credit — a team org, published listing, or ledger is no longer disposable.`
+            : `Fresh-start still OK. Stay on Deno KV through the 20 × 100 courier proof.`}
+        </p>
+        <p className="mt-1 text-[12px] text-muted">
+          Credits ${creditsUsd} · published listings {census.published_listings}{" "}
+          · pairing flags {census.pairing_flags_open} · Mixpanel still splits
+          work handoff vs ping.
+        </p>
+      </div>
+    </div>
   );
 }

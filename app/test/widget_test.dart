@@ -1587,7 +1587,7 @@ void main() {
     expect(find.text('Open Cursor'), findsOneWidget);
     expect(find.text(FirstRunPingWizard.promptFor('@claude')), findsOneWidget);
     expect(find.byTooltip('Copy prompt'), findsOneWidget);
-    expect(find.text('I’ve pasted it — wait for the reply'), findsOneWidget);
+    expect(find.text('I’ve pasted it'), findsOneWidget);
     expect(find.text('Copy prompt'), findsNothing);
     expect(find.text('Skip for now'), findsNothing);
   });
@@ -1633,7 +1633,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Open Cursor'), findsOneWidget);
-    expect(find.text('I’ve pasted it — wait for the reply'), findsOneWidget);
+    expect(find.text('I’ve pasted it'), findsOneWidget);
     expect(find.text('Skip for now'), findsNothing);
     expect(firstRun.pingComplete, isFalse);
     expect(find.text('Threads'), findsNothing);

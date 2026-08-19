@@ -36,6 +36,15 @@ void main() {
     expect(HostComposerLaunch.displayName('cursor'), 'Cursor');
   });
 
+  test('chatgpt web opens the browser, not desktop schemes', () {
+    expect(HostComposerLaunch.composerUrls('chatgpt-web', 'hi'), isEmpty);
+    expect(HostComposerLaunch.webHomeUrls('chatgpt-web'), [
+      'https://chatgpt.com',
+    ]);
+    expect(HostComposerLaunch.canOpen('chatgpt-web'), isTrue);
+    expect(HostComposerLaunch.displayName('chatgpt-web'), 'ChatGPT Web');
+  });
+
   test('open returns prefilled on the first scheme that succeeds', () async {
     final tried = <String>[];
     final result = await HostComposerLaunch.open(
@@ -52,6 +61,20 @@ void main() {
     expect(result, HostComposerOpenResult.prefilled);
     expect(tried.first, contains('codex://new?prompt=hi'));
     expect(tried.last, contains('com.openai.chat://chatgpt.com/?prompt=hi'));
+  });
+
+  test('open chatgpt-web uses the site url', () async {
+    final tried = <String>[];
+    final result = await HostComposerLaunch.open(
+      slug: 'chatgpt-web',
+      prompt: 'hi',
+      run: (exe, args) async {
+        tried.add('$exe ${args.join(' ')}');
+        return ProcessResult(0, 0, '', '');
+      },
+    );
+    expect(result, HostComposerOpenResult.appOpened);
+    expect(tried.single, contains('https://chatgpt.com'));
   });
 
   test('open falls back to launching the Mac app', () async {
