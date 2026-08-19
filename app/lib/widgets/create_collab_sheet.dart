@@ -246,7 +246,9 @@ class _PersonOpt {
   /// Lowercase identity (`alice@acme`).
   final String handle;
 
-  /// Hub casing for `list_agents?handle=` — prod 404s on a lowercased handle.
+  /// Handle exactly as the hub listed it. Handles are lowercase at rest on
+  /// the hub (legacy mixed-case data is migrated and lookups normalize), so
+  /// [rpcHandle] lowercases this safely for `list_agents?handle=` and RPCs.
   final String? listHandle;
   final String? displayName;
   final String? avatarUrl;

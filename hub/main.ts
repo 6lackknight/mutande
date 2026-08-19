@@ -22,6 +22,7 @@ import {
   runSentrySmoke,
   sentrySmokeEnabled,
 } from "./store/sentry.ts";
+import { migrateHandlesToLowercase } from "./store/handle_migration.ts";
 import { createStore } from "./store/store.ts";
 import type { TokenVerifier } from "./store/auth0.ts";
 
@@ -31,6 +32,16 @@ export async function createApp(
 ) {
   assertR2ConfiguredForDeploy();
   const resolvedKv = kv ?? await Deno.openKv();
+  try {
+    const report = await migrateHandlesToLowercase(resolvedKv);
+    if (report) {
+      console.log("lowercase-handles migration ran:", JSON.stringify(report));
+    }
+  } catch (err) {
+    // Serve anyway — lookups normalize input, so correctly-cased data works;
+    // the marker stays unset and the next boot retries the sweep.
+    console.error("lowercase-handles migration failed:", err);
+  }
   const store = createStore(resolvedKv, storeOptions);
 
   const app = new Hono();

@@ -449,7 +449,8 @@ export class HubStore {
   }
   private userKey(id: string) { return ["users", id]; }
   private auth0SubKey(sub: string) { return ["auth0_subs", sub]; }
-  private handleKey(handle: string) { return ["handles", handle]; }
+  /** Handles are lowercase at rest; normalize here so lookups never miss on casing. */
+  private handleKey(handle: string) { return ["handles", handle.trim().toLowerCase()]; }
   private orgKey(id: string) { return ["orgs", id]; }
   private orgSlugKey(slug: string) { return ["org_slugs", slug]; }
   private memberKey(orgId: string, userId: string) { return ["org_members", orgId, userId]; }
@@ -1356,7 +1357,7 @@ export class HubStore {
     /** Per-slug preferred transport — needed so clients can mirror hub bare-slug resolve. */
     transport_defaults: Record<string, AgentTransport>;
   }> {
-    const bare = stripAgentSuffix(handle.trim());
+    const bare = stripAgentSuffix(handle.trim()).toLowerCase();
     await this.assertSameOrgHandle(auth.orgId, bare);
     const user = await this.getUserByHandle(bare);
     if (!user) throw notFound("User");

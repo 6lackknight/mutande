@@ -49,9 +49,12 @@ export function assertValidAgentSlug(slug: string): void {
  * - `@all@acme` (org broadcast)
  * - `@all` (all of my agents)
  * - `@claude` (shorthand for current user's agent slug)
+ *
+ * Input is lowercased first: handles and agent slugs are lowercase at rest,
+ * so any casing a client sends resolves to the same address.
  */
 export function parseDisplayAddress(input: string): ParsedDisplayAddress {
-  const trimmed = input.trim();
+  const trimmed = input.trim().toLowerCase();
 
   if (isMyAgentsHandle(trimmed)) {
     return { kind: "my_agents", local: "@all", orgSlug: "", agentSlug: undefined };
