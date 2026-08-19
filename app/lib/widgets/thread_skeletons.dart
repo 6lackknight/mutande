@@ -211,7 +211,10 @@ class ThreadReadingSkeleton extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 16),
-              const MutandeArrive(order: 1, child: _Bone(width: 220, height: 11)),
+              const MutandeArrive(
+                order: 1,
+                child: _Bone(width: 220, height: 11),
+              ),
               const SizedBox(height: 10),
               for (final w in [1.0, 0.92, 0.74]) ...[
                 MutandeArrive(
@@ -421,9 +424,7 @@ class CollabLanesSkeleton extends StatelessWidget {
                               children: [
                                 _Bone(width: 8, height: 8, circle: true),
                                 SizedBox(width: 8),
-                                Expanded(
-                                  child: _Bone(width: 48, height: 9),
-                                ),
+                                Expanded(child: _Bone(width: 48, height: 9)),
                                 _Bone(width: 16, height: 9),
                               ],
                             ),
@@ -469,9 +470,7 @@ class CollabTableRowsSkeleton extends StatelessWidget {
                         child: _Bone(width: double.infinity, height: 9),
                       ),
                       SizedBox(width: 16),
-                      Expanded(
-                        child: _Bone(width: double.infinity, height: 8),
-                      ),
+                      Expanded(child: _Bone(width: double.infinity, height: 8)),
                       SizedBox(width: 16),
                       _Bone(width: 28, height: 8),
                     ],
@@ -489,10 +488,10 @@ class CollabTableRowsSkeleton extends StatelessWidget {
 }
 
 /// Fixed roster panel — loading wrap and loaded wrap share this height.
-const kOnboardingRosterPanelHeight = 168.0;
+const kOnboardingRosterPanelHeight = 200.0;
 
-/// Fixed host list — three [_HostTileBone] rows plus gaps.
-const kOnboardingHostPanelHeight = 268.0;
+/// Fixed host panel — compact connected chips plus a cloud of marks.
+const kOnboardingHostPanelHeight = 220.0;
 
 /// Two helper lines (12px) plus [OnboardingSpace.sm] between them.
 const kOnboardingConnectHelperHeight = 52.0;
@@ -501,7 +500,7 @@ const kOnboardingConnectHelperHeight = 52.0;
 class OnboardingRosterSkeleton extends StatelessWidget {
   const OnboardingRosterSkeleton({super.key});
 
-  static const _chipWidths = [148.0, 128.0, 110.0, 136.0];
+  static const _chipWidths = [220.0, 200.0, 176.0, 208.0];
 
   @override
   Widget build(BuildContext context) {
@@ -512,8 +511,8 @@ class OnboardingRosterSkeleton extends StatelessWidget {
           height: kOnboardingRosterPanelHeight,
           child: SingleChildScrollView(
             child: Wrap(
-              spacing: 6,
-              runSpacing: 6,
+              spacing: 10,
+              runSpacing: 10,
               children: [
                 for (var i = 0; i < _chipWidths.length; i++)
                   MutandeArrive(
@@ -529,35 +528,21 @@ class OnboardingRosterSkeleton extends StatelessWidget {
   }
 }
 
-/// One host tile bone — matches onboarding [_HostTile] padding and icon size.
-class _HostTileBone extends StatelessWidget {
-  const _HostTileBone();
+/// One host cloud-mark bone.
+class _HostCloudBone extends StatelessWidget {
+  const _HostCloudBone();
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
-      decoration: BoxDecoration(
-        color: MutandeColors.stone50,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: MutandeColors.stone200),
-      ),
-      child: const Row(
+    return const SizedBox(
+      width: 84,
+      child: Column(
         children: [
           _Bone(width: 44, height: 44, circle: true),
-          SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _Bone(width: 88, height: 12),
-                SizedBox(height: 8),
-                _Bone(width: 64, height: 8),
-              ],
-            ),
-          ),
-          SizedBox(width: 10),
-          _Bone(width: 72, height: 32),
+          SizedBox(height: 8),
+          _Bone(width: 56, height: 8),
+          SizedBox(height: 6),
+          _Bone(width: 40, height: 6),
         ],
       ),
     );
@@ -566,7 +551,7 @@ class _HostTileBone extends StatelessWidget {
 
 /// Onboarding host tiles — heading stays on the connect step.
 class OnboardingHostSkeleton extends StatelessWidget {
-  const OnboardingHostSkeleton({super.key, this.tiles = 3});
+  const OnboardingHostSkeleton({super.key, this.tiles = 5});
 
   final int tiles;
 
@@ -577,21 +562,16 @@ class OnboardingHostSkeleton extends StatelessWidget {
       child: _Breath(
         child: SizedBox(
           height: kOnboardingHostPanelHeight,
-          child: SingleChildScrollView(
-            child: Column(
-              children: [
-                for (var i = 0; i < tiles; i++)
-                  MutandeArrive(
-                    order: i,
-                    child: Padding(
-                      padding: EdgeInsets.only(
-                        bottom: i < tiles - 1 ? 8 : 0,
-                      ),
-                      child: const _HostTileBone(),
-                    ),
-                  ),
-              ],
-            ),
+          child: Wrap(
+            spacing: 14,
+            runSpacing: 16,
+            children: [
+              for (var i = 0; i < tiles; i++)
+                MutandeArrive(
+                  order: i,
+                  child: const _HostCloudBone(),
+                ),
+            ],
           ),
         ),
       ),
@@ -731,25 +711,27 @@ class _PersonChipBone extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       width: width,
-      height: 44,
+      height: 56,
       child: const Row(
         children: [
-          _Bone(width: 28, height: 28, circle: true),
-          SizedBox(width: 8),
+          _Bone(width: 40, height: 40, circle: true),
+          SizedBox(width: 10),
           Expanded(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _Bone(width: double.infinity, height: 11),
-                SizedBox(height: 6),
+                _Bone(width: double.infinity, height: 12),
+                SizedBox(height: 8),
                 FractionallySizedBox(
                   widthFactor: 0.72,
-                  child: _Bone(width: double.infinity, height: 8),
+                  child: _Bone(width: double.infinity, height: 9),
                 ),
               ],
             ),
           ),
+          SizedBox(width: 10),
+          _Bone(width: 24, height: 24, circle: true),
         ],
       ),
     );

@@ -7,7 +7,7 @@ import 'onboarding_address_rail.dart';
 /// Onboarding steps, one per segment of the address plus its first delivery.
 ///
 /// Notifications used to be a step of its own; it now rides along with the
-/// ping wait, where the arriving pong proves the permission works.
+/// first-handoff wait, where the arriving reply proves the permission works.
 enum OnboardingStep { signIn, team, connect, ping }
 
 extension OnboardingStepLabels on OnboardingStep {
@@ -20,7 +20,7 @@ extension OnboardingStepLabels on OnboardingStep {
       case OnboardingStep.connect:
         return 'Connect a host';
       case OnboardingStep.ping:
-        return 'First ping';
+        return 'First handshake';
     }
   }
 

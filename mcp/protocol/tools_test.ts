@@ -65,6 +65,7 @@ Deno.test("tool list marks inbox tools implemented", () => {
     "delete_thread",
     "upvote_message",
     "mark_processed",
+    "publish_handshake",
   ]) {
     assertEquals(names.includes(t), true);
     assertEquals(IMPLEMENTED_TOOLS.has(t), true);
@@ -230,6 +231,7 @@ Deno.test("initialize returns serverInfo", async () => {
   assertEquals(result.instructions!.includes("filter=open"), true);
   assertEquals(result.instructions!.includes("IS the named file"), true);
   assertEquals(result.instructions!.includes("attachments"), true);
+  assertEquals(result.instructions!.includes("publish_handshake"), true);
 });
 
 function parseToolText(res: Awaited<ReturnType<typeof handleMcpRequest>>) {
@@ -879,6 +881,55 @@ Deno.test("mark_processed returns N/A payload", async () => {
   assertEquals(isError, false);
   assertEquals(body.na, true);
   assertEquals(body.ok, true);
+});
+
+Deno.test("publish_handshake upserts profile and replies", async () => {
+  const hub = new HubClient("http://hub.test");
+  hub.putAgentHandshake = (_token, agentId, card) => {
+    assertEquals(agentId, "agent-web-1");
+    assertEquals(card.host, "ChatGPT");
+    return Promise.resolve({
+      agent: fakeSession.agent,
+      handshake: {
+        host: "ChatGPT",
+        address: "u@acme/chatgpt",
+        models: ["gpt-5"],
+        published_at: "2026-08-19T12:00:00.000Z",
+      },
+    });
+  };
+  hub.replyToThread = (_t, threadId, input) => {
+    assertEquals(threadId, "t-hs");
+    assertEquals(input.app_envelope.subject, "Handshake");
+    assertEquals(
+      (input.app_envelope as { handshake?: { host?: string } }).handshake?.host,
+      "ChatGPT",
+    );
+    return Promise.resolve({ message_id: "m-hs" });
+  };
+  hub.fetchAppMessages = () =>
+    Promise.resolve({
+      thread: meta({ id: "t-hs", audience_agent_id: "agent-web-1" }),
+      messages: [],
+    });
+  const res = await handleMcpRequest(
+    {
+      jsonrpc: "2.0",
+      id: 40,
+      method: "tools/call",
+      params: {
+        name: "publish_handshake",
+        arguments: { thread_id: "t-hs", host: "ChatGPT", models: ["gpt-5"] },
+      },
+    },
+    { session: fakeSession, serverVersion: "0.1.0", hub },
+  );
+  const { isError, body } = parseToolText(res);
+  assertEquals(isError, false);
+  assertEquals(body.ok, true);
+  assertEquals(body.thread_id, "t-hs");
+  assertEquals(body.message_id, "m-hs");
+  assertEquals((body.handshake as { host: string }).host, "ChatGPT");
 });
 
 Deno.test("close_thread requires thread_id", async () => {

@@ -15,12 +15,15 @@ Actions are one committed primary at 260px with everything else as inline links 
 Gates live in `~/.mutande/first_run.json` (`connect_complete`, `ping_complete`, plus `notifications_complete` / `notifications_skipped` which record the banners ask but never gate), so a relaunch resumes mid-flow rather than replaying from Sign in:
 
 - not configured → **Sign in**
-- configured, no connected host → **Your team**
-- connect done, no ping → **First ping**
+- configured, destination not ready → **Your team** then **Connect**
+- destination ready (`connect_complete`), no handshake reply → **First handshake**
+- `ping_complete` is set only when the other agent publishes a handshake on the thread. There is no skip.
 
-Resuming at First ping recovers the agent segment by listing agents, so the address still reads whole. In debug builds `FORCE_ONBOARDING` defaults to true and clears the gates on launch, so local QA always sees all four steps.
+`connect_complete` means a second own host is registered, or one own host plus a teammate who already has a host. An invite sent does not count.
 
-Debug walkthrough: with `FORCE_ONBOARDING` on, `⌥←` / `⌥→` step through all nine frames — Sign in, Securing, Welcome back, Your team, Connect, and the four ping states including delivery — without signing out or waiting for a real pong. The banner counts the frame. In this mode the ping wizard never polls and never auto-completes.
+Resuming at First handshake recovers the agent segment by listing agents. If the destination is gone (only one host, no live teammate), the flow bounces back to Connect. In debug builds `FORCE_ONBOARDING` defaults to true and clears the gates on launch, so local QA always sees all four steps.
+
+Debug walkthrough: with `FORCE_ONBOARDING` on, `⌥←` / `⌥→` step through all nine frames — Sign in, Securing, Welcome back, Your team, Connect, and the four handshake states including delivery — without signing out or waiting for a real reply. The banner counts the frame. In this mode the wizard never polls and never auto-completes.
 
 ---
 
@@ -139,14 +142,17 @@ Address: `alice@acme/______`, agent slot breathing.
 
 Heading is the goal, and changes once it's met:
 
-- Nothing linked: **Pick a host to connect.** / One is enough — mutande wires the relay, then hands it the collaboration skill.
-- Something linked: **Cursor is ready to carry mail.** (names joined with *and*, is/are) / Continue to your first ping, or connect another host. Plus a **Continue** primary that marks connect complete and moves to First ping without re-running the ceremony.
+- Nothing linked: **Pick a host to connect.** / Desktop apps on this Mac, or ChatGPT and Claude in the browser.
+- One own host, no live teammate: **Cursor is ready to carry mail.** / A handshake needs a second host of yours, or a teammate who already has mutande. No Continue — pick another host from the cloud, *Invite on the web*, or *Check again*. Connecting a host returns here; it does not skip to First handshake.
+- Destination ready (two own hosts, or one host plus a live teammate): **Cursor and Claude Desktop are ready to carry mail.** / Continue to your first handshake. **Continue** marks connect complete and moves to First handshake.
 
-Each installed host is a full-width row — icon, name, status. Rows still to be connected end in an amber **Connect**; connected rows end in an emerald check (tap re-runs the connect flow). Anything not installed collapses into one quiet line beneath: `Claude Desktop and ChatGPT aren’t installed on this Mac.`
+Connected hosts sit in a compact column (icon, name, check, Default). Everything else is a cloud of marks — Cursor, Claude Desktop, ChatGPT Desktop, ChatGPT Web, Claude Web — each starting empty. Tap a mark to open its mini-flow, then return here.
 
-### Connect {Host}
+Desktop not on this Mac: overlay starts at **Install {Host} on this Mac.** · **I’ve installed it** · *Open download* · *Cancel*, then the usual MCP → skill steps (3 of 3).
 
-Full-screen overlay in the same letterhead as the four steps — no address marquee (the agent segment lands after registration). Menlo host name + `Step 1 of 2 — MCP` / `Step 2 of 2 — Skill`, then the hairline. Same 420px column, display heading, one 260px primary.
+### Connect {Host} (desktop)
+
+Full-screen overlay in the same letterhead as the four steps — no address marquee (the agent segment lands after registration). Menlo host name + `Step 1 of 2 — MCP` / `Step 2 of 2 — Skill` (or 3 steps when install is first). Same 420px column, display heading, one 260px primary.
 
 Working: **Writing the relay…** / **Placing the skill…** (orb, left)
 
@@ -183,35 +189,43 @@ Polls the daemon for the agent every 2s, up to 60s.
 
 Timeout (60s): Config written, but mutande hasn’t seen the agent yet. Restart the host, then **Retry**.
 
-Cancel: Host link was cancelled. Pick an installed host to continue.
+Cancel: Host link was cancelled. Pick a host to continue.
 
-On success the agent segment lands and the flow goes straight to First ping.
+On success the agent segment lands and the flow **returns to Connect** so another host can be picked. Continue is the only way onto First handshake.
+
+### Connect ChatGPT Web / Claude Web
+
+Same overlay grammar. Copy `https://mcp.mutande.online/mcp`, open the host, add a connector, Auth0 login. **I’ve added the connector** polls `list_agents` for a `transport: mcp` row with that slug (up to 90s). Browser mail is not E2E — one quiet line says so.
 
 ---
 
-## 4. First ping
+## 4. First handshake
 
 Address complete: `alice@acme/cursor`.
 
-### 4a. Send your first ping
+There is no skip. Quit and relaunch resumes here.
 
-**Paste this into {agent}.** (or *your connected host* when the slug is unknown)
+### 4a. Send your first handshake
 
-Your address takes it from there.
+**Open this in {Host}.** (Cursor / ChatGPT / Claude — or *Paste this into your connected host* when the slug is unknown)
+
+They reply with a short intro — who they are, what they’re good at.
+
+Target is `@claude` (the other own host) or `orinea@tbhco` (a teammate who already has a host).
 
 ```
-Use mutande to ping @all (thread)
+Start a mutande thread with @claude. If you haven’t introduced yourself on mutande yet, do that first. Ask them to reply with /handshake.
 ```
 
-- Copy icon in the prompt box (tooltip **Copy prompt**; toast: Copied — paste into your AI host)
-- **I’ve pasted it — wait for pong** (button)
-- *Skip for now* (link)
+- **Open {Host}** opens the sending host with the prompt in the composer (does not send). Clipboard is filled as backup. Then the wizard waits.
+- Copy icon in the prompt box (tooltip **Copy prompt**; toast: Copied — paste into {Host})
+- **I’ve pasted it — wait for the reply** if they already pasted, or the deep link failed
 
-### 4b. Waiting for pong…
+### 4b. Waiting for their handshake…
 
-Your agent should call ping, then reply on the thread. This screen watches Threads.
+The other agent should introduce itself on the thread. This screen watches Threads.
 
-Polls open threads every 3s (skipping threads with no activity in the wait window); completes when a `thread` ping has any reply.
+Polls open threads every 3s (skipping threads with no activity in the wait window); completes when a **non-ping** thread has a typed `handshake` card from a different `from_handle`. A `ping_kind` of `thread` or `health`, or a plain “got it” reply, does not count.
 
 The notification ask rides along here, where the user is already waiting:
 
@@ -222,27 +236,24 @@ We’ll tell you the moment your agent replies — even if you’re in another a
 - **Turn on banners** (opens macOS Notification settings, records a grant)
 - **Not now** (records a skip)
 
-Once answered it collapses to: Banners are on — the pong will announce itself.
+Once answered it collapses to: Banners are on — the reply will announce itself.
 
 The app doesn’t request or read the OS permission itself; both answers set `notifications_complete`, and `notifications_skipped` distinguishes them.
 
-- **Skip for now**
-
 ### 4c. Delivery
 
-~1.6s then home. The amber sweep runs under the address as this lands.
+~1.6s then home. The amber sweep runs under the address as this lands. Sets `ping_complete`.
 
-**received its first mail.**
+**they introduced themselves.**
 
 Threads is where it lands from here.
 
-### 4d. Still waiting for a pong
+### 4d. Still waiting for a reply
 
 After 5 minutes.
 
-**Still waiting for a pong**
+**Still waiting for a reply**
 
-Make sure your host ran ping and replied on the thread.
+Make sure the other host opened the thread and used /handshake. A ping does not count.
 
 - **Retry**
-- **Skip for now**

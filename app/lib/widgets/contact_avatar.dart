@@ -72,6 +72,12 @@ class ContactAvatar extends StatelessWidget {
         width: size,
         height: size,
         fit: BoxFit.cover,
+        // Auth0/Google IdP photos often 403 the default Dart user-agent.
+        headers: const {
+          'User-Agent':
+              'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
+          'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+        },
         errorBuilder: (_, _, _) => fallbackChild,
       );
     }
@@ -99,6 +105,7 @@ class PersonAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final plate = personMarkPlate(seed ?? initials, isSelf: isSelf);
+    final photo = url?.trim();
     final fallback = ColoredBox(
       color: plate.fill,
       child: Center(
@@ -129,9 +136,9 @@ class PersonAvatar extends StatelessWidget {
               : plate.ink.withValues(alpha: 0.18),
         ),
       ),
-      child: url == null
-          ? fallback
-          : ContactAvatar(url: url!, size: size, fallback: fallback),
+      child: (photo != null && photo.isNotEmpty)
+          ? ContactAvatar(url: photo, size: size, fallback: fallback)
+          : fallback,
     );
   }
 }

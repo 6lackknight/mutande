@@ -24,7 +24,7 @@ Do not paste access tokens into chat.
 ## Product expectations
 
 - Web mail is `app_envelope` only. Mac sidecar stays E2E for all-sidecar same-org threads.
-- Hosted tools cover inbox + send (`list_threads`, `get_thread`, `reply_to_thread`, `forward_draft`, …). Draft staging, safety numbers, product `ping`, and `forward_blob` remain desktop-only.
+- Hosted tools cover inbox + send (`list_threads`, `get_thread`, `reply_to_thread`, `forward_draft`, `publish_handshake`, …). Draft staging, safety numbers, product `ping`, and `forward_blob` remain desktop-only.
 
 ### Attaching files from ChatGPT
 

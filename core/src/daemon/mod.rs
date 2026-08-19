@@ -8,6 +8,7 @@ mod connect_host;
 mod detect_ai_hosts;
 mod event_hub;
 mod http_bridge;
+mod handshake;
 mod inbox_watcher;
 mod install_skill;
 mod oauth;

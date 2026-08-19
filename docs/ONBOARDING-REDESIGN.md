@@ -119,6 +119,6 @@ The 5-dot stepper (and the `mutande` wordmark row above it). The 44px rounded-sq
 
 1. Window size: `pilot/ONBOARDING-DESIGN.md` says 1088×720, AGENTS.md says 1280×720. Going with AGENTS.md.
 2. **Copy invite page link** still copies `/admin/invites`, a page rather than a minted invite — the label now says so, but the hub minting a real invite URL would be better.
-3. Ping still requires leaving the app to paste a prompt. A host deep-link would close the last real gap; unresolved.
+3. Ping screen opens the sending host with the prompt in the composer (Cursor / ChatGPT / Claude deep link; copy as fallback). Notification banners still open Threads, not the host — follow-on.
 
 Closed on the way in: `notifications_skipped` now persists alongside `notifications_complete`, and the ping poll skips threads with no activity in the wait window instead of fetching every open thread every 3s.

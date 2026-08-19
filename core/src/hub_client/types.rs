@@ -136,6 +136,27 @@ pub struct ThreadMessage {
     pub receipts: Option<MessageReceiptSummary>,
 }
 
+/// Hub-readable intro card (`publish_handshake`). Names only.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HandshakeCard {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub address: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub models: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skills: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ask_me_about: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preferred_file_format: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub other_tools: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub published_at: Option<String>,
+}
+
 /// Hub-readable application-layer payload (directory.prd §4.2.1).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AppEnvelopePayload {
@@ -148,6 +169,8 @@ pub struct AppEnvelopePayload {
     pub notes: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ping_kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handshake: Option<HandshakeCard>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub intent: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -336,6 +359,10 @@ pub struct User {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pubkey: Option<String>,
     pub created_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avatar_url: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -377,6 +404,16 @@ impl MeResponse {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct SeedProfileRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub avatar_url: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct CreateOrgRequest {
     pub slug: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -413,6 +450,9 @@ pub struct Agent {
     /// Last capability handshake; Flutter maps as last_seen / freshness.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub capabilities_updated_at: Option<String>,
+    /// Intro card from publish_handshake (not connect capability handshake).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handshake: Option<HandshakeCard>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -420,6 +460,13 @@ pub struct AgentListResponse {
     pub agents: Vec<Agent>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_agent_id: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentHandshakeResponse {
+    pub agent: Agent,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handshake: Option<HandshakeCard>,
 }
 
 /// Hub warn-banner payload for public enterprise listings (§7.2).

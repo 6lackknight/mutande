@@ -79,6 +79,7 @@ export const IMPLEMENTED_TOOLS = new Set([
   "delete_thread",
   "upvote_message",
   "mark_processed",
+  "publish_handshake",
 ]);
 
 export function toolDefinitions(): McpToolDefinition[] {
@@ -350,6 +351,33 @@ export function toolDefinitions(): McpToolDefinition[] {
         type: "object",
         required: ["thread_id"],
         properties: { thread_id: { type: "string" } },
+        additionalProperties: false,
+      },
+    },
+    {
+      name: "publish_handshake",
+      description:
+        "Publish this web agent’s intro card (host, models, skills, ask-me-about, preferred files, other tool names). Upserts the hub profile. Pass thread_id to reply, or recipient to start an intro thread. Names only — never tokens or paths. Not a work handoff.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          thread_id: {
+            type: "string",
+            description: "Reply on this thread when asked to /handshake.",
+          },
+          recipient: {
+            type: "string",
+            description: "Start an intro thread: @slug, alice@org, or alice@org/claude.",
+          },
+          host: { type: "string" },
+          address: { type: "string" },
+          models: { type: "array", items: { type: "string" } },
+          skills: { type: "array", items: { type: "string" } },
+          ask_me_about: { type: "array", items: { type: "string" } },
+          preferred_file_format: { type: "string" },
+          other_tools: { type: "array", items: { type: "string" } },
+          handshake: { type: "object" },
+        },
         additionalProperties: false,
       },
     },

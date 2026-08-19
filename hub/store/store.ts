@@ -118,7 +118,9 @@ import type {
   PairingOpsFlag,
   SubmitPairRequestInput,
   ExternalContactLink,
+  HandshakeInput,
 } from "./types.ts";
+import { sanitizeHandshake } from "./handshake.ts";
 import { createBlobUrls } from "./r2.ts";
 import {
   CAPABILITY_STALE_TTL_MS,
@@ -350,6 +352,7 @@ export function normalizeAgent(raw: Agent | Record<string, unknown>): Agent {
     mcp_endpoint: r.mcp_endpoint ?? (transport === "mcp" ? MCP_ENDPOINT_DEFAULT : null),
     capabilities: r.capabilities ?? null,
     capabilities_updated_at: r.capabilities_updated_at ?? null,
+    handshake: r.handshake ?? null,
   };
 }
 
@@ -1368,6 +1371,57 @@ export class HubStore {
       default_agent_id,
       transport_defaults: prefs.defaults,
     };
+  }
+
+  async putAgentHandshake(
+    auth: AuthContext,
+    agentId: string,
+    input: HandshakeInput | Record<string, unknown>,
+  ): Promise<Agent> {
+    const agent = await this.getAgent(agentId);
+    if (!agent) throw notFound("Agent");
+    if (agent.user_id !== auth.userId) {
+      throw forbidden("Only this agent’s owner can publish a handshake");
+    }
+    const handshake = sanitizeHandshake(input, nowIso());
+    const updated: Agent = { ...agent, handshake };
+    await this.kv.set(this.agentKey(updated.id), updated);
+    return updated;
+  }
+
+  async getAgentHandshake(
+    auth: AuthContext,
+    agentId: string,
+  ): Promise<{ handshake: Agent["handshake"] }> {
+    const agent = await this.getAgent(agentId);
+    if (!agent) throw notFound("Agent");
+    if (!(await this.viewerCanReadHandshake(auth, agent))) {
+      throw forbidden("Handshake is visible to org members and thread peers");
+    }
+    return { handshake: agent.handshake ?? null };
+  }
+
+  private async viewerCanReadHandshake(
+    auth: AuthContext,
+    agent: Agent,
+  ): Promise<boolean> {
+    if (agent.user_id === auth.userId) return true;
+    const owner = await this.getUser(agent.user_id);
+    if (owner?.org_id && owner.org_id === auth.orgId) return true;
+    const iter = this.kv.list<InboxEntry>({
+      prefix: this.inboxPrefix(auth.userId),
+    });
+    for await (const entry of iter) {
+      const threadRes = await this.kv.get<ThreadMeta>(
+        this.threadKey(entry.value.thread_id),
+      );
+      const t = threadRes.value;
+      if (!t) continue;
+      if (t.from_agent_id === agent.id || t.audience_agent_id === agent.id) {
+        return true;
+      }
+    }
+    return false;
   }
 
   async getTransportPrefs(auth: AuthContext): Promise<AgentTransportPrefs> {

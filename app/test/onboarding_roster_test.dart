@@ -7,6 +7,7 @@ import 'package:app/services/daemon_client.dart';
 import 'package:app/services/first_run_store.dart';
 import 'package:app/services/host_link_store.dart';
 import 'package:app/theme/mutande_macos_theme.dart';
+import 'package:app/widgets/ai_host_icon.dart';
 import 'package:app/widgets/contact_avatar.dart';
 import 'package:app/widgets/onboarding_address_rail.dart';
 import 'package:app/widgets/onboarding_chrome.dart';
@@ -58,25 +59,24 @@ void main() {
           'signed_in': true,
           'handle': 'tawanda@tbhco',
           'hub_url': 'http://localhost:8000',
+          'display_name': 'Tawanda Brandon',
+          'avatar_url': 'https://cdn.example.test/t.jpg',
         });
       }
       if (method == 'list_contacts') {
         return _rpcOk(body['id'], {
           'contacts': [
             {
-              'handle': 'tawanda@tbhco',
-              'kind': 'org',
-              'display_name': 'Tawanda Brandon',
-              'avatar_url': 'https://cdn.example.test/t.jpg',
-            },
-            {
               'handle': 'orinea@tbhco',
               'kind': 'org',
               'display_name': 'Orinea',
+              'avatar_url': 'https://cdn.example.test/o.jpg',
             },
             {
               'handle': 'tawandadev@tbhco',
               'kind': 'org',
+              'display_name': 'Tawanda Dev',
+              'avatar_url': 'https://cdn.example.test/d.jpg',
             },
           ],
         });
@@ -110,10 +110,90 @@ void main() {
     expect(find.text('you'), findsOneWidget);
     expect(find.text('Orinea'), findsOneWidget);
     expect(find.text('orinea@tbhco'), findsOneWidget);
-    expect(find.text('Tawandadev'), findsOneWidget);
+    expect(find.text('Tawanda Dev'), findsOneWidget);
     expect(find.text('tawandadev@tbhco'), findsOneWidget);
     expect(find.byType(PersonAvatar), findsNWidgets(3));
+    final avatars = tester
+        .widgetList<PersonAvatar>(find.byType(PersonAvatar))
+        .toList();
+    expect(avatars[0].isSelf, isTrue);
+    expect(avatars[0].url, 'https://cdn.example.test/t.jpg');
+    expect(avatars[1].url, 'https://cdn.example.test/o.jpg');
+    expect(avatars[2].url, 'https://cdn.example.test/d.jpg');
     expect(find.text('Two teammates can already reach you.'), findsOneWidget);
+  });
+
+  testWidgets('team roster shows known host marks as a stack', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final daemon = _mockDaemon((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      final method = body['method'] as String?;
+      if (method == 'get_status') {
+        return _rpcOk(body['id'], {
+          'configured': true,
+          'signed_in': true,
+          'handle': 'tawanda@tbhco',
+          'hub_url': 'http://localhost:8000',
+        });
+      }
+      if (method == 'list_contacts') {
+        return _rpcOk(body['id'], {
+          'contacts': [
+            {
+              'handle': 'tawanda@tbhco',
+              'kind': 'org',
+              'display_name': 'Tawanda Brandon',
+            },
+            {'handle': 'orinea@tbhco', 'kind': 'org', 'display_name': 'Orinea'},
+          ],
+        });
+      }
+      if (method == 'list_agents') {
+        final params = body['params'] as Map<String, dynamic>? ?? {};
+        final handle = params['handle'] as String?;
+        if (handle == 'orinea@tbhco') {
+          return _rpcOk(body['id'], {
+            'agents': [
+              {'id': 'o1', 'slug': 'cursor'},
+              {'id': 'o2', 'slug': 'claude'},
+            ],
+          });
+        }
+        return _rpcOk(body['id'], {
+          'agents': [
+            {'id': 's1', 'slug': 'cursor'},
+          ],
+        });
+      }
+      return _rpcOk(body['id'], {'ok': true});
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: mutandeMaterialTheme(),
+        home: OnboardingFlowScreen(
+          config: const AppConfig(hubUrl: 'http://localhost:8000'),
+          daemon: daemon,
+          firstRunStore: FirstRunStore.memory(),
+          hostLinkStore: HostLinkStore.memory(),
+          onComplete: (_, _) {},
+          initialStatus: const DaemonStatusResult(
+            configured: true,
+            signedIn: true,
+            handle: 'tawanda@tbhco',
+            hubUrl: 'http://localhost:8000',
+          ),
+          initialStep: OnboardingStep.team,
+        ),
+      ),
+    );
+    await _pumpUntil(tester, find.byType(AiHostIcon));
+    expect(find.byType(AiHostIcon), findsNWidgets(3));
   });
 
   testWidgets('team roster loading keeps onboarding chrome', (
@@ -251,5 +331,196 @@ void main() {
     expect(find.byType(OnboardingHostSkeleton), findsNothing);
     expect(find.byType(OnboardingAddressRail), findsOneWidget);
     expect(find.text('Pick a host to connect.'), findsOneWidget);
+    expect(find.text('ChatGPT Web'), findsOneWidget);
+    expect(find.text('Claude Web'), findsOneWidget);
+    expect(find.text('ChatGPT Desktop'), findsOneWidget);
+  });
+
+  testWidgets('tapping ChatGPT Web opens the connector mini-flow', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final daemon = _mockDaemon((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      final method = body['method'] as String?;
+      if (method == 'get_status') {
+        return _rpcOk(body['id'], {
+          'configured': true,
+          'signed_in': true,
+          'handle': 'alice@acme',
+          'hub_url': 'http://localhost:8000',
+        });
+      }
+      if (method == 'detect_ai_hosts') {
+        return _rpcOk(body['id'], {
+          'hosts': [
+            {'host': 'cursor', 'installed': true, 'config_present': false},
+          ],
+        });
+      }
+      if (method == 'list_agents') {
+        return _rpcOk(body['id'], {'agents': <Object?>[]});
+      }
+      return _rpcOk(body['id'], {'ok': true});
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: mutandeMaterialTheme(),
+        home: OnboardingFlowScreen(
+          config: const AppConfig(hubUrl: 'http://localhost:8000'),
+          daemon: daemon,
+          firstRunStore: FirstRunStore.memory(),
+          hostLinkStore: HostLinkStore.memory(),
+          onComplete: (_, _) {},
+          initialStatus: const DaemonStatusResult(
+            configured: true,
+            signedIn: true,
+            handle: 'alice@acme',
+            hubUrl: 'http://localhost:8000',
+          ),
+          initialStep: OnboardingStep.connect,
+        ),
+      ),
+    );
+    await _pumpUntil(tester, find.text('ChatGPT Web'));
+    await tester.tap(find.text('ChatGPT Web'));
+    await tester.pumpAndSettle();
+    expect(find.text('Add mutande in ChatGPT.'), findsOneWidget);
+    expect(find.text('I’ve added the connector'), findsOneWidget);
+    expect(find.textContaining('mcp.mutande.online'), findsOneWidget);
+  });
+
+  testWidgets('one host does not unlock Continue to handoff', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final daemon = _mockDaemon((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      final method = body['method'] as String?;
+      if (method == 'get_status') {
+        return _rpcOk(body['id'], {
+          'configured': true,
+          'signed_in': true,
+          'handle': 'alice@acme',
+          'hub_url': 'http://localhost:8000',
+        });
+      }
+      if (method == 'detect_ai_hosts') {
+        return _rpcOk(body['id'], {
+          'hosts': [
+            {'host': 'cursor', 'installed': true, 'config_present': true},
+            {'host': 'claude', 'installed': true, 'config_present': false},
+          ],
+        });
+      }
+      if (method == 'list_agents') {
+        return _rpcOk(body['id'], {
+          'agents': [
+            {'id': 'a1', 'slug': 'cursor'},
+          ],
+        });
+      }
+      if (method == 'list_contacts') {
+        return _rpcOk(body['id'], {
+          'contacts': [
+            {'handle': 'alice@acme', 'kind': 'org'},
+          ],
+        });
+      }
+      return _rpcOk(body['id'], {'ok': true});
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: mutandeMaterialTheme(),
+        home: OnboardingFlowScreen(
+          config: const AppConfig(hubUrl: 'http://localhost:8000'),
+          daemon: daemon,
+          firstRunStore: FirstRunStore.memory(),
+          hostLinkStore: HostLinkStore.memory(),
+          onComplete: (_, _) {},
+          initialStatus: const DaemonStatusResult(
+            configured: true,
+            signedIn: true,
+            handle: 'alice@acme',
+            hubUrl: 'http://localhost:8000',
+          ),
+          initialStep: OnboardingStep.connect,
+        ),
+      ),
+    );
+    await _pumpUntil(
+      tester,
+      find.textContaining('A handoff needs a second host'),
+    );
+    expect(find.text('Continue'), findsNothing);
+    expect(find.text('Invite on the web'), findsOneWidget);
+  });
+
+  testWidgets('two own agents unlock Continue to handoff', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final daemon = _mockDaemon((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      final method = body['method'] as String?;
+      if (method == 'get_status') {
+        return _rpcOk(body['id'], {
+          'configured': true,
+          'signed_in': true,
+          'handle': 'alice@acme',
+          'hub_url': 'http://localhost:8000',
+        });
+      }
+      if (method == 'detect_ai_hosts') {
+        return _rpcOk(body['id'], {
+          'hosts': [
+            {'host': 'cursor', 'installed': true, 'config_present': true},
+            {'host': 'claude', 'installed': true, 'config_present': true},
+          ],
+        });
+      }
+      if (method == 'list_agents') {
+        return _rpcOk(body['id'], {
+          'agents': [
+            {'id': 'a1', 'slug': 'cursor'},
+            {'id': 'a2', 'slug': 'claude'},
+          ],
+        });
+      }
+      return _rpcOk(body['id'], {'ok': true});
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: mutandeMaterialTheme(),
+        home: OnboardingFlowScreen(
+          config: const AppConfig(hubUrl: 'http://localhost:8000'),
+          daemon: daemon,
+          firstRunStore: FirstRunStore.memory(),
+          hostLinkStore: HostLinkStore.memory(),
+          onComplete: (_, _) {},
+          initialStatus: const DaemonStatusResult(
+            configured: true,
+            signedIn: true,
+            handle: 'alice@acme',
+            hubUrl: 'http://localhost:8000',
+          ),
+          initialStep: OnboardingStep.connect,
+        ),
+      ),
+    );
+    await _pumpUntil(tester, find.text('Continue'));
+    expect(find.text('Continue'), findsOneWidget);
   });
 }

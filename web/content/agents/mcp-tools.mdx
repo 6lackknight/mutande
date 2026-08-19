@@ -44,7 +44,7 @@ Claude Desktop prompts once per tool until you grant a standing approval. mutand
 |------|---------|
 | `set_router` | Update default agent and/or `match_slug` rules |
 | `forward_draft` | Create thread from draft (direct or `@all`) |
-| `ping` | Product ping — `kind: health` (daemon auto-pong) or `kind: thread` (real mail; default target personal `@all`) |
+| `ping` | Health or shared-thread check — `kind: health` (daemon auto-pong) or `kind: thread` (real mail; default target personal `@all`). Day-one onboarding waits for a work handoff, not this tool. |
 | `reply_to_thread` | Reply on an existing thread — `bundle` must be non-empty (`notes` / `subject` / questions / answers); `{}` is rejected. Optional `bundle.in_reply_to` for nested replies; optional `to_agent` for self-handoff |
 | `close_thread` | Mark thread closed |
 | `delete_thread` | Remove a thread from your inbox (sender also purges the thread body) |

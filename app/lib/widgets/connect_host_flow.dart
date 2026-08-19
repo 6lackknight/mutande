@@ -43,6 +43,8 @@ Future<ConnectHostFlowResult?> showConnectHostFlow({
   required HostLinkStore hostLinkStore,
   required String host,
   bool celebrateFirstHost = false,
+  bool needsInstall = false,
+  String? downloadUrl,
   Rect? morphOrigin,
   bool fullScreen = false,
 }) {
@@ -52,6 +54,8 @@ Future<ConnectHostFlowResult?> showConnectHostFlow({
     hostLinkStore: hostLinkStore,
     host: host,
     celebrateFirstHost: celebrateFirstHost,
+    needsInstall: needsInstall,
+    downloadUrl: downloadUrl,
     useIconHero: morphOrigin != null && !reduceMotion,
     embedded: fullScreen,
   );
@@ -108,7 +112,7 @@ Future<ConnectHostFlowResult?> showConnectHostFlow({
   );
 }
 
-enum _Step { mcp, skill, done }
+enum _Step { install, mcp, skill, done }
 
 class _ConnectHostFlowDialog extends StatefulWidget {
   const _ConnectHostFlowDialog({
@@ -116,6 +120,8 @@ class _ConnectHostFlowDialog extends StatefulWidget {
     required this.hostLinkStore,
     required this.host,
     required this.celebrateFirstHost,
+    this.needsInstall = false,
+    this.downloadUrl,
     this.useIconHero = false,
     this.embedded = false,
   });
@@ -124,6 +130,8 @@ class _ConnectHostFlowDialog extends StatefulWidget {
   final HostLinkStore hostLinkStore;
   final String host;
   final bool celebrateFirstHost;
+  final bool needsInstall;
+  final String? downloadUrl;
   final bool useIconHero;
   final bool embedded;
 
@@ -142,7 +150,12 @@ class _ConnectHostFlowDialogState extends State<_ConnectHostFlowDialog> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _runMcp());
+    if (widget.needsInstall) {
+      _step = _Step.install;
+      _busy = false;
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _runMcp());
+    }
   }
 
   bool get _reduceMotion {
@@ -350,6 +363,7 @@ class _ConnectHostFlowDialogState extends State<_ConnectHostFlowDialog> {
       host: widget.host,
       label: label,
       step: _step,
+      needsInstall: widget.needsInstall,
       useIconHero: widget.useIconHero,
     );
 
@@ -440,6 +454,43 @@ class _ConnectHostFlowDialogState extends State<_ConnectHostFlowDialog> {
       return OnboardingHeading(
         variant: OnboardingHeadingVariant.display,
         title: '$label will check mutande mail on new chats.',
+      );
+    }
+
+    if (_step == _Step.install) {
+      final url = widget.downloadUrl;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          OnboardingHeading(
+            variant: OnboardingHeadingVariant.display,
+            title: 'Install $label on this Mac.',
+            subtitle:
+                'Open the download page, install the app, then come back. '
+                'mutande will write the relay next.',
+          ),
+          OnboardingActions(
+            primary: FilledButton(
+              onPressed: _runMcp,
+              child: const Text('I’ve installed it'),
+            ),
+            secondary: url == null
+                ? TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Cancel'),
+                  )
+                : TextButton(
+                    onPressed: () => Process.run('open', [url]),
+                    child: const Text('Open download'),
+                  ),
+            tertiary: url == null
+                ? null
+                : TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Cancel'),
+                  ),
+          ),
+        ],
       );
     }
 
@@ -647,21 +698,29 @@ class _ConnectLetterhead extends StatelessWidget {
     required this.label,
     required this.step,
     required this.useIconHero,
+    this.needsInstall = false,
   });
 
   final String host;
   final String label;
   final _Step step;
   final bool useIconHero;
+  final bool needsInstall;
 
   @override
   Widget build(BuildContext context) {
     const iconSize = 28.0;
     final icon = AiHostIcon(host, size: iconSize);
+    final total = needsInstall ? 3 : 2;
+    final (index, name) = switch (step) {
+      _Step.install => (1, 'Install'),
+      _Step.mcp => (needsInstall ? 2 : 1, 'MCP'),
+      _Step.skill => (needsInstall ? 3 : 2, 'Skill'),
+      _Step.done => (total, 'Done'),
+    };
     final caption = step == _Step.done
         ? 'Done'
-        : 'Step ${step == _Step.skill ? 2 : 1} of 2 — '
-            '${step == _Step.skill ? 'Skill' : 'MCP'}';
+        : 'Step $index of $total — $name';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

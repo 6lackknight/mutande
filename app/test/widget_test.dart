@@ -1524,16 +1524,15 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Step 2 of 4 — Your team'), findsOneWidget);
+    await tester.ensureVisible(find.text('Continue'));
     await tester.tap(find.text('Continue'));
     await tester.pumpAndSettle();
 
     expect(find.text('Step 3 of 4 — Connect a host'), findsOneWidget);
     expect(find.text('Pick a host to connect.'), findsOneWidget);
-    // The verb rides on the row that still needs it.
-    expect(find.text('Connect'), findsOneWidget);
-    expect(find.text('Installed'), findsOneWidget);
-    // Undetected hosts collapse to one line instead of dead tiles.
-    expect(find.textContaining('installed on this Mac'), findsOneWidget);
+    expect(find.text('ChatGPT Web'), findsOneWidget);
+    expect(find.text('Claude Web'), findsOneWidget);
+    expect(find.text('Cursor'), findsWidgets);
     expect(find.text('Threads'), findsNothing);
   });
 
@@ -1545,6 +1544,22 @@ void main() {
       final method = body['method'] as String?;
       if (method == 'list_threads') {
         return _rpcOk(body['id'], {'threads': []});
+      }
+      if (method == 'list_agents') {
+        return _rpcOk(body['id'], {
+          'agents': [
+            {'id': 'a1', 'slug': 'cursor'},
+            {'id': 'a2', 'slug': 'claude'},
+          ],
+        });
+      }
+      if (method == 'detect_ai_hosts') {
+        return _rpcOk(body['id'], {
+          'hosts': [
+            {'host': 'cursor', 'installed': true, 'config_present': true},
+            {'host': 'claude', 'installed': true, 'config_present': true},
+          ],
+        });
       }
       return _rpcOk(body['id'], {'ok': true});
     });
@@ -1568,15 +1583,16 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Paste this into your connected host.'), findsOneWidget);
-    expect(find.text(FirstRunPingWizard.prompt), findsOneWidget);
+    expect(find.text('Open this in Cursor.'), findsOneWidget);
+    expect(find.text('Open Cursor'), findsOneWidget);
+    expect(find.text(FirstRunPingWizard.promptFor('@claude')), findsOneWidget);
     expect(find.byTooltip('Copy prompt'), findsOneWidget);
-    expect(find.text('I’ve pasted it — wait for pong'), findsOneWidget);
+    expect(find.text('I’ve pasted it — wait for the reply'), findsOneWidget);
     expect(find.text('Copy prompt'), findsNothing);
-    expect(find.text('Skip for now'), findsOneWidget);
+    expect(find.text('Skip for now'), findsNothing);
   });
 
-  testWidgets('ping wizard skip marks complete and shows home', (
+  testWidgets('handoff wizard has no skip and does not mark complete', (
     WidgetTester tester,
   ) async {
     final daemon = _mockDaemon((request) async {
@@ -1584,6 +1600,14 @@ void main() {
       final method = body['method'] as String?;
       if (method == 'list_threads') {
         return _rpcOk(body['id'], {'threads': []});
+      }
+      if (method == 'list_agents') {
+        return _rpcOk(body['id'], {
+          'agents': [
+            {'id': 'a1', 'slug': 'cursor'},
+            {'id': 'a2', 'slug': 'claude'},
+          ],
+        });
       }
       return _rpcOk(body['id'], {'ok': true});
     });
@@ -1607,13 +1631,12 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Skip for now'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Skip for now'));
-    await tester.pumpAndSettle();
 
-    expect(firstRun.pingComplete, isTrue);
-    expect(find.text('Threads'), findsWidgets);
+    expect(find.text('Open Cursor'), findsOneWidget);
+    expect(find.text('I’ve pasted it — wait for the reply'), findsOneWidget);
+    expect(find.text('Skip for now'), findsNothing);
+    expect(firstRun.pingComplete, isFalse);
+    expect(find.text('Threads'), findsNothing);
   });
 
   testWidgets('collab tab shows empty create shell', (

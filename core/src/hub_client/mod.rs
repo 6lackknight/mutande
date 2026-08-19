@@ -194,6 +194,11 @@ impl HubClient {
         self.get_json("/v1/me").await
     }
 
+    /// One-shot Auth0 name/photo seed (`POST /v1/me/profile/seed`).
+    pub async fn seed_profile(&self, body: &SeedProfileRequest) -> Result<MeResponse> {
+        self.post_json("/v1/me/profile/seed", body, true).await
+    }
+
     /// Compat alias used by older call sites / docs.
     pub async fn auth_me(&self) -> Result<MeResponse> {
         self.get_json("/v1/auth/me").await
@@ -263,6 +268,16 @@ impl HubClient {
 
     pub async fn list_agents(&self) -> Result<AgentListResponse> {
         self.get_json("/v1/agents").await
+    }
+
+    pub async fn put_agent_handshake(
+        &self,
+        agent_id: &str,
+        card: &HandshakeCard,
+    ) -> Result<Agent> {
+        let path = format!("/v1/agents/{}/handshake", agent_id.trim());
+        let resp: AgentHandshakeResponse = self.put_json(&path, card).await?;
+        Ok(resp.agent)
     }
 
     pub async fn get_transport_defaults(&self) -> Result<AgentTransportPrefs> {
@@ -1347,10 +1362,28 @@ mod tests {
                 role: Some("org_admin".into()),
                 pubkey: None,
                 created_at: "2026-01-01T00:00:00Z".into(),
+                display_name: Some("Alice".into()),
+                avatar_url: Some("https://cdn.example.test/a.jpg".into()),
             }),
             org: None,
         };
         assert!(ready.is_onboarded());
+    }
+
+    #[test]
+    fn me_user_deserializes_profile_fields() {
+        let user: User = serde_json::from_value(serde_json::json!({
+            "id": "u1",
+            "created_at": "2026-01-01T00:00:00Z",
+            "display_name": "Pat Jones",
+            "avatar_url": "https://cdn.example.test/p.jpg"
+        }))
+        .unwrap();
+        assert_eq!(user.display_name.as_deref(), Some("Pat Jones"));
+        assert_eq!(
+            user.avatar_url.as_deref(),
+            Some("https://cdn.example.test/p.jpg")
+        );
     }
 
     #[test]

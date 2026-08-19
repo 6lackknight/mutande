@@ -6,6 +6,7 @@ use serde_json::Value;
 
 use super::sentry_report::capture_rpc_error;
 use super::state::{HumanDecision, MutandeBundle, PingKind, ResourceRequest};
+use crate::hub_client::HandshakeCard;
 use super::DaemonState;
 
 pub const PARSE_ERROR: i32 = -32700;
@@ -234,7 +235,13 @@ async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Resu
                 .get("filter")
                 .and_then(|v| serde_json::from_value(v.clone()).ok());
             let agent_slug = optional_str(&params, "agent_slug");
-            let threads = state.list_threads(filter, agent_slug.as_deref()).await?;
+            let enrich = params
+                .get("enrich")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            let threads = state
+                .list_threads(filter, agent_slug.as_deref(), enrich)
+                .await?;
             let threads = if let Some(cid) = optional_str(&params, "collab_id") {
                 threads
                     .into_iter()
@@ -445,6 +452,45 @@ async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Resu
                 "recipients": result.recipients,
                 "ping_kind": kind.as_str(),
             }))
+        }
+        "publish_handshake" => {
+            let thread_id = optional_str(&params, "thread_id");
+            let recipient = optional_str(&params, "recipient");
+            let agent_slug = optional_str(&params, "agent_slug");
+            let mut card: HandshakeCard = params
+                .get("handshake")
+                .cloned()
+                .and_then(|v| serde_json::from_value(v).ok())
+                .unwrap_or_default();
+            if card.host.is_none() {
+                card.host = optional_str(&params, "host");
+            }
+            if card.address.is_none() {
+                card.address = optional_str(&params, "address");
+            }
+            if card.models.is_empty() {
+                card.models = optional_str_vec(&params, "models");
+            }
+            if card.skills.is_empty() {
+                card.skills = optional_str_vec(&params, "skills");
+            }
+            if card.ask_me_about.is_empty() {
+                card.ask_me_about = optional_str_vec(&params, "ask_me_about");
+            }
+            if card.preferred_file_format.is_none() {
+                card.preferred_file_format = optional_str(&params, "preferred_file_format");
+            }
+            if card.other_tools.is_empty() {
+                card.other_tools = optional_str_vec(&params, "other_tools");
+            }
+            state
+                .publish_handshake(
+                    card,
+                    thread_id.as_deref(),
+                    recipient.as_deref(),
+                    agent_slug.as_deref(),
+                )
+                .await
         }
         "reply_to_thread" => {
             let thread_id = param_str(&params, "thread_id")?;

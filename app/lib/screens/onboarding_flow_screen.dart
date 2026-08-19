@@ -6,16 +6,20 @@ import 'package:flutter/services.dart';
 
 import '../analytics_events.dart';
 import '../config/app_config.dart';
+import '../models/agent_transport.dart';
 import '../services/analytics.dart';
 import '../services/daemon_client.dart';
+import '../services/first_run_gates.dart';
 import '../services/first_run_store.dart';
 import '../services/host_link_store.dart';
 import '../theme/mutande_macos_theme.dart';
 import '../util/address_display.dart';
 import '../widgets/ai_host_icon.dart';
 import '../widgets/connect_host_flow.dart';
+import '../widgets/connect_host_picker.dart';
 import '../widgets/contact_avatar.dart';
 import '../widgets/home_chrome_strip.dart';
+import '../widgets/hosted_mcp_flow.dart';
 import '../widgets/morphing_orb_button.dart';
 import '../widgets/onboarding_address_rail.dart';
 import '../widgets/onboarding_chrome.dart';
@@ -24,8 +28,9 @@ import '../widgets/thinking_orb.dart';
 import '../widgets/thread_skeletons.dart';
 import 'first_run_ping_wizard.dart';
 
-/// Guided 4-step onboarding (sign in → team → connect → ping), told as the
-/// address assembling itself. Notifications are asked during the ping wait.
+/// Guided 4-step onboarding (sign in → team → connect → first handshake).
+/// Connect stays until a second host or a live teammate exists; the last
+/// step completes only when that recipient replies on a work thread.
 class OnboardingFlowScreen extends StatefulWidget {
   const OnboardingFlowScreen({
     super.key,
@@ -55,27 +60,29 @@ class OnboardingFlowScreen extends StatefulWidget {
 
 enum _TeamMode { setupChoose, setupCreate, setupJoin, roster }
 
-/// Org member chip on the team roster: avatar, name, lowercase handle.
+/// Org member chip on the team roster: person mark, address, known hosts.
 class _RosterChip extends StatelessWidget {
   const _RosterChip({
     required this.handle,
     this.displayName,
     this.avatarUrl,
     this.isSelf = false,
+    this.hostSlugs = const [],
   });
 
   final String handle;
   final String? displayName;
   final String? avatarUrl;
   final bool isSelf;
+  final List<String> hostSlugs;
 
   @override
   Widget build(BuildContext context) {
     final title = personDisplayTitle(displayName: displayName, handle: handle);
     final address = formatMailAddress(handle);
     return Container(
-      constraints: const BoxConstraints(maxWidth: 228, minHeight: 44),
-      padding: const EdgeInsets.fromLTRB(6, 6, 12, 6),
+      constraints: const BoxConstraints(maxWidth: 300, minHeight: 56),
+      padding: const EdgeInsets.fromLTRB(8, 8, 12, 8),
       decoration: BoxDecoration(
         color: MutandeColors.stone50,
         borderRadius: BorderRadius.circular(999),
@@ -85,13 +92,13 @@ class _RosterChip extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           PersonAvatar(
-            size: 28,
+            size: 40,
             url: avatarUrl,
             initials: personInitials(title),
             seed: handle,
             isSelf: isSelf,
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 10),
           Flexible(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -106,7 +113,7 @@ class _RosterChip extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          fontSize: 12.5,
+                          fontSize: 14,
                           fontWeight: FontWeight.w600,
                           color: MutandeColors.stone800,
                           height: 1.15,
@@ -119,13 +126,14 @@ class _RosterChip extends StatelessWidget {
                     ],
                   ],
                 ),
+                const SizedBox(height: 2),
                 Text(
                   address,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontFamily: 'Menlo',
-                    fontSize: 11,
+                    fontSize: 12,
                     fontWeight: FontWeight.w500,
                     color: MutandeColors.stone500,
                     height: 1.2,
@@ -134,7 +142,101 @@ class _RosterChip extends StatelessWidget {
               ],
             ),
           ),
+          if (hostSlugs.isNotEmpty) ...[
+            const SizedBox(width: 12),
+            _HostAvatarStack(hostSlugs),
+          ],
         ],
+      ),
+    );
+  }
+}
+
+/// Overlapping host marks for agents we already know on this handle.
+class _HostAvatarStack extends StatelessWidget {
+  const _HostAvatarStack(this.slugs);
+
+  final List<String> slugs;
+
+  static const _size = 24.0;
+  static const _overlap = 9.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final shown = slugs.take(3).toList();
+    final extra = slugs.length - shown.length;
+    final count = shown.length + (extra > 0 ? 1 : 0);
+    final width = _size + (count - 1) * (_size - _overlap);
+    final names = shown.map(AiHostIcon.displayName).join(', ');
+    return Tooltip(
+      message: extra > 0 ? '$names +$extra' : names,
+      child: SizedBox(
+        width: width,
+        height: _size,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            for (var i = 0; i < shown.length; i++)
+              Positioned(
+                left: i * (_size - _overlap),
+                child: _HostStackDot(shown[i]),
+              ),
+            if (extra > 0)
+              Positioned(
+                left: shown.length * (_size - _overlap),
+                child: _HostStackMore('+$extra'),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HostStackDot extends StatelessWidget {
+  const _HostStackDot(this.slug);
+
+  final String slug;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: _HostAvatarStack._size,
+      height: _HostAvatarStack._size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: MutandeColors.stone50,
+        shape: BoxShape.circle,
+        border: Border.all(color: MutandeColors.stone200),
+      ),
+      child: AiHostIcon(slug, size: 15, showPlate: false),
+    );
+  }
+}
+
+class _HostStackMore extends StatelessWidget {
+  const _HostStackMore(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: _HostAvatarStack._size,
+      height: _HostAvatarStack._size,
+      alignment: Alignment.center,
+      decoration: const BoxDecoration(
+        color: MutandeColors.stone800,
+        shape: BoxShape.circle,
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: MutandeColors.stone50,
+          fontSize: 9,
+          fontWeight: FontWeight.w700,
+          height: 1,
+        ),
       ),
     );
   }
@@ -174,6 +276,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
   final _handle = TextEditingController();
   final _invite = TextEditingController();
   List<ContactView> _contacts = const [];
+  Map<String, List<String>> _hostsByHandle = const {};
   bool _contactsLoading = false;
 
   // Connect
@@ -186,6 +289,9 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
   bool _connectWaiting = false;
   String? _connectHint;
   Timer? _connectPoll;
+
+  /// Teammate handle that already has at least one registered agent.
+  String? _liveTeammateHandle;
 
   /// Last address segment — the agent slug, once one has registered.
   String? _agentSlug;
@@ -212,26 +318,44 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
       unawaited(_loadHosts());
     }
     if (_step == OnboardingStep.ping) {
-      unawaited(_loadAgentSlug());
+      unawaited(_ensureHandoffDestination());
     }
     if (_status?.signedIn == true && _status?.configured != true) {
       unawaited(_refreshSignedInStatus());
     }
   }
 
-  /// Resuming at the ping step: recover the agent segment already earned.
-  Future<void> _loadAgentSlug() async {
-    try {
-      final agents = await widget.daemon.listAgents();
-      final slug = agents.agents
-          .map((a) => a.slug.toLowerCase())
-          .where((s) => s.isNotEmpty && s != 'default')
-          .firstOrNull;
-      if (!mounted || slug == null) return;
-      setState(() => _agentSlug = slug);
-    } catch (_) {
-      // Address just shows the agent slot empty.
+  bool get _destinationReady => firstRunDestinationReady(
+    ownAgents: firstRunOwnAgentCount(_agents),
+    liveTeammate: _liveTeammateHandle != null,
+  );
+
+  String? get _handoffTarget => firstRunHandoffTarget(
+    ownAgents: _agents,
+    sendingSlug: _agentSlug,
+    liveTeammateHandle: _liveTeammateHandle,
+  );
+
+  /// Resuming at the handoff step: bounce back if there is still no recipient.
+  Future<void> _ensureHandoffDestination() async {
+    await _loadHosts();
+    if (!mounted) return;
+    if (!_destinationReady) {
+      setState(() => _step = OnboardingStep.connect);
+      return;
     }
+    final slug = _agents
+        .map((a) => a.slug.toLowerCase())
+        .where((s) => s.isNotEmpty && s != 'default')
+        .firstOrNull;
+    if (slug != null) setState(() => _agentSlug = slug);
+  }
+
+  Future<void> _goToHandoffIfReady() async {
+    if (!_destinationReady) return;
+    await widget.firstRunStore.markConnectComplete();
+    if (!mounted) return;
+    setState(() => _step = OnboardingStep.ping);
   }
 
   OnboardingStep _initialStepFromStatus() {
@@ -349,6 +473,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
           _teamMode = _TeamMode.roster;
           _contactsLoading = false;
         });
+        unawaited(_loadContactHosts());
         return;
       }
     } catch (_) {}
@@ -406,6 +531,47 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
     }
   }
 
+  Future<void> _loadContactHosts() async {
+    final humans = _contacts.where((c) => !c.isBroadcast && !c.isExternal);
+    final self = (_status?.handle ?? '').toLowerCase();
+    final next = <String, List<String>>{};
+    final keys = <String>{
+      if (self.isNotEmpty) self,
+      for (final c in humans) c.handle.toLowerCase(),
+    };
+    for (final key in keys) {
+      try {
+        final list = key == self
+            ? await widget.daemon.listAgents()
+            : await widget.daemon.listAgents(handle: key);
+        next[key] = _rankedHostSlugs(list.agents);
+      } catch (_) {
+        next[key] = const [];
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      _hostsByHandle = next;
+      _liveTeammateHandle = next.entries
+          .where((e) => e.key != self && e.value.isNotEmpty)
+          .map((e) => e.key)
+          .firstOrNull;
+    });
+  }
+
+  static List<String> _rankedHostSlugs(Iterable<AgentInfo> agents) {
+    const order = ['cursor', 'claude', 'chatgpt'];
+    final slugs = agents
+        .map((a) => a.slug.toLowerCase().trim())
+        .where((s) => s.isNotEmpty && s != 'default')
+        .toSet();
+    return [
+      for (final o in order)
+        if (slugs.contains(o)) o,
+      ...slugs.where((s) => !order.contains(s)),
+    ];
+  }
+
   Future<void> _afterTeamSetup() async {
     final status = await widget.daemon.getStatus();
     if (!mounted) return;
@@ -423,24 +589,17 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
       final detections = await widget.daemon.detectAiHosts();
       final links = await widget.hostLinkStore.load();
       final agents = await widget.daemon.listAgents();
-      final registered = agents.agents.map((a) => a.slug.toLowerCase()).toSet();
+      final live = await _findLiveTeammate();
+      final registered = agents.agents;
       if (!mounted) return;
       setState(() {
         _agents = agents.agents;
         _defaultAgentId = agents.defaultAgentId;
-        _hosts =
-            detections
-                .map(
-                  (d) => AiHostPresence(
-                    slug: d.host,
-                    installed: d.installed,
-                    configPresent: d.configPresent,
-                    linked: links[d.host]?.ok ?? false,
-                    agentRegistered: registered.contains(d.host),
-                  ),
-                )
-                .toList()
-              ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+        _liveTeammateHandle = live;
+        _hosts = [
+          for (final spec in AiHostCatalog.onboarding)
+            _presenceFor(spec, detections, links, registered),
+        ];
         _hostsLoading = false;
       });
     } catch (e) {
@@ -452,8 +611,74 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
     }
   }
 
+  static AiHostPresence _presenceFor(
+    AiHostSpec spec,
+    List<AiHostDetection> detections,
+    Map<String, HostLinkRecord> links,
+    List<AgentInfo> agents,
+  ) {
+    AiHostDetection? detected;
+    for (final d in detections) {
+      if (d.host.toLowerCase() == spec.agentSlug) {
+        detected = d;
+        break;
+      }
+    }
+    final slug = spec.agentSlug.toLowerCase();
+    final webReg = agents.any(
+      (a) =>
+          a.slug.toLowerCase() == slug && a.transport == AgentTransport.mcp,
+    );
+    final desktopReg = agents.any((a) {
+      if (a.slug.toLowerCase() != slug) return false;
+      return a.transport != AgentTransport.mcp;
+    });
+    return AiHostPresence(
+      id: spec.id,
+      slug: spec.agentSlug,
+      iconSlug: spec.iconSlug,
+      label: spec.label,
+      installed: spec.isWeb || (detected?.installed ?? false),
+      configPresent: detected?.configPresent ?? false,
+      linked: spec.isWeb
+          ? webReg
+          : (links[spec.agentSlug]?.ok ?? false),
+      agentRegistered: spec.isWeb ? webReg : desktopReg,
+      isWeb: spec.isWeb,
+    );
+  }
+
+  Future<String?> _findLiveTeammate() async {
+    var contacts = _contacts;
+    if (contacts.isEmpty) {
+      try {
+        contacts = await widget.daemon.listContacts();
+        if (mounted) {
+          _contacts = contacts.where((c) => !c.isBroadcast).toList();
+        }
+      } catch (_) {
+        return _liveTeammateHandle;
+      }
+    }
+    final self = (_status?.handle ?? '').toLowerCase();
+    if (_hostsByHandle.isNotEmpty) {
+      for (final e in _hostsByHandle.entries) {
+        if (e.key != self && e.value.isNotEmpty) return e.key;
+      }
+    }
+    for (final c in contacts) {
+      if (c.isBroadcast) continue;
+      if (self.isNotEmpty && c.handle.toLowerCase() == self) continue;
+      try {
+        final list = await widget.daemon.listAgents(handle: c.handle);
+        if (list.agents.isNotEmpty) return c.handle.toLowerCase();
+      } catch (_) {}
+    }
+    return null;
+  }
+
   String _hostNames(List<AiHostPresence> hosts) {
-    final names = hosts.map((h) => AiHostIcon.displayName(h.slug)).toList();
+    final names = hosts.map((h) => h.label).toList();
     if (names.length == 1) return names.first;
     return '${names.sublist(0, names.length - 1).join(', ')} and ${names.last}';
   }
@@ -499,29 +724,48 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
     }
   }
 
-  Future<void> _beginConnectHost(String host) async {
-    if (!_hosts.any((h) => h.slug == host && h.installed)) {
-      setState(() {
-        _error = '${AiHostIcon.displayName(host)} isn’t installed on this Mac.';
-      });
-      return;
-    }
+  Future<void> _beginConnectHost(String catalogId) async {
+    final spec = AiHostCatalog.onboardingById(catalogId);
+    if (spec == null) return;
     setState(() {
-      _selectedHost = host;
+      _selectedHost = spec.id;
       _error = null;
     });
+
+    if (spec.isWeb) {
+      final ok = await showHostedMcpConnectFlow(
+        context: context,
+        daemon: widget.daemon,
+        spec: spec,
+      );
+      if (!mounted) return;
+      if (ok == true) {
+        await _loadHosts();
+        return;
+      }
+      if (ok == null) {
+        setState(() {
+          _error = 'Host link was cancelled. Pick a host to continue.';
+        });
+      }
+      return;
+    }
+
+    final installed = _hosts.any((h) => h.id == spec.id && h.installed);
     final result = await showConnectHostFlow(
       context: context,
       daemon: widget.daemon,
       hostLinkStore: widget.hostLinkStore,
-      host: host,
+      host: spec.agentSlug,
+      needsInstall: !installed,
+      downloadUrl: spec.downloadUrl,
       celebrateFirstHost: true,
       fullScreen: true,
     );
     if (!mounted) return;
     if (result == null || !result.mcpOk) {
       setState(() {
-        _error = 'Host link was cancelled. Pick an installed host to continue.';
+        _error = 'Host link was cancelled. Pick a host to continue.';
       });
       return;
     }
@@ -529,7 +773,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
       _connectWaiting = true;
       _connectHint = result.mcpNote;
     });
-    await _waitForRegistration(host);
+    await _waitForRegistration(spec.agentSlug);
   }
 
   Future<void> _waitForRegistration(String host) async {
@@ -541,13 +785,13 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
         if (agents.agents.any(
           (a) => a.slug.toLowerCase() == host.toLowerCase(),
         )) {
-          await widget.firstRunStore.markConnectComplete();
           if (!mounted) return;
           setState(() {
             _connectWaiting = false;
             _agentSlug = host.toLowerCase();
-            _step = OnboardingStep.ping;
+            _agents = agents.agents;
           });
+          await _loadHosts();
           return;
         }
       } catch (_) {}
@@ -584,7 +828,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
     final screen = _buildStep(context);
     if (!widget.forceDebug) return screen;
     // Debug walkthrough: every frame reachable without signing out or waiting
-    // for a real pong.
+    // for a real reply.
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.arrowLeft, alt: true): () =>
@@ -677,14 +921,24 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
           step: _step,
           address: _address,
           debugBanner: debugBanner,
-          contentMaxWidth: 480,
+          contentMaxWidth: 560,
           child: _connectBody(),
         );
       case OnboardingStep.ping:
+        final target = _handoffTarget;
+        if (target == null && frame == null) {
+          return OnboardingShell(
+            step: OnboardingStep.ping,
+            address: _address,
+            debugBanner: debugBanner,
+            child: const SizedBox.shrink(),
+          );
+        }
         return FirstRunPingWizard(
           daemon: widget.daemon,
           firstRunStore: widget.firstRunStore,
           address: _address,
+          target: target ?? '@claude',
           debugBanner: debugBanner,
           preview: frame == null ? null : _debugFrames[frame].ping,
           onComplete: (threadId) {
@@ -795,21 +1049,26 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
               ? const OnboardingRosterSkeleton()
               : SingleChildScrollView(
                   child: Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
+                    spacing: 10,
+                    runSpacing: 10,
                     children: [
                       if (handle.isNotEmpty)
                         _RosterChip(
                           handle: handle,
-                          displayName: self?.displayName,
-                          avatarUrl: self?.avatarUrl,
+                          displayName: self?.displayName ?? _status?.displayName,
+                          avatarUrl: self?.avatarUrl ?? _status?.avatarUrl,
                           isSelf: true,
+                          hostSlugs:
+                              _hostsByHandle[handle.toLowerCase()] ?? const [],
                         ),
                       for (final c in peers)
                         _RosterChip(
                           handle: c.handle,
                           displayName: c.displayName,
                           avatarUrl: c.avatarUrl,
+                          hostSlugs:
+                              _hostsByHandle[c.handle.toLowerCase()] ??
+                              const [],
                         ),
                     ],
                   ),
@@ -982,36 +1241,48 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
       );
     }
 
-    final installed = _hostsLoading
+    final connected = _hostsLoading
         ? const <AiHostPresence>[]
-        : _hosts.where((h) => h.installed).toList();
-    final missing = _hostsLoading
+        : _hosts.where((h) => h.connected).toList();
+    final available = _hostsLoading
         ? const <AiHostPresence>[]
-        : _hosts.where((h) => !h.installed).toList();
-    final linked = _hostsLoading
-        ? const <AiHostPresence>[]
-        : installed.where((h) => h.linked && h.agentRegistered).toList();
+        : _hosts.where((h) => !h.connected).toList();
 
-    final heading = _hostsLoading || linked.isEmpty
+    final ownCount = firstRunOwnAgentCount(_agents);
+    final heading = _hostsLoading || (connected.isEmpty && ownCount == 0)
         ? const OnboardingHeading(
             variant: OnboardingHeadingVariant.display,
             title: 'Pick a host to connect.',
             subtitle:
-                'One is enough — mutande wires the relay, '
-                'then hands it the collaboration skill.',
+                'Desktop apps on this Mac, or ChatGPT and Claude in the browser.',
+          )
+        : !_destinationReady
+        ? OnboardingHeading(
+            variant: OnboardingHeadingVariant.display,
+            title: connected.isEmpty
+                ? 'Connect another host.'
+                : '${_hostNames(connected)} '
+                      '${connected.length == 1 ? 'is' : 'are'} ready to carry mail.',
+            subtitle:
+                'A handoff needs a second host of yours, or a teammate who '
+                'already has mutande.',
           )
         : OnboardingHeading(
             variant: OnboardingHeadingVariant.display,
-            title:
-                '${_hostNames(linked)} '
-                '${linked.length == 1 ? 'is' : 'are'} ready to carry mail.',
-            subtitle: 'Continue to your first ping, or connect another host.',
+            title: connected.isEmpty
+                ? 'Ready for a first handshake.'
+                : '${_hostNames(connected)} '
+                      '${connected.length == 1 ? 'is' : 'are'} ready to carry mail.',
+            subtitle: _liveTeammateHandle == null
+                ? 'Continue to your first handshake.'
+                : 'Continue to your first handshake — $_liveTeammateHandle can already receive.',
           );
 
-    final showContinue = _hostsLoading || linked.isNotEmpty;
+    final showContinue = !_hostsLoading && _destinationReady;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
       children: [
         heading,
         const SizedBox(height: OnboardingSpace.lg),
@@ -1020,23 +1291,47 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
           child: _hostsLoading
               ? const OnboardingHostSkeleton()
               : SingleChildScrollView(
-                  child: Column(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      for (final host in installed)
-                        Padding(
-                          padding: const EdgeInsets.only(
-                            bottom: OnboardingSpace.xs,
-                          ),
-                          child: _HostTile(
-                            presence: host,
-                            isDefault: _isDefaultHost(host.slug),
-                            settingDefault: _settingDefault,
-                            onTap: () => _beginConnectHost(host.slug),
-                            onSetDefault: host.linked && host.agentRegistered
-                                ? () => _setDefaultHost(host.slug)
-                                : null,
+                      if (connected.isNotEmpty) ...[
+                        SizedBox(
+                          width: 220,
+                          child: Column(
+                            children: [
+                              for (final host in connected)
+                                Padding(
+                                  padding: const EdgeInsets.only(
+                                    bottom: OnboardingSpace.xs,
+                                  ),
+                                  child: _HostTile(
+                                    presence: host,
+                                    isDefault: _isDefaultHost(host.slug),
+                                    settingDefault: _settingDefault,
+                                    onTap: () => _beginConnectHost(host.id),
+                                    onSetDefault: host.connected
+                                        ? () => _setDefaultHost(host.slug)
+                                        : null,
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
+                        const SizedBox(width: OnboardingSpace.md),
+                      ],
+                      Expanded(
+                        child: Wrap(
+                          spacing: 14,
+                          runSpacing: 16,
+                          children: [
+                            for (final host in available)
+                              _HostCloudMark(
+                                presence: host,
+                                onTap: () => _beginConnectHost(host.id),
+                              ),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -1045,37 +1340,17 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
           height: kOnboardingConnectHelperHeight,
           child: Align(
             alignment: Alignment.topLeft,
-            child: _hostsLoading
+            child: _hostsLoading || connected.isEmpty
                 ? null
-                : Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (linked.isNotEmpty)
-                        Text(
-                          _defaultAgentId == null
-                              ? 'Set Default so mail to your address goes to one host.'
-                              : 'Mail to your address goes to Default.',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            height: 1.35,
-                            color: MutandeColors.stone400,
-                          ),
-                        ),
-                      if (missing.isNotEmpty) ...[
-                        if (linked.isNotEmpty)
-                          const SizedBox(height: OnboardingSpace.sm),
-                        Text(
-                          '${_hostNames(missing)} '
-                          '${missing.length == 1 ? 'isn\'t' : 'aren\'t'} installed on this Mac.',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            height: 1.35,
-                            color: MutandeColors.stone400,
-                          ),
-                        ),
-                      ],
-                    ],
+                : Text(
+                    _defaultAgentId == null
+                        ? 'Set Default so mail to your address goes to one host.'
+                        : 'Mail to your address goes to Default.',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      height: 1.35,
+                      color: MutandeColors.stone400,
+                    ),
                   ),
           ),
         ),
@@ -1095,25 +1370,37 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
           OnboardingActions(
             topSpacing: OnboardingSpace.md,
             primary: FilledButton(
-              onPressed: _hostsLoading || linked.isEmpty
-                  ? null
-                  : () => _continueWithLinkedHost(linked.first.slug),
+              onPressed: () => _continueWithLinkedHost(
+                connected.isNotEmpty
+                    ? connected.first.slug
+                    : (_agents.isNotEmpty ? _agents.first.slug : ''),
+              ),
               child: const Text('Continue'),
+            ),
+          )
+        else if (!_hostsLoading && ownCount >= 1)
+          OnboardingActions(
+            topSpacing: OnboardingSpace.md,
+            secondary: TextButton(
+              onPressed: _openInvitesWeb,
+              child: const Text('Invite on the web'),
+            ),
+            tertiary: TextButton(
+              onPressed: () => unawaited(_loadHosts()),
+              child: const Text('Check again'),
             ),
           ),
       ],
     );
   }
 
-  /// Forward path when a host is already wired in (returning users, replays,
-  /// or a second visit to this step) — the connect ceremony isn't re-run.
+  /// Forward path when a destination is already ready (two hosts or a live
+  /// teammate) — the connect ceremony isn't re-run.
   Future<void> _continueWithLinkedHost(String slug) async {
-    await widget.firstRunStore.markConnectComplete();
-    if (!mounted) return;
-    setState(() {
-      _agentSlug = slug.toLowerCase();
-      _step = OnboardingStep.ping;
-    });
+    if (slug.isNotEmpty) {
+      setState(() => _agentSlug = slug.toLowerCase());
+    }
+    await _goToHandoffIfReady();
   }
 }
 
@@ -1134,9 +1421,8 @@ class _HostTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final linked = presence.linked && presence.agentRegistered;
-    final label = AiHostIcon.displayName(presence.slug);
-    final badge = isDefault ? 'Default' : presence.primaryBadge;
+    final label = presence.label;
+    final badge = isDefault ? 'Default' : 'Connected';
 
     return Semantics(
       button: true,
@@ -1144,110 +1430,133 @@ class _HostTile extends StatelessWidget {
       child: Material(
         color: isDefault
             ? MutandeColors.stone50
-            : linked
-            ? MutandeColors.emeraldSoft
-            : Colors.white,
-        borderRadius: BorderRadius.circular(14),
+            : MutandeColors.emeraldSoft,
+        borderRadius: BorderRadius.circular(12),
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
           child: Ink(
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(12),
               border: Border.all(
                 color: isDefault
                     ? MutandeColors.stone800
-                    : linked
-                    ? const Color(0xFF86EFAC)
-                    : MutandeColors.stone200,
+                    : const Color(0xFF86EFAC),
               ),
             ),
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+            padding: const EdgeInsets.fromLTRB(8, 8, 10, 8),
             child: Row(
               children: [
-                AiHostIcon(presence.slug, size: 44),
-                const SizedBox(width: OnboardingSpace.md),
+                AiHostIcon(presence.iconSlug, size: 28),
+                const SizedBox(width: 8),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 17,
-                          letterSpacing: -0.2,
-                          color: MutandeColors.stone800,
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        badge,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                          color: isDefault
-                              ? MutandeColors.stone800
-                              : linked
-                              ? MutandeColors.emerald
-                              : MutandeColors.stone500,
-                        ),
-                      ),
-                    ],
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                      letterSpacing: -0.15,
+                      color: MutandeColors.stone800,
+                    ),
                   ),
                 ),
-                if (linked) ...[
-                  const Icon(
-                    Icons.check,
-                    size: 20,
-                    color: MutandeColors.emerald,
-                  ),
-                  const SizedBox(width: 10),
-                  if (isDefault)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: MutandeColors.stone800,
-                        borderRadius: HomeChrome.thumbStadium,
-                      ),
-                      child: const Text(
-                        'Default',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: MutandeColors.stone50,
-                        ),
-                      ),
-                    )
-                  else if (onSetDefault != null)
-                    TextButton(
-                      onPressed: settingDefault ? null : onSetDefault,
-                      style: TextButton.styleFrom(
-                        foregroundColor: MutandeColors.stone800,
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        minimumSize: const Size(0, 32),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      child: Text(
-                        settingDefault ? 'Setting…' : 'Set as default',
+                const Icon(
+                  Icons.check,
+                  size: 16,
+                  color: MutandeColors.emerald,
+                ),
+                if (isDefault) ...[
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: MutandeColors.stone800,
+                      borderRadius: HomeChrome.thumbStadium,
+                    ),
+                    child: const Text(
+                      'Default',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: MutandeColors.stone50,
                       ),
                     ),
-                ] else
-                  const Text(
-                    'Connect',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: MutandeColors.amber,
+                  ),
+                ] else if (onSetDefault != null)
+                  TextButton(
+                    onPressed: settingDefault ? null : onSetDefault,
+                    style: TextButton.styleFrom(
+                      foregroundColor: MutandeColors.stone800,
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      minimumSize: const Size(0, 28),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: Text(
+                      settingDefault ? '…' : 'Default',
+                      style: const TextStyle(fontSize: 11),
                     ),
                   ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HostCloudMark extends StatelessWidget {
+  const _HostCloudMark({required this.presence, required this.onTap});
+
+  final AiHostPresence presence;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'Connect ${presence.label}',
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: SizedBox(
+          width: 84,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AiHostIcon(presence.iconSlug, size: 44),
+              const SizedBox(height: 8),
+              Text(
+                presence.label,
+                maxLines: 2,
+                textAlign: TextAlign.center,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 11,
+                  height: 1.2,
+                  fontWeight: FontWeight.w600,
+                  color: MutandeColors.stone800,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                presence.isWeb
+                    ? 'Browser'
+                    : presence.installed
+                    ? 'This Mac'
+                    : 'Install',
+                style: const TextStyle(
+                  fontSize: 10,
+                  height: 1.2,
+                  color: MutandeColors.stone400,
+                ),
+              ),
+            ],
           ),
         ),
       ),

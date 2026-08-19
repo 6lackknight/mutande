@@ -83,6 +83,8 @@ pub struct MutandeBundle {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ping_kind: Option<PingKind>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handshake: Option<crate::hub_client::HandshakeCard>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub in_reply_to: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub next_turn: Vec<TurnEntry>,
@@ -530,6 +532,10 @@ pub struct StatusResult {
     /// Auth0 subject for analytics identify — never email/handle.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auth0_sub: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avatar_url: Option<String>,
 }
 
 /// Safety-number compare result.
@@ -777,7 +783,8 @@ impl DaemonState {
         let client_id = resolve_auth0_client_id(auth0_client_id)?;
         let audience = resolve_auth0_audience(auth0_audience);
 
-        let (access, refresh) = if let Some(at) = access_token.map(str::trim).filter(|s| !s.is_empty())
+        let (access, refresh, id_token) = if let Some(at) =
+            access_token.map(str::trim).filter(|s| !s.is_empty())
         {
             (
                 at.to_string(),
@@ -786,6 +793,7 @@ impl DaemonState {
                     .filter(|s| !s.is_empty())
                     .map(str::to_string)
                     .or_else(|| std::env::var("MUTANDE_AUTH0_REFRESH_TOKEN").ok()),
+                None,
             )
         } else if let Ok(env_at) = std::env::var("MUTANDE_AUTH0_ACCESS_TOKEN") {
             let at = env_at.trim().to_string();
@@ -798,6 +806,7 @@ impl DaemonState {
                     .ok()
                     .map(|s| s.trim().to_string())
                     .filter(|s| !s.is_empty()),
+                None,
             )
         } else {
             let tokens = oauth::login_with_loopback(&Auth0NativeConfig {
@@ -807,7 +816,7 @@ impl DaemonState {
                 open_browser,
             })
             .await?;
-            (tokens.access_token, tokens.refresh_token)
+            (tokens.access_token, tokens.refresh_token, tokens.id_token)
         };
 
         self.persist_session(
@@ -822,7 +831,20 @@ impl DaemonState {
         let hub = self
             .hub_client()
             .context("hub client missing after auth_login")?;
-        let me = hub.me().await.context("GET /v1/me after Auth0 login")?;
+        let mut me = hub.me().await.context("GET /v1/me after Auth0 login")?;
+        if let Some(profile) = id_token.as_deref().and_then(oauth::id_token_profile) {
+            match hub
+                .seed_profile(&crate::hub_client::SeedProfileRequest {
+                    email: profile.email,
+                    display_name: profile.display_name,
+                    avatar_url: profile.avatar_url,
+                })
+                .await
+            {
+                Ok(seeded) => me = seeded,
+                Err(err) => tracing::warn!(error = %err, "Auth0 profile seed failed"),
+            }
+        }
         if me.is_onboarded() {
             // Soft-fail: session is already persisted; boot/status will retry.
             self.register_local_device_soft(&hub).await;
@@ -863,6 +885,8 @@ impl DaemonState {
             connected_agent: None,
             default_agent: None,
             auth0_sub: None,
+            display_name: None,
+            avatar_url: None,
         })
     }
 
@@ -1152,6 +1176,8 @@ impl DaemonState {
                 connected_agent: None,
                 default_agent: None,
                 auth0_sub: None,
+                display_name: None,
+                avatar_url: None,
             });
         }
 
@@ -1398,6 +1424,7 @@ impl DaemonState {
         &self,
         filter: Option<ThreadFilter>,
         agent_slug: Option<&str>,
+        enrich: bool,
     ) -> Result<Vec<ThreadMeta>> {
         if let Some(hub) = self.hub_client() {
             let agent = agent_slug.map(str::trim).filter(|s| !s.is_empty());
@@ -1434,11 +1461,13 @@ impl DaemonState {
                             && t.your_status == Some(YourStatus::Pending)
                     });
                 }
-            } else {
+            } else if enrich {
                 // Mac UI: Needs you = unanswered human decisions only
                 // (approval / verify / questions to the bare human handle).
                 // Agent-to-agent waiting is never Needs you.
                 // Also attach last-message author + preview (local open only).
+                // First-handoff watch passes enrich=false so a large inbox
+                // cannot decrypt every open thread inside the RPC timeout.
                 let mut enrich_cache = thread_list_cache::ThreadListEnrichmentCache::load_default();
                 let keep_ids: HashSet<String> =
                     threads.iter().map(|t| t.id.clone()).collect();
@@ -1478,7 +1507,7 @@ impl DaemonState {
             }
 
             // Health pings: auto-pong on inbox poll so hosts don't need an LLM turn.
-            if matches!(filter, Some(ThreadFilter::NeedsAction)) {
+            if enrich && matches!(filter, Some(ThreadFilter::NeedsAction)) {
                 for t in &threads {
                     if let Ok(detail) = self.fetch_and_open_thread(&t.id).await {
                         let _ = self.maybe_auto_pong_health(&detail).await;
@@ -1660,6 +1689,7 @@ impl DaemonState {
                 "thread" => Some(PingKind::Thread),
                 _ => None,
             }),
+            handshake: app.handshake,
             in_reply_to: app.in_reply_to,
             ..Default::default()
         };
@@ -2445,6 +2475,82 @@ impl DaemonState {
         }
     }
 
+    /// Intro card: upsert hub profile; optionally reply on `thread_id` or open a thread to `recipient`.
+    pub async fn publish_handshake(
+        &self,
+        mut card: crate::hub_client::HandshakeCard,
+        thread_id: Option<&str>,
+        recipient: Option<&str>,
+        agent_slug: Option<&str>,
+    ) -> Result<serde_json::Value> {
+        let slug = self
+            .effective_agent_slug(agent_slug)
+            .await
+            .context("connected agent unknown — cannot publish handshake")?;
+        if card.host.is_none() {
+            card.host = Some(super::handshake::host_display_name(&slug).into());
+        }
+        if card.address.is_none() {
+            if let Ok(addr) = self.sender_display_address(agent_slug).await {
+                card.address = Some(addr);
+            }
+        }
+        let mut card = super::handshake::sanitize_handshake(card);
+
+        let hub = self.hub_client().context("hub not configured")?;
+        let list = hub.list_agents().await?;
+        let agent = list
+            .agents
+            .iter()
+            .find(|a| {
+                a.slug.eq_ignore_ascii_case(&slug) && a.transport.as_deref() != Some("mcp")
+            })
+            .or_else(|| {
+                list.agents
+                    .iter()
+                    .find(|a| a.slug.eq_ignore_ascii_case(&slug))
+            })
+            .context("agent slot not found — connect this host first")?;
+        let stored = hub.put_agent_handshake(&agent.id, &card).await?;
+        if let Some(published) = stored.handshake {
+            card = published;
+        }
+
+        let notes = super::handshake::handshake_notes(&card);
+        let bundle = MutandeBundle {
+            subject: Some("Handshake".into()),
+            notes: Some(notes),
+            handshake: Some(card.clone()),
+            ..Default::default()
+        };
+
+        let mut thread_ids: Vec<String> = Vec::new();
+        let mut recipients: Vec<String> = Vec::new();
+        if let Some(tid) = thread_id.map(str::trim).filter(|s| !s.is_empty()) {
+            self.reply_to_thread(tid, bundle, None, agent_slug).await?;
+            thread_ids.push(tid.to_string());
+        } else if let Some(target) = recipient.map(str::trim).filter(|s| !s.is_empty()) {
+            self.assert_recipient_allowed(target, agent_slug).await?;
+            let hub_tos = self.expand_hub_recipients(target, agent_slug).await?;
+            let from_agent = self.from_agent_for_send(agent_slug);
+            for to in &hub_tos {
+                let tid = self
+                    .create_hub_thread(&hub, to, &bundle, from_agent.as_deref(), None, None, None)
+                    .await?;
+                thread_ids.push(tid);
+            }
+            recipients = hub_tos;
+        }
+
+        Ok(serde_json::json!({
+            "ok": true,
+            "handshake": card,
+            "thread_id": thread_ids.first(),
+            "thread_ids": thread_ids,
+            "recipients": recipients,
+        }))
+    }
+
     /// Toggle agent upvote on a thread message (coordination weight, not ranking).
     pub async fn toggle_message_upvote(
         &self,
@@ -3178,7 +3284,13 @@ fn status_from_me(hub_url: &Option<String>, me: &MeResponse) -> StatusResult {
         connected_agent: None,
         default_agent: None,
         auth0_sub: Some(me.auth0_sub.clone()),
+        display_name: nonempty_opt(me.user.as_ref().and_then(|u| u.display_name.clone())),
+        avatar_url: nonempty_opt(me.user.as_ref().and_then(|u| u.avatar_url.clone())),
     }
+}
+
+fn nonempty_opt(value: Option<String>) -> Option<String> {
+    value.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
 }
 
 /// All device pubkeys for a contact (multi-device fan-out), falling back to legacy `pubkey`.
@@ -3403,6 +3515,7 @@ fn bundle_is_empty(bundle: &MutandeBundle) -> bool {
         && bundle.context.as_ref().is_none_or(|c| c.trim().is_empty())
         && bundle.notes.as_ref().is_none_or(|n| n.trim().is_empty())
         && bundle.ping_kind.is_none()
+        && bundle.handshake.is_none()
 }
 
 /// Map a MutandeBundle to hub app_envelope wire payload (never mixed with E2E envelope).
@@ -3418,6 +3531,7 @@ pub(super) fn bundle_to_app_envelope(
             PingKind::Health => "health".into(),
             PingKind::Thread => "thread".into(),
         }),
+        handshake: bundle.handshake.clone(),
         intent: bundle.intent.map(|i| i.as_str().to_string()),
         questions: if bundle.questions.is_empty() {
             None
@@ -4096,6 +4210,7 @@ mod tests {
             context: None,
             notes: Some("hello web".into()),
             ping_kind: None,
+            handshake: None,
             intent: None,
             questions: None,
             answers: None,
@@ -4181,6 +4296,7 @@ mod tests {
                 trust_tier: None,
                 mcp_endpoint: None,
                 capabilities_updated_at: None,
+                handshake: None,
             },
             Agent {
                 id: "m1".into(),
@@ -4192,6 +4308,7 @@ mod tests {
                 trust_tier: None,
                 mcp_endpoint: Some("https://mcp.mutande.online".into()),
                 capabilities_updated_at: None,
+                handshake: None,
             },
         ];
         let mut defaults = std::collections::BTreeMap::new();
@@ -5087,6 +5204,7 @@ mod tests {
             notes: Some("Please review".into()),
             context: None,
             ping_kind: None,
+            handshake: None,
             intent: None,
             in_reply_to: None,
             questions: None,

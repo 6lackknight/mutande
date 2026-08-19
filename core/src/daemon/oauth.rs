@@ -29,6 +29,40 @@ pub struct Auth0NativeConfig {
 pub struct Auth0Tokens {
     pub access_token: String,
     pub refresh_token: Option<String>,
+    pub id_token: Option<String>,
+}
+
+/// Profile claims from an Auth0 ID token payload (unverified — hub seed is authenticated).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct IdTokenProfile {
+    pub email: Option<String>,
+    pub display_name: Option<String>,
+    pub avatar_url: Option<String>,
+}
+
+/// Read `name` / `picture` / `email` from a JWT payload. Does not verify the signature.
+pub fn id_token_profile(id_token: &str) -> Option<IdTokenProfile> {
+    let payload_b64 = id_token.split('.').nth(1)?.trim_end_matches('=');
+    let bytes = URL_SAFE_NO_PAD.decode(payload_b64).ok()?;
+    let v: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    let str_field = |key: &str| {
+        v.get(key)
+            .and_then(|x| x.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    };
+    let email = str_field("email");
+    let display_name = str_field("name");
+    let avatar_url = str_field("picture");
+    if email.is_none() && display_name.is_none() && avatar_url.is_none() {
+        return None;
+    }
+    Some(IdTokenProfile {
+        email,
+        display_name,
+        avatar_url,
+    })
 }
 
 /// Fixed loopback port for Auth0 Allowed Callback URLs.
@@ -122,6 +156,7 @@ pub async fn login_with_loopback(cfg: &Auth0NativeConfig) -> Result<Auth0Tokens>
     Ok(Auth0Tokens {
         access_token: tokens.access_token,
         refresh_token: tokens.refresh_token,
+        id_token: tokens.id_token,
     })
 }
 
@@ -599,6 +634,21 @@ fn open_url(url: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn id_token_profile_reads_name_and_picture() {
+        let payload = URL_SAFE_NO_PAD.encode(
+            br#"{"name":"Pat Jones","picture":"https://cdn.example.test/p.jpg","email":"pat@x.test"}"#,
+        );
+        let token = format!("hdr.{payload}.sig");
+        let p = id_token_profile(&token).unwrap();
+        assert_eq!(p.display_name.as_deref(), Some("Pat Jones"));
+        assert_eq!(
+            p.avatar_url.as_deref(),
+            Some("https://cdn.example.test/p.jpg")
+        );
+        assert_eq!(p.email.as_deref(), Some("pat@x.test"));
+    }
 
     #[test]
     fn pkce_challenge_is_s256() {

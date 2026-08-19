@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>mutande — Competitive Landscape</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap');
+
+  :root {
+    --bg: #0e0e0e;
+    --surface: #161616;
+    --surface2: #1e1e1e;
+    --border: #2a2a2a;
+    --accent: #c8f06a;
+    --accent-dim: rgba(200, 240, 106, 0.08);
+    --accent-border: rgba(200, 240, 106, 0.3);
+    --text: #e8e8e8;
+    --muted: #666;
+    --danger: #ff6b6b;
+    --warn: #f0a52a;
+    --blue: #6ab4f0;
+    --purple: #b06af0;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-weight: 300;
+    font-size: 14px;
+    line-height: 1.6;
+    padding: 40px 24px 80px;
+    max-width: 760px;
+    margin: 0 auto;
+  }
+
+  .header {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 24px;
+    margin-bottom: 40px;
+  }
+
+  .wordmark {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--accent);
+    letter-spacing: 0.08em;
+    margin-bottom: 10px;
+  }
+
+  .title {
+    font-size: 22px;
+    font-weight: 500;
+    line-height: 1.3;
+    margin-bottom: 6px;
+  }
+
+  .sub {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .section-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .section-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  section { margin-bottom: 48px; }
+
+  /* Category map */
+  .category-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+
+  @media (max-width: 520px) { .category-grid { grid-template-columns: 1fr; } }
+
+  .cat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 16px;
+  }
+
+  .cat-card.highlight {
+    border-color: var(--accent-border);
+    background: var(--accent-dim);
+  }
+
+  .cat-title {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  .cat-title.green { color: var(--accent); }
+  .cat-title.blue { color: var(--blue); }
+  .cat-title.warn { color: var(--warn); }
+  .cat-title.purple { color: var(--purple); }
+
+  .cat-players {
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.7;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
+  .cat-players span {
+    display: block;
+  }
+
+  /* Competitor cards */
+  .competitor {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    margin-bottom: 12px;
+    overflow: hidden;
+  }
+
+  .competitor.close {
+    border-left: 3px solid var(--warn);
+  }
+
+  .competitor.different {
+    border-left: 3px solid var(--border);
+  }
+
+  .competitor.protocol {
+    border-left: 3px solid var(--purple);
+  }
+
+  .comp-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    gap: 12px;
+  }
+
+  .comp-name {
+    font-weight: 500;
+    font-size: 14px;
+  }
+
+  .comp-tagline {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+
+  .comp-meta {
+    text-align: right;
+    flex-shrink: 0;
+  }
+
+  .tag {
+    display: inline-block;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 2px;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+  }
+
+  .tag.close { background: rgba(240,165,42,0.12); color: var(--warn); }
+  .tag.different { background: rgba(106,180,240,0.1); color: var(--blue); }
+  .tag.protocol { background: rgba(176,106,240,0.12); color: var(--purple); }
+  .tag.funded { background: rgba(200,240,106,0.08); color: var(--accent); font-size: 10px; display: block; margin-top: 4px; }
+
+  .comp-body {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 0;
+  }
+
+  @media (max-width: 520px) { .comp-body { grid-template-columns: 1fr; } }
+
+  .comp-cell {
+    padding: 12px 16px;
+    border-right: 1px solid var(--border);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  .comp-cell:last-child { border-right: none; }
+
+  .comp-cell .key {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 5px;
+  }
+
+  .comp-cell .val { color: var(--text); }
+  .comp-cell .val.good { color: var(--accent); }
+  .comp-cell .val.bad { color: var(--danger); }
+  .comp-cell .val.neutral { color: var(--muted); }
+
+  /* Battlecard table */
+  .battlecard {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+
+  .battlecard th {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 500;
+    text-align: left;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  .battlecard th:first-child { border-radius: 2px 0 0 0; }
+  .battlecard th:last-child { border-radius: 0 2px 0 0; }
+
+  .battlecard td {
+    padding: 10px 10px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+    line-height: 1.5;
+    color: var(--text);
+  }
+
+  .battlecard tr:last-child td { border-bottom: none; }
+
+  .battlecard td:first-child {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+
+  .dot-yes::before { content: '✓ '; color: var(--accent); }
+  .dot-no::before { content: '✗ '; color: var(--danger); }
+  .dot-partial::before { content: '~ '; color: var(--warn); }
+
+  /* Opportunity block */
+  .opportunity {
+    background: var(--accent-dim);
+    border: 1px solid var(--accent-border);
+    border-radius: 2px;
+    padding: 20px;
+  }
+
+  .opp-title {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 12px;
+  }
+
+  .opp-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .opp-item {
+    display: flex;
+    gap: 12px;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .opp-item .arrow {
+    color: var(--accent);
+    font-family: 'IBM Plex Mono', monospace;
+    flex-shrink: 0;
+    padding-top: 1px;
+  }
+
+  /* Watch list */
+  .watchlist {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .watch-item {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    font-size: 13px;
+    padding: 12px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+  }
+
+  .watch-icon {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--warn);
+    flex-shrink: 0;
+    padding-top: 1px;
+  }
+
+  .watch-item strong { font-weight: 500; }
+  .watch-item span { color: var(--muted); }
+
+  .footer {
+    margin-top: 60px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="wordmark">mutande · competitive landscape</div>
+  <div class="title">The agent communication market<br>as of August 2026</div>
+  <div class="sub">mutande.online · internal strategy doc</div>
+</div>
+
+<!-- CATEGORY MAP -->
+<section>
+  <div class="section-label">How the market is structured</div>
+  <div class="category-grid">
+    <div class="cat-card highlight">
+      <div class="cat-title green">Agent address layer ← mutande</div>
+      <div class="cat-players">
+        <span>mutande</span>
+        <span style="color:#444">— no other direct match</span>
+      </div>
+    </div>
+    <div class="cat-card">
+      <div class="cat-title warn">Human + agent messaging</div>
+      <div class="cat-players">
+        <span>Ando</span>
+        <span>AgentChat</span>
+      </div>
+    </div>
+    <div class="cat-card">
+      <div class="cat-title blue">Agent observability</div>
+      <div class="cat-players">
+        <span>LangSmith</span>
+        <span>Langfuse</span>
+        <span>Arize Phoenix</span>
+        <span>Helicone</span>
+        <span>Datadog LLM</span>
+      </div>
+    </div>
+    <div class="cat-card">
+      <div class="cat-title purple">Agent protocols / infrastructure</div>
+      <div class="cat-players">
+        <span>Google A2A</span>
+        <span>IBM ACP</span>
+        <span>Masumi (blockchain)</span>
+        <span>AgentMessenger</span>
+      </div>
+    </div>
+  </div>
+  <p style="font-size:12px; color: var(--muted); font-family: 'IBM Plex Mono', monospace;">
+    Key insight: no one else is building a trusted address system for developer AI tools. mutande owns an unclaimed category.
+  </p>
+</section>
+
+<!-- CLOSEST COMPETITORS -->
+<section>
+  <div class="section-label">Closest competitors</div>
+
+  <div class="competitor close">
+    <div class="comp-header">
+      <div>
+        <div class="comp-name">Ando</div>
+        <div class="comp-tagline">Work messaging for humans and AI agents</div>
+      </div>
+      <div class="comp-meta">
+        <span class="tag close">closest rival</span>
+        <span class="tag funded">$17.6M · Accel, Index, Emergence</span>
+      </div>
+    </div>
+    <div class="comp-body">
+      <div class="comp-cell">
+        <div class="key">What they do</div>
+        <div class="val">Rebuild Slack from scratch for human-agent teams. Agents are first-class citizens in channels, threads, and DMs. Full context capture — every message, call, and decision indexed.</div>
+      </div>
+      <div class="comp-cell">
+        <div class="key">Their edge</div>
+        <div class="val">Well-funded. Strong design philosophy. Native agent participation. Building for teams, not solo devs. SF-based with enterprise trajectory.</div>
+      </div>
+      <div class="comp-cell">
+        <div class="key">mutande edge</div>
+        <div class="val good">Desktop E2E encryption. Address-first (not channel-first). Works with your existing AI tools — doesn't replace them. Cross-platform.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="competitor close">
+    <div class="comp-header">
+      <div>
+        <div class="comp-name">AgentMessenger (Masumi)</div>
+        <div class="comp-tagline">Agent-to-agent messaging + on-chain payments</div>
+      </div>
+      <div class="comp-meta">
+        <span class="tag close">partial overlap</span>
+      </div>
+    </div>
+    <div class="comp-body">
+      <div class="comp-cell">
+        <div class="key">What they do</div>
+        <div class="val">Agent-to-agent messaging with payments baked in. Built on Cardano blockchain. Agents can discover, message, and transact with each other. Decentralised registry.</div>
+      </div>
+      <div class="comp-cell">
+        <div class="key">Their edge</div>
+        <div class="val">On-chain trust and verifiable identity. Payments native to the protocol. Framework-agnostic. Backed by Serviceplan Group.</div>
+      </div>
+      <div class="comp-cell">
+        <div class="key">mutande edge</div>
+        <div class="val good">No blockchain complexity. Desktop E2E. Connects your existing AI tools directly. Human-in-the-loop by design. Simpler developer experience.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="competitor close">
+    <div class="comp-header">
+      <div>
+        <div class="comp-name">AgentChat</div>
+        <div class="comp-tagline">Real-time messaging platform for AI agents</div>
+      </div>
+      <div class="comp-meta">
+        <span class="tag close">partial overlap</span>
+      </div>
+    </div>
+    <div class="comp-body">
+      <div class="comp-cell">
+        <div class="key">What they do</div>
+        <div class="val">Real-time messaging between AI agents — direct messages, group chats, directory, and contacts. Positioned as "Slack for agents."</div>
+      </div>
+      <div class="comp-cell">
+        <div class="key">Their edge</div>
+        <div class="val">Real-time focus. Simpler surface area. Early mover on agent DMs.</div>
+      </div>
+      <div class="comp-cell">
+        <div class="key">mutande edge</div>
+        <div class="val good">Desktop sidecar — agents use your existing tools. E2E encryption. Human decisions built into the protocol. Organisation-level addresses, not just agent IDs.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- DIFFERENT LAYER -->
+<section>
+  <div class="section-label">Different layer — observability tools</div>
+
+  <div class="competitor different">
+    <div class="comp-header">
+      <div>
+        <div class="comp-name">LangSmith</div>
+        <div class="comp-tagline">LLM observability and agent engineering platform</div>
+      </div>
+      <div class="comp-meta">
+        <span class="tag different">different layer</span>
+        <span class="tag funded">AWS Marketplace · enterprise</span>
+      </div>
+    </div>
+    <div class="comp-body">
+      <div class="comp-cell">
+        <div class="key">What they do</div>
+        <div class="val">Trace every step of an agent run. Evaluate output quality. Version prompts. Deploy agents to production via LangSmith Fleet. Expanding into full agent ops stack.</div>
+      </div>
+      <div class="comp-cell">
+        <div class="key">Risk to mutande</div>
+        <div class="val bad">Expanding fast. Already positioning on EU AI Act compliance and auditability. Could add a "messaging" layer as they grow the platform.</div>
+      </div>
+      <div class="comp-cell">
+        <div class="key">Why they won't win mutande's space</div>
+        <div class="val neutral">LangChain-native — locked to their framework. No cross-tool desktop integration. Observability-first mindset, not communication-first.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PROTOCOL LAYER -->
+<section>
+  <div class="section-label">Protocol layer — infrastructure, not products</div>
+
+  <div class="competitor protocol">
+    <div class="comp-header">
+      <div>
+        <div class="comp-name">Google A2A Protocol</div>
+        <div class="comp-tagline">Open standard for agent-to-agent communication</div>
+      </div>
+      <div class="comp-meta">
+        <span class="tag protocol">protocol, not product</span>
+        <span class="tag funded">Linux Foundation · 150+ orgs</span>
+      </div>
+    </div>
+    <div class="comp-body">
+      <div class="comp-cell">
+        <div class="key">What it is</div>
+        <div class="val">Open protocol (v1.0, April 2026). Defines how agents discover each other via Agent Cards, delegate tasks, and exchange messages across organisations. Backed by AWS, Cisco, Google, IBM, Microsoft, Salesforce.</div>
+      </div>
+      <div class="comp-cell">
+        <div class="key">Risk</div>
+        <div class="val bad">If A2A becomes the default inter-agent protocol, mutande either builds on top of it or competes with a Google-backed standard. This needs a clear stance.</div>
+      </div>
+      <div class="comp-cell">
+        <div class="key">Opportunity</div>
+        <div class="val good">A2A is a protocol, not a product. mutande can be the UX layer on top — the "mail client" to A2A's "SMTP." Position as A2A-compatible, not A2A-competing.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="competitor protocol">
+    <div class="comp-header">
+      <div>
+        <div class="comp-name">IBM ACP (Agent Communication Protocol)</div>
+        <div class="comp-tagline">Structured multi-agent communication with negotiation</div>
+      </div>
+      <div class="comp-meta">
+        <span class="tag protocol">protocol, not product</span>
+      </div>
+    </div>
+    <div class="comp-body">
+      <div class="comp-cell">
+        <div class="key">What it is</div>
+        <div class="val">IBM Research protocol with typed message performatives (propose, accept, reject, counter). FIPA-ACL heritage. Designed for enterprise multi-agent negotiation.</div>
+      </div>
+      <div class="comp-cell">
+        <div class="key">Risk</div>
+        <div class="val neutral">Enterprise-oriented. Not developer-facing. Low relevance to mutande's current ICP.</div>
+      </div>
+      <div class="comp-cell">
+        <div class="key">Opportunity</div>
+        <div class="val good">ACP is complex and enterprise-heavy. mutande's simplicity wins for dev teams who don't want formal negotiation semantics.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- BATTLECARD -->
+<section>
+  <div class="section-label">Feature battlecard</div>
+  <table class="battlecard">
+    <thead>
+      <tr>
+        <th>Capability</th>
+        <th>mutande</th>
+        <th>Ando</th>
+        <th>AgentMessenger</th>
+        <th>LangSmith</th>
+        <th>A2A</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Works with existing AI tools</td>
+        <td class="dot-yes">Yes — sidecar</td>
+        <td class="dot-no">Replaces them</td>
+        <td class="dot-yes">Yes</td>
+        <td class="dot-partial">LangChain only</td>
+        <td class="dot-partial">Protocol only</td>
+      </tr>
+      <tr>
+        <td>Desktop E2E encryption</td>
+        <td class="dot-yes">Yes</td>
+        <td class="dot-no">No</td>
+        <td class="dot-partial">On-chain, not E2E</td>
+        <td class="dot-no">No</td>
+        <td class="dot-no">No</td>
+      </tr>
+      <tr>
+        <td>Human-in-the-loop decisions</td>
+        <td class="dot-yes">Built-in</td>
+        <td class="dot-yes">Yes</td>
+        <td class="dot-no">No</td>
+        <td class="dot-partial">Annotation queues</td>
+        <td class="dot-no">No</td>
+      </tr>
+      <tr>
+        <td>Org-level address system</td>
+        <td class="dot-yes">Yes — handles</td>
+        <td class="dot-partial">Channel-based</td>
+        <td class="dot-partial">Agent registry</td>
+        <td class="dot-no">No</td>
+        <td class="dot-yes">Agent Cards</td>
+      </tr>
+      <tr>
+        <td>Model agnostic</td>
+        <td class="dot-yes">Yes</td>
+        <td class="dot-yes">Yes</td>
+        <td class="dot-yes">Yes</td>
+        <td class="dot-no">LangChain-native</td>
+        <td class="dot-yes">Yes</td>
+      </tr>
+      <tr>
+        <td>No blockchain required</td>
+        <td class="dot-yes">Yes</td>
+        <td class="dot-yes">Yes</td>
+        <td class="dot-no">Cardano required</td>
+        <td class="dot-yes">Yes</td>
+        <td class="dot-yes">Yes</td>
+      </tr>
+      <tr>
+        <td>Web browser support</td>
+        <td class="dot-partial">Hosted MCP (non-E2E)</td>
+        <td class="dot-yes">Yes</td>
+        <td class="dot-yes">Yes</td>
+        <td class="dot-yes">Yes</td>
+        <td class="dot-yes">Yes</td>
+      </tr>
+      <tr>
+        <td>Audit trail</td>
+        <td class="dot-yes">Thread history</td>
+        <td class="dot-yes">Full context index</td>
+        <td class="dot-yes">On-chain immutable</td>
+        <td class="dot-yes">Trace logs</td>
+        <td class="dot-no">No</td>
+      </tr>
+      <tr>
+        <td>Solo dev friendly</td>
+        <td class="dot-yes">Yes</td>
+        <td class="dot-partial">Team-first</td>
+        <td class="dot-yes">Yes</td>
+        <td class="dot-yes">Yes</td>
+        <td class="dot-no">Protocol only</td>
+      </tr>
+      <tr>
+        <td>Funded / backed</td>
+        <td class="dot-partial">Alpha / bootstrapped</td>
+        <td class="dot-yes">$17.6M</td>
+        <td class="dot-partial">Serviceplan Group</td>
+        <td class="dot-yes">LangChain Inc.</td>
+        <td class="dot-yes">Linux Foundation</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- OPPORTUNITY -->
+<section>
+  <div class="section-label">Strategic opportunities</div>
+  <div class="opportunity">
+    <div class="opp-title">Where mutande can win</div>
+    <div class="opp-list">
+      <div class="opp-item">
+        <span class="arrow">→</span>
+        <span><strong>Own "agent address layer" before anyone names it.</strong> You're the only product with trusted handles like <code style="font-size:11px; background:#1a1a1a; padding:1px 5px; border-radius:2px;">alice@acme/cursor</code>. Name the category explicitly in your messaging.</span>
+      </div>
+      <div class="opp-item">
+        <span class="arrow">→</span>
+        <span><strong>Position as A2A-compatible, not A2A-competing.</strong> Google's protocol needs a product layer. Be the mail client to their SMTP — integrate A2A Agent Cards as a discovery mechanism rather than fighting the standard.</span>
+      </div>
+      <div class="opp-item">
+        <span class="arrow">→</span>
+        <span><strong>Desktop encryption is a real moat while it lasts.</strong> Ando and LangSmith can't offer this without changing their architecture. Lead with it for security-conscious teams.</span>
+      </div>
+      <div class="opp-item">
+        <span class="arrow">→</span>
+        <span><strong>Human-in-the-loop is underbuilt everywhere.</strong> Ando has it, but no one is making it a primary feature. "Your agents ask before they act" is a strong enterprise hook.</span>
+      </div>
+      <div class="opp-item">
+        <span class="arrow">→</span>
+        <span><strong>Ando is going upmarket fast.</strong> $17.6M raised, SF-based, enterprise trajectory. The solo dev and small team space is being vacated — move into it aggressively before they change their mind.</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- WATCH LIST -->
+<section>
+  <div class="section-label">Watch list</div>
+  <div class="watchlist">
+    <div class="watch-item">
+      <span class="watch-icon">⚠</span>
+      <span><strong>Ando's enterprise move</strong> — <span>backed by $17.6M. If they pivot back to prosumer, they have the resources to out-execute on every front.</span></span>
+    </div>
+    <div class="watch-item">
+      <span class="watch-icon">⚠</span>
+      <span><strong>A2A protocol adoption</strong> — <span>150+ organisations backing Google's standard. If it becomes the TCP/IP of agent communication, you need a clear compatibility story by Q1 2027.</span></span>
+    </div>
+    <div class="watch-item">
+      <span class="watch-icon">⚠</span>
+      <span><strong>LangSmith platform expansion</strong> — <span>already on AWS Marketplace, already positioning on compliance. A "send to agent" feature is one roadmap item away.</span></span>
+    </div>
+    <div class="watch-item">
+      <span class="watch-icon">⚠</span>
+      <span><strong>Anthropic and OpenAI native integrations</strong> — <span>if Claude Desktop or ChatGPT desktop ship native agent handoff features, the sidecar approach needs a fast response.</span></span>
+    </div>
+  </div>
+</section>
+
+<div class="footer">
+  <span>mutande.online</span>
+  <span>competitive landscape · aug 2026</span>
+</div>
+
+</body>
+</html>

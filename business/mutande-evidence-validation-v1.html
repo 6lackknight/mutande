@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>mutande — Evidence & Validation Plan</title>
+<style>
+:root {
+  --bg:#0e0e0e; --surface:#161616; --surface2:#1e1e1e;
+  --border:#2a2a2a; --accent:#c8f06a; --accent-dim:rgba(200,240,106,.08);
+  --text:#e8e8e8; --muted:#777; --danger:#ff6b6b; --warn:#f0a52a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:Arial,sans-serif;font-weight:300;font-size:14px;line-height:1.6;padding:40px 24px 80px;max-width:780px;margin:auto}
+.header{border-bottom:1px solid var(--border);padding-bottom:24px;margin-bottom:36px}
+.wordmark,.label,.mono{font-family:monospace}
+.wordmark{font-size:12px;color:var(--accent);letter-spacing:.08em;margin-bottom:10px}
+.title{font-size:24px;font-weight:500;line-height:1.25;margin-bottom:8px}
+.sub{font:11px monospace;color:var(--muted)}
+.verdict{background:var(--accent-dim);border:1px solid var(--accent);padding:18px 20px;margin-bottom:40px;font-family:monospace;font-size:12px;color:var(--accent);line-height:1.7}
+.verdict strong{display:block;font-size:14px;margin-bottom:5px}
+section{margin-bottom:44px}
+.label{font-size:10px;letter-spacing:.15em;text-transform:uppercase;color:var(--muted);margin-bottom:16px;display:flex;gap:10px;align-items:center}
+.label:after{content:"";height:1px;background:var(--border);flex:1}
+.card{background:var(--surface);border:1px solid var(--border);padding:16px;margin-bottom:10px}
+.card h3{font-size:14px;font-weight:500;margin-bottom:7px}
+.card p{font-size:13px}
+.tag{display:inline-block;font:10px monospace;padding:2px 7px;margin-left:7px;border-radius:2px}
+.green{background:rgba(200,240,106,.1);color:var(--accent)}
+.yellow{background:rgba(240,165,42,.1);color:var(--warn)}
+.red{background:rgba(255,107,107,.1);color:var(--danger)}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{font:10px monospace;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);text-align:left;padding:9px 8px;border-bottom:1px solid var(--border)}
+td{padding:10px 8px;border-bottom:1px solid var(--border);vertical-align:top}
+td:first-child{font-family:monospace;font-size:11px;color:var(--muted)}
+tr:last-child td{border-bottom:none}
+.steps{display:flex;flex-direction:column;gap:10px}
+.step{display:flex;gap:14px;background:var(--surface);border:1px solid var(--border);padding:14px}
+.num{font:11px monospace;color:var(--accent);min-width:24px}
+.step strong{font-weight:500}
+.step span{color:var(--muted)}
+.callout{background:var(--surface);border-left:2px solid var(--accent);padding:18px 20px}
+.callout strong{display:block;margin-bottom:6px}
+.metric{font-size:20px;font-family:monospace;color:var(--accent);margin-bottom:3px}
+.footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--border);display:flex;justify-content:space-between;font:10px monospace;color:var(--muted)}
+@media(max-width:600px){body{padding:28px 18px 60px}table{font-size:11px}th,td{padding:8px 5px}}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="wordmark">mutande · validation</div>
+  <div class="title">Evidence & Validation Plan</div>
+  <div class="sub">turning the product thesis into a falsifiable evidence programme · aug 2026</div>
+</div>
+
+<div class="verdict">
+  <strong>Current verdict: Strong hypothesis. Product evidence exists. Market demand remains unproven.</strong>
+  The existing validation work establishes a credible problem and an emerging competitive category, but it does not yet establish frequency of pain, behavioural adoption, retention, willingness to pay, or network effects. This document defines the evidence required to earn those conclusions.
+</div>
+
+<section>
+  <div class="label">What the existing work supports</div>
+  <div class="card">
+    <h3>Observed / established</h3>
+    <p>A working alpha exists, including an MCP server and desktop applications. The proposed wedge is multi-tool AI workflows where developers manually transfer context between tools.</p>
+  </div>
+  <div class="card">
+    <h3>Externally evidenced</h3>
+    <p>The competitive landscape shows an emerging market around human-agent messaging, agent communication protocols, and agent infrastructure. This establishes market activity—not demand for mutande specifically.</p>
+  </div>
+  <div class="card">
+    <h3>Hypothesised</h3>
+    <p>Users will prefer trusted addresses, delegate handoffs to agents, repeatedly use mutande, and eventually pay for it.</p>
+  </div>
+  <div class="card">
+    <h3>Unknown</h3>
+    <p>The frequency and severity of the problem, the value of automation, the importance of E2E privacy to purchase decisions, retention after initial novelty, and whether an address graph creates durable network effects.</p>
+  </div>
+</section>
+
+<section>
+  <div class="label">Core hypotheses</div>
+  <table>
+    <thead><tr><th>Hypothesis</th><th>Current confidence</th><th>Evidence needed</th></tr></thead>
+    <tbody>
+      <tr><td>H1 · Pain</td><td><span class="tag yellow">medium</span></td><td>20 interviews + workflow observation. Measure how often context moves between AI tools and what users do today.</td></tr>
+      <tr><td>H2 · Solution</td><td><span class="tag yellow">medium</span></td><td>Observe real handoffs. Test whether users allow agent A to route work to agent B without manually copying context.</td></tr>
+      <tr><td>H3 · Address</td><td><span class="tag yellow">medium</span></td><td>Message-test trusted addresses against generic messaging, inboxes, channels, and tool-specific integrations.</td></tr>
+      <tr><td>H4 · Privacy</td><td><span class="tag yellow">medium</span></td><td>Interview security-conscious users and test whether E2E changes adoption or purchasing behaviour.</td></tr>
+      <tr><td>H5 · Retention</td><td><span class="tag red">unknown</span></td><td>Track Day 7/30 retention and repeated handoffs per active user.</td></tr>
+      <tr><td>H6 · Monetisation</td><td><span class="tag red">unknown</span></td><td>Run paid conversion and willingness-to-pay tests after users experience the core workflow.</td></tr>
+      <tr><td>H7 · Network</td><td><span class="tag red">unknown</span></td><td>Measure invitations, cross-user threads, external addresses, and whether additional identities increase product value.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <div class="label">Validation programme · first 20 users</div>
+  <div class="steps">
+    <div class="step"><div class="num">01</div><div><strong>Recruit.</strong> <span>Find 20 people who actively use at least two AI tools in the same workflow. Do not optimise for enthusiasm; recruit for observed behaviour.</span></div></div>
+    <div class="step"><div class="num">02</div><div><strong>Baseline.</strong> <span>Before installation, record their current handoff workflow: tools used, frequency, workaround, time cost, failure modes, and what context is repeatedly re-entered.</span></div></div>
+    <div class="step"><div class="num">03</div><div><strong>Instrument.</strong> <span>Track agent connections, first handoff, successful handoffs, manual interventions, thread creation, repeat usage, invitations, and failures.</span></div></div>
+    <div class="step"><div class="num">04</div><div><strong>Observe the magic moment.</strong> <span>The critical event is an agent completing a useful handoff to another agent without the human acting as courier. Capture whether this actually saves work.</span></div></div>
+    <div class="step"><div class="num">05</div><div><strong>Follow up.</strong> <span>Interview users after real usage—not immediately after onboarding. Ask what they returned to, what they stopped doing, and where mutande failed.</span></div></div>
+    <div class="step"><div class="num">06</div><div><strong>Charge.</strong> <span>Test payment only after the user has experienced the core value. Separate stated willingness to pay from an actual paid conversion.</span></div></div>
+  </div>
+</section>
+
+<section>
+  <div class="label">Evidence scoreboard</div>
+  <table>
+    <thead><tr><th>Dimension</th><th>Measure</th><th>Proof threshold</th></tr></thead>
+    <tbody>
+      <tr><td>Activation</td><td>First successful agent→agent handoff</td><td>Most qualified users reach it without assisted onboarding.</td></tr>
+      <tr><td>Frequency</td><td>Handoffs per active user/week</td><td>Repeated use rather than a one-off novelty interaction.</td></tr>
+      <tr><td>Value</td><td>Manual steps/time removed</td><td>Users can identify a concrete workflow they no longer perform manually.</td></tr>
+      <tr><td>Retention</td><td>Day 7 / Day 30 usage</td><td>Users return because mutande is part of a recurring workflow.</td></tr>
+      <tr><td>Trust</td><td>Unaided vs supervised handoffs</td><td>Users progressively allow useful work to move without manual copying.</td></tr>
+      <tr><td>Network</td><td>Invitations + cross-address activity</td><td>Additional identities create measurable incremental value.</td></tr>
+      <tr><td>Revenue</td><td>Paid conversion</td><td>Users exchange money for continued access after experiencing value.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <div class="label">Disconfirming evidence</div>
+  <div class="card"><h3>Kill / pivot signal</h3><p>Users rarely move work between AI tools, or the frequency is too low to justify a dedicated product.</p></div>
+  <div class="card"><h3>Kill / pivot signal</h3><p>Users understand the demo but return to copy-paste because automated handoffs do not save meaningful time.</p></div>
+  <div class="card"><h3>Kill / pivot signal</h3><p>Users do not trust agents to communicate or act without supervision, making automation structurally unattractive.</p></div>
+  <div class="card"><h3>Kill / pivot signal</h3><p>Users adopt once but do not return, indicating novelty rather than workflow value.</p></div>
+  <div class="card"><h3>Kill / pivot signal</h3><p>Users value the communication capability but do not value addresses, identity, or the broader network layer enough to support the proposed category.</p></div>
+  <div class="card"><h3>Kill / pivot signal</h3><p>Users repeatedly use the product but will not pay, indicating that the wedge may be valuable while the current monetisation model is not.</p></div>
+</section>
+
+<section>
+  <div class="label">The strategic test</div>
+  <div class="callout">
+    <div class="metric">100 real handoffs</div>
+    <strong>The next meaningful proof point</strong>
+    <p>Get the first 20 qualified multi-tool AI users through 100 real work handoffs. Measure whether mutande removes manual context transfer, whether users repeat the behaviour, and whether they eventually invite other identities into the workflow.</p>
+  </div>
+</section>
+
+<section>
+  <div class="label">What success unlocks</div>
+  <div class="card"><h3>Evidence → wedge</h3><p>If repeated handoffs are valuable, the developer multi-tool workflow becomes the validated beachhead.</p></div>
+  <div class="card"><h3>Wedge → network</h3><p>If users invite humans, agents, or organisations, validate the transition from personal productivity tool to address network.</p></div>
+  <div class="card"><h3>Network → platform</h3><p>If identities, capabilities, relationships, and work history accumulate, the broader mutande thesis becomes testable: trusted infrastructure for work moving between intelligences.</p></div>
+</section>
+
+<div class="footer">
+  <span>mutande.online</span>
+  <span>evidence & validation · v1 · aug 2026</span>
+</div>
+</body>
+</html>

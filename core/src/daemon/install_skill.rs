@@ -16,6 +16,7 @@ use super::user_home_dir;
 
 /// Bundled skill body (repo `skill/SKILL.md`).
 const SKILL_MD: &str = include_str!("../../../skill/SKILL.md");
+const HANDSHAKE_SKILL_MD: &str = include_str!("../../../skill/handshake/SKILL.md");
 
 const CLAUDE_CODE_HINT: &str = "Claude Code will load this on the next chat. Claude Desktop still needs the ZIP — Customize → Skills → Upload, then enable code execution under Capabilities.";
 
@@ -51,14 +52,19 @@ pub fn install_skill(host: &str, home_override: Option<&Path>) -> Result<Install
     match h {
         Host::Cursor => install_auto(
             h,
-            &[home.join(".cursor/skills/mutande/SKILL.md")],
+            &[
+                (home.join(".cursor/skills/mutande/SKILL.md"), SKILL_MD),
+                (home.join(".cursor/skills/handshake/SKILL.md"), HANDSHAKE_SKILL_MD),
+            ],
             "Reload Cursor (or start a new agent chat) so it picks up the mutande skill.",
         ),
         Host::Chatgpt => install_auto(
             h,
             &[
-                home.join(".agents/skills/mutande/SKILL.md"),
-                home.join(".codex/skills/mutande/SKILL.md"),
+                (home.join(".agents/skills/mutande/SKILL.md"), SKILL_MD),
+                (home.join(".codex/skills/mutande/SKILL.md"), SKILL_MD),
+                (home.join(".agents/skills/handshake/SKILL.md"), HANDSHAKE_SKILL_MD),
+                (home.join(".codex/skills/handshake/SKILL.md"), HANDSHAKE_SKILL_MD),
             ],
             "Restart ChatGPT Desktop (or open a new chat) so it picks up the mutande skill.",
         ),
@@ -66,11 +72,11 @@ pub fn install_skill(host: &str, home_override: Option<&Path>) -> Result<Install
     }
 }
 
-fn install_auto(host: Host, paths: &[PathBuf], hint: &str) -> Result<InstallSkillResult> {
+fn install_auto(host: Host, files: &[(PathBuf, &str)], hint: &str) -> Result<InstallSkillResult> {
     let mut written = Vec::new();
     let mut last_err: Option<String> = None;
-    for path in paths {
-        match write_skill_file(path) {
+    for (path, body) in files {
+        match write_skill_file(path, body) {
             Ok(()) => written.push(path.display().to_string()),
             Err(e) => last_err = Some(format!("{e:#}")),
         }
@@ -80,7 +86,7 @@ fn install_auto(host: Host, paths: &[PathBuf], hint: &str) -> Result<InstallSkil
             host: host.as_str().into(),
             ok: false,
             mode: SkillInstallMode::Auto,
-            path: paths.first().map(|p| p.display().to_string()),
+            path: files.first().map(|(p, _)| p.display().to_string()),
             zip_path: None,
             hint: Some(last_err.unwrap_or_else(|| {
                 "Couldn't write the skill file. Check folder permissions, then Retry.".into()
@@ -97,17 +103,19 @@ fn install_auto(host: Host, paths: &[PathBuf], hint: &str) -> Result<InstallSkil
     })
 }
 
-fn write_skill_file(path: &Path) -> Result<()> {
+fn write_skill_file(path: &Path, body: &str) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
     }
-    fs::write(path, SKILL_MD).with_context(|| format!("write {}", path.display()))?;
+    fs::write(path, body).with_context(|| format!("write {}", path.display()))?;
     Ok(())
 }
 
 fn install_claude(home: &Path) -> Result<InstallSkillResult> {
     let code_path = home.join(".claude/skills/mutande/SKILL.md");
-    let code_ok = write_skill_file(&code_path).is_ok();
+    let handshake_path = home.join(".claude/skills/handshake/SKILL.md");
+    let code_ok = write_skill_file(&code_path, SKILL_MD).is_ok()
+        && write_skill_file(&handshake_path, HANDSHAKE_SKILL_MD).is_ok();
 
     let dir = home.join(".mutande/skills");
     fs::create_dir_all(&dir).with_context(|| format!("create {}", dir.display()))?;
@@ -142,6 +150,8 @@ fn write_claude_skill_zip(zip_path: &Path) -> Result<()> {
     let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
     zip.start_file("mutande/SKILL.md", opts)?;
     zip.write_all(SKILL_MD.as_bytes())?;
+    zip.start_file("handshake/SKILL.md", opts)?;
+    zip.write_all(HANDSHAKE_SKILL_MD.as_bytes())?;
     zip.finish()?;
     Ok(())
 }
@@ -164,6 +174,9 @@ mod tests {
         let body = fs::read_to_string(&path).unwrap();
         assert!(body.contains("name: mutande"));
         assert!(body.contains("Inbox on new chat"));
+        let handshake = home.join(".cursor/skills/handshake/SKILL.md");
+        assert!(handshake.exists());
+        assert!(fs::read_to_string(&handshake).unwrap().contains("name: handshake"));
     }
 
     #[test]
@@ -174,6 +187,8 @@ mod tests {
         assert!(r.ok);
         assert!(home.join(".agents/skills/mutande/SKILL.md").exists());
         assert!(home.join(".codex/skills/mutande/SKILL.md").exists());
+        assert!(home.join(".agents/skills/handshake/SKILL.md").exists());
+        assert!(home.join(".codex/skills/handshake/SKILL.md").exists());
     }
 
     #[test]
@@ -186,13 +201,22 @@ mod tests {
         let code = home.join(".claude/skills/mutande/SKILL.md");
         assert!(code.exists());
         assert!(fs::read_to_string(&code).unwrap().contains("name: mutande"));
+        let handshake_code = home.join(".claude/skills/handshake/SKILL.md");
+        assert!(handshake_code.exists());
+        assert!(fs::read_to_string(&handshake_code)
+            .unwrap()
+            .contains("name: handshake"));
         let zip_path = PathBuf::from(r.zip_path.as_ref().unwrap());
         assert!(zip_path.exists());
         let f = fs::File::open(&zip_path).unwrap();
         let mut archive = ZipArchive::new(f).unwrap();
-        assert_eq!(archive.len(), 1);
-        let mut file = archive.by_index(0).unwrap();
-        assert_eq!(file.name(), "mutande/SKILL.md");
+        assert_eq!(archive.len(), 2);
+        let names: Vec<String> = (0..archive.len())
+            .map(|i| archive.by_index(i).unwrap().name().to_string())
+            .collect();
+        assert!(names.contains(&"mutande/SKILL.md".into()));
+        assert!(names.contains(&"handshake/SKILL.md".into()));
+        let mut file = archive.by_name("mutande/SKILL.md").unwrap();
         let mut body = String::new();
         std::io::Read::read_to_string(&mut file, &mut body).unwrap();
         assert!(body.contains("name: mutande"));

@@ -246,7 +246,7 @@ const SEND_TOOLS: &[(&str, &str, ValueFn)] = &[
     ),
     (
         "ping",
-        "Send a product ping to your agents. kind=health → daemon auto-pongs (liveness). kind=thread → creates a real thread; recipients should reply_to_thread with pong (first-run / teaching loop). Default target=@all (your agents). Day-one with one host: thread ping still creates a Mac-visible thread.",
+        "Send a product ping to your agents. kind=health → daemon auto-pongs (liveness). kind=thread → creates a real thread; recipients should reply_to_thread with pong. Default target=@all. Not first-run — use publish_handshake to introduce agents.",
         || {
             json!({
                 "type": "object",
@@ -261,6 +261,28 @@ const SEND_TOOLS: &[(&str, &str, ValueFn)] = &[
                         "type": "string",
                         "description": "Default @all. Also @claude / @cursor / @chatgpt or handle/agent."
                     }
+                },
+                "additionalProperties": false
+            })
+        },
+    ),
+    (
+        "publish_handshake",
+        "Publish this agent’s intro card (host, models, skills, ask-me-about, preferred files, other tool names). Upserts the hub profile. Pass thread_id to reply on a thread that asked for /handshake, or recipient to start an intro thread. Names only — never tokens or paths. Not a work handoff.",
+        || {
+            json!({
+                "type": "object",
+                "properties": {
+                    "thread_id": { "type": "string", "description": "Reply on this thread (when asked to /handshake)." },
+                    "recipient": { "type": "string", "description": "Start an intro thread: @slug, alice@org, or alice@org/claude." },
+                    "host": { "type": "string", "description": "Host product name, e.g. Cursor or ChatGPT." },
+                    "address": { "type": "string", "description": "Filled for you when omitted (alice@org/slug)." },
+                    "models": { "type": "array", "items": { "type": "string" } },
+                    "skills": { "type": "array", "items": { "type": "string" } },
+                    "ask_me_about": { "type": "array", "items": { "type": "string" } },
+                    "preferred_file_format": { "type": "string" },
+                    "other_tools": { "type": "array", "items": { "type": "string" }, "description": "Other MCP/tool names besides mutande." },
+                    "handshake": { "type": "object", "description": "Optional nested card; flat fields also work." }
                 },
                 "additionalProperties": false
             })
@@ -474,7 +496,7 @@ fn annotations_for(name: &str, read: bool) -> McpToolAnnotations {
             open_world_hint: Some(false),
         },
         // Outbound mail / hub — additive but open-world recipients.
-        "forward_draft" | "ping" | "reply_to_thread" | "forward_blob" => McpToolAnnotations {
+        "forward_draft" | "ping" | "publish_handshake" | "reply_to_thread" | "forward_blob" => McpToolAnnotations {
             title: None,
             read_only_hint: Some(false),
             destructive_hint: Some(false),
@@ -532,6 +554,7 @@ pub fn daemon_method_for_tool(name: &str) -> Option<&'static str> {
         "draft_add_resource" => Some("draft_add_resource"),
         "forward_draft" => Some("forward_draft"),
         "ping" => Some("ping"),
+        "publish_handshake" => Some("publish_handshake"),
         "forward_blob" => Some("forward_blob"),
         "reply_to_thread" => Some("reply_to_thread"),
         "close_thread" => Some("close_thread"),

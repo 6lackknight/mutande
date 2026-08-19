@@ -151,7 +151,8 @@ class _MutandeAppState extends State<MutandeApp> {
       _updateRequired = _previewUpdateInfo();
       _updateChecking = false;
     } else if (_shouldRunUpdateGate) {
-      _updateGate = widget.updateGate ??
+      _updateGate =
+          widget.updateGate ??
           UpdateGateClient(webAppUrl: widget.config.webAppUrl);
       // Non-blocking: splash/bootstrap proceed while we poll mutande.online.
       unawaited(_checkForUpdate());
@@ -211,13 +212,10 @@ class _MutandeAppState extends State<MutandeApp> {
       });
       if (required != null && !_trackedUpdateRequired) {
         _trackedUpdateRequired = true;
-        Analytics.track(
-          AnalyticsEvent.updateRequired,
-          {
-            'current': widget.appVersion,
-            'latest': required.version,
-          },
-        );
+        Analytics.track(AnalyticsEvent.updateRequired, {
+          'current': widget.appVersion,
+          'latest': required.version,
+        });
       }
     } catch (_) {
       if (!mounted) return;
@@ -391,7 +389,6 @@ class _RootScreenState extends State<RootScreen> {
   String? _connectError;
 
   bool _firstRunReady = false;
-  bool _hasLinkedHost = false;
   String? _openThreadId;
   bool _trackedHomeReady = false;
 
@@ -403,26 +400,18 @@ class _RootScreenState extends State<RootScreen> {
   /// session can reach home.
   bool _forceOnboardingPending = false;
 
-  // Notifications are asked during the ping wait, so they never gate the flow.
+  // Notifications ride along with the handoff wait; they never gate the flow.
+  // First-run is done only when a work handoff gets a reply (`ping_complete`).
   bool _needsOnboardingFlow() {
     if (_forceOnboardingPending) return true;
-    final connectDone = _firstRunStore.connectComplete || _hasLinkedHost;
-    if (!connectDone) return true;
-    if (_firstRunStore.connectComplete && !_firstRunStore.pingComplete) {
-      return true;
-    }
-    return false;
+    return !_firstRunStore.pingComplete;
   }
 
   OnboardingStep? _onboardingStartStep(bool configured) {
     if (_forceOnboardingActive && configured) return OnboardingStep.team;
     if (!configured) return null;
-    if (!(_firstRunStore.connectComplete || _hasLinkedHost)) {
-      return OnboardingStep.team;
-    }
-    if (_firstRunStore.connectComplete && !_firstRunStore.pingComplete) {
-      return OnboardingStep.ping;
-    }
+    if (_firstRunStore.pingComplete) return null;
+    if (_firstRunStore.connectComplete) return OnboardingStep.ping;
     return OnboardingStep.team;
   }
 
@@ -485,21 +474,16 @@ class _RootScreenState extends State<RootScreen> {
 
   Future<void> _bootstrapFirstRun() async {
     await _firstRunStore.load();
-    final links = await _hostLinkStore.load();
     if (!mounted) return;
     setState(() {
-      _hasLinkedHost = links.values.any((r) => r.ok);
       _firstRunReady = true;
     });
   }
 
   Future<void> _refreshFirstRunGate() async {
     await _firstRunStore.load();
-    final links = await _hostLinkStore.load();
     if (!mounted) return;
-    setState(() {
-      _hasLinkedHost = links.values.any((r) => r.ok);
-    });
+    setState(() {});
   }
 
   @override

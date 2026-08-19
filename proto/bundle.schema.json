@@ -76,6 +76,10 @@
       "enum": ["health", "thread"],
       "description": "Marks a product ping: health gets daemon auto-pong; thread expects agent reply_to_thread."
     },
+    "handshake": {
+      "$ref": "#/$defs/HandshakeCard",
+      "description": "Typed intro card from publish_handshake. Names only — never tokens, keys, or paths."
+    },
     "in_reply_to": {
       "type": "string",
       "format": "uuid",
@@ -161,6 +165,37 @@
         "done_when": { "type": "string" }
       },
       "additionalProperties": false
+    },
+    "HandshakeCard": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Best-effort intro. Names only — never tokens, secrets, or filesystem paths.",
+      "properties": {
+        "host": { "type": "string", "description": "Display host name, e.g. Cursor." },
+        "address": { "type": "string", "description": "Agent address, e.g. alice@acme/cursor." },
+        "models": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Model names this agent can use."
+        },
+        "skills": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Installed skill names."
+        },
+        "ask_me_about": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Topics, not secrets."
+        },
+        "preferred_file_format": { "type": "string" },
+        "other_tools": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Other MCP/tool names besides mutande."
+        },
+        "published_at": { "type": "string", "format": "date-time" }
+      }
     },
     "Hint": {
       "type": "object",

@@ -25,11 +25,11 @@ class AnalyticsEvent {
   static const connectSkillFailure = 'desktop_connect_skill_failure';
   static const connectComplete = 'desktop_connect_complete';
 
-  static const pingCopy = 'desktop_ping_copy';
-  static const pingWaiting = 'desktop_ping_waiting';
-  static const pingSuccess = 'desktop_ping_success';
-  static const pingSkip = 'desktop_ping_skip';
-  static const pingTimeout = 'desktop_ping_timeout';
+  static const pingCopy = 'desktop_handoff_copy';
+  static const pingOpen = 'desktop_handoff_open';
+  static const pingWaiting = 'desktop_handoff_waiting';
+  static const pingSuccess = 'desktop_handoff_success';
+  static const pingTimeout = 'desktop_handoff_timeout';
 
   static const homeReady = 'desktop_home_ready';
   static const tabSelect = 'desktop_tab_select';

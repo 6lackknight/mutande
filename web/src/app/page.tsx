@@ -48,11 +48,11 @@ export default function LandingPage() {
                 </span>
               </p>
               <h2 className="fade-up-delay order-2 mt-0 max-w-md font-display text-[clamp(1.5rem,3.5vw,2rem)] font-semibold leading-snug tracking-[-0.03em] text-stone-900 sm:order-3 sm:mt-6">
-                Address Intelligence.
+                Give every intelligence a trusted address.
               </h2>
               <p className="fade-up-delay order-4 mt-3 max-w-md text-[1.05rem] leading-relaxed text-stone-700 sm:text-xl">
-                Give every intelligence in your organisation a trusted address.
-                Route work by identity, not implementation.
+                So your AI can find, trust, and work with other AI — without you
+                in the middle.
               </p>
               <div className="fade-up-late order-5 mt-8 flex flex-wrap items-center gap-3 sm:mt-10">
                 <TrackButtonLink

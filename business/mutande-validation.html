@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>mutande — Startup Validation</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap');
+
+  :root {
+    --bg: #0e0e0e;
+    --surface: #161616;
+    --border: #2a2a2a;
+    --accent: #c8f06a;
+    --accent-dim: rgba(200, 240, 106, 0.08);
+    --text: #e8e8e8;
+    --muted: #666;
+    --danger: #ff6b6b;
+    --warn: #f0a52a;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-weight: 300;
+    font-size: 14px;
+    line-height: 1.6;
+    padding: 40px 24px 80px;
+    max-width: 720px;
+    margin: 0 auto;
+  }
+
+  /* Header */
+  .header {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 24px;
+    margin-bottom: 40px;
+  }
+
+  .wordmark {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--accent);
+    letter-spacing: 0.08em;
+    text-transform: lowercase;
+    margin-bottom: 12px;
+  }
+
+  .tagline {
+    font-size: 22px;
+    font-weight: 500;
+    color: var(--text);
+    line-height: 1.3;
+    margin-bottom: 8px;
+  }
+
+  .sub {
+    color: var(--muted);
+    font-size: 13px;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
+  /* Verdict banner */
+  .verdict {
+    background: var(--accent-dim);
+    border: 1px solid var(--accent);
+    border-radius: 2px;
+    padding: 16px 20px;
+    margin-bottom: 40px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    color: var(--accent);
+    line-height: 1.7;
+  }
+
+  .verdict strong {
+    font-size: 13px;
+    display: block;
+    margin-bottom: 4px;
+    font-weight: 600;
+  }
+
+  /* Sections */
+  section {
+    margin-bottom: 40px;
+  }
+
+  .section-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .section-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* Pain block */
+  .pain-block {
+    background: var(--surface);
+    border-left: 2px solid var(--danger);
+    padding: 16px 20px;
+    border-radius: 0 2px 2px 0;
+    margin-bottom: 12px;
+  }
+
+  .pain-block .label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: var(--danger);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .pain-block p {
+    font-size: 14px;
+    color: var(--text);
+  }
+
+  /* ICP card */
+  .icp-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  @media (max-width: 500px) {
+    .icp-grid { grid-template-columns: 1fr; }
+  }
+
+  .icp-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 16px;
+  }
+
+  .icp-card .key {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .icp-card .val {
+    font-size: 13px;
+    color: var(--text);
+    line-height: 1.5;
+  }
+
+  .icp-card.full {
+    grid-column: 1 / -1;
+  }
+
+  /* Competitive table */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  thead tr {
+    border-bottom: 1px solid var(--border);
+  }
+
+  th {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 500;
+    text-align: left;
+    padding: 8px 12px 8px 0;
+  }
+
+  td {
+    padding: 10px 12px 10px 0;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+    color: var(--text);
+    line-height: 1.5;
+  }
+
+  tr:last-child td { border-bottom: none; }
+
+  .tag {
+    display: inline-block;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 2px;
+    letter-spacing: 0.05em;
+  }
+
+  .tag.gap { background: rgba(200,240,106,0.12); color: var(--accent); }
+  .tag.partial { background: rgba(240,165,42,0.12); color: var(--warn); }
+  .tag.none { background: rgba(255,107,107,0.1); color: var(--danger); }
+
+  /* Strengths / risks */
+  .item-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .item {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+
+  .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    margin-top: 6px;
+    flex-shrink: 0;
+  }
+
+  .dot.green { background: var(--accent); }
+  .dot.red { background: var(--danger); }
+  .dot.yellow { background: var(--warn); }
+
+  .item p { font-size: 13px; line-height: 1.6; }
+  .item strong { color: var(--text); font-weight: 500; }
+  .item span { color: var(--muted); }
+
+  /* Positioning */
+  .positioning {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 20px;
+  }
+
+  .positioning .one-liner {
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--text);
+    line-height: 1.4;
+    margin-bottom: 16px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .positioning .one-liner em {
+    color: var(--accent);
+    font-style: normal;
+  }
+
+  .pos-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+    font-size: 13px;
+  }
+
+  .pos-row .pos-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    min-width: 80px;
+    padding-top: 2px;
+  }
+
+  /* GTM */
+  .step-list {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .step {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+  }
+
+  .step-num {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--accent);
+    min-width: 24px;
+    padding-top: 2px;
+  }
+
+  .step p { font-size: 13px; line-height: 1.6; }
+  .step strong { font-weight: 500; }
+  .step span { color: var(--muted); }
+
+  /* Footer */
+  .footer {
+    margin-top: 60px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="wordmark">mutande</div>
+  <div class="tagline">Stop being the middleman<br>between your AI tools.</div>
+  <div class="sub">startup validation · aug 2026</div>
+</div>
+
+<div class="verdict">
+  <strong>Verdict: Credible. Early market. Ship fast.</strong>
+  Real problem, working product, no clear category winner yet. The window to define "agent address layer" is open — but Ando, AgentMessenger, and eventually LangSmith are all circling. Execution speed matters more than perfection right now.
+</div>
+
+<!-- PROBLEM -->
+<section>
+  <div class="section-label">The problem</div>
+  <div class="pain-block">
+    <div class="label">Root pain</div>
+    <p>Developers running multiple AI tools — Cursor, Claude, ChatGPT — are manually copying context between them dozens of times a day. They are the courier. There is no native way for their agents to talk to each other.</p>
+  </div>
+  <div class="pain-block" style="border-left-color: var(--warn);">
+    <div class="label" style="color: var(--warn);">How it shows up</div>
+    <p>Copy-paste between chat windows. Emailing themselves. Slack messages to no one. Re-explaining the same context in every new session. Handoffs that silently drop information.</p>
+  </div>
+</section>
+
+<!-- ICP -->
+<section>
+  <div class="section-label">Ideal customer profile</div>
+  <div class="icp-grid">
+    <div class="icp-card">
+      <div class="key">Who</div>
+      <div class="val">Solo dev or 2–5 person founding team. Founder-engineer or CTO. Decides in days, pays from a card.</div>
+    </div>
+    <div class="icp-card">
+      <div class="key">Setup</div>
+      <div class="val">Running 2+ AI tools simultaneously. Mac or Windows. Ships fast, context-switches constantly.</div>
+    </div>
+    <div class="icp-card">
+      <div class="key">Stack</div>
+      <div class="val">Model-agnostic. Cursor + Claude + ChatGPT in the same week. No framework loyalty.</div>
+    </div>
+    <div class="icp-card">
+      <div class="key">Trigger moment</div>
+      <div class="val">Just lost critical context switching between tools. Or re-explained the same brief for the 5th time this week.</div>
+    </div>
+    <div class="icp-card full">
+      <div class="key">Where to find them</div>
+      <div class="val">X/Twitter AI builder community · Anthropic Discord · Claude Code GitHub issues · Cursor community · r/LocalLLaMA · AI Engineer World's Fair alumni · Building in public</div>
+    </div>
+  </div>
+</section>
+
+<!-- POSITIONING -->
+<section>
+  <div class="section-label">Positioning</div>
+  <div class="positioning">
+    <div class="one-liner">"mutande gives every AI tool in your workflow a <em>trusted address</em> — so your agents hand off work to each other, and you stop being the courier."</div>
+    <div class="pos-row">
+      <div class="pos-label">Category</div>
+      <div>Agent address layer — not observability, not orchestration</div>
+    </div>
+    <div class="pos-row">
+      <div class="pos-label">For</div>
+      <div>Developers running multi-tool AI workflows</div>
+    </div>
+    <div class="pos-row">
+      <div class="pos-label">Unlike</div>
+      <div>LangSmith (watches agents), Slack (built for humans), email (no agent primitives)</div>
+    </div>
+    <div class="pos-row">
+      <div class="pos-label">Key edge</div>
+      <div>On-device E2E encryption for desktop — the hub never reads your content</div>
+    </div>
+  </div>
+</section>
+
+<!-- COMPETITIVE MAP -->
+<section>
+  <div class="section-label">Competitive landscape</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Player</th>
+        <th>What they do</th>
+        <th>Mutande overlap</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>LangSmith</td>
+        <td>Trace, eval, deploy agents</td>
+        <td><span class="tag none">different layer</span></td>
+      </tr>
+      <tr>
+        <td>Langfuse</td>
+        <td>Open-source observability</td>
+        <td><span class="tag none">different layer</span></td>
+      </tr>
+      <tr>
+        <td>Ando</td>
+        <td>Work messaging for humans + agents</td>
+        <td><span class="tag partial">partial overlap</span></td>
+      </tr>
+      <tr>
+        <td>AgentMessenger</td>
+        <td>Agent-to-agent messaging + payments (on-chain)</td>
+        <td><span class="tag partial">partial overlap</span></td>
+      </tr>
+      <tr>
+        <td>Slack / Email</td>
+        <td>Human comms — agents are second-class</td>
+        <td><span class="tag gap">gap mutande fills</span></td>
+      </tr>
+      <tr>
+        <td>Copy-paste</td>
+        <td>Status quo — developer as courier</td>
+        <td><span class="tag gap">gap mutande fills</span></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- STRENGTHS -->
+<section>
+  <div class="section-label">What's working</div>
+  <div class="item-list">
+    <div class="item">
+      <div class="dot green"></div>
+      <p><strong>Working product in alpha</strong> <span>— not a deck, not a prototype. MCP server live, Mac + Windows app shipping.</span></p>
+    </div>
+    <div class="item">
+      <div class="dot green"></div>
+      <p><strong>No clear category winner</strong> <span>— "agent address layer" is unnamed territory. First to define it owns it.</span></p>
+    </div>
+    <div class="item">
+      <div class="dot green"></div>
+      <p><strong>E2E encryption on desktop</strong> <span>— real differentiator. The hub never reads your content. Competitors can't say that.</span></p>
+    </div>
+    <div class="item">
+      <div class="dot green"></div>
+      <p><strong>Model-agnostic</strong> <span>— works across Cursor, Claude, ChatGPT. Not locked to one ecosystem.</span></p>
+    </div>
+    <div class="item">
+      <div class="dot green"></div>
+      <p><strong>Pain is live and searchable</strong> <span>— devs are complaining about manual agent handoffs on X, Discord, and GitHub right now.</span></p>
+    </div>
+  </div>
+</section>
+
+<!-- RISKS -->
+<section>
+  <div class="section-label">What needs pressure-testing</div>
+  <div class="item-list">
+    <div class="item">
+      <div class="dot red"></div>
+      <p><strong>Desktop-first limits reach</strong> <span>— browser agents (Claude.ai, ChatGPT web) get a weaker, non-E2E path via hosted MCP. Many devs live in the browser.</span></p>
+    </div>
+    <div class="item">
+      <div class="dot red"></div>
+      <p><strong>Network effects needed</strong> <span>— addresses only matter if teammates are on mutande too. Cold start problem is real.</span></p>
+    </div>
+    <div class="item">
+      <div class="dot yellow"></div>
+      <p><strong>LangSmith expanding fast</strong> <span>— already positioning around EU AI Act compliance and agent ops. Watch their roadmap closely.</span></p>
+    </div>
+    <div class="item">
+      <div class="dot yellow"></div>
+      <p><strong>Monetization not locked</strong> <span>— per-seat pricing works for human orgs, but agent-native pricing (per address? per thread volume?) may fit better long-term.</span></p>
+    </div>
+  </div>
+</section>
+
+<!-- GTM -->
+<section>
+  <div class="section-label">Go-to-market — first 10 teams</div>
+  <div class="step-list">
+    <div class="step">
+      <div class="step-num">01</div>
+      <p><strong>Find the pain in public.</strong> <span>Search X, Anthropic Discord, Cursor community, and Claude Code GitHub issues for "copy paste between" / "re-explaining to" / "lost context switching". These are your first DMs.</span></p>
+    </div>
+    <div class="step">
+      <div class="step-num">02</div>
+      <p><strong>Seed with solo power users first.</strong> <span>One-person installs have no cold-start problem. They have multiple agents already. Get them addicted before targeting teams.</span></p>
+    </div>
+    <div class="step">
+      <div class="step-num">03</div>
+      <p><strong>Ship a frictionless onboarding moment.</strong> <span>The first handoff — agent A sends to agent B without the developer touching it — needs to feel like magic. That's your word-of-mouth moment.</span></p>
+    </div>
+    <div class="step">
+      <div class="step-num">04</div>
+      <p><strong>Build in public.</strong> <span>Post the problem, not just the product. "I was copy-pasting between Cursor and Claude 20 times a day" is a post that finds your ICP for free.</span></p>
+    </div>
+    <div class="step">
+      <div class="step-num">05</div>
+      <p><strong>Teams come second.</strong> <span>Solo users invite cofounders. Cofounders invite contractors. That's your land-and-expand. Don't sell teams cold — let solo users pull them in.</span></p>
+    </div>
+  </div>
+</section>
+
+<div class="footer">
+  <span>mutande.online</span>
+  <span>validation v1 · aug 2026</span>
+</div>
+
+</body>
+</html>

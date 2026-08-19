@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>mutande — Product Roadmap</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap');
+
+  :root {
+    --bg: #0e0e0e;
+    --surface: #161616;
+    --surface2: #1e1e1e;
+    --border: #2a2a2a;
+    --accent: #c8f06a;
+    --accent-dim: rgba(200, 240, 106, 0.08);
+    --accent-border: rgba(200, 240, 106, 0.3);
+    --text: #e8e8e8;
+    --muted: #666;
+    --danger: #ff6b6b;
+    --warn: #f0a52a;
+    --blue: #6ab4f0;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-weight: 300;
+    font-size: 14px;
+    line-height: 1.6;
+    padding: 40px 24px 80px;
+    max-width: 720px;
+    margin: 0 auto;
+  }
+
+  .header {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 24px;
+    margin-bottom: 40px;
+  }
+
+  .wordmark {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--accent);
+    letter-spacing: 0.08em;
+    text-transform: lowercase;
+    margin-bottom: 12px;
+  }
+
+  .tagline {
+    font-size: 22px;
+    font-weight: 500;
+    color: var(--text);
+    line-height: 1.3;
+    margin-bottom: 8px;
+  }
+
+  .sub {
+    color: var(--muted);
+    font-size: 13px;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
+  .verdict {
+    background: var(--accent-dim);
+    border: 1px solid var(--accent);
+    border-radius: 2px;
+    padding: 16px 20px;
+    margin-bottom: 40px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    color: var(--accent);
+    line-height: 1.7;
+  }
+
+  .verdict strong {
+    font-size: 13px;
+    display: block;
+    margin-bottom: 4px;
+    font-weight: 600;
+  }
+
+  section { margin-bottom: 40px; }
+
+  .section-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .section-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .pain-block {
+    background: var(--surface);
+    border-left: 2px solid var(--danger);
+    padding: 16px 20px;
+    border-radius: 0 2px 2px 0;
+    margin-bottom: 12px;
+  }
+
+  .pain-block.warn { border-left-color: var(--warn); }
+  .pain-block.good { border-left-color: var(--accent); }
+
+  .pain-block .label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: var(--danger);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .pain-block.warn .label { color: var(--warn); }
+  .pain-block.good .label { color: var(--accent); }
+
+  .pain-block p { font-size: 14px; color: var(--text); }
+
+  .now-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  @media (max-width: 500px) { .now-grid { grid-template-columns: 1fr; } }
+
+  .icp-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 16px;
+  }
+
+  .icp-card.full { grid-column: 1 / -1; }
+
+  .icp-card .key {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .icp-card .val {
+    font-size: 13px;
+    color: var(--text);
+    line-height: 1.5;
+  }
+
+  .callout {
+    background: var(--surface);
+    border-left: 2px solid var(--accent);
+    padding: 18px 20px;
+  }
+
+  .callout .metric {
+    font-size: 20px;
+    font-family: 'IBM Plex Mono', monospace;
+    color: var(--accent);
+    margin-bottom: 3px;
+  }
+
+  .callout strong { display: block; margin-bottom: 6px; font-weight: 500; }
+  .callout p { font-size: 13px; color: var(--text); }
+
+  .phase {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    margin-bottom: 12px;
+    overflow: hidden;
+  }
+
+  .phase.now { border-left: 3px solid var(--muted); }
+  .phase.active { border-left: 3px solid var(--accent); }
+  .phase.gated { border-left: 3px solid var(--warn); }
+  .phase.later { border-left: 3px solid var(--blue); }
+
+  .phase-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    gap: 12px;
+  }
+
+  .phase-name { font-weight: 500; font-size: 14px; }
+  .phase-when {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+
+  .tag {
+    display: inline-block;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 2px;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+  }
+
+  .tag.shipped { background: rgba(102,102,102,0.15); color: var(--muted); }
+  .tag.now { background: rgba(200,240,106,0.12); color: var(--accent); }
+  .tag.gate { background: rgba(240,165,42,0.12); color: var(--warn); }
+  .tag.later { background: rgba(106,180,240,0.1); color: var(--blue); }
+
+  .phase-body { padding: 14px 16px 16px; }
+
+  .phase-body .goal {
+    font-size: 13px;
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .phase-body .goal em {
+    color: var(--accent);
+    font-style: normal;
+    font-weight: 500;
+  }
+
+  .step-list { display: flex; flex-direction: column; gap: 10px; }
+
+  .step {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+
+  .step-num {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--accent);
+    min-width: 22px;
+    padding-top: 2px;
+  }
+
+  .step p { font-size: 13px; line-height: 1.6; }
+  .step strong { font-weight: 500; }
+  .step span { color: var(--muted); }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  th {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 500;
+    text-align: left;
+    padding: 8px 12px 8px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  td {
+    padding: 10px 12px 10px 0;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+    color: var(--text);
+    line-height: 1.5;
+  }
+
+  tr:last-child td { border-bottom: none; }
+
+  td:first-child {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .item-list { display: flex; flex-direction: column; gap: 10px; }
+
+  .item {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+
+  .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    margin-top: 6px;
+    flex-shrink: 0;
+  }
+
+  .dot.green { background: var(--accent); }
+  .dot.red { background: var(--danger); }
+  .dot.yellow { background: var(--warn); }
+
+  .item p { font-size: 13px; line-height: 1.6; }
+  .item strong { color: var(--text); font-weight: 500; }
+  .item span { color: var(--muted); }
+
+  .watch-item {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    font-size: 13px;
+    padding: 12px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    margin-bottom: 8px;
+  }
+
+  .watch-icon {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--warn);
+    flex-shrink: 0;
+    padding-top: 1px;
+  }
+
+  .watch-item strong { font-weight: 500; }
+  .watch-item span { color: var(--muted); }
+
+  .footer {
+    margin-top: 60px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="wordmark">mutande</div>
+  <div class="tagline">Prove the courier<br>before expanding the address.</div>
+  <div class="sub">product roadmap · aug 2026</div>
+</div>
+
+<div class="verdict">
+  <strong>Verdict: Product is ahead of evidence. Sequence the next 8 weeks around one proof.</strong>
+  A working alpha exists — Mac + Windows, MCP + skill, Threads / Collab / Network, E2E sidecar. Demand, retention, and willingness to pay do not. The next release of work is not iOS, A2A, or more surface area. It is 20 qualified multi-tool users completing 100 real work handoffs.
+</div>
+
+<section>
+  <div class="section-label">Where we are</div>
+  <div class="now-grid">
+    <div class="icp-card">
+      <div class="key">Shipped</div>
+      <div class="val">Rolling alpha 2.0.x. Auth0, create/join org, host connect (MCP then skill), ping wizard, Threads split, Collab boards, Network, blobs, hosted MCP, Mac + Windows.</div>
+    </div>
+    <div class="icp-card">
+      <div class="key">Unproven</div>
+      <div class="val">Frequency of pain, unattended handoffs in real work, Day 7/30 return, invitations, E2E as a purchase reason, paid conversion.</div>
+    </div>
+    <div class="icp-card">
+      <div class="key">ICP (wedge)</div>
+      <div class="val">Solo or 2–5 person founding team. Two or more AI hosts in the same week. Card-payers. Mac first.</div>
+    </div>
+    <div class="icp-card">
+      <div class="key">Evidence so far</div>
+      <div class="val">1/5 pilots. Waitlist still small. Copy-paste is the stated workaround. Setup friction (MCP, Keychain, notifications) already shows up as the tax vs paste.</div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="section-label">The sequencing rule</div>
+  <div class="pain-block">
+    <div class="label">Gap</div>
+    <p>Day-one success in the app is a ping. The thesis is an unattended work handoff — agent A routes a useful packet to agent B without the human as courier. Pings will fill the funnel with false confidence.</p>
+  </div>
+  <div class="pain-block warn">
+    <div class="label" style="color: var(--warn);">Company vs wedge</div>
+    <p>Collab, Network, org addresses, and Address Intelligence are the company. The beachhead is personal multi-tool courier. Do not sell or expand the company until the wedge repeats.</p>
+  </div>
+  <div class="pain-block good">
+    <div class="label" style="color: var(--accent);">Copy for this phase</div>
+    <p>Lead with “stop being the courier.” Do not lead with E2E, handles, or an unnamed category. Encryption is a product fact; it is not yet a purchase reason for this ICP.</p>
+  </div>
+</section>
+
+<section>
+  <div class="section-label">North star</div>
+  <div class="callout">
+    <div class="metric">100 real handoffs</div>
+    <strong>The only proof that unlocks the rest of this map</strong>
+    <p>20 people who already use at least two AI tools, through 100 useful work packets that move without the human copying context. A ping does not count. Neither does a demo they do not return to.</p>
+  </div>
+</section>
+
+<section>
+  <div class="section-label">Roadmap</div>
+
+  <div class="phase now">
+    <div class="phase-header">
+      <div>
+        <div class="phase-name">Now — alpha in market</div>
+        <div class="phase-when">Shipped · do not add surface area here</div>
+      </div>
+      <span class="tag shipped">hold</span>
+    </div>
+    <div class="phase-body">
+      <p class="goal">Keep the product <em>stable and reachable</em>. Fix install/daemon issues that block a first session. Collab and Network stay in the app; they are not the pitch.</p>
+      <div class="step-list">
+        <div class="step">
+          <div class="step-num">—</div>
+          <p><strong>Protect last-known configured state.</strong> <span>Daemon/Keychain failures must not reset people to Join. Restart courier stays the recovery path.</span></p>
+        </div>
+        <div class="step">
+          <div class="step-num">—</div>
+          <p><strong>Do not grow Collab, Hub skills, or Network as GTM.</strong> <span>They exist. They are not the experiment.</span></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phase active">
+    <div class="phase-header">
+      <div>
+        <div class="phase-name">1 — Courier</div>
+        <div class="phase-when">Next ~8 weeks · prove the wedge</div>
+      </div>
+      <span class="tag now">in focus</span>
+    </div>
+    <div class="phase-body">
+      <p class="goal">Make the <em>first unattended work handoff</em> the onboarding magic moment, then get 20 qualified users through 100 of them.</p>
+      <div class="step-list">
+        <div class="step">
+          <div class="step-num">01</div>
+          <p><strong>Redefine first-run.</strong> <span>Ping can stay as a connectivity check. Complete-when should be a real packet moving between two of the user’s hosts (personal <code style="font-size:11px;background:#1a1a1a;padding:1px 5px;">@all</code> or <code style="font-size:11px;background:#1a1a1a;padding:1px 5px;">@claude</code> ←→ Cursor) without copy-paste. Celebrate that, not Pong.</span></p>
+        </div>
+        <div class="step">
+          <div class="step-num">02</div>
+          <p><strong>Cut the tax vs paste.</strong> <span>MCP + skill + Keychain + notifications is the reason people stay on Cmd+C. One-host connect that actually works, then a second host, then the handoff. Assisted onboarding is a fail for the proof threshold.</span></p>
+        </div>
+        <div class="step">
+          <div class="step-num">03</div>
+          <p><strong>Instrument the magic event.</strong> <span>Track: hosts connected, first work handoff (not ping), successful handoffs/week, manual interventions, Day 7 / Day 30 return, failures. Mixpanel already exists — point it at this funnel, not vanity opens.</span></p>
+        </div>
+        <div class="step">
+          <div class="step-num">04</div>
+          <p><strong>Recruit for behaviour, not enthusiasm.</strong> <span>20 people already using ≥2 AI tools in one workflow. Baseline their current courier loop before install. Follow up after real usage, not after onboarding.</span></p>
+        </div>
+        <div class="step">
+          <div class="step-num">05</div>
+          <p><strong>Talk like the wedge.</strong> <span>Build in public about the tab loop. DM searchable complainers. Seed solo power users. Do not sell teams, addresses, or encryption yet.</span></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phase gated">
+    <div class="phase-header">
+      <div>
+        <div class="phase-name">2 — Repeat &amp; invite</div>
+        <div class="phase-when">Only if Phase 1 hits · retention is the product</div>
+      </div>
+      <span class="tag gate">gated</span>
+    </div>
+    <div class="phase-body">
+      <p class="goal">Users return because mutande is <em>part of a recurring workflow</em>, then pull a second identity in.</p>
+      <div class="step-list">
+        <div class="step">
+          <div class="step-num">01</div>
+          <p><strong>Make the second handoff obvious.</strong> <span>Inbox at new chat already exists. Tighten so returning to a host surfaces waiting work without a timer poll or a human courier.</span></p>
+        </div>
+        <div class="step">
+          <div class="step-num">02</div>
+          <p><strong>Invitation as the first network test.</strong> <span>Measure whether people add another host, another of their own agents, or a cofounder because the workflow needs them — not because onboarding asked.</span></p>
+        </div>
+        <div class="step">
+          <div class="step-num">03</div>
+          <p><strong>Trust after value.</strong> <span>Now E2E and safety numbers can show up as why they keep using it. Still not the homepage headline.</span></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phase gated">
+    <div class="phase-header">
+      <div>
+        <div class="phase-name">3 — Address network</div>
+        <div class="phase-when">Only if invitations create incremental value</div>
+      </div>
+      <span class="tag gate">gated</span>
+    </div>
+    <div class="phase-body">
+      <p class="goal">Handles, orgs, and Network stop being scaffolding and become the <em>reason a second person installs</em>.</p>
+      <div class="step-list">
+        <div class="step">
+          <div class="step-num">01</div>
+          <p><strong>Land-and-expand for real.</strong> <span>Solo users pull cofounders. Cofounders pull contractors. Cold team sales stay off. Org invite UX earns its keep here, not in Phase 1.</span></p>
+        </div>
+        <div class="step">
+          <div class="step-num">02</div>
+          <p><strong>Collab as a consequence.</strong> <span>Boards are already shipped. Promote them when people have threads worth filing — not as the way in.</span></p>
+        </div>
+        <div class="step">
+          <div class="step-num">03</div>
+          <p><strong>Name the category only after people use the addresses.</strong> <span><code style="font-size:11px;background:#1a1a1a;padding:1px 5px;">alice@acme/cursor</code> is the artifact. “Agent address layer” is internal until unaided users say something like it.</span></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phase later">
+    <div class="phase-header">
+      <div>
+        <div class="phase-name">4 — Platform</div>
+        <div class="phase-when">After network value · iOS, A2A, pay</div>
+      </div>
+      <span class="tag later">later</span>
+    </div>
+    <div class="phase-body">
+      <p class="goal">Same encrypted mail on more devices; mutande as the <em>product layer on A2A</em>; money after value.</p>
+      <div class="step-list">
+        <div class="step">
+          <div class="step-num">01</div>
+          <p><strong>Charge after the workflow is habitual.</strong> <span>Separate stated WTP from a paid conversion. Free inline / premium blobs can stay the model — do not invent agent-native pricing until people repeat.</span></p>
+        </div>
+        <div class="step">
+          <div class="step-num">02</div>
+          <p><strong>iOS companion (PRD v1.5).</strong> <span>Humans read/reply on the phone; agents stay on desktop. Multi-device wrap is already in the crypto seam. Do not start this to “complete the product” before Phase 1.</span></p>
+        </div>
+        <div class="step">
+          <div class="step-num">03</div>
+          <p><strong>A2A-compatible, not A2A-competing.</strong> <span>Mail client to their SMTP. Stance now; thin discovery (Agent Cards) when Phase 3 is real. Full protocol work is not the next 8 weeks.</span></p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="section-label">Proof gates</div>
+  <table>
+    <thead>
+      <tr>
+        <th>To unlock</th>
+        <th>Must see</th>
+        <th>Otherwise</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Phase 2</td>
+        <td>Most of the 20 reach a work handoff without assisted onboarding. Repeated handoffs/week, not one demo.</td>
+        <td>Keep cutting setup tax. Do not add Collab/iOS/A2A.</td>
+      </tr>
+      <tr>
+        <td>Phase 3</td>
+        <td>Day 7 return. Users name a workflow they no longer paste. At least some invite a second identity unprompted.</td>
+        <td>Valuable courier, weak network — stay personal, revisit the address thesis.</td>
+      </tr>
+      <tr>
+        <td>Phase 4 pay</td>
+        <td>Habitual use, then an actual paid conversion — not a survey.</td>
+        <td>Keep the wedge free longer; pricing is wrong, not necessarily the product.</td>
+      </tr>
+      <tr>
+        <td>Phase 4 iOS</td>
+        <td>Desktop mail is already a habit. Humans need to reply away from the Mac.</td>
+        <td>Phone is a companion, not a growth engine. Wait.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <div class="section-label">Do not build yet</div>
+  <div class="item-list">
+    <div class="item">
+      <div class="dot red"></div>
+      <p><strong>iOS / Android</strong> <span>— PRD v1.5 is correct later. It does not help 100 desktop handoffs.</span></p>
+    </div>
+    <div class="item">
+      <div class="dot red"></div>
+      <p><strong>A2A implementation</strong> <span>— Need a written stance and a compatibility sketch. Not a protocol port.</span></p>
+    </div>
+    <div class="item">
+      <div class="dot red"></div>
+      <p><strong>Leading with E2E or category ownership</strong> <span>— Internal true, GTM false for this ICP.</span></p>
+    </div>
+    <div class="item">
+      <div class="dot yellow"></div>
+      <p><strong>New hosts beyond Cursor / Claude / ChatGPT desktop</strong> <span>— Only if a qualified user is blocked from the magic moment. Browser agents stay the weaker hosted-MCP path until the desktop wedge repeats.</span></p>
+    </div>
+    <div class="item">
+      <div class="dot yellow"></div>
+      <p><strong>Enterprise / compliance / audit productization</strong> <span>— That’s LangSmith’s gravity. Don’t follow it to look serious.</span></p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="section-label">Kill / pivot signals</div>
+  <div class="item-list">
+    <div class="item">
+      <div class="dot red"></div>
+      <p><strong>They understand the demo and go back to paste</strong> <span>— automation doesn’t save enough time vs setup. Product problem, not marketing.</span></p>
+    </div>
+    <div class="item">
+      <div class="dot red"></div>
+      <p><strong>Handoffs are too rare to justify a dedicated app</strong> <span>— the pain is real but not frequent. Don’t expand the thesis to rescue it.</span></p>
+    </div>
+    <div class="item">
+      <div class="dot red"></div>
+      <p><strong>They won’t let agents talk without supervising every send</strong> <span>— courier stays the human. mutande becomes a nicer pasteboard; that’s a different company.</span></p>
+    </div>
+    <div class="item">
+      <div class="dot yellow"></div>
+      <p><strong>They use it, invite no one, and still won’t pay</strong> <span>— personal tool maybe; address network no. Stay in Phase 2 and change the bet.</span></p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="section-label">Watch while shipping Phase 1</div>
+  <div class="watch-item">
+    <span class="watch-icon">⚠</span>
+    <span><strong>Native host handoff</strong> — <span>If Claude Desktop or Cursor ships cross-host handoff, the sidecar becomes a compatibility layer. This outranks Ando. Keep a fast response: stay the address + E2E + org layer they don’t want to own.</span></span>
+  </div>
+  <div class="watch-item">
+    <span class="watch-icon">⚠</span>
+    <span><strong>AgentMessenger skill install</strong> — <span>Same ICP, addresses, E2E threads, Cursor/Claude skill. Cheaper to try than a daemon. Win on org-shaped mail and an actual Mac app, not on “we also have addresses.”</span></span>
+  </div>
+  <div class="watch-item">
+    <span class="watch-icon">⚠</span>
+    <span><strong>Ando BYO agents</strong> — <span>They are closer than “replaces your tools.” They are still team-chat-first. Don’t wander into rebuilding Slack.</span></span>
+  </div>
+  <div class="watch-item">
+    <span class="watch-icon">⚠</span>
+    <span><strong>A2A v1.0 adoption</strong> — <span>Linux Foundation, 150+ orgs. Write the compatibility stance this quarter even if code waits.</span></span>
+  </div>
+</section>
+
+<div class="footer">
+  <span>mutande.online</span>
+  <span>product roadmap · v1 · aug 2026</span>
+</div>
+
+</body>
+</html>

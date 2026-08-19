@@ -1,8 +1,8 @@
 # Connect your AI
 
-Without this step, your assistant can't reach colleagues — mutande blocks home until MCP and the collaboration skill are wired. The Mac app connects **desktop** hosts over local **MCP** (Model Context Protocol) and installs a small skill so the host knows how to check mail on a new chat.
+A handoff needs two ends — the host you paste into, and someone who can reply. mutande blocks home until that loop is real: at least one desktop host wired, a destination ready, then a [first handoff](/docs/first-handoff) that gets a reply.
 
-After you have an org, mutande blocks on Connect an AI host before home — pick one host at a time, then the first-ping wizard.
+The Mac app connects **desktop** hosts over local **MCP** (the UI calls this the **relay**) and installs a small **skill** so the host checks mail on a new chat.
 
 **Browser agents** (ChatGPT web, Claude.ai) skip the Mac gate and use [hosted MCP](/docs/hosted-mcp) at `https://mcp.mutande.online` instead.
 
@@ -21,14 +21,25 @@ After you have an org, mutande blocks on Connect an AI host before home — pick
 
 See [hosted MCP](/docs/hosted-mcp) for the remote connector URL and Auth0 login.
 
+## What “destination ready” means
+
+Continue to the first handoff appears when:
+
+- two of your hosts are registered, or
+- one of yours plus a teammate who already has a host
+
+One linked host with no live teammate is still progress — **Cursor is ready to carry mail** — but you stay on Connect. Add another host, *Invite on the web*, or *Check again* after a teammate connects.
+
+Installed hosts show as full-width rows (Connect / connected). Hosts that aren’t on this Mac collapse to one quiet line, e.g. `Claude Desktop and ChatGPT aren’t installed on this Mac.`
+
 ## Steps (desktop — two install beats)
 
-1. Open mutande from the menu bar.
-2. You'll hit the Connect AI hosts gate (or open it from Settings → AI HOSTS / Agents).
-3. Pick one host from the picker.
-4. **Step 1 — Link MCP** — mutande writes the local MCP config. Restart the host if prompted.
-5. **Step 2 — Install skill** — mutande places the collaboration skill automatically when the host allows it (Cursor, ChatGPT). **Claude Desktop:** save the ZIP mutande prepares, then in Claude open Customize → Skills → Upload, turn the skill on, and enable code execution under Capabilities. You can skip and finish later — MCP alone is enough to continue.
-6. Continue to the [first ping](/docs/first-handoff) wizard (copy prompt → paste into the host → Threads celebrates).
+1. After Sign in and Your team, you’ll land on Connect (or later: Settings → AI HOSTS).
+2. Pick one **installed** host.
+3. **Step 1 — Relay** — mutande writes the local MCP config. Reload MCP in Cursor, or quit and reopen Claude / ChatGPT, so the host loads it.
+4. **Step 2 — Skill** — mutande places the collaboration skill when the host allows it (Cursor, ChatGPT, Claude Code). **Claude Desktop:** save the ZIP mutande prepares, then in Claude open Customize → Skills → Upload, turn the skill on, and enable code execution under Capabilities. You can skip the skill and finish it later — the relay is enough to register the agent.
+5. Restart the host and open a new chat so the agent registers (the app waits up to a minute). “Linked” means config was written; it does not mean the host’s MCP session is live until you reopen and Allow tools.
+6. Repeat for a second host, or wait until a teammate is live. Then **Continue** to the [first handoff](/docs/first-handoff).
 
 Your desktop agent then calls mutande tools through the local service — not through a public API URL you paste into chat.
 
@@ -41,7 +52,7 @@ Your desktop agent then calls mutande tools through the local service — not th
 ## After connecting
 
 - Allow send tools carefully in your host (allow now / always is host policy).
-- Add more hosts later the same way — one at a time (MCP + skill each time).
+- Add more hosts later the same way — one at a time (relay + skill each time).
 - Settings → AI HOSTS shows MCP and skill status per host.
 
 Next: [first handoff](/docs/first-handoff) · [hosted MCP](/docs/hosted-mcp) · [agent overview](/docs/agents) · [MCP tools](/docs/agents/mcp-tools).

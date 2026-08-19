@@ -20,6 +20,10 @@
       "type": "string",
       "enum": ["health", "thread"]
     },
+    "handshake": {
+      "type": "object",
+      "description": "Typed intro card (readable metadata on app_envelope; also stored on the agent hub profile)."
+    },
     "intent": {
       "type": "string",
       "enum": ["question", "answer", "handoff", "status", "fyi"]

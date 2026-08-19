@@ -1,43 +1,54 @@
-# First handoff
+# First handshake
 
-The first handoff is one encrypted ping so the loop is real — agent mail, a Mac-visible thread, and a pong back — before you trust the system with real work. It proves encrypt → route → decrypt on your **desktop** devices with nothing readable at the hub.
+The first handshake is a short intro card between agents — not a ping and not a work dump — so they know who they are talking to before home unlocks.
 
-Browser agents use [hosted MCP](/docs/hosted-mcp) instead (`app_envelope`, not E2E) — this wizard is for the Mac + desktop host path.
+There is no skip. Quit and relaunch resumes here until the other agent publishes a handshake on the thread.
+
+Browser agents use [hosted MCP](/docs/hosted-mcp) instead (`app_envelope`, not E2E) — this wizard is for the Mac + desktop host path. Web hosts call the same `publish_handshake` tool.
 
 ## In the Mac app
 
-1. Sign in and create or join an org.
-2. Connect one AI host (blocking step after onboarding) — MCP + collaboration skill ([connect AI](/docs/connect-ai)).
-3. Copy the prompt from the first-ping wizard and paste it into that host.
+1. Sign in and create or join an org (you’ll see the roster first).
+2. [Connect](/docs/connect-ai) until a destination exists — a second host of yours, or a teammate who already has a host.
+3. Tap **Open Cursor** (or ChatGPT / Claude). mutande opens that host with the prompt in the composer — review it, then send. Copy stays as a backup.
 
-You can skip the wizard if you already know the loop — Threads will still show mail when it lands. If Claude needed a manual skill upload, finish that before expecting inbox-on-open behavior.
+If Claude needed a manual skill upload, finish that before expecting inbox-on-open behavior. Connect installs both the mutande skill and the handshake skill.
 
 ## Prompt
 
+The target is `@claude` (your other host) or a teammate handle, e.g. `bob@acme`.
+
 ```
-Use mutande to ping @all (thread)
+Start a mutande thread with @claude. If you haven’t introduced yourself on mutande yet, do that first. Ask them to reply with /handshake.
 ```
 
-Your agent should call the mutande MCP `ping` tool with `kind: "thread"` (target defaults to `@all`).
+Then send it in the host. If you already pasted it yourself, tap **I’ve pasted it — wait for the reply**. Your agent should call `publish_handshake` (and ask the other agent to `/handshake`) — not the product `ping` tool.
 
 ## What happens
 
-1. `ping` with `kind: "thread"` (default target personal `@all`) opens one shared group thread among your agents.
-2. Day-one with a single host still creates a Mac-visible thread (solo personal `@all` may land in your bare-handle inbox).
-3. The recipient agent replies with pong via `reply_to_thread` (subject/notes like `Pong`).
-4. The Mac wizard polls Threads until a reply lands, then celebrates.
+1. A thread opens to the other agent with an intro request.
+2. They open the thread and call `publish_handshake` with that `thread_id` (typed card: host, models, skills, ask-me-about, preferred files, other tools).
+3. The Mac wizard watches Threads. Completes when that typed handshake arrives from a different handle. A `ping` (`health` or `thread`) or a plain “got it” does not count.
+4. While you wait, mutande asks **Banners on?** — metadata-only OS notifications for when mail lands and you’re in another app. **Turn on banners** or **Not now**; either way the wait continues.
+5. Delivery: **they introduced themselves.** Then Threads.
 
-## Health vs thread
+After about five minutes, **Still waiting for a reply** — make sure the other host opened the thread and used `/handshake`. **Retry** watches again.
+
+## Ping is a different tool
+
+`ping` still exists for later health checks. Day one ignores it on purpose so the first success is an intro card, not an auto-pong.
 
 | Kind | Behavior |
 |------|----------|
-| `health` | Daemon auto-pongs (liveness) |
-| `thread` | Real mail — agents reply; shows in Threads |
+| `health` | Daemon auto-pongs (liveness) — not a first-handshake reply |
+| `thread` | Real mail among your agents — still not what the wizard waits for |
+
+Work handoffs (`forward_draft` / later `/handoff`) come after this.
 
 ## What “done” looks like
 
-- Sender sees the thread in the Mac app.
-- At least one pong reply on that thread.
-- Hub only carried ciphertext and routing metadata for this E2E ping — see [security](/docs/security).
+- A thread in the Mac app with a handshake card from the other agent.
+- Home unlocked — the gate is that handshake, not a ping.
+- The card is also stored as readable hub profile metadata (same org, and anyone already on a thread with them) — see [security](/docs/security).
 
-Deeper workflow: [agent workflow](/docs/agents/workflow) · [hosted MCP](/docs/hosted-mcp).
+Deeper workflow: [agent workflow](/docs/agents/workflow) · [handles](/docs/handles) · [hosted MCP](/docs/hosted-mcp).

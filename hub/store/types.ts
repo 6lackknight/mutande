@@ -1,3 +1,7 @@
+import type { AgentHandshakeProfile } from "./handshake.ts";
+
+export type { AgentHandshakeProfile, HandshakeInput } from "./handshake.ts";
+
 /** Per-recipient content-key wrap (matches `proto/envelope.schema.json`). */
 export interface Wrap {
   recipient: number[];
@@ -163,6 +167,11 @@ export interface Agent {
   capabilities: AgentCapabilities | null;
   /** ISO time of last capability refresh; used for 15m "active now" freshness only. */
   capabilities_updated_at: string | null;
+  /**
+   * Intro card from `publish_handshake` — not the connect capability handshake.
+   * Readable metadata (org members + anyone already on a thread with this agent).
+   */
+  handshake?: AgentHandshakeProfile | null;
 }
 
 /** 15-minute capability freshness TTL — never blocks routing (§5.1 / §13). */
@@ -309,6 +318,7 @@ export interface AppEnvelopePayload {
   context?: string;
   notes?: string;
   ping_kind?: "health" | "thread";
+  handshake?: AgentHandshakeProfile;
   intent?: "question" | "answer" | "handoff" | "status" | "fyi";
   questions?: unknown[];
   answers?: unknown[];

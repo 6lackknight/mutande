@@ -442,10 +442,19 @@ class DaemonClient {
   }
 
   /// List threads via JSON-RPC `list_threads`.
-  Future<List<ThreadSummary>> listThreads({String? filter}) async {
+  ///
+  /// [enrich] is the Mac snippet/Needs-you decrypt pass. The first-handoff
+  /// watch sets this false so a large inbox cannot blow the RPC timeout.
+  Future<List<ThreadSummary>> listThreads({
+    String? filter,
+    bool enrich = true,
+  }) async {
+    final params = <String, dynamic>{};
+    if (filter != null) params['filter'] = filter;
+    if (!enrich) params['enrich'] = false;
     final result = await _callWithTimeout(
       'list_threads',
-      filter == null ? null : {'filter': filter},
+      params.isEmpty ? null : params,
       requestTimeout,
     );
     final map = result as Map<String, dynamic>? ?? {};
@@ -565,6 +574,7 @@ class DaemonClient {
           bundleNotes:
               bundle?['notes'] as String? ?? bundle?['context'] as String?,
           pingKind: bundle?['ping_kind'] as String?,
+          hasHandshake: bundle?['handshake'] is Map,
           questionPrompts: questions,
           resourceRequests: resourceRequests,
           resources: resources,
@@ -1124,9 +1134,17 @@ class DaemonStatusResult {
     this.connectedAgent,
     this.defaultAgent,
     this.auth0Sub,
+    this.displayName,
+    this.avatarUrl,
   });
 
   factory DaemonStatusResult.fromJson(Map<String, dynamic> map) {
+    String? nonempty(String? value) {
+      final v = value?.trim();
+      if (v == null || v.isEmpty) return null;
+      return v;
+    }
+
     return DaemonStatusResult(
       configured: map['configured'] == true,
       signedIn: map['signed_in'] == true,
@@ -1139,6 +1157,8 @@ class DaemonStatusResult {
       connectedAgent: map['connected_agent'] as String?,
       defaultAgent: map['default_agent'] as String?,
       auth0Sub: map['auth0_sub'] as String?,
+      displayName: nonempty(map['display_name'] as String?),
+      avatarUrl: nonempty(map['avatar_url'] as String?),
     );
   }
 
@@ -1153,6 +1173,8 @@ class DaemonStatusResult {
   final String? connectedAgent;
   final String? defaultAgent;
   final String? auth0Sub;
+  final String? displayName;
+  final String? avatarUrl;
 }
 
 class OnboardResult {
@@ -1209,29 +1231,35 @@ class AiHostDetection {
 /// Merged view for onboarding host tiles.
 class AiHostPresence {
   const AiHostPresence({
+    required this.id,
     required this.slug,
+    required this.iconSlug,
+    required this.label,
     required this.installed,
     required this.configPresent,
     required this.linked,
     required this.agentRegistered,
+    this.isWeb = false,
   });
 
+  /// Catalog id (`chatgpt-web` vs desktop `chatgpt`).
+  final String id;
   final String slug;
+  final String iconSlug;
+  final String label;
   final bool installed;
   final bool configPresent;
   final bool linked;
   final bool agentRegistered;
+  final bool isWeb;
+
+  bool get connected => agentRegistered;
 
   String get primaryBadge {
-    if (linked && agentRegistered) return 'Connected';
+    if (connected) return 'Connected';
+    if (isWeb) return 'Browser';
     if (installed) return 'Installed';
-    return 'Not detected';
-  }
-
-  int get sortOrder {
-    if (linked && agentRegistered) return 2;
-    if (installed) return 0;
-    return 3;
+    return 'Not on this Mac';
   }
 }
 
@@ -2758,6 +2786,7 @@ class ThreadMessageView {
     this.bundleSubject,
     this.bundleNotes,
     this.pingKind,
+    this.hasHandshake = false,
     this.questionPrompts = const [],
     this.resourceRequests = const [],
     this.resources = const [],
@@ -2776,6 +2805,9 @@ class ThreadMessageView {
 
   /// Bundle `ping_kind`: `health` | `thread`, when present.
   final String? pingKind;
+
+  /// True when the opened bundle includes a typed `handshake` card.
+  final bool hasHandshake;
   final List<String> questionPrompts;
   final List<String> resourceRequests;
 
@@ -2795,6 +2827,7 @@ class ThreadMessageView {
       bundleSubject: bundleSubject,
       bundleNotes: bundleNotes,
       pingKind: pingKind,
+      hasHandshake: hasHandshake,
       questionPrompts: questionPrompts,
       resourceRequests: resourceRequests,
       resources: resources,

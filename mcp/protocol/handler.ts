@@ -80,7 +80,8 @@ export async function handleMcpRequest(
           "Send with forward_draft(recipient, …). You may pass subject/notes/resources at the top level OR inside bundle (same shape as desktop drafts). " +
           "Text body → notes (UTF-8). Attachments: resources[{name, content}] UTF-8 — that IS the named file in the thread (Mac shows a file chip; not a stub). NEVER /mnt/data paths, NEVER base64 text. " +
           "Binary pdf/png only → resources[{name, content_base64, mime}], keep under ~1MB. " +
-          "On success report thread_id, message_id, attachments[{name,bytes}], resource_count, resource_names.",
+          "On success report thread_id, message_id, attachments[{name,bytes}], resource_count, resource_names. " +
+          "When asked to /handshake or introduce yourself, call publish_handshake (thread_id if on a thread). Names only — never tokens or paths.",
       });
     case "tools/list":
       return mcpSuccess(id, { tools: toolDefinitions() });
@@ -122,6 +123,28 @@ export async function handleMcpRequest(
 function requireString(args: Record<string, unknown>, key: string): string {
   const v = args[key];
   return typeof v === "string" ? v.trim() : "";
+}
+
+function handshakeNotes(card: Record<string, unknown>): string {
+  const lines = ["Handshake"];
+  const str = (k: string) =>
+    typeof card[k] === "string" && String(card[k]).trim()
+      ? String(card[k]).trim()
+      : "";
+  const list = (k: string) =>
+    Array.isArray(card[k])
+      ? (card[k] as unknown[]).filter((x) => typeof x === "string" && String(x).trim()).join(", ")
+      : "";
+  if (str("host")) lines.push(`Host: ${str("host")}`);
+  if (str("address")) lines.push(`Address: ${str("address")}`);
+  if (list("models")) lines.push(`Models: ${list("models")}`);
+  if (list("skills")) lines.push(`Skills: ${list("skills")}`);
+  if (list("ask_me_about")) lines.push(`Ask me about: ${list("ask_me_about")}`);
+  if (str("preferred_file_format")) {
+    lines.push(`Preferred files: ${str("preferred_file_format")}`);
+  }
+  if (list("other_tools")) lines.push(`Other tools: ${list("other_tools")}`);
+  return lines.join("\n");
 }
 
 function requireBundle(
@@ -568,6 +591,79 @@ async function callTool(
     }
     return toolTextResult(
       JSON.stringify(markProcessedHosted(threadId), null, 2),
+    );
+  }
+
+  if (name === "publish_handshake") {
+    const nested =
+      args.handshake && typeof args.handshake === "object" &&
+        !Array.isArray(args.handshake)
+        ? args.handshake as Record<string, unknown>
+        : {};
+    const pick = (key: string): unknown =>
+      args[key] !== undefined ? args[key] : nested[key];
+    const slug = ctx.session.slug;
+    const handle = ctx.session.me.user?.handle;
+    const hostGuess = slug.toLowerCase().includes("chatgpt")
+      ? "ChatGPT"
+      : slug.toLowerCase().includes("claude")
+      ? "Claude"
+      : slug.toLowerCase().includes("cursor")
+      ? "Cursor"
+      : "AI host";
+    const card: Record<string, unknown> = {
+      host: pick("host") ?? hostGuess,
+      address: pick("address") ??
+        (handle ? `${handle}/${slug}` : undefined),
+      models: pick("models"),
+      skills: pick("skills"),
+      ask_me_about: pick("ask_me_about"),
+      preferred_file_format: pick("preferred_file_format"),
+      other_tools: pick("other_tools"),
+    };
+    const stored = await ctx.hub.putAgentHandshake(
+      ctx.session.accessToken,
+      ctx.session.agent.id,
+      card,
+    );
+    const handshake = stored.handshake ?? card;
+    const notes = handshakeNotes(handshake);
+    const bundle: Record<string, unknown> = {
+      subject: "Handshake",
+      notes,
+      handshake,
+    };
+    const threadId = requireString(args, "thread_id");
+    const recipient = requireString(args, "recipient") ||
+      requireString(args, "to");
+    let mailed: { thread_id?: string; message_id?: string } = {};
+    if (threadId) {
+      const result = await replyAsWebAgent(
+        ctx.hub,
+        ctx.session.accessToken,
+        ctx.session.agent.id,
+        ctx.session.slug,
+        threadId,
+        bundle,
+      );
+      mailed = { thread_id: threadId, message_id: result.message_id };
+    } else if (recipient) {
+      const result = await forwardDraftAsWebAgent(
+        ctx.hub,
+        ctx.session.accessToken,
+        ctx.session.agent.id,
+        ctx.session.slug,
+        recipient,
+        bundle,
+        undefined,
+      );
+      mailed = {
+        thread_id: result.thread?.id,
+        message_id: result.message_id,
+      };
+    }
+    return toolTextResult(
+      JSON.stringify({ ok: true, handshake, ...mailed }, null, 2),
     );
   }
 

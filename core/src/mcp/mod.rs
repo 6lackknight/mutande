@@ -224,6 +224,7 @@ mod tests {
         assert!(defs.iter().any(|t| t.name == "set_lane"));
         assert!(defs.iter().any(|t| t.name == "add_learning"));
         assert!(defs.iter().any(|t| t.name == "forward_draft"));
+        assert!(defs.iter().any(|t| t.name == "publish_handshake"));
         assert!(defs.iter().any(|t| t.name == "forward_blob"));
         assert!(defs.iter().any(|t| t.name == "close_thread"));
         assert!(defs.iter().any(|t| t.name == "delete_thread"));

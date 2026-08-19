@@ -437,8 +437,8 @@ pub fn task_gate_decision(from_handle: &str, objective: &str, message_id: &str) 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::state::OpenedThreadMessage;
     use crate::hub_client::{ThreadKind, ThreadStatus};
-    use super::state::OpenedThreadMessage;
 
     fn empty_thread() -> OpenedThreadDetail {
         OpenedThreadDetail {

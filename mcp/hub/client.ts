@@ -184,6 +184,18 @@ export class HubClient {
     return this.request<AgentsListResponse>(`/v1/agents${q}`, accessToken);
   }
 
+  putAgentHandshake(
+    accessToken: string,
+    agentId: string,
+    card: Record<string, unknown>,
+  ): Promise<{ agent: HubAgent; handshake: Record<string, unknown> | null }> {
+    return this.request(
+      `/v1/agents/${encodeURIComponent(agentId)}/handshake`,
+      accessToken,
+      { method: "PUT", body: JSON.stringify(card) },
+    );
+  }
+
   /** Same-org contacts + @all@org broadcast (desktop list_contacts). */
   listContacts(accessToken: string): Promise<{ contacts: Contact[] }> {
     return this.request<{ contacts: Contact[] }>("/v1/contacts", accessToken);

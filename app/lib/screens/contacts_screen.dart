@@ -43,6 +43,8 @@ class _ContactsPanelState extends State<ContactsPanel> {
   List<PairRequestView> _incoming = const [];
   List<PairRequestView> _outgoing = const [];
   bool _busy = false;
+  String? _selfDisplayName;
+  String? _selfAvatarUrl;
 
   @override
   void initState() {
@@ -69,6 +71,13 @@ class _ContactsPanelState extends State<ContactsPanel> {
       List<ContactView> external = const [];
       List<PairRequestView> incoming = const [];
       List<PairRequestView> outgoing = const [];
+      String? selfDisplayName;
+      String? selfAvatarUrl;
+      try {
+        final status = await widget.daemon.getStatus();
+        selfDisplayName = status.displayName;
+        selfAvatarUrl = status.avatarUrl;
+      } catch (_) {}
       try {
         external = await widget.daemon.listExternalContacts();
         final pending = await widget.daemon.listPendingPairRequests();
@@ -83,6 +92,8 @@ class _ContactsPanelState extends State<ContactsPanel> {
         _external = external;
         _incoming = incoming;
         _outgoing = outgoing;
+        _selfDisplayName = selfDisplayName;
+        _selfAvatarUrl = selfAvatarUrl;
         _loading = false;
       });
     } catch (e) {
@@ -326,11 +337,12 @@ class _ContactsPanelState extends State<ContactsPanel> {
                   id: 'self',
                   child: PersonIdentityRow(
                     title: personDisplayTitle(
-                      displayName: _selfContact?.displayName,
+                      displayName:
+                          _selfDisplayName ?? _selfContact?.displayName,
                       handle: widget.handle!,
                     ),
                     handle: widget.handle!,
-                    avatarUrl: _selfContact?.avatarUrl,
+                    avatarUrl: _selfAvatarUrl ?? _selfContact?.avatarUrl,
                     badge: PersonIdentityRow.statusPill(label: 'you'),
                     isSelf: true,
                     onTap: () => _copyHandle(

@@ -71,6 +71,8 @@ deno task check
 | GET/PUT | `/v1/agents/transport-defaults` | Auth0 Bearer — preferred transport per display slug |
 | POST | `/v1/agents/web` | Auth0 Bearer — **compat alias** → same as `/connect/mcp` |
 | PATCH | `/v1/agents/:agentId` | Auth0 Bearer — rename slug (same `agent_id`) |
+| PUT/GET | `/v1/agents/:agentId/handshake` | Auth0 Bearer — intro card (owner PUT; org members + thread peers GET) |
+| PUT/GET | `/v1/agents/:agentId/handshake` | Auth0 Bearer — intro card (PUT owner; GET org or thread peer) |
 | GET/POST | `/v1/threads` | Auth0 Bearer (onboarded); `POST` accepts `envelope` **or** `app_envelope` (never both) |
 | GET | `/v1/threads/:id` | Auth0 Bearer (onboarded); hydrates `app_envelope` when thread mode is non-E2E; may include `pending_downgrade` |
 | GET | `/v1/threads/:id/app-messages` | Auth0 Bearer — web/MCP pull of app_envelope content; optional `?agent_id=`; post-downgrade history sealed |

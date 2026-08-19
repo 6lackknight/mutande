@@ -54,9 +54,13 @@ class AiHostIcon extends StatelessWidget {
       case 'cursor':
         return 'Cursor';
       case 'claude':
-        return 'Claude (Anthropic)';
+        return 'Claude Desktop';
       case 'chatgpt':
-        return 'ChatGPT';
+        return 'ChatGPT Desktop';
+      case 'chatgpt-web':
+        return 'ChatGPT Web';
+      case 'claude-web':
+        return 'Claude Web';
       default:
         return host;
     }

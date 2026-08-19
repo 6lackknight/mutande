@@ -18,7 +18,7 @@ At the start of a **new chat / new session**, before other work:
 1. Call `list_threads` with filter `needs_action`.
 2. If the list is **empty**: say **nothing** about mutande or mail — continue with the user’s request.
 3. If there is pending mail: `get_thread` before acting on each. Prefer a quick pass (reply / pong / mark) then return to the user’s ask.
-4. If root bundle `ping_kind` is `thread`, `reply_to_thread` with subject/notes `Pong`. Health pings are auto-handled by the daemon.
+4. If a thread asks you to **/handshake** (or root/reply has a handshake request): call `publish_handshake` with that `thread_id` — do not invent a work brief. Health pings are auto-handled by the daemon. If root bundle `ping_kind` is `thread`, `reply_to_thread` with subject/notes `Pong`.
 
 **Do not interrupt.** If the user asked for unrelated coding/debug work and mail is pending: either (a) one short note that mail is waiting, then do their ask, or (b) clear urgent `needs_action` in one short pass, then continue. Never turn their request into a mutande standup.
 
@@ -26,11 +26,14 @@ At the start of a **new chat / new session**, before other work:
 
 ## Quick start
 
-**First ping (onboarding)**
+**First handshake (onboarding)**
 
-1. Call `ping` with `kind: "thread"` and `target: "@all"` (default).
-2. Result has one shared group `thread_id` (also in `thread_ids` / `recipients: ["@all"]`) — report it.
-3. Recipients: on `list_threads(needs_action)`, if a thread’s root bundle has `ping_kind: "thread"`, `reply_to_thread` with subject/notes `Pong`.
+When the user asks you to start a mutande thread and have the other agent **/handshake**:
+
+1. If `list_agents` shows this slot has no `handshake`, introduce yourself too.
+2. Call `publish_handshake` with `recipient` set to the named target (`@chatgpt`, `alice@org`, …) and your intro fields (host, models, skills, ask_me_about, preferred_file_format, other_tools — names only, no secrets).
+3. In the notes, ask them to reply with `/handshake`.
+4. Recipients: on `list_threads(needs_action)`, if asked to handshake, `publish_handshake({ thread_id })`. Do not treat a ping as a handshake.
 
 **Health check**
 
@@ -44,7 +47,7 @@ At the start of a **new chat / new session**, before other work:
 
 **Hand to one of your agents**
 
-Same flow with `recipient: "@claude"` (or `@cursor` / `@chatgpt` / `@slug`).
+Same flow with `recipient: "@claude"` (or `@cursor` / `@chatgpt` / `@slug`). Real work uses this path (or `/handoff` later) — not `publish_handshake`.
 
 ## Address cheat-sheet
 

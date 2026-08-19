@@ -9,6 +9,7 @@ import type {
   SetRouterInput,
   SetTransportDefaultInput,
 } from "../store/types.ts";
+import type { HandshakeInput } from "../store/handshake.ts";
 
 export function createAgentRoutes(store: HubStore) {
   const agentRoutes = new Hono<HubEnv>();
@@ -73,6 +74,24 @@ export function createAgentRoutes(store: HubStore) {
     const body = await c.req.json<ConnectAgentInput>();
     const agent = await store.connectAgent(c.get("auth"), "mcp", body);
     return c.json({ agent }, 201);
+  });
+
+  agentRoutes.put("/:agentId/handshake", async (c) => {
+    const body = await c.req.json<HandshakeInput>();
+    const agent = await store.putAgentHandshake(
+      c.get("auth"),
+      c.req.param("agentId"),
+      body ?? {},
+    );
+    return c.json({ agent, handshake: agent.handshake });
+  });
+
+  agentRoutes.get("/:agentId/handshake", async (c) => {
+    const result = await store.getAgentHandshake(
+      c.get("auth"),
+      c.req.param("agentId"),
+    );
+    return c.json(result);
   });
 
   agentRoutes.post("/", async (c) => {
