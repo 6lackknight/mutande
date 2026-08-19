@@ -16,7 +16,6 @@ import '../theme/mutande_macos_theme.dart';
 import '../widgets/ai_host_icon.dart';
 import '../widgets/connect_host_flow.dart';
 import '../widgets/connect_host_picker.dart';
-import '../widgets/home_chrome_strip.dart';
 import '../widgets/hosted_mcp_flow.dart';
 import '../widgets/morphing_orb_button.dart';
 import '../widgets/onboarding_address_rail.dart';
@@ -102,6 +101,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
   bool _hostsLoading = false;
   bool _settingDefault = false;
   String? _selectedHost;
+  String? _hostFocusId;
   bool _connectWaiting = false;
   String? _connectHint;
   Timer? _connectPoll;
@@ -504,6 +504,23 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
     final names = hosts.map((h) => h.label).toList();
     if (names.length == 1) return names.first;
     return '${names.sublist(0, names.length - 1).join(', ')} and ${names.last}';
+  }
+
+  static String _hostFamilyLabel(AiHostPresence host) {
+    final label = host.label;
+    if (label.endsWith(' Web')) {
+      return label.substring(0, label.length - 4);
+    }
+    if (label.endsWith(' Desktop')) {
+      return label.substring(0, label.length - 8);
+    }
+    return label;
+  }
+
+  static String _hostPlaceLabel(AiHostPresence host) {
+    if (host.isWeb) return 'Browser';
+    if (host.installed) return 'Desktop';
+    return 'Install';
   }
 
   AgentInfo? _agentForHost(String slug) {
@@ -1137,47 +1154,18 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
           child: _hostsLoading
               ? const OnboardingHostSkeleton()
               : SingleChildScrollView(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
                     children: [
-                      if (connected.isNotEmpty) ...[
-                        SizedBox(
-                          width: 220,
-                          child: Column(
-                            children: [
-                              for (final host in connected)
-                                Padding(
-                                  padding: const EdgeInsets.only(
-                                    bottom: OnboardingSpace.xs,
-                                  ),
-                                  child: _HostTile(
-                                    presence: host,
-                                    isDefault: _isDefaultHost(host.slug),
-                                    settingDefault: _settingDefault,
-                                    onTap: () => _beginConnectHost(host.id),
-                                    onSetDefault: host.connected
-                                        ? () => _setDefaultHost(host.slug)
-                                        : null,
-                                  ),
-                                ),
-                            ],
-                          ),
+                      for (final host in connected)
+                        _hostRosterChip(
+                          host,
+                          connected: true,
+                          isDefault: _isDefaultHost(host.slug),
                         ),
-                        const SizedBox(width: OnboardingSpace.md),
-                      ],
-                      Expanded(
-                        child: Wrap(
-                          spacing: 14,
-                          runSpacing: 16,
-                          children: [
-                            for (final host in available)
-                              _HostCloudMark(
-                                presence: host,
-                                onTap: () => _beginConnectHost(host.id),
-                              ),
-                          ],
-                        ),
-                      ),
+                      for (final host in available)
+                        _hostRosterChip(host, connected: false),
                     ],
                   ),
                 ),
@@ -1240,6 +1228,76 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
     );
   }
 
+  Widget _hostRosterChip(
+    AiHostPresence host, {
+    required bool connected,
+    bool isDefault = false,
+  }) {
+    final name = _hostFamilyLabel(host);
+    final place = _hostPlaceLabel(host);
+    final focused = _hostFocusId == host.id;
+    final badge = isDefault ? 'Default' : 'Connected';
+    return OnboardingRosterChip(
+      key: ValueKey(host.id),
+      handle: '@${host.slug}',
+      displayName: name,
+      subtitle: place,
+      leading: OnboardingHostLeading(host.iconSlug),
+      selected: focused || isDefault,
+      semanticLabel: connected
+          ? '$name, $place, $badge'
+          : 'Connect $name, $place',
+      onTap: () {
+        if (connected) {
+          setState(() => _hostFocusId = host.id);
+          return;
+        }
+        setState(() => _hostFocusId = null);
+        _beginConnectHost(host.id);
+      },
+      trailing: connected
+          ? [
+              const Icon(Icons.check, size: 16, color: MutandeColors.emerald),
+              if (isDefault)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: MutandeColors.stone800,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: const Text(
+                    'Default',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: MutandeColors.stone50,
+                    ),
+                  ),
+                )
+              else if (focused)
+                TextButton(
+                  onPressed: _settingDefault
+                      ? null
+                      : () => _setDefaultHost(host.slug),
+                  style: TextButton.styleFrom(
+                    foregroundColor: MutandeColors.stone800,
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    minimumSize: const Size(0, 28),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: Text(
+                    _settingDefault ? '…' : 'Make default',
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                ),
+            ]
+          : null,
+    );
+  }
+
   /// Forward path when a destination is already ready (two hosts or a live
   /// teammate) — the connect ceremony isn't re-run.
   Future<void> _continueWithLinkedHost(String slug) async {
@@ -1247,159 +1305,5 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
       setState(() => _agentSlug = slug.toLowerCase());
     }
     await _goToHandoffIfReady();
-  }
-}
-
-class _HostTile extends StatelessWidget {
-  const _HostTile({
-    required this.presence,
-    required this.onTap,
-    this.isDefault = false,
-    this.settingDefault = false,
-    this.onSetDefault,
-  });
-
-  final AiHostPresence presence;
-  final VoidCallback onTap;
-  final bool isDefault;
-  final bool settingDefault;
-  final VoidCallback? onSetDefault;
-
-  @override
-  Widget build(BuildContext context) {
-    final label = presence.label;
-    final badge = isDefault ? 'Default' : 'Connected';
-
-    return Semantics(
-      button: true,
-      label: '$label, $badge',
-      child: Material(
-        color: isDefault ? MutandeColors.stone50 : MutandeColors.emeraldSoft,
-        borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(12),
-          child: Ink(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: isDefault
-                    ? MutandeColors.stone800
-                    : const Color(0xFF86EFAC),
-              ),
-            ),
-            padding: const EdgeInsets.fromLTRB(8, 8, 10, 8),
-            child: Row(
-              children: [
-                AiHostIcon(presence.iconSlug, size: 28),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13,
-                      letterSpacing: -0.15,
-                      color: MutandeColors.stone800,
-                    ),
-                  ),
-                ),
-                const Icon(Icons.check, size: 16, color: MutandeColors.emerald),
-                if (isDefault) ...[
-                  const SizedBox(width: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 7,
-                      vertical: 3,
-                    ),
-                    decoration: BoxDecoration(
-                      color: MutandeColors.stone800,
-                      borderRadius: HomeChrome.thumbStadium,
-                    ),
-                    child: const Text(
-                      'Default',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                        color: MutandeColors.stone50,
-                      ),
-                    ),
-                  ),
-                ] else if (onSetDefault != null)
-                  TextButton(
-                    onPressed: settingDefault ? null : onSetDefault,
-                    style: TextButton.styleFrom(
-                      foregroundColor: MutandeColors.stone800,
-                      padding: const EdgeInsets.symmetric(horizontal: 6),
-                      minimumSize: const Size(0, 28),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    child: Text(
-                      settingDefault ? '…' : 'Default',
-                      style: const TextStyle(fontSize: 11),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _HostCloudMark extends StatelessWidget {
-  const _HostCloudMark({required this.presence, required this.onTap});
-
-  final AiHostPresence presence;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      label: 'Connect ${presence.label}',
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: SizedBox(
-          width: 84,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AiHostIcon(presence.iconSlug, size: 44),
-              const SizedBox(height: 8),
-              Text(
-                presence.label,
-                maxLines: 2,
-                textAlign: TextAlign.center,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 11,
-                  height: 1.2,
-                  fontWeight: FontWeight.w600,
-                  color: MutandeColors.stone800,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                presence.isWeb
-                    ? 'Browser'
-                    : presence.installed
-                    ? 'This Mac'
-                    : 'Install',
-                style: const TextStyle(
-                  fontSize: 10,
-                  height: 1.2,
-                  color: MutandeColors.stone400,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 }

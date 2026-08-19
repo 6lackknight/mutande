@@ -331,9 +331,11 @@ void main() {
     expect(find.byType(OnboardingHostSkeleton), findsNothing);
     expect(find.byType(OnboardingAddressRail), findsOneWidget);
     expect(find.text('Pick a host to connect.'), findsOneWidget);
-    expect(find.text('ChatGPT Web'), findsOneWidget);
-    expect(find.text('Claude Web'), findsOneWidget);
-    expect(find.text('ChatGPT Desktop'), findsOneWidget);
+    expect(find.text('ChatGPT'), findsNWidgets(2));
+    expect(find.text('Claude'), findsNWidgets(2));
+    expect(find.text('ChatGPT Desktop'), findsNothing);
+    expect(find.text('ChatGPT Web'), findsNothing);
+    expect(find.text('Claude Web'), findsNothing);
   });
 
   testWidgets('tapping ChatGPT Web opens the connector mini-flow', (
@@ -386,8 +388,8 @@ void main() {
         ),
       ),
     );
-    await _pumpUntil(tester, find.text('ChatGPT Web'));
-    await tester.tap(find.text('ChatGPT Web'));
+    await _pumpUntil(tester, find.byKey(const ValueKey('chatgpt-web')));
+    await tester.tap(find.byKey(const ValueKey('chatgpt-web')));
     await tester.pumpAndSettle();
     expect(find.text('Add mutande in ChatGPT.'), findsOneWidget);
     expect(find.text('I’ve added the connector'), findsOneWidget);
@@ -522,5 +524,12 @@ void main() {
     );
     await _pumpUntil(tester, find.text('Continue'));
     expect(find.text('Continue'), findsOneWidget);
+    expect(find.text('Make default'), findsNothing);
+    expect(find.text('Default'), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('claude')));
+    await tester.pump();
+    expect(find.text('Make default'), findsOneWidget);
+    expect(find.text('Default'), findsNothing);
   });
 }

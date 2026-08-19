@@ -16,8 +16,11 @@ class OnboardingRosterChip extends StatelessWidget {
     this.isSelf = false,
     this.hostSlugs = const [],
     this.leading,
+    this.subtitle,
+    this.trailing,
     this.onTap,
     this.semanticLabel,
+    this.selected = false,
   });
 
   final String handle;
@@ -28,13 +31,18 @@ class OnboardingRosterChip extends StatelessWidget {
 
   /// Replaces the person mark (host destinations on the handshake picker).
   final Widget? leading;
+
+  /// Overrides the address line (e.g. Browser / Desktop).
+  final String? subtitle;
+  final List<Widget>? trailing;
   final VoidCallback? onTap;
   final String? semanticLabel;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
     final title = personDisplayTitle(displayName: displayName, handle: handle);
-    final address = formatMailAddress(handle);
+    final line = subtitle ?? formatMailAddress(handle);
     final child = Padding(
       padding: const EdgeInsets.fromLTRB(8, 8, 12, 8),
       child: Row(
@@ -78,11 +86,11 @@ class OnboardingRosterChip extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  address,
+                  line,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontFamily: 'Menlo',
+                  style: TextStyle(
+                    fontFamily: subtitle == null ? 'Menlo' : null,
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
                     color: MutandeColors.stone500,
@@ -96,6 +104,8 @@ class OnboardingRosterChip extends StatelessWidget {
             const SizedBox(width: 12),
             OnboardingHostAvatarStack(hostSlugs),
           ],
+          if (trailing != null)
+            for (final w in trailing!) ...[const SizedBox(width: 8), w],
         ],
       ),
     );
@@ -105,7 +115,9 @@ class OnboardingRosterChip extends StatelessWidget {
       decoration: BoxDecoration(
         color: MutandeColors.stone50,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: MutandeColors.stone200),
+        border: Border.all(
+          color: selected ? MutandeColors.stone800 : MutandeColors.stone200,
+        ),
       ),
       child: child,
     );

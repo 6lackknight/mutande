@@ -143,10 +143,10 @@ Address: `alice@acme/______`, agent slot breathing.
 Heading is the goal, and changes once it's met:
 
 - Nothing linked: **Pick a host to connect.** / Desktop apps on this Mac, or ChatGPT and Claude in the browser.
-- One own host, no live teammate: **Cursor is ready to carry mail.** / A handshake needs a second host of yours, or a teammate who already has mutande. No Continue — pick another host from the cloud, *Invite on the web*, or *Check again*. Connecting a host returns here; it does not skip to First handshake.
+- One own host, no live teammate: **Cursor is ready to carry mail.** / A handshake needs a second host of yours, or a teammate who already has mutande. No Continue — pick another host, *Invite on the web*, or *Check again*. Connecting a host returns here; it does not skip to First handshake.
 - Destination ready (two own hosts, or one host plus a live teammate): **Cursor and Claude Desktop are ready to carry mail.** / Continue to your first handshake. **Continue** marks connect complete and moves to First handshake.
 
-Connected hosts sit in a compact column (icon, name, check, Default). Everything else is a cloud of marks — Cursor, Claude Desktop, ChatGPT Desktop, ChatGPT Web, Claude Web — each starting empty. Tap a mark to open its mini-flow, then return here.
+Same roster chips as the team step. Title is the product (Cursor, Claude, ChatGPT); subtitle is Desktop, Browser, or Install. Connected hosts show a check; Default stays on the current default; **Make default** appears after you select another connected host. Tap a chip to open its mini-flow, then return here.
 
 Desktop not on this Mac: overlay starts at **Install {Host} on this Mac.** · **I’ve installed it** · *Open download* · *Cancel*, then the usual MCP → skill steps (3 of 3).
 

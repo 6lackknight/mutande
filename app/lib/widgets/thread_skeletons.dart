@@ -490,7 +490,7 @@ class CollabTableRowsSkeleton extends StatelessWidget {
 /// Fixed roster panel — loading wrap and loaded wrap share this height.
 const kOnboardingRosterPanelHeight = 200.0;
 
-/// Fixed host panel — compact connected chips plus a cloud of marks.
+/// Fixed host panel — roster chips for connected and available hosts.
 const kOnboardingHostPanelHeight = 220.0;
 
 /// Two helper lines (12px) plus [OnboardingSpace.sm] between them.
@@ -528,32 +528,12 @@ class OnboardingRosterSkeleton extends StatelessWidget {
   }
 }
 
-/// One host cloud-mark bone.
-class _HostCloudBone extends StatelessWidget {
-  const _HostCloudBone();
-
-  @override
-  Widget build(BuildContext context) {
-    return const SizedBox(
-      width: 84,
-      child: Column(
-        children: [
-          _Bone(width: 44, height: 44, circle: true),
-          SizedBox(height: 8),
-          _Bone(width: 56, height: 8),
-          SizedBox(height: 6),
-          _Bone(width: 40, height: 6),
-        ],
-      ),
-    );
-  }
-}
-
 /// Onboarding host tiles — heading stays on the connect step.
 class OnboardingHostSkeleton extends StatelessWidget {
   const OnboardingHostSkeleton({super.key, this.tiles = 5});
 
   final int tiles;
+  static const _chipWidths = [220.0, 200.0, 176.0, 208.0, 188.0];
 
   @override
   Widget build(BuildContext context) {
@@ -563,13 +543,15 @@ class OnboardingHostSkeleton extends StatelessWidget {
         child: SizedBox(
           height: kOnboardingHostPanelHeight,
           child: Wrap(
-            spacing: 14,
-            runSpacing: 16,
+            spacing: 10,
+            runSpacing: 10,
             children: [
               for (var i = 0; i < tiles; i++)
                 MutandeArrive(
                   order: i,
-                  child: const _HostCloudBone(),
+                  child: _PersonChipBone(
+                    width: _chipWidths[i % _chipWidths.length],
+                  ),
                 ),
             ],
           ),

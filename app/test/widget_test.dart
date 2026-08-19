@@ -1530,8 +1530,8 @@ void main() {
 
     expect(find.text('Step 3 of 4 — Connect a host'), findsOneWidget);
     expect(find.text('Pick a host to connect.'), findsOneWidget);
-    expect(find.text('ChatGPT Web'), findsOneWidget);
-    expect(find.text('Claude Web'), findsOneWidget);
+    expect(find.text('ChatGPT'), findsNWidgets(2));
+    expect(find.text('Claude'), findsNWidgets(2));
     expect(find.text('Cursor'), findsWidgets);
     expect(find.text('Threads'), findsNothing);
   });
