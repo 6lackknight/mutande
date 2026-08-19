@@ -531,5 +531,17 @@ void main() {
     await tester.pump();
     expect(find.text('Make default'), findsOneWidget);
     expect(find.text('Default'), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('chatgpt-web')));
+    await tester.pumpAndSettle();
+    expect(find.text('Add mutande in ChatGPT.'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(find.text('Continue'), findsOneWidget);
+    expect(find.text('Retry'), findsNothing);
+    expect(
+      find.text('Host link was cancelled. Pick a host to continue.'),
+      findsNothing,
+    );
   });
 }

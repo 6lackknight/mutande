@@ -31,6 +31,7 @@ class AnalyticsEvent {
   static const pingWaiting = 'desktop_handoff_waiting';
   static const pingSuccess = 'desktop_handoff_success';
   static const pingTimeout = 'desktop_handoff_timeout';
+  static const pingNext = 'desktop_handoff_next';
 
   static const homeReady = 'desktop_home_ready';
   static const tabSelect = 'desktop_tab_select';

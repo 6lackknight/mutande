@@ -7,11 +7,13 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../models/handshake_card.dart';
 import '../services/daemon_client.dart';
 import '../theme/mutande_macos_theme.dart';
 import '../util/address_display.dart';
 import '../util/clock_format.dart';
 import 'ai_host_icon.dart';
+import 'handshake_intro_card.dart';
 import 'message_attachments.dart';
 import 'mutande_stagger.dart';
 import 'thread_message_tree.dart';
@@ -72,6 +74,7 @@ class _RelayHeader extends StatelessWidget {
 
   final ThreadRelayReading host;
   final ThreadMessageView? op;
+
   /// Thread subject, rendered inline after the sender.
   final String? subject;
 
@@ -130,9 +133,9 @@ class _RelayHeader extends StatelessWidget {
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  color: MutandeColors.stone800,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleSmall?.copyWith(color: MutandeColors.stone800),
               ),
               const SizedBox(height: 3),
               Wrap(
@@ -431,8 +434,12 @@ class _MdBody extends StatelessWidget {
   /// label weight when it's short and clearly not a sentence.
   static final _leadIn = RegExp(r'^([^:.!?`*]{2,48}):\s+(.+)$');
 
-  Widget _listItem(String marker, String body, TextStyle base,
-      {required double gap}) {
+  Widget _listItem(
+    String marker,
+    String body,
+    TextStyle base, {
+    required double gap,
+  }) {
     return Padding(
       padding: EdgeInsets.only(left: 2, bottom: gap),
       child: Row(
@@ -752,9 +759,7 @@ class _CapsuleComposerState extends State<_CapsuleComposer> {
                         enabledBorder: InputBorder.none,
                         focusedBorder: InputBorder.none,
                         disabledBorder: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(
-                          vertical: 8,
-                        ),
+                        contentPadding: const EdgeInsets.symmetric(vertical: 8),
                       ),
                     ),
                   ),
@@ -837,6 +842,17 @@ const int _kReplyMaxLines = 3;
 /// subject-only message), fall back to the full body so the reading pane
 /// never shows "(no notes)" for a message that did say something.
 String _bodyWithoutSubject(ThreadMessageView m) {
+  final notes = m.bundleNotes?.trim();
+  if (notes != null &&
+      notes.isNotEmpty &&
+      !HandshakeCardView.notesAreDump(notes)) {
+    return notes;
+  }
+  final intro = HandshakeCardView.resolve(
+    handshake: m.handshake,
+    notes: m.bundleNotes,
+  );
+  if (intro != null && intro.leadSentence.isNotEmpty) return intro.leadSentence;
   final body = m.displayBody;
   final subj = m.bundleSubject?.trim();
   if (subj == null || subj.isEmpty) return body;
@@ -868,9 +884,9 @@ class _RelayTimelineState extends State<_RelayTimeline> {
     final d = host.detail;
     final op = _op(d);
     final closed = d.status == 'closed';
-    final nodes = flattenThreadMessages(d.messages)
-        .where((n) => op == null || n.message.id != op.id)
-        .toList();
+    final nodes = flattenThreadMessages(
+      d.messages,
+    ).where((n) => op == null || n.message.id != op.id).toList();
     final byId = {for (final m in d.messages) m.id: m};
 
     final ids = {if (op != null) op.id, ...nodes.map((n) => n.message.id)};
@@ -883,10 +899,7 @@ class _RelayTimelineState extends State<_RelayTimeline> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _RelayHeader(host: host, op: op, subject: op?.bundleSubject),
-        for (final w in host.leading) ...[
-          const SizedBox(height: 10),
-          w,
-        ],
+        for (final w in host.leading) ...[const SizedBox(height: 10), w],
         const SizedBox(height: 12),
         Expanded(
           // Keyed by thread: remounts on open/select; freeze holds across
@@ -1101,10 +1114,7 @@ class _ReplyHeader extends StatelessWidget {
           const SizedBox(width: 8),
           Text(
             time,
-            style: const TextStyle(
-              color: MutandeColors.stone400,
-              fontSize: 11,
-            ),
+            style: const TextStyle(color: MutandeColors.stone400, fontSize: 11),
           ),
         ],
         if (trailing != null) ...[const Spacer(), trailing!],
@@ -1147,46 +1157,46 @@ class _RailItem extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-            if (replyToLabel != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 3),
-                child: Text(
-                  'replying to $replyToLabel',
-                  style: const TextStyle(
-                    color: MutandeColors.stone400,
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            if (isOp)
-              open
-                  ? _openBody()
-                  : _ClampedBody(
-                      text: _bodyWithoutSubject(message),
-                      maxLines: _kOpMaxLines,
-                    )
-            else if (open) ...[
-              _ReplyHeader(
-                message: message,
-                myHandle: host.myHandle,
-                trailing: const Icon(
-                  LucideIcons.chevronUp,
-                  size: 13,
+          if (replyToLabel != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 3),
+              child: Text(
+                'replying to $replyToLabel',
+                style: const TextStyle(
                   color: MutandeColors.stone400,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-              const SizedBox(height: 6),
-              _openBody(),
-            ] else
-              _InlineSnippet(
-                message: message,
-                myHandle: host.myHandle,
-                maxLines: _kReplyMaxLines,
-                emphasized: latest,
+            ),
+          if (isOp)
+            open
+                ? _openBody()
+                : _ClampedBody(
+                    text: _bodyWithoutSubject(message),
+                    maxLines: _kOpMaxLines,
+                  )
+          else if (open) ...[
+            _ReplyHeader(
+              message: message,
+              myHandle: host.myHandle,
+              trailing: const Icon(
+                LucideIcons.chevronUp,
+                size: 13,
+                color: MutandeColors.stone400,
               ),
-          ],
-        ),
+            ),
+            const SizedBox(height: 6),
+            _openBody(),
+          ] else
+            _InlineSnippet(
+              message: message,
+              myHandle: host.myHandle,
+              maxLines: _kReplyMaxLines,
+              emphasized: latest,
+            ),
+        ],
+      ),
     );
 
     return GestureDetector(
@@ -1206,10 +1216,10 @@ class _RailItem extends StatelessWidget {
                   dotColor: open
                       ? MutandeColors.bronze
                       : isOp
-                          ? MutandeColors.stone800
-                          : latest
-                              ? MutandeColors.stone600
-                              : MutandeColors.stone400,
+                      ? MutandeColors.stone800
+                      : latest
+                      ? MutandeColors.stone600
+                      : MutandeColors.stone400,
                   filled: open || isOp || latest,
                   big: isOp || open,
                 ),
@@ -1223,10 +1233,27 @@ class _RailItem extends StatelessWidget {
   }
 
   Widget _openBody() {
+    final card = HandshakeCardView.resolve(
+      handshake: message.handshake,
+      notes: message.bundleNotes,
+    );
+    final notes = message.bundleNotes?.trim();
+    final prose =
+        notes != null &&
+            notes.isNotEmpty &&
+            !HandshakeCardView.notesAreDump(notes)
+        ? notes
+        : null;
+    final body =
+        prose ??
+        (card != null && card.leadSentence.isNotEmpty
+            ? card.leadSentence
+            : _bodyWithoutSubject(message));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _MdBody(text: _bodyWithoutSubject(message), recede: false),
+        _MdBody(text: body, recede: false),
+        if (card != null) HandshakeExtrasLine(card),
         if (message.resources.isNotEmpty) ...[
           const SizedBox(height: 10),
           _PackageStack(resources: message.resources),
@@ -1317,4 +1344,3 @@ class _RailPainter extends CustomPainter {
       old.filled != filled ||
       old.big != big;
 }
-

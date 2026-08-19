@@ -584,9 +584,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
         return;
       }
       if (ok == null) {
-        setState(() {
-          _error = 'Host link was cancelled. Pick a host to continue.';
-        });
+        if (mounted) setState(() => _selectedHost = null);
       }
       return;
     }
@@ -603,7 +601,11 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
       fullScreen: true,
     );
     if (!mounted) return;
-    if (result == null || !result.mcpOk) {
+    if (result == null) {
+      setState(() => _selectedHost = null);
+      return;
+    }
+    if (!result.mcpOk) {
       setState(() {
         _error = 'Host link was cancelled. Pick a host to continue.';
       });
@@ -803,6 +805,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
           ),
           debugBanner: debugBanner,
           preview: frame == null ? null : _debugFrames[frame].ping,
+          onInvite: _openInvitesWeb,
           onComplete: (threadId) {
             final status = _status;
             if (status != null) {
@@ -1149,58 +1152,48 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
       children: [
         heading,
         const SizedBox(height: OnboardingSpace.lg),
-        SizedBox(
-          height: kOnboardingHostPanelHeight,
-          child: _hostsLoading
-              ? const OnboardingHostSkeleton()
-              : SingleChildScrollView(
-                  child: Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: [
-                      for (final host in connected)
-                        _hostRosterChip(
-                          host,
-                          connected: true,
-                          isDefault: _isDefaultHost(host.slug),
-                        ),
-                      for (final host in available)
-                        _hostRosterChip(host, connected: false),
-                    ],
-                  ),
-                ),
-        ),
-        SizedBox(
-          height: kOnboardingConnectHelperHeight,
-          child: Align(
-            alignment: Alignment.topLeft,
-            child: _hostsLoading || connected.isEmpty
-                ? null
-                : Text(
-                    _defaultAgentId == null
-                        ? 'Set Default so mail to your address goes to one host.'
-                        : 'Mail to your address goes to Default.',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      height: 1.35,
-                      color: MutandeColors.stone400,
+        if (_hostsLoading)
+          const OnboardingHostSkeleton()
+        else
+          ConstrainedBox(
+            constraints: const BoxConstraints(
+              maxHeight: kOnboardingHostPanelHeight,
+            ),
+            child: SingleChildScrollView(
+              child: Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  for (final host in connected)
+                    _hostRosterChip(
+                      host,
+                      connected: true,
+                      isDefault: _isDefaultHost(host.slug),
                     ),
-                  ),
+                  for (final host in available)
+                    _hostRosterChip(host, connected: false),
+                ],
+              ),
+            ),
           ),
-        ),
+        if (!_hostsLoading && connected.isNotEmpty) ...[
+          const SizedBox(height: OnboardingSpace.sm),
+          Text(
+            _defaultAgentId == null
+                ? 'Set Default so mail to your address goes to one host.'
+                : 'Mail to your address goes to Default.',
+            style: const TextStyle(
+              fontSize: 12,
+              height: 1.35,
+              color: MutandeColors.stone400,
+            ),
+          ),
+        ],
         if (_error != null) ...[
           const SizedBox(height: OnboardingSpace.md),
           OnboardingErrorBanner(message: _error!),
         ],
-        if (_selectedHost != null && _error != null)
-          OnboardingActions(
-            topSpacing: OnboardingSpace.sm,
-            primary: OutlinedButton(
-              onPressed: () => _beginConnectHost(_selectedHost!),
-              child: const Text('Retry'),
-            ),
-          )
-        else if (showContinue)
+        if (showContinue)
           OnboardingActions(
             topSpacing: OnboardingSpace.md,
             primary: FilledButton(
@@ -1210,6 +1203,20 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
                     : (_agents.isNotEmpty ? _agents.first.slug : ''),
               ),
               child: const Text('Continue'),
+            ),
+            secondary: _selectedHost != null && _error != null
+                ? TextButton(
+                    onPressed: () => _beginConnectHost(_selectedHost!),
+                    child: const Text('Retry'),
+                  )
+                : null,
+          )
+        else if (_selectedHost != null && _error != null)
+          OnboardingActions(
+            topSpacing: OnboardingSpace.sm,
+            primary: OutlinedButton(
+              onPressed: () => _beginConnectHost(_selectedHost!),
+              child: const Text('Retry'),
             ),
           )
         else if (!_hostsLoading && ownCount >= 1)

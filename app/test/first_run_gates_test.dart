@@ -227,4 +227,74 @@ void main() {
     expect(firstRunHandshakePrompt('@claude'), contains('@claude'));
     expect(firstRunHandshakeReplyPrompt(), contains('/handshake'));
   });
+
+  test('next-step recipient is @all once two own hosts exist', () {
+    const two = [
+      AgentInfo(id: '1', slug: 'cursor'),
+      AgentInfo(id: '2', slug: 'claude'),
+    ];
+    expect(
+      firstRunNextStepRecipient(ownAgents: two, target: '@claude'),
+      '@all',
+    );
+    expect(
+      firstRunNextStepRecipient(
+        ownAgents: [const AgentInfo(id: '1', slug: 'cursor')],
+        target: 'orinea@tbhco',
+      ),
+      'orinea@tbhco',
+    );
+  });
+
+  test('next-step pair names the hosts that are actually connected', () {
+    const two = [
+      AgentInfo(id: '1', slug: 'cursor'),
+      AgentInfo(id: '2', slug: 'claude'),
+    ];
+    final pair = firstRunNextStepPairLabels(
+      ownAgents: two,
+      sendingSlug: 'cursor',
+      target: '@claude',
+    );
+    expect(pair.first, 'Cursor');
+    expect(pair.second, 'Claude');
+    expect(
+      firstRunNextStepWorkNotes(pair.first, pair.second),
+      contains('Cursor and Claude'),
+    );
+    expect(
+      firstRunNextStepPhysicsNotes(pair.first, pair.second),
+      contains('Foucault'),
+    );
+
+    final teammate = firstRunNextStepPairLabels(
+      ownAgents: [const AgentInfo(id: '1', slug: 'cursor')],
+      sendingSlug: 'cursor',
+      target: 'orinea@tbhco',
+      contacts: const [
+        ContactView(handle: 'orinea@tbhco', displayName: 'Orinea'),
+      ],
+    );
+    expect(teammate.second, 'Orinea');
+  });
+
+  test('invite shows only when the org roster is still solo', () {
+    expect(
+      firstRunShowInvite(
+        contacts: const [ContactView(handle: 'alice@acme')],
+        myHandle: 'alice@acme',
+      ),
+      isTrue,
+    );
+    expect(
+      firstRunShowInvite(
+        contacts: const [
+          ContactView(handle: 'alice@acme'),
+          ContactView(handle: 'orinea@tbhco', displayName: 'Orinea'),
+        ],
+        myHandle: 'alice@acme',
+      ),
+      isFalse,
+    );
+  });
 }

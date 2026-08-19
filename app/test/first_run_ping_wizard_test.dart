@@ -405,11 +405,14 @@ void main() {
 
     expect(find.text('they introduced themselves.'), findsOneWidget);
     expect(find.text('I’m Claude. Ask me about shipping.'), findsOneWidget);
+    expect(find.text('Find work worth a handoff.'), findsOneWidget);
+    expect(find.text('Check this with me.'), findsOneWidget);
+    expect(find.text('Invite someone.'), findsNothing);
     expect(find.text('Finish'), findsOneWidget);
     expect(completed, isFalse);
     expect(store.pingComplete, isFalse);
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Finish'));
+    await tester.tap(find.widgetWithText(TextButton, 'Finish'));
     await tester.pump();
 
     expect(completed, isTrue);
@@ -620,5 +623,97 @@ void main() {
 
     expect(find.text('Who gets this handshake.'), findsOneWidget);
     expect(find.text('Open this in Cursor.'), findsNothing);
+  });
+
+  testWidgets('delivery offers a first job and Finish', (tester) async {
+    var invited = false;
+    final daemon = _mockDaemon((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      return _rpcOk(body['id'], {'ok': true});
+    });
+    final store = FirstRunStore.memory(notificationsComplete: true)
+      ..loadMemorySync();
+
+    await _pumpWizard(
+      tester,
+      child: FirstRunPingWizard(
+        daemon: daemon,
+        firstRunStore: store,
+        address: const OnboardingAddress(
+          name: 'alice',
+          org: 'acme',
+          agent: 'cursor',
+        ),
+        target: '@claude',
+        ownAgents: const [
+          AgentInfo(id: '1', slug: 'cursor'),
+          AgentInfo(id: '2', slug: 'claude'),
+        ],
+        preview: PingPreview.delivered,
+        onInvite: () => invited = true,
+        onComplete: (_) {},
+      ),
+    );
+
+    expect(find.text('Find work worth a handoff.'), findsOneWidget);
+    expect(find.text('Check this with me.'), findsOneWidget);
+    expect(find.text('Invite someone.'), findsOneWidget);
+    expect(
+      find.textContaining('Ask Cursor and Claude'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Foucault'), findsOneWidget);
+
+    await tester.tap(find.text('Invite someone.'));
+    await tester.pump();
+    expect(invited, isTrue);
+    expect(store.pingComplete, isFalse);
+  });
+
+  testWidgets('physics card starts a thread then unlocks home', (tester) async {
+    String? completedId;
+    String? recipient;
+    String? notes;
+    final daemon = _mockDaemon((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      if (body['method'] == 'forward_draft') {
+        final params = body['params'] as Map<String, dynamic>? ?? {};
+        recipient = params['recipient'] as String?;
+        notes = params['notes'] as String?;
+        return _rpcOk(body['id'], {'thread_id': 't-physics'});
+      }
+      return _rpcOk(body['id'], {'ok': true});
+    });
+    final store = FirstRunStore.memory(notificationsComplete: true)
+      ..loadMemorySync();
+
+    await _pumpWizard(
+      tester,
+      child: FirstRunPingWizard(
+        daemon: daemon,
+        firstRunStore: store,
+        address: const OnboardingAddress(
+          name: 'alice',
+          org: 'acme',
+          agent: 'cursor',
+        ),
+        target: '@claude',
+        ownAgents: const [
+          AgentInfo(id: '1', slug: 'cursor'),
+          AgentInfo(id: '2', slug: 'claude'),
+        ],
+        preview: PingPreview.delivered,
+        onComplete: (id) => completedId = id,
+      ),
+    );
+
+    await tester.tap(find.text('Check this with me.'));
+    await tester.pump();
+    await tester.pump();
+
+    expect(recipient, '@all');
+    expect(notes, contains('Foucault'));
+    expect(completedId, 't-physics');
+    expect(store.pingComplete, isTrue);
   });
 }

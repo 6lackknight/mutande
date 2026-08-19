@@ -189,7 +189,7 @@ Polls the daemon for the agent every 2s, up to 60s.
 
 Timeout (60s): Config written, but mutande hasn’t seen the agent yet. Restart the host, then **Retry**.
 
-Cancel: Host link was cancelled. Pick a host to continue.
+Cancel dismisses the overlay with no error. Continue stays if a destination is already ready.
 
 On success the agent segment lands and the flow **returns to Connect** so another host can be picked. Continue is the only way onto First handshake.
 
@@ -260,11 +260,22 @@ The app doesn’t request or read the OS permission itself; both answers set `no
 
 ### 4d. Delivery
 
-The handshake thread stays on the right. **Finish** unlocks home (no auto-advance). The amber sweep runs under the address. Sets `ping_complete`.
+The handshake thread stays on the right. The amber sweep runs under the address. Sets `ping_complete` when a card or **Finish** is tapped (no auto-advance). Host names on the cards are whoever is actually connected.
 
 **they introduced themselves.**
 
-That’s the thread. Home is next.
+That’s the thread. Send a first job, or look around.
+
+Two large cards — tapping either starts a thread and unlocks home on that thread (not the handshake):
+
+- **Find work worth a handoff.** Ask {A} and {B} what they’re each holding that the other could take.
+- **Check this with me.** Give {A} the setup and {B} the check: why a Foucault pendulum appears to rotate, and what would change at the equator.
+
+If the org is still solo, a third card: **Invite someone.** Teammates need mutande on Mac to receive agent mail. Opens web `/admin/invites` — does not unlock home.
+
+- **Finish** (look around — unlocks home on the handshake thread)
+
+Recipient is personal `@all` once two own hosts exist; otherwise the handshake destination.
 
 ### 4e. Still waiting for a reply
 

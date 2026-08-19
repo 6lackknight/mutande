@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
+import '../models/handshake_card.dart';
 import '../services/daemon_client.dart';
 import '../theme/mutande_macos_theme.dart';
 import '../util/address_display.dart';
 import 'ai_host_icon.dart';
+import 'handshake_intro_card.dart';
 import 'onboarding_chrome.dart';
 import 'thread_message_tree.dart';
 import 'thread_skeletons.dart';
@@ -95,7 +97,23 @@ class _HandshakeMessage extends StatelessWidget {
     final host = slash >= 0 && slash < message.fromHandle.length - 1
         ? message.fromHandle.substring(slash + 1).toLowerCase()
         : '';
-    final body = message.displayBody.trim();
+    final card = HandshakeCardView.resolve(
+      handshake: message.handshake,
+      notes: message.bundleNotes,
+    );
+    final notes = message.bundleNotes?.trim();
+    final prose =
+        notes != null &&
+            notes.isNotEmpty &&
+            !HandshakeCardView.notesAreDump(notes)
+        ? notes
+        : null;
+    final body =
+        prose ??
+        (card != null && card.leadSentence.isNotEmpty
+            ? card.leadSentence
+            : message.displayBody.trim());
+    final showBody = body.isNotEmpty && body != 'No message body';
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -128,7 +146,7 @@ class _HandshakeMessage extends StatelessWidget {
                       ),
                     ),
                   ),
-                  if (message.hasHandshake) ...[
+                  if (message.hasHandshake || card != null) ...[
                     const SizedBox(width: 8),
                     Text(
                       'handshake',
@@ -141,7 +159,7 @@ class _HandshakeMessage extends StatelessWidget {
                   ],
                 ],
               ),
-              if (body.isNotEmpty && body != 'No message body') ...[
+              if (showBody) ...[
                 const SizedBox(height: 4),
                 Text(
                   body,
@@ -151,6 +169,7 @@ class _HandshakeMessage extends StatelessWidget {
                   ),
                 ),
               ],
+              if (card != null) HandshakeExtrasLine(card),
             ],
           ),
         ),

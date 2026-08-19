@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 
 import '../models/agent_transport.dart';
+import '../models/handshake_card.dart';
 import '../platform/user_home.dart';
 import 'daemon_errors.dart';
 import 'sentry_report.dart';
@@ -564,6 +565,17 @@ class DaemonClient {
             })
             .where((a) => a.trim().isNotEmpty)
             .toList();
+        final notes =
+            bundle?['notes'] as String? ?? bundle?['context'] as String?;
+        final handshakeRaw = bundle?['handshake'];
+        HandshakeCardView? handshake;
+        if (handshakeRaw is Map) {
+          handshake = HandshakeCardView.fromJson(
+            Map<String, dynamic>.from(handshakeRaw),
+          );
+        }
+        handshake ??= HandshakeCardView.tryParseNotes(notes);
+        if (handshake != null && handshake.isEmpty) handshake = null;
         return ThreadMessageView(
           id: m['id'] as String? ?? '',
           fromHandle: m['from_handle'] as String? ?? '',
@@ -571,10 +583,10 @@ class DaemonClient {
           parentMessageId: m['parent_message_id'] as String?,
           inReplyTo: bundle?['in_reply_to'] as String?,
           bundleSubject: bundle?['subject'] as String?,
-          bundleNotes:
-              bundle?['notes'] as String? ?? bundle?['context'] as String?,
+          bundleNotes: notes,
           pingKind: bundle?['ping_kind'] as String?,
-          hasHandshake: bundle?['handshake'] is Map,
+          hasHandshake: handshakeRaw is Map || handshake != null,
+          handshake: handshake,
           questionPrompts: questions,
           resourceRequests: resourceRequests,
           resources: resources,
@@ -755,11 +767,9 @@ class DaemonClient {
   }
 
   Future<CollabDetail> getCollab(String collabId) async {
-    final result = await _callWithTimeout(
-      'get_collab',
-      {'collab_id': collabId},
-      const Duration(seconds: 45),
-    );
+    final result = await _callWithTimeout('get_collab', {
+      'collab_id': collabId,
+    }, const Duration(seconds: 45));
     final map = result as Map<String, dynamic>? ?? {};
     final collab = map['collab'] as Map<String, dynamic>? ?? map;
     return CollabDetail.fromJson(collab);
@@ -793,9 +803,7 @@ class DaemonClient {
       'handle': handle,
     });
     final map = result as Map<String, dynamic>? ?? {};
-    return CollabDetail.fromJson(
-      map['collab'] as Map<String, dynamic>? ?? map,
-    );
+    return CollabDetail.fromJson(map['collab'] as Map<String, dynamic>? ?? map);
   }
 
   Future<CollabDetail> removeCollabSteerer({
@@ -807,9 +815,7 @@ class DaemonClient {
       'user_id': userId,
     });
     final map = result as Map<String, dynamic>? ?? {};
-    return CollabDetail.fromJson(
-      map['collab'] as Map<String, dynamic>? ?? map,
-    );
+    return CollabDetail.fromJson(map['collab'] as Map<String, dynamic>? ?? map);
   }
 
   Future<CollabDetail> addCollabRoster({
@@ -821,9 +827,7 @@ class DaemonClient {
       'address': address,
     });
     final map = result as Map<String, dynamic>? ?? {};
-    return CollabDetail.fromJson(
-      map['collab'] as Map<String, dynamic>? ?? map,
-    );
+    return CollabDetail.fromJson(map['collab'] as Map<String, dynamic>? ?? map);
   }
 
   Future<CollabDetail> removeCollabRoster({
@@ -835,25 +839,19 @@ class DaemonClient {
       'agent_id': agentId,
     });
     final map = result as Map<String, dynamic>? ?? {};
-    return CollabDetail.fromJson(
-      map['collab'] as Map<String, dynamic>? ?? map,
-    );
+    return CollabDetail.fromJson(map['collab'] as Map<String, dynamic>? ?? map);
   }
 
   Future<CollabDetail> archiveCollab(String collabId) async {
     final result = await _call('archive_collab', {'collab_id': collabId});
     final map = result as Map<String, dynamic>? ?? {};
-    return CollabDetail.fromJson(
-      map['collab'] as Map<String, dynamic>? ?? map,
-    );
+    return CollabDetail.fromJson(map['collab'] as Map<String, dynamic>? ?? map);
   }
 
   Future<CollabDetail> unarchiveCollab(String collabId) async {
     final result = await _call('unarchive_collab', {'collab_id': collabId});
     final map = result as Map<String, dynamic>? ?? {};
-    return CollabDetail.fromJson(
-      map['collab'] as Map<String, dynamic>? ?? map,
-    );
+    return CollabDetail.fromJson(map['collab'] as Map<String, dynamic>? ?? map);
   }
 
   Future<CollabDetail> approveCollabPendingMembership(String collabId) async {
@@ -861,9 +859,7 @@ class DaemonClient {
       'collab_id': collabId,
     });
     final map = result as Map<String, dynamic>? ?? {};
-    return CollabDetail.fromJson(
-      map['collab'] as Map<String, dynamic>? ?? map,
-    );
+    return CollabDetail.fromJson(map['collab'] as Map<String, dynamic>? ?? map);
   }
 
   Future<CollabDetail> denyCollabPendingMembership(String collabId) async {
@@ -871,9 +867,7 @@ class DaemonClient {
       'collab_id': collabId,
     });
     final map = result as Map<String, dynamic>? ?? {};
-    return CollabDetail.fromJson(
-      map['collab'] as Map<String, dynamic>? ?? map,
-    );
+    return CollabDetail.fromJson(map['collab'] as Map<String, dynamic>? ?? map);
   }
 
   Future<void> setLane({
@@ -1061,8 +1055,9 @@ class DaemonClient {
 
       if (decoded.containsKey('error')) {
         final err = decoded['error'];
-        final message =
-            err is Map ? err['message']?.toString() : err.toString();
+        final message = err is Map
+            ? err['message']?.toString()
+            : err.toString();
         throw DaemonException(message ?? 'Daemon error');
       }
 
@@ -1574,8 +1569,7 @@ class CollabPendingMembership {
   final String proposedBy;
   final List<String> approvedBy;
 
-  String get who =>
-      (kind == 'roster' ? address : handle) ?? causeAddress;
+  String get who => (kind == 'roster' ? address : handle) ?? causeAddress;
 }
 
 class CollabLearningView {
@@ -1623,11 +1617,7 @@ class CollabChecklistItem {
   final String text;
   final bool done;
 
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'text': text,
-    'done': done,
-  };
+  Map<String, dynamic> toJson() => {'id': id, 'text': text, 'done': done};
 }
 
 class CollabCardView {
@@ -1959,11 +1949,7 @@ class CollabListResult {
   final CollabPortfolio portfolio;
 }
 
-int _collabLaneCount(
-  Map<String, dynamic> map,
-  String key, {
-  int fallback = 0,
-}) {
+int _collabLaneCount(Map<String, dynamic> map, String key, {int fallback = 0}) {
   if (!map.containsKey(key)) return fallback;
   return (map[key] as num?)?.toInt() ?? 0;
 }
@@ -2787,6 +2773,7 @@ class ThreadMessageView {
     this.bundleNotes,
     this.pingKind,
     this.hasHandshake = false,
+    this.handshake,
     this.questionPrompts = const [],
     this.resourceRequests = const [],
     this.resources = const [],
@@ -2808,6 +2795,7 @@ class ThreadMessageView {
 
   /// True when the opened bundle includes a typed `handshake` card.
   final bool hasHandshake;
+  final HandshakeCardView? handshake;
   final List<String> questionPrompts;
   final List<String> resourceRequests;
 
@@ -2828,6 +2816,7 @@ class ThreadMessageView {
       bundleNotes: bundleNotes,
       pingKind: pingKind,
       hasHandshake: hasHandshake,
+      handshake: handshake,
       questionPrompts: questionPrompts,
       resourceRequests: resourceRequests,
       resources: resources,
@@ -2876,7 +2865,9 @@ class ThreadMessageView {
   List<String> get _contentParts => [
     if (bundleSubject != null && bundleSubject!.trim().isNotEmpty)
       bundleSubject!.trim(),
-    if (_displayNotes != null) _displayNotes!,
+    if (_displayNotes != null &&
+        HandshakeCardView.tryParseNotes(_displayNotes) == null)
+      _displayNotes!,
     ...questionPrompts.map((q) => q.trim()).where((q) => q.isNotEmpty),
     ...answerTexts.map((a) => a.trim()).where((a) => a.isNotEmpty),
     ...resourceRequests

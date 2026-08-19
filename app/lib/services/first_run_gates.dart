@@ -178,6 +178,85 @@ String firstRunHandshakeReplyPrompt() {
       'Open the thread and reply with /handshake.';
 }
 
+/// `@all` once two own hosts can talk; otherwise the handshake destination.
+String firstRunNextStepRecipient({
+  required Iterable<AgentInfo> ownAgents,
+  required String target,
+}) {
+  if (firstRunOwnAgentCount(ownAgents) >= 2) return '@all';
+  return target;
+}
+
+String _firstRunHostLabel(String? slug) {
+  final s = (slug ?? '').toLowerCase().trim();
+  if (s.isEmpty || s == 'default') return 'this host';
+  return firstRunHandoffChoiceLabel('@$s');
+}
+
+String _firstRunTeammateLabel(String target, Iterable<ContactView> contacts) {
+  final key = target.trim().toLowerCase();
+  for (final c in contacts) {
+    if (c.handle.toLowerCase() != key) continue;
+    final name = (c.displayName ?? '').trim();
+    return name.isNotEmpty ? name : key;
+  }
+  return key;
+}
+
+/// Names actually on this Mac — sending host plus the other own host, or the
+/// teammate when that's the only peer.
+({String first, String second}) firstRunNextStepPairLabels({
+  required Iterable<AgentInfo> ownAgents,
+  required String sendingSlug,
+  required String target,
+  Iterable<ContactView> contacts = const [],
+}) {
+  final first = _firstRunHostLabel(sendingSlug);
+  if (firstRunOwnAgentCount(ownAgents) >= 2) {
+    final other = firstRunHandoffTarget(
+      ownAgents: ownAgents,
+      sendingSlug: sendingSlug,
+    );
+    return (
+      first: first,
+      second: firstRunHandoffChoiceLabel(other ?? target),
+    );
+  }
+  if (firstRunTargetIsTeammate(target)) {
+    return (
+      first: first,
+      second: _firstRunTeammateLabel(target, contacts),
+    );
+  }
+  return (first: first, second: firstRunHandoffChoiceLabel(target));
+}
+
+/// Invite CTA only when nobody else is on the org roster.
+bool firstRunShowInvite({
+  required Iterable<ContactView> contacts,
+  String? myHandle,
+}) {
+  final self = (myHandle ?? '').trim().toLowerCase();
+  for (final c in contacts) {
+    if (c.isBroadcast || c.isExternal) continue;
+    final h = c.handle.trim().toLowerCase();
+    if (h.isEmpty) continue;
+    if (self.isNotEmpty && h == self) continue;
+    return false;
+  }
+  return true;
+}
+
+String firstRunNextStepWorkNotes(String first, String second) {
+  return 'Ask $first and $second what they’re each holding that the other '
+      'could take. Find work worth a handoff.';
+}
+
+String firstRunNextStepPhysicsNotes(String first, String second) {
+  return 'Give $first the setup and $second the check: why a Foucault pendulum '
+      'appears to rotate, and what would change at the equator.';
+}
+
 bool firstRunSummaryMatchesTarget(ThreadSummary summary, String target) {
   final t = target.trim().toLowerCase();
   if (t.isEmpty) return false;

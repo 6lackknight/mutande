@@ -27,8 +27,8 @@ enum PingPreview { pick, copy, waiting, delivered, timeout }
 /// waits for the other agent to publish a handshake. Skip does not exist —
 /// a handshake reply is the only way through.
 ///
-/// After send, the thread fills the letterhead’s right side. Finish unlocks
-/// home; the notification ask rides along with the wait.
+/// After send, the thread fills the letterhead’s right side. A first-job
+/// card or Finish unlocks home; the notification ask rides along with the wait.
 class FirstRunPingWizard extends StatefulWidget {
   const FirstRunPingWizard({
     super.key,
@@ -46,6 +46,7 @@ class FirstRunPingWizard extends StatefulWidget {
     this.openComposer,
     this.sendingTransport,
     this.targetTransport,
+    this.onInvite,
   });
 
   final DaemonClient daemon;
@@ -87,6 +88,9 @@ class FirstRunPingWizard extends StatefulWidget {
   })?
   openComposer;
 
+  /// Opens the web invite page. Null hides the invite card even when solo.
+  final VoidCallback? onInvite;
+
   static String promptFor(String target) => firstRunHandshakePrompt(target);
 
   @override
@@ -112,6 +116,7 @@ class _FirstRunPingWizardState extends State<FirstRunPingWizard> {
   bool _awaitingThread = false;
   bool _awaitingReply = false;
   bool _holdOnCopy = false;
+  String? _startingKind;
 
   String get _prompt => FirstRunPingWizard.promptFor(_target);
   String get _replyPrompt => firstRunHandshakeReplyPrompt();
@@ -149,6 +154,13 @@ class _FirstRunPingWizardState extends State<FirstRunPingWizard> {
     final host = _replyHostName;
     return host == null ? 'Waiting' : 'Waiting for $host';
   }
+
+  ({String first, String second}) get _nextPair => firstRunNextStepPairLabels(
+    ownAgents: widget.ownAgents,
+    sendingSlug: _hostSlug ?? '',
+    target: _target,
+    contacts: widget.contacts,
+  );
 
   String? get _myHandle {
     final name = widget.address.name?.trim();
@@ -532,9 +544,49 @@ class _FirstRunPingWizardState extends State<FirstRunPingWizard> {
     if (_finishing) return;
     setState(() => _finishing = true);
     _poll?.cancel();
+    Analytics.track(AnalyticsEvent.pingNext, {'kind': 'skip'});
     await widget.firstRunStore.markPingComplete();
     if (!mounted) return;
     widget.onComplete(_threadId);
+  }
+
+  Future<void> _startNext(String kind) async {
+    if (_finishing) return;
+    setState(() {
+      _finishing = true;
+      _startingKind = kind;
+      _error = null;
+    });
+    _poll?.cancel();
+    Analytics.track(AnalyticsEvent.pingNext, {'kind': kind});
+    final pair = _nextPair;
+    final notes = kind == 'physics'
+        ? firstRunNextStepPhysicsNotes(pair.first, pair.second)
+        : firstRunNextStepWorkNotes(pair.first, pair.second);
+    try {
+      final id = await widget.daemon.forwardDraft(
+        recipient: firstRunNextStepRecipient(
+          ownAgents: widget.ownAgents,
+          target: _target,
+        ),
+        notes: notes,
+      );
+      await widget.firstRunStore.markPingComplete();
+      if (!mounted) return;
+      widget.onComplete(id.isNotEmpty ? id : _threadId);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _finishing = false;
+        _startingKind = null;
+        _error = friendlyDaemonError(e, what: 'Send');
+      });
+    }
+  }
+
+  void _openInvite() {
+    Analytics.track(AnalyticsEvent.pingNext, {'kind': 'invite'});
+    widget.onInvite?.call();
   }
 
   Future<void> _allowBanners() async {
@@ -613,6 +665,19 @@ class _FirstRunPingWizardState extends State<FirstRunPingWizard> {
         ),
         _PingStep.success => _SuccessStep(
           finishing: _finishing,
+          startingKind: _startingKind,
+          error: _error,
+          first: _nextPair.first,
+          second: _nextPair.second,
+          showInvite:
+              widget.onInvite != null &&
+              firstRunShowInvite(
+                contacts: widget.contacts,
+                myHandle: _myHandle,
+              ),
+          onWork: () => _startNext('work'),
+          onPhysics: () => _startNext('physics'),
+          onInvite: widget.onInvite == null ? null : _openInvite,
           onFinish: _finish,
         ),
         _PingStep.timeout => _TimeoutStep(
@@ -1015,9 +1080,28 @@ class _BannerAsk extends StatelessWidget {
 }
 
 class _SuccessStep extends StatelessWidget {
-  const _SuccessStep({required this.finishing, required this.onFinish});
+  const _SuccessStep({
+    required this.finishing,
+    required this.startingKind,
+    required this.first,
+    required this.second,
+    required this.showInvite,
+    required this.onWork,
+    required this.onPhysics,
+    required this.onFinish,
+    this.error,
+    this.onInvite,
+  });
 
   final bool finishing;
+  final String? startingKind;
+  final String? error;
+  final String first;
+  final String second;
+  final bool showInvite;
+  final VoidCallback onWork;
+  final VoidCallback onPhysics;
+  final VoidCallback? onInvite;
   final VoidCallback onFinish;
 
   @override
@@ -1028,17 +1112,121 @@ class _SuccessStep extends StatelessWidget {
         const OnboardingHeading(
           variant: OnboardingHeadingVariant.display,
           title: 'they introduced themselves.',
-          subtitle: 'That’s the thread. Home is next.',
+          subtitle: 'That’s the thread. Send a first job, or look around.',
         ),
+        const SizedBox(height: OnboardingSpace.lg),
+        _NextJobCard(
+          title: 'Find work worth a handoff.',
+          body:
+              'Ask $first and $second what they’re each holding that the other '
+              'could take.',
+          starting: startingKind == 'work',
+          enabled: !finishing,
+          onTap: onWork,
+        ),
+        const SizedBox(height: OnboardingSpace.sm),
+        _NextJobCard(
+          title: 'Check this with me.',
+          body:
+              'Give $first the setup and $second the check: why a Foucault '
+              'pendulum appears to rotate, and what would change at the equator.',
+          starting: startingKind == 'physics',
+          enabled: !finishing,
+          onTap: onPhysics,
+        ),
+        if (showInvite && onInvite != null) ...[
+          const SizedBox(height: OnboardingSpace.sm),
+          _NextJobCard(
+            title: 'Invite someone.',
+            body: 'Teammates need mutande on Mac to receive agent mail.',
+            starting: false,
+            enabled: !finishing,
+            onTap: onInvite!,
+          ),
+        ],
+        if (error != null) ...[
+          const SizedBox(height: OnboardingSpace.sm),
+          OnboardingErrorBanner(message: error!),
+        ],
         OnboardingActions(
-          topSpacing: OnboardingSpace.lg,
-          hugPrimary: true,
-          primary: FilledButton(
+          topSpacing: OnboardingSpace.md,
+          secondary: TextButton(
             onPressed: finishing ? null : onFinish,
             child: const Text('Finish'),
           ),
         ),
       ],
+    );
+  }
+}
+
+class _NextJobCard extends StatelessWidget {
+  const _NextJobCard({
+    required this.title,
+    required this.body,
+    required this.starting,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final String title;
+  final String body;
+  final bool starting;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context).textTheme;
+    return Material(
+      color: MutandeColors.stone50,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: const BorderSide(color: MutandeColors.stone200),
+      ),
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: theme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -0.3,
+                  color: MutandeColors.stone800,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                body,
+                style: theme.bodyMedium?.copyWith(
+                  color: MutandeColors.stone600,
+                  height: 1.45,
+                ),
+              ),
+              if (starting) ...[
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    MutandeOrb.loading(semanticLabel: 'Starting'),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Starting',
+                      style: theme.labelMedium?.copyWith(
+                        color: MutandeColors.stone500,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

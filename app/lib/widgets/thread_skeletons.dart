@@ -490,11 +490,8 @@ class CollabTableRowsSkeleton extends StatelessWidget {
 /// Fixed roster panel — loading wrap and loaded wrap share this height.
 const kOnboardingRosterPanelHeight = 200.0;
 
-/// Fixed host panel — roster chips for connected and available hosts.
+/// Max height for the host chip wrap — shorter content does not pad.
 const kOnboardingHostPanelHeight = 220.0;
-
-/// Two helper lines (12px) plus [OnboardingSpace.sm] between them.
-const kOnboardingConnectHelperHeight = 52.0;
 
 /// Onboarding team roster chips — heading and actions stay on the step.
 class OnboardingRosterSkeleton extends StatelessWidget {
