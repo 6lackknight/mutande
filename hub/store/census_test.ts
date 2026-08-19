@@ -80,6 +80,11 @@ Deno.test("solo org stays fresh-start; multi-host and replied threads count", as
     assertEquals(census.storage_status, "fresh_start_ok");
     assertEquals(census.targets.users, 20);
     assertEquals(census.targets.replied_threads, 100);
+    const selfEdges = census.graph.edges.filter((e) => e.kind === "self");
+    assertEquals(selfEdges.length >= 1, true);
+    assertEquals(census.graph.bias.self_weight > 0, true);
+    assertEquals(census.graph.bias.independent_self_users, 1);
+    assertEquals(census.graph.bias.star_share, 0);
   });
 });
 
@@ -100,6 +105,7 @@ Deno.test("second member flips storage to migrate_before_keep", async () => {
     assertEquals(census.users, 2);
     assertEquals(census.orgs_with_2plus_members, 1);
     assertEquals(census.storage_status, "migrate_before_keep");
+    assertEquals(census.graph.nodes.filter((n) => n.kind === "user").length, 2);
   });
 });
 
@@ -118,6 +124,43 @@ Deno.test("ops credits outstanding flips storage to migrate_before_keep", async 
     assertEquals(census.ledger_orgs_nonzero, 1);
     assertEquals(census.credits_outstanding_cents, 1000);
     assertEquals(census.storage_status, "migrate_before_keep");
+  });
+});
+
+Deno.test("ops graph treats teammate mail as org star, own @all as self", async () => {
+  await withStore(async (store) => {
+    const { user: alice } = await store.createOrgWithAdmin(
+      { sub: "auth0|alice", email: "alice@acme.io" },
+      { slug: "acme", handle: "alice@acme" },
+    );
+    const aliceAuth = store.authContextFromUser(alice);
+    await store.registerDevice(aliceAuth, { pubkey: "apk", platform: "macos" });
+    await store.registerAgent(aliceAuth, { slug: "cursor" });
+    await store.registerAgent(aliceAuth, { slug: "claude" });
+    const inv = await store.createInvite(aliceAuth);
+    const { user: bob } = await store.joinOrg(
+      { sub: "auth0|bob", email: "bob@acme.io" },
+      { invite_code: inv.code, handle: "bob@acme" },
+    );
+    const bobAuth = store.authContextFromUser(bob);
+    await store.registerDevice(bobAuth, { pubkey: "bpk", platform: "macos" });
+    await store.registerAgent(bobAuth, { slug: "cursor" });
+
+    await store.createThread(aliceAuth, {
+      to: "bob@acme",
+      envelope: sampleEnvelope("hi"),
+    });
+    await store.createThread(aliceAuth, {
+      to: "@all",
+      envelope: sampleEnvelope("self"),
+      from_agent: "cursor",
+    });
+
+    const census = await store.listOpsCensus(ops(aliceAuth));
+    assertEquals(census.graph.bias.org_weight > 0, true);
+    assertEquals(census.graph.bias.self_weight > 0, true);
+    assertEquals(census.graph.bias.star_share, 1);
+    assertEquals(census.graph.bias.hub_label, "alice@acme");
   });
 });
 

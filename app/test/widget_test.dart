@@ -1587,9 +1587,70 @@ void main() {
     expect(find.text('Open Cursor'), findsOneWidget);
     expect(find.text(FirstRunPingWizard.promptFor('@claude')), findsOneWidget);
     expect(find.byTooltip('Copy prompt'), findsOneWidget);
-    expect(find.text('I’ve pasted it'), findsOneWidget);
+    expect(find.text('Go back'), findsOneWidget);
     expect(find.text('Copy prompt'), findsNothing);
     expect(find.text('Skip for now'), findsNothing);
+  });
+
+  testWidgets('first handshake asks who when several hosts are connected', (
+    WidgetTester tester,
+  ) async {
+    final daemon = _mockDaemon((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      final method = body['method'] as String?;
+      if (method == 'list_threads') {
+        return _rpcOk(body['id'], {'threads': []});
+      }
+      if (method == 'list_agents') {
+        return _rpcOk(body['id'], {
+          'agents': [
+            {'id': 'a1', 'slug': 'cursor'},
+            {'id': 'a2', 'slug': 'claude'},
+            {'id': 'a3', 'slug': 'chatgpt'},
+          ],
+        });
+      }
+      if (method == 'detect_ai_hosts') {
+        return _rpcOk(body['id'], {
+          'hosts': [
+            {'host': 'cursor', 'installed': true, 'config_present': true},
+            {'host': 'claude', 'installed': true, 'config_present': true},
+            {'host': 'chatgpt', 'installed': true, 'config_present': true},
+          ],
+        });
+      }
+      return _rpcOk(body['id'], {'ok': true});
+    });
+
+    await tester.pumpWidget(
+      MutandeApp(
+        config: const AppConfig(hubUrl: 'http://localhost:8000'),
+        daemon: daemon,
+        hostLinkStore: HostLinkStore.memory(),
+        firstRunStore: FirstRunStore.memory(
+          connectComplete: true,
+          notificationsComplete: true,
+        ),
+        seedStatus: const DaemonStatusResult(
+          configured: true,
+          hubUrl: 'http://localhost:8000',
+          handle: 'alice@acme',
+        ),
+        welcomeDuration: Duration.zero,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Who gets this handshake.'), findsOneWidget);
+    expect(find.text('Claude'), findsOneWidget);
+    expect(find.text('ChatGPT'), findsOneWidget);
+    expect(find.text('Open this in Cursor.'), findsNothing);
+
+    await tester.tap(find.text('ChatGPT'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Open this in Cursor.'), findsOneWidget);
+    expect(find.text(FirstRunPingWizard.promptFor('@chatgpt')), findsOneWidget);
   });
 
   testWidgets('handoff wizard has no skip and does not mark complete', (
@@ -1633,7 +1694,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Open Cursor'), findsOneWidget);
-    expect(find.text('I’ve pasted it'), findsOneWidget);
+    expect(find.text('Go back'), findsOneWidget);
     expect(find.text('Skip for now'), findsNothing);
     expect(firstRun.pingComplete, isFalse);
     expect(find.text('Threads'), findsNothing);

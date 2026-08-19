@@ -38,6 +38,25 @@ void main() {
     );
   });
 
+  test('handoff choices list every other host and teammate', () {
+    const agents = [
+      AgentInfo(id: '1', slug: 'cursor'),
+      AgentInfo(id: '2', slug: 'claude'),
+      AgentInfo(id: '3', slug: 'chatgpt'),
+      AgentInfo(id: '4', slug: 'chatgpt', transport: AgentTransport.mcp),
+    ];
+    expect(
+      firstRunHandoffChoices(
+        ownAgents: agents,
+        sendingSlug: 'cursor',
+        liveTeammateHandles: ['orinea@tbhco'],
+      ),
+      ['@claude', '@chatgpt', 'orinea@tbhco'],
+    );
+    expect(firstRunHandoffChoiceLabel('@chatgpt'), 'ChatGPT');
+    expect(firstRunHandoffChoiceIconSlug('orinea@tbhco'), isNull);
+  });
+
   test('dual chatgpt slots prefer web for the first-run target', () {
     const agents = [
       AgentInfo(id: '1', slug: 'cursor', transport: AgentTransport.sidecar),
@@ -204,10 +223,7 @@ void main() {
   });
 
   test('first-run prompt asks for a handshake, not a work dump', () {
-    expect(
-      firstRunHandshakePrompt('@claude'),
-      contains('/handshake'),
-    );
+    expect(firstRunHandshakePrompt('@claude'), contains('/handshake'));
     expect(firstRunHandshakePrompt('@claude'), contains('@claude'));
     expect(firstRunHandshakeReplyPrompt(), contains('/handshake'));
   });

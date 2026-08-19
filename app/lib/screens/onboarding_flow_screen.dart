@@ -13,17 +13,15 @@ import '../services/first_run_gates.dart';
 import '../services/first_run_store.dart';
 import '../services/host_link_store.dart';
 import '../theme/mutande_macos_theme.dart';
-import '../util/address_display.dart';
 import '../widgets/ai_host_icon.dart';
 import '../widgets/connect_host_flow.dart';
 import '../widgets/connect_host_picker.dart';
-import '../widgets/contact_avatar.dart';
 import '../widgets/home_chrome_strip.dart';
 import '../widgets/hosted_mcp_flow.dart';
 import '../widgets/morphing_orb_button.dart';
 import '../widgets/onboarding_address_rail.dart';
 import '../widgets/onboarding_chrome.dart';
-import '../widgets/person_identity_row.dart';
+import '../widgets/onboarding_roster_chip.dart';
 import '../widgets/thinking_orb.dart';
 import '../widgets/thread_skeletons.dart';
 import 'first_run_ping_wizard.dart';
@@ -59,188 +57,6 @@ class OnboardingFlowScreen extends StatefulWidget {
 }
 
 enum _TeamMode { setupChoose, setupCreate, setupJoin, roster }
-
-/// Org member chip on the team roster: person mark, address, known hosts.
-class _RosterChip extends StatelessWidget {
-  const _RosterChip({
-    required this.handle,
-    this.displayName,
-    this.avatarUrl,
-    this.isSelf = false,
-    this.hostSlugs = const [],
-  });
-
-  final String handle;
-  final String? displayName;
-  final String? avatarUrl;
-  final bool isSelf;
-  final List<String> hostSlugs;
-
-  @override
-  Widget build(BuildContext context) {
-    final title = personDisplayTitle(displayName: displayName, handle: handle);
-    final address = formatMailAddress(handle);
-    return Container(
-      constraints: const BoxConstraints(maxWidth: 300, minHeight: 56),
-      padding: const EdgeInsets.fromLTRB(8, 8, 12, 8),
-      decoration: BoxDecoration(
-        color: MutandeColors.stone50,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: MutandeColors.stone200),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          PersonAvatar(
-            size: 40,
-            url: avatarUrl,
-            initials: personInitials(title),
-            seed: handle,
-            isSelf: isSelf,
-          ),
-          const SizedBox(width: 10),
-          Flexible(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Flexible(
-                      child: Text(
-                        title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: MutandeColors.stone800,
-                          height: 1.15,
-                        ),
-                      ),
-                    ),
-                    if (isSelf) ...[
-                      const SizedBox(width: 6),
-                      PersonIdentityRow.statusPill(label: 'you'),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  address,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontFamily: 'Menlo',
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: MutandeColors.stone500,
-                    height: 1.2,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (hostSlugs.isNotEmpty) ...[
-            const SizedBox(width: 12),
-            _HostAvatarStack(hostSlugs),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-/// Overlapping host marks for agents we already know on this handle.
-class _HostAvatarStack extends StatelessWidget {
-  const _HostAvatarStack(this.slugs);
-
-  final List<String> slugs;
-
-  static const _size = 24.0;
-  static const _overlap = 9.0;
-
-  @override
-  Widget build(BuildContext context) {
-    final shown = slugs.take(3).toList();
-    final extra = slugs.length - shown.length;
-    final count = shown.length + (extra > 0 ? 1 : 0);
-    final width = _size + (count - 1) * (_size - _overlap);
-    final names = shown.map(AiHostIcon.displayName).join(', ');
-    return Tooltip(
-      message: extra > 0 ? '$names +$extra' : names,
-      child: SizedBox(
-        width: width,
-        height: _size,
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            for (var i = 0; i < shown.length; i++)
-              Positioned(
-                left: i * (_size - _overlap),
-                child: _HostStackDot(shown[i]),
-              ),
-            if (extra > 0)
-              Positioned(
-                left: shown.length * (_size - _overlap),
-                child: _HostStackMore('+$extra'),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _HostStackDot extends StatelessWidget {
-  const _HostStackDot(this.slug);
-
-  final String slug;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: _HostAvatarStack._size,
-      height: _HostAvatarStack._size,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: MutandeColors.stone50,
-        shape: BoxShape.circle,
-        border: Border.all(color: MutandeColors.stone200),
-      ),
-      child: AiHostIcon(slug, size: 15, showPlate: false),
-    );
-  }
-}
-
-class _HostStackMore extends StatelessWidget {
-  const _HostStackMore(this.label);
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: _HostAvatarStack._size,
-      height: _HostAvatarStack._size,
-      alignment: Alignment.center,
-      decoration: const BoxDecoration(
-        color: MutandeColors.stone800,
-        shape: BoxShape.circle,
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          color: MutandeColors.stone50,
-          fontSize: 9,
-          fontWeight: FontWeight.w700,
-          height: 1,
-        ),
-      ),
-    );
-  }
-}
 
 /// One stop on the debug walkthrough.
 class _DebugFrame {
@@ -291,7 +107,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
   Timer? _connectPoll;
 
   /// Teammate handle that already has at least one registered agent.
-  String? _liveTeammateHandle;
+  List<String> _liveTeammateHandles = const [];
 
   /// Last address segment — the agent slug, once one has registered.
   String? _agentSlug;
@@ -330,10 +146,18 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
     liveTeammate: _liveTeammateHandle != null,
   );
 
+  String? get _liveTeammateHandle => _liveTeammateHandles.firstOrNull;
+
   String? get _handoffTarget => firstRunHandoffTarget(
     ownAgents: _agents,
     sendingSlug: _agentSlug,
-    liveTeammateHandle: _liveTeammateHandle,
+    liveTeammateHandles: _liveTeammateHandles,
+  );
+
+  List<String> get _handoffChoices => firstRunHandoffChoices(
+    ownAgents: _agents,
+    sendingSlug: _agentSlug,
+    liveTeammateHandles: _liveTeammateHandles,
   );
 
   /// Resuming at the handoff step: bounce back if there is still no recipient.
@@ -552,10 +376,10 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
     if (!mounted) return;
     setState(() {
       _hostsByHandle = next;
-      _liveTeammateHandle = next.entries
+      _liveTeammateHandles = next.entries
           .where((e) => e.key != self && e.value.isNotEmpty)
           .map((e) => e.key)
-          .firstOrNull;
+          .toList();
     });
   }
 
@@ -589,13 +413,13 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
       final detections = await widget.daemon.detectAiHosts();
       final links = await widget.hostLinkStore.load();
       final agents = await widget.daemon.listAgents();
-      final live = await _findLiveTeammate();
+      final live = await _findLiveTeammates();
       final registered = agents.agents;
       if (!mounted) return;
       setState(() {
         _agents = agents.agents;
         _defaultAgentId = agents.defaultAgentId;
-        _liveTeammateHandle = live;
+        _liveTeammateHandles = live;
         _hosts = [
           for (final spec in AiHostCatalog.onboarding)
             _presenceFor(spec, detections, links, registered),
@@ -626,8 +450,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
     }
     final slug = spec.agentSlug.toLowerCase();
     final webReg = agents.any(
-      (a) =>
-          a.slug.toLowerCase() == slug && a.transport == AgentTransport.mcp,
+      (a) => a.slug.toLowerCase() == slug && a.transport == AgentTransport.mcp,
     );
     final desktopReg = agents.any((a) {
       if (a.slug.toLowerCase() != slug) return false;
@@ -640,15 +463,13 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
       label: spec.label,
       installed: spec.isWeb || (detected?.installed ?? false),
       configPresent: detected?.configPresent ?? false,
-      linked: spec.isWeb
-          ? webReg
-          : (links[spec.agentSlug]?.ok ?? false),
+      linked: spec.isWeb ? webReg : (links[spec.agentSlug]?.ok ?? false),
       agentRegistered: spec.isWeb ? webReg : desktopReg,
       isWeb: spec.isWeb,
     );
   }
 
-  Future<String?> _findLiveTeammate() async {
+  Future<List<String>> _findLiveTeammates() async {
     var contacts = _contacts;
     if (contacts.isEmpty) {
       try {
@@ -657,24 +478,26 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
           _contacts = contacts.where((c) => !c.isBroadcast).toList();
         }
       } catch (_) {
-        return _liveTeammateHandle;
+        return _liveTeammateHandles;
       }
     }
     final self = (_status?.handle ?? '').toLowerCase();
     if (_hostsByHandle.isNotEmpty) {
-      for (final e in _hostsByHandle.entries) {
-        if (e.key != self && e.value.isNotEmpty) return e.key;
-      }
+      return [
+        for (final e in _hostsByHandle.entries)
+          if (e.key != self && e.value.isNotEmpty) e.key,
+      ];
     }
+    final out = <String>[];
     for (final c in contacts) {
       if (c.isBroadcast) continue;
       if (self.isNotEmpty && c.handle.toLowerCase() == self) continue;
       try {
         final list = await widget.daemon.listAgents(handle: c.handle);
-        if (list.agents.isNotEmpty) return c.handle.toLowerCase();
+        if (list.agents.isNotEmpty) out.add(c.handle.toLowerCase());
       } catch (_) {}
     }
-    return null;
+    return out;
   }
 
   String _hostNames(List<AiHostPresence> hosts) {
@@ -855,6 +678,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
     _DebugFrame(OnboardingStep.signIn, welcomeBack: true),
     _DebugFrame(OnboardingStep.team),
     _DebugFrame(OnboardingStep.connect),
+    _DebugFrame(OnboardingStep.ping, ping: PingPreview.pick),
     _DebugFrame(OnboardingStep.ping, ping: PingPreview.copy),
     _DebugFrame(OnboardingStep.ping, ping: PingPreview.waiting),
     _DebugFrame(OnboardingStep.ping, ping: PingPreview.delivered),
@@ -948,6 +772,10 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
           firstRunStore: widget.firstRunStore,
           address: _address,
           target: target ?? '@claude',
+          choices: _handoffChoices,
+          contacts: _contacts,
+          hostsByHandle: _hostsByHandle,
+          ownAgents: _agents,
           sendingTransport: firstRunSendingTransport(
             ownAgents: _agents,
             sendingSlug: _agentSlug,
@@ -1070,16 +898,17 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
                     runSpacing: 10,
                     children: [
                       if (handle.isNotEmpty)
-                        _RosterChip(
+                        OnboardingRosterChip(
                           handle: handle,
-                          displayName: self?.displayName ?? _status?.displayName,
+                          displayName:
+                              self?.displayName ?? _status?.displayName,
                           avatarUrl: self?.avatarUrl ?? _status?.avatarUrl,
                           isSelf: true,
                           hostSlugs:
                               _hostsByHandle[handle.toLowerCase()] ?? const [],
                         ),
                       for (final c in peers)
-                        _RosterChip(
+                        OnboardingRosterChip(
                           handle: c.handle,
                           displayName: c.displayName,
                           avatarUrl: c.avatarUrl,
@@ -1445,9 +1274,7 @@ class _HostTile extends StatelessWidget {
       button: true,
       label: '$label, $badge',
       child: Material(
-        color: isDefault
-            ? MutandeColors.stone50
-            : MutandeColors.emeraldSoft,
+        color: isDefault ? MutandeColors.stone50 : MutandeColors.emeraldSoft,
         borderRadius: BorderRadius.circular(12),
         child: InkWell(
           onTap: onTap,
@@ -1479,11 +1306,7 @@ class _HostTile extends StatelessWidget {
                     ),
                   ),
                 ),
-                const Icon(
-                  Icons.check,
-                  size: 16,
-                  color: MutandeColors.emerald,
-                ),
+                const Icon(Icons.check, size: 16, color: MutandeColors.emerald),
                 if (isDefault) ...[
                   const SizedBox(width: 6),
                   Container(

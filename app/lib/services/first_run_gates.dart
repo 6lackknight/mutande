@@ -17,32 +17,94 @@ bool firstRunDestinationReady({
   required bool liveTeammate,
 }) => ownAgents >= 2 || (ownAgents >= 1 && liveTeammate);
 
+const _ownHostOrder = ['cursor', 'claude', 'chatgpt'];
+
+List<String> _ownHandoffSlugs({
+  required Iterable<AgentInfo> ownAgents,
+  String? sendingSlug,
+}) {
+  var sending = (sendingSlug ?? '').toLowerCase().trim();
+  final all = ownAgents
+      .map((a) => a.slug.toLowerCase().trim())
+      .where((s) => s.isNotEmpty && s != 'default')
+      .toSet();
+  if (sending.isEmpty || !all.contains(sending)) {
+    sending = _ownHostOrder.firstWhere(all.contains, orElse: () => '');
+    if (sending.isEmpty) sending = all.firstOrNull ?? '';
+  }
+  final slugs = all.where((s) => s != sending).toList();
+  slugs.sort((a, b) {
+    final ai = _ownHostOrder.indexOf(a);
+    final bi = _ownHostOrder.indexOf(b);
+    if (ai >= 0 && bi >= 0) return ai.compareTo(bi);
+    if (ai >= 0) return -1;
+    if (bi >= 0) return 1;
+    return a.compareTo(b);
+  });
+  return slugs;
+}
+
+/// Destinations for the first handshake. Own hosts are `@slug` (one row even
+/// when sidecar + web both exist). Teammates are bare handles.
+List<String> firstRunHandoffChoices({
+  required Iterable<AgentInfo> ownAgents,
+  String? sendingSlug,
+  Iterable<String> liveTeammateHandles = const [],
+}) {
+  final own = [
+    for (final s in _ownHandoffSlugs(
+      ownAgents: ownAgents,
+      sendingSlug: sendingSlug,
+    ))
+      '@$s',
+  ];
+  final seen = {for (final t in own) t.toLowerCase()};
+  final peers = <String>[];
+  for (final raw in liveTeammateHandles) {
+    final h = raw.trim().toLowerCase();
+    if (h.isEmpty || seen.contains(h)) continue;
+    seen.add(h);
+    peers.add(h);
+  }
+  peers.sort();
+  return [...own, ...peers];
+}
+
 /// Self-collab uses `@slug`; a teammate is their bare handle.
 ///
-/// When a slug has both sidecar and hosted-MCP slots, the first handshake
-/// (and any `@chatgpt` mail) reaches both — no v1 participant picker.
+/// When a slug has both sidecar and hosted-MCP slots, `@chatgpt` still reaches
+/// both — the picker is who, not which ChatGPT transport.
 String? firstRunHandoffTarget({
   required Iterable<AgentInfo> ownAgents,
   String? sendingSlug,
   String? liveTeammateHandle,
+  Iterable<String> liveTeammateHandles = const [],
 }) {
-  final slugs = ownAgents
-      .map((a) => a.slug.toLowerCase().trim())
-      .where((s) => s.isNotEmpty && s != 'default')
-      .toSet()
-      .toList();
-  if (slugs.length >= 2) {
-    final sending = (sendingSlug ?? slugs.first).toLowerCase().trim();
-    final other = slugs.firstWhere(
-      (s) => s != sending,
-      orElse: () => slugs.last,
-    );
-    return '@$other';
-  }
-  final peer = liveTeammateHandle?.trim().toLowerCase();
-  if (peer == null || peer.isEmpty) return null;
-  return peer;
+  final peers = [
+    ...liveTeammateHandles,
+    if (liveTeammateHandle != null) liveTeammateHandle,
+  ];
+  final choices = firstRunHandoffChoices(
+    ownAgents: ownAgents,
+    sendingSlug: sendingSlug,
+    liveTeammateHandles: peers,
+  );
+  return choices.firstOrNull;
 }
+
+String firstRunHandoffChoiceLabel(String target) {
+  final slug = firstRunTargetHostSlug(target);
+  return switch (slug) {
+    'cursor' => 'Cursor',
+    'claude' => 'Claude',
+    'chatgpt' => 'ChatGPT',
+    null => target.trim().toLowerCase(),
+    final other => other,
+  };
+}
+
+String? firstRunHandoffChoiceIconSlug(String target) =>
+    firstRunTargetHostSlug(target);
 
 /// Hub transport for [target] (`@chatgpt` → mcp when a web slot exists).
 AgentTransport? firstRunHandoffTransport({
@@ -57,10 +119,7 @@ AgentTransport? firstRunHandoffTransport({
   if (slots.any((a) => a.transport == AgentTransport.mcp)) {
     return AgentTransport.mcp;
   }
-  return slots
-      .map((a) => a.transport)
-      .whereType<AgentTransport>()
-      .firstOrNull;
+  return slots.map((a) => a.transport).whereType<AgentTransport>().firstOrNull;
 }
 
 /// Sending-host transport: web only when that slug has no sidecar row.
@@ -77,10 +136,7 @@ AgentTransport? firstRunSendingTransport({
   final hasSidecar = slots.any((a) => a.transport == AgentTransport.sidecar);
   if (hasMcp && !hasSidecar) return AgentTransport.mcp;
   if (hasSidecar) return AgentTransport.sidecar;
-  return slots
-      .map((a) => a.transport)
-      .whereType<AgentTransport>()
-      .firstOrNull;
+  return slots.map((a) => a.transport).whereType<AgentTransport>().firstOrNull;
 }
 
 bool firstRunTargetIsTeammate(String target) {
@@ -98,10 +154,7 @@ String? firstRunTargetHostSlug(String? target) {
 }
 
 /// Catalog id for opening a host (`chatgpt-web` vs `chatgpt`).
-String firstRunComposerId({
-  required String slug,
-  AgentTransport? transport,
-}) {
+String firstRunComposerId({required String slug, AgentTransport? transport}) {
   final s = slug.toLowerCase().trim();
   if (transport == AgentTransport.mcp) {
     return switch (s) {

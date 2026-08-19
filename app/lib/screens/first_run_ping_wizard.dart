@@ -16,10 +16,12 @@ import '../theme/mutande_macos_theme.dart';
 import '../widgets/handshake_thread_pane.dart';
 import '../widgets/onboarding_address_rail.dart';
 import '../widgets/onboarding_chrome.dart';
+import '../widgets/onboarding_roster_chip.dart';
+import '../widgets/thinking_orb.dart';
 
 /// Debug-only: pins the starting frame. Waiting still polls so a real
 /// handshake can land on Finish without stepping ⌥→.
-enum PingPreview { copy, waiting, delivered, timeout }
+enum PingPreview { pick, copy, waiting, delivered, timeout }
 
 /// Opens a host composer with the handshake prompt (copy as fallback), then
 /// waits for the other agent to publish a handshake. Skip does not exist —
@@ -34,6 +36,10 @@ class FirstRunPingWizard extends StatefulWidget {
     required this.firstRunStore,
     required this.onComplete,
     required this.target,
+    this.choices = const [],
+    this.contacts = const [],
+    this.hostsByHandle = const {},
+    this.ownAgents = const [],
     this.address = const OnboardingAddress(),
     this.debugBanner,
     this.preview,
@@ -48,8 +54,21 @@ class FirstRunPingWizard extends StatefulWidget {
   final OnboardingAddress address;
   final String? debugBanner;
 
-  /// `@claude` or `orinea@tbhco` — the recipient that is not the sending agent.
+  /// `@claude` or `orinea@tbhco` — used when [choices] is empty or a single
+  /// destination. Multiple choices show a picker first.
   final String target;
+
+  /// Other own hosts and live teammates. One `@chatgpt` covers desktop + web.
+  final List<String> choices;
+
+  /// Org roster — names and avatars on teammate destination chips.
+  final List<ContactView> contacts;
+
+  /// Known host slugs per handle, same map as the team roster.
+  final Map<String, List<String>> hostsByHandle;
+
+  /// Own agent slots — used to pick ChatGPT/Claude Web vs desktop after a choice.
+  final List<AgentInfo> ownAgents;
 
   /// Hub slot for the sending host (`mcp` → open ChatGPT/Claude Web).
   final AgentTransport? sendingTransport;
@@ -74,10 +93,13 @@ class FirstRunPingWizard extends StatefulWidget {
   State<FirstRunPingWizard> createState() => _FirstRunPingWizardState();
 }
 
-enum _PingStep { copy, waiting, success, timeout }
+enum _PingStep { pick, copy, waiting, success, timeout }
 
 class _FirstRunPingWizardState extends State<FirstRunPingWizard> {
-  late _PingStep _step = _previewStep(widget.preview) ?? _PingStep.copy;
+  late String _target = widget.target;
+  late _PingStep _step =
+      _previewStep(widget.preview) ??
+      (widget.choices.length > 1 ? _PingStep.pick : _PingStep.copy);
   Timer? _poll;
   DateTime? _waitStarted;
   String? _threadId;
@@ -86,25 +108,30 @@ class _FirstRunPingWizardState extends State<FirstRunPingWizard> {
   bool _busy = false;
   late bool _bannersAsked = widget.firstRunStore.notificationsComplete;
   bool _bannersGranted = false;
-  bool _opening = false;
-  bool _openingReply = false;
   bool _finishing = false;
+  bool _awaitingThread = false;
+  bool _awaitingReply = false;
+  bool _holdOnCopy = false;
 
-  String get _prompt => FirstRunPingWizard.promptFor(widget.target);
+  String get _prompt => FirstRunPingWizard.promptFor(_target);
   String get _replyPrompt => firstRunHandshakeReplyPrompt();
   String? get _hostSlug => widget.address.agent;
+  bool get _shouldPick => widget.choices.length > 1;
+  AgentTransport? get _targetTransport =>
+      firstRunHandoffTransport(ownAgents: widget.ownAgents, target: _target) ??
+      widget.targetTransport;
   String? get _sendComposerId {
     final slug = _hostSlug;
     if (slug == null) return null;
     return firstRunComposerId(slug: slug, transport: widget.sendingTransport);
   }
 
-  bool get _teammate => firstRunTargetIsTeammate(widget.target);
+  bool get _teammate => firstRunTargetIsTeammate(_target);
   String? get _replyComposerId {
     if (_teammate) return null;
-    final slug = firstRunTargetHostSlug(widget.target);
+    final slug = firstRunTargetHostSlug(_target);
     if (slug == null) return null;
-    return firstRunComposerId(slug: slug, transport: widget.targetTransport);
+    return firstRunComposerId(slug: slug, transport: _targetTransport);
   }
 
   String? get _hostName => HostComposerLaunch.displayName(_sendComposerId);
@@ -112,6 +139,16 @@ class _FirstRunPingWizardState extends State<FirstRunPingWizard> {
       HostComposerLaunch.displayName(_replyComposerId);
   bool get _canOpenHost => HostComposerLaunch.canOpen(_sendComposerId);
   bool get _canOpenReplyHost => HostComposerLaunch.canOpen(_replyComposerId);
+
+  String get _sendWaitLabel {
+    final host = _hostName ?? _hostSlug;
+    return host == null ? 'Waiting' : 'Waiting for $host';
+  }
+
+  String get _replyWaitLabel {
+    final host = _replyHostName;
+    return host == null ? 'Waiting' : 'Waiting for $host';
+  }
 
   String? get _myHandle {
     final name = widget.address.name?.trim();
@@ -134,7 +171,9 @@ class _FirstRunPingWizardState extends State<FirstRunPingWizard> {
   @override
   void initState() {
     super.initState();
-    if (widget.preview == null) unawaited(_preferTargetTransport());
+    if (widget.preview == null && !_shouldPick) {
+      unawaited(_preferTargetTransport());
+    }
     if (widget.preview == PingPreview.waiting) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _ensurePoll();
@@ -166,26 +205,39 @@ class _FirstRunPingWizardState extends State<FirstRunPingWizard> {
 
   static _PingStep? _previewStep(PingPreview? preview) => switch (preview) {
     null => null,
+    PingPreview.pick => _PingStep.pick,
     PingPreview.copy => _PingStep.copy,
     PingPreview.waiting => _PingStep.waiting,
     PingPreview.delivered => _PingStep.success,
     PingPreview.timeout => _PingStep.timeout,
   };
 
-  Future<void> _preferTargetTransport() async {
-    final slug = firstRunTargetHostSlug(widget.target);
-    final transport = widget.targetTransport;
+  Future<void> _preferTargetTransport([String? target]) async {
+    final chosen = target ?? _target;
+    final slug = firstRunTargetHostSlug(chosen);
+    final transport =
+        firstRunHandoffTransport(ownAgents: widget.ownAgents, target: chosen) ??
+        widget.targetTransport;
     if (slug == null || transport == null) return;
     try {
       await widget.daemon.setTransportDefault(slug: slug, transport: transport);
     } catch (_) {}
   }
 
+  void _pickTarget(String target) {
+    Analytics.track(AnalyticsEvent.pingPicked);
+    setState(() {
+      _target = target;
+      _step = _PingStep.copy;
+    });
+    unawaited(_preferTargetTransport(target));
+  }
+
   ThreadDetailResult _previewDetail({required bool handshake}) {
     final me = _myHandle ?? 'alice@acme';
     final sending = _hostSlug ?? 'cursor';
-    final peer = firstRunTargetHostSlug(widget.target) ?? 'claude';
-    final other = _teammate ? widget.target : '$me/$peer';
+    final peer = firstRunTargetHostSlug(_target) ?? 'claude';
+    final other = _teammate ? _target : '$me/$peer';
     return ThreadDetailResult(
       id: 'preview',
       kind: 'direct',
@@ -215,12 +267,8 @@ class _FirstRunPingWizardState extends State<FirstRunPingWizard> {
 
   Future<void> _copyPrompt() async {
     Analytics.track(AnalyticsEvent.pingCopy);
+    _beginSendWait();
     await Clipboard.setData(ClipboardData(text: _prompt));
-    if (!mounted) return;
-    final host = _hostName ?? 'your AI host';
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('Copied — paste into $host')));
   }
 
   Future<void> _copyTextQuiet(String text) async {
@@ -238,81 +286,98 @@ class _FirstRunPingWizardState extends State<FirstRunPingWizard> {
   }
 
   Future<void> _openHost() async {
-    if (_opening) return;
-    setState(() => _opening = true);
+    if (_awaitingThread) return;
+    _beginSendWait();
     unawaited(_copyTextQuiet(_prompt));
     final slug = _sendComposerId ?? '';
+    if (slug.isEmpty) return;
     final result = await _launch(slug: slug, prompt: _prompt);
     if (!mounted) return;
-    setState(() => _opening = false);
     switch (result) {
       case HostComposerOpenResult.prefilled:
         Analytics.track(AnalyticsEvent.pingOpen);
-        _startWaiting();
       case HostComposerOpenResult.appOpened:
         Analytics.track(AnalyticsEvent.pingOpen);
-        final host = _hostName ?? 'the host';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$host is open — paste the prompt (copied).')),
-        );
       case HostComposerOpenResult.failed:
-        final host = _hostName ?? 'the host';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Couldn’t open $host — prompt copied. Paste it there.',
-            ),
-          ),
-        );
+        break;
     }
   }
 
   Future<void> _openReplyHost() async {
-    if (_openingReply) return;
+    if (_awaitingReply) return;
     final slug = _replyComposerId;
     if (slug == null) return;
-    setState(() => _openingReply = true);
+    _beginReplyWait();
     unawaited(_copyTextQuiet(_replyPrompt));
     final result = await _launch(slug: slug, prompt: _replyPrompt);
     if (!mounted) return;
-    setState(() => _openingReply = false);
-    final host = _replyHostName ?? 'the host';
     switch (result) {
       case HostComposerOpenResult.prefilled:
-        Analytics.track(AnalyticsEvent.pingOpen);
       case HostComposerOpenResult.appOpened:
         Analytics.track(AnalyticsEvent.pingOpen);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$host is open — paste the prompt (copied).')),
-        );
       case HostComposerOpenResult.failed:
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Couldn’t open $host — prompt copied. Paste it there.',
-            ),
-          ),
-        );
+        break;
     }
   }
 
   Future<void> _copyReplyPrompt() async {
     Analytics.track(AnalyticsEvent.pingCopy);
+    _beginReplyWait();
     await Clipboard.setData(ClipboardData(text: _replyPrompt));
-    if (!mounted) return;
-    final host = _replyHostName ?? 'the other host';
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('Copied — paste into $host')));
   }
 
-  void _startWaiting() {
+  void _beginSendWait() {
     Analytics.track(AnalyticsEvent.pingWaiting);
     setState(() {
-      _step = _PingStep.waiting;
+      _awaitingThread = true;
+      _holdOnCopy = false;
+      _waitStarted ??= DateTime.now();
+      _error = null;
+      _busy = false;
+    });
+    _ensurePoll();
+  }
+
+  void _beginReplyWait() {
+    setState(() => _awaitingReply = true);
+  }
+
+  void _goBackFromCopy() {
+    if (_shouldPick) {
+      _startOver();
+      return;
+    }
+    _poll?.cancel();
+    setState(() {
+      _awaitingThread = false;
+      _holdOnCopy = false;
+      _waitStarted = null;
+    });
+  }
+
+  void _goBackFromWaiting() {
+    setState(() {
+      _step = _PingStep.copy;
+      _awaitingReply = false;
+      _awaitingThread = false;
+      _holdOnCopy = true;
+    });
+  }
+
+  void _resumeWait() {
+    Analytics.track(AnalyticsEvent.pingWaiting);
+    setState(() {
       _waitStarted = DateTime.now();
       _error = null;
       _busy = false;
+      _holdOnCopy = false;
+      if (_threadId != null) {
+        _step = _PingStep.waiting;
+        _awaitingReply = true;
+      } else {
+        _step = _PingStep.copy;
+        _awaitingThread = true;
+      }
     });
     _ensurePoll();
   }
@@ -322,16 +387,21 @@ class _FirstRunPingWizardState extends State<FirstRunPingWizard> {
   void _startOver() {
     _poll?.cancel();
     setState(() {
-      _step = _PingStep.copy;
+      _step = _shouldPick ? _PingStep.pick : _PingStep.copy;
       _threadId = null;
       _detail = null;
       _waitStarted = null;
       _error = null;
+      _awaitingThread = false;
+      _awaitingReply = false;
+      _holdOnCopy = false;
     });
   }
 
   void _ensurePoll() {
-    if (_step != _PingStep.waiting) return;
+    final watchCopy =
+        _step == _PingStep.copy && (_awaitingThread || _threadId != null);
+    if (_step != _PingStep.waiting && !watchCopy) return;
     if (widget.preview == PingPreview.delivered ||
         widget.preview == PingPreview.timeout) {
       return;
@@ -359,7 +429,7 @@ class _FirstRunPingWizardState extends State<FirstRunPingWizard> {
             (s) => isFirstRunOutboundCandidate(
               summary: s,
               waitStarted: started,
-              target: widget.target,
+              target: _target,
             ),
           )
           .toList();
@@ -388,6 +458,10 @@ class _FirstRunPingWizardState extends State<FirstRunPingWizard> {
           _threadId = detail.id;
           _detail = detail;
           _error = null;
+          if (_step == _PingStep.copy && !_holdOnCopy) {
+            _step = _PingStep.waiting;
+            _awaitingThread = false;
+          }
         });
         if (isFirstRunHandshakeReply(detail)) {
           _markSuccess(detail.id);
@@ -488,7 +562,7 @@ class _FirstRunPingWizardState extends State<FirstRunPingWizard> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final showSide = _step != _PingStep.copy;
+    final showSide = _step != _PingStep.copy && _step != _PingStep.pick;
     return OnboardingShell(
       step: OnboardingStep.ping,
       address: widget.address,
@@ -502,27 +576,36 @@ class _FirstRunPingWizardState extends State<FirstRunPingWizard> {
             )
           : null,
       child: switch (_step) {
+        _PingStep.pick => _PickStep(
+          choices: widget.choices.isEmpty ? [_target] : widget.choices,
+          contacts: widget.contacts,
+          hostsByHandle: widget.hostsByHandle,
+          onPick: _pickTarget,
+        ),
         _PingStep.copy => _CopyStep(
           theme: theme,
           hostName: _hostName,
           hostSlug: _hostSlug,
           canOpen: _canOpenHost,
-          opening: _opening,
+          waiting: _awaitingThread,
+          waitLabel: _sendWaitLabel,
           prompt: _prompt,
           onCopy: _copyPrompt,
           onOpen: _openHost,
-          onWaiting: _startWaiting,
+          onGoBack: _goBackFromCopy,
         ),
         _PingStep.waiting => _WaitingStep(
           error: _error,
           teammate: _teammate,
-          target: widget.target,
+          target: _target,
           replyHostName: _replyHostName,
           canOpenReply: _canOpenReplyHost,
-          openingReply: _openingReply,
+          waiting: _awaitingReply,
+          waitLabel: _replyWaitLabel,
           replyPrompt: _replyPrompt,
           onCopyReply: _copyReplyPrompt,
           onOpenReply: _openReplyHost,
+          onGoBack: _goBackFromWaiting,
           showBannerAsk: !_bannersAsked,
           bannersGranted: _bannersGranted,
           onAllowBanners: _allowBanners,
@@ -533,10 +616,96 @@ class _FirstRunPingWizardState extends State<FirstRunPingWizard> {
           onFinish: _finish,
         ),
         _PingStep.timeout => _TimeoutStep(
-          onKeepWaiting: _startWaiting,
+          onKeepWaiting: _resumeWait,
           onStartOver: _startOver,
         ),
       },
+    );
+  }
+}
+
+class _PickStep extends StatelessWidget {
+  const _PickStep({
+    required this.choices,
+    required this.contacts,
+    required this.hostsByHandle,
+    required this.onPick,
+  });
+
+  final List<String> choices;
+  final List<ContactView> contacts;
+  final Map<String, List<String>> hostsByHandle;
+  final ValueChanged<String> onPick;
+
+  ContactView? _contact(String handle) {
+    final key = handle.trim().toLowerCase();
+    for (final c in contacts) {
+      if (c.handle.toLowerCase() == key) return c;
+    }
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const OnboardingHeading(
+          variant: OnboardingHeadingVariant.display,
+          title: 'Who gets this handshake.',
+          subtitle:
+              'Another host of yours, or a teammate who already has mutande.',
+        ),
+        const SizedBox(height: OnboardingSpace.lg),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            for (final target in choices)
+              _HandshakeChoiceChip(
+                target: target,
+                contact: firstRunTargetIsTeammate(target)
+                    ? _contact(target)
+                    : null,
+                hostSlugs: firstRunTargetIsTeammate(target)
+                    ? (hostsByHandle[target.trim().toLowerCase()] ?? const [])
+                    : const [],
+                onTap: () => onPick(target),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _HandshakeChoiceChip extends StatelessWidget {
+  const _HandshakeChoiceChip({
+    required this.target,
+    required this.onTap,
+    this.contact,
+    this.hostSlugs = const [],
+  });
+
+  final String target;
+  final ContactView? contact;
+  final List<String> hostSlugs;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = firstRunHandoffChoiceLabel(target);
+    final icon = firstRunHandoffChoiceIconSlug(target);
+    return OnboardingRosterChip(
+      handle: target,
+      displayName:
+          contact?.displayName ??
+          (firstRunTargetIsTeammate(target) ? null : label),
+      avatarUrl: contact?.avatarUrl,
+      hostSlugs: hostSlugs,
+      leading: icon == null ? null : OnboardingHostLeading(icon),
+      semanticLabel: 'Handshake with $label',
+      onTap: onTap,
     );
   }
 }
@@ -547,27 +716,34 @@ class _CopyStep extends StatelessWidget {
     required this.hostName,
     required this.hostSlug,
     required this.canOpen,
-    required this.opening,
+    required this.waiting,
+    required this.waitLabel,
     required this.prompt,
     required this.onCopy,
     required this.onOpen,
-    required this.onWaiting,
+    required this.onGoBack,
   });
 
   final ThemeData theme;
   final String? hostName;
   final String? hostSlug;
   final bool canOpen;
-  final bool opening;
+  final bool waiting;
+  final String waitLabel;
   final String prompt;
   final VoidCallback onCopy;
   final VoidCallback onOpen;
-  final VoidCallback onWaiting;
+  final VoidCallback onGoBack;
 
   String get _title {
     if (canOpen && hostName != null) return 'Open this in $hostName.';
     if (hostSlug != null) return 'Paste this into $hostSlug.';
     return 'Paste this into your connected host.';
+  }
+
+  String get _idleLabel {
+    if (canOpen) return hostName == null ? 'Open host' : 'Open $hostName';
+    return 'Waiting';
   }
 
   @override
@@ -586,22 +762,55 @@ class _CopyStep extends StatelessWidget {
         OnboardingActions(
           topSpacing: OnboardingSpace.md,
           hugPrimary: true,
-          primary: FilledButton(
-            onPressed: opening ? null : (canOpen ? onOpen : onWaiting),
-            child: Text(
-              canOpen
-                  ? (hostName == null ? 'Open host' : 'Open $hostName')
-                  : 'I’ve pasted it',
-            ),
-          ),
-          secondary: canOpen
-              ? TextButton(
-                  onPressed: onWaiting,
-                  child: const Text('I’ve pasted it'),
+          primary: (canOpen || waiting)
+              ? _HandshakeWaitButton(
+                  label: _idleLabel,
+                  waitingLabel: waitLabel,
+                  waiting: waiting,
+                  onPressed: canOpen ? onOpen : null,
                 )
               : null,
+          secondary: TextButton(
+            onPressed: onGoBack,
+            child: const Text('Go back'),
+          ),
         ),
       ],
+    );
+  }
+}
+
+class _HandshakeWaitButton extends StatelessWidget {
+  const _HandshakeWaitButton({
+    required this.label,
+    required this.waitingLabel,
+    required this.waiting,
+    required this.onPressed,
+  });
+
+  final String label;
+  final String waitingLabel;
+  final bool waiting;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return FilledButton(
+      onPressed: waiting ? null : onPressed,
+      style: FilledButton.styleFrom(
+        disabledBackgroundColor: MutandeColors.stone800,
+        disabledForegroundColor: MutandeColors.stone50,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (waiting) ...[
+            MutandeOrb.loading(semanticLabel: waitingLabel, dark: true),
+            const SizedBox(width: 8),
+          ],
+          Text(waiting ? waitingLabel : label),
+        ],
+      ),
     );
   }
 }
@@ -662,10 +871,12 @@ class _WaitingStep extends StatelessWidget {
     required this.target,
     required this.replyHostName,
     required this.canOpenReply,
-    required this.openingReply,
+    required this.waiting,
+    required this.waitLabel,
     required this.replyPrompt,
     required this.onCopyReply,
     required this.onOpenReply,
+    required this.onGoBack,
     required this.showBannerAsk,
     required this.bannersGranted,
     required this.onAllowBanners,
@@ -677,10 +888,12 @@ class _WaitingStep extends StatelessWidget {
   final String target;
   final String? replyHostName;
   final bool canOpenReply;
-  final bool openingReply;
+  final bool waiting;
+  final String waitLabel;
   final String replyPrompt;
   final VoidCallback onCopyReply;
   final VoidCallback onOpenReply;
+  final VoidCallback onGoBack;
   final bool showBannerAsk;
   final bool bannersGranted;
   final VoidCallback onAllowBanners;
@@ -710,14 +923,25 @@ class _WaitingStep extends StatelessWidget {
           OnboardingActions(
             topSpacing: OnboardingSpace.md,
             hugPrimary: true,
-            primary: canOpenReply
-                ? FilledButton(
-                    onPressed: openingReply ? null : onOpenReply,
-                    child: Text(host == null ? 'Open host' : 'Open $host'),
-                  )
-                : null,
+            primary: _HandshakeWaitButton(
+              label: host == null ? 'Open host' : 'Open $host',
+              waitingLabel: waitLabel,
+              waiting: waiting,
+              onPressed: canOpenReply ? onOpenReply : null,
+            ),
+            secondary: TextButton(
+              onPressed: onGoBack,
+              child: const Text('Go back'),
+            ),
           ),
-        ],
+        ] else
+          OnboardingActions(
+            topSpacing: OnboardingSpace.md,
+            secondary: TextButton(
+              onPressed: onGoBack,
+              child: const Text('Go back'),
+            ),
+          ),
         if (error != null) ...[
           const SizedBox(height: OnboardingSpace.sm),
           OnboardingErrorBanner(message: error!),

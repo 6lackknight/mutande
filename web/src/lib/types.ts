@@ -230,6 +230,42 @@ export interface OpsCensus {
   pairing_flags_open: number;
   storage_status: OpsStorageStatus;
   targets: { users: number; replied_threads: number };
+  graph?: OpsGraph;
+}
+
+export type OpsGraphNodeKind = "org" | "user" | "agent";
+export type OpsGraphEdgeKind = "slot" | "self" | "org" | "external" | "broadcast";
+
+export interface OpsGraphNode {
+  id: string;
+  kind: OpsGraphNodeKind;
+  label: string;
+  parent_id?: string;
+}
+
+export interface OpsGraphEdge {
+  from: string;
+  to: string;
+  kind: OpsGraphEdgeKind;
+  weight: number;
+  threads: number;
+}
+
+export interface OpsGraphBias {
+  self_weight: number;
+  org_weight: number;
+  external_weight: number;
+  broadcast_weight: number;
+  hub_user_id: string | null;
+  hub_label: string | null;
+  star_share: number;
+  independent_self_users: number;
+}
+
+export interface OpsGraph {
+  nodes: OpsGraphNode[];
+  edges: OpsGraphEdge[];
+  bias: OpsGraphBias;
 }
 
 export interface EnterpriseDeliveryMetric {

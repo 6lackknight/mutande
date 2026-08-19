@@ -92,7 +92,7 @@ export interface Feedback {
   platform: "macos" | "ios" | "web";
 }
 
-/** SuperAdmin census — Phase 1 evidence + KV wipe watch. Counts only, no PII. */
+/** SuperAdmin census — Phase 1 evidence + KV wipe watch. Graph labels are handles/slugs; no mail content. */
 export type OpsStorageStatus = "fresh_start_ok" | "migrate_before_keep";
 
 export interface OpsCensus {
@@ -116,6 +116,44 @@ export interface OpsCensus {
   pairing_flags_open: number;
   storage_status: OpsStorageStatus;
   targets: { users: number; replied_threads: number };
+  graph: OpsGraph;
+}
+
+export type OpsGraphNodeKind = "org" | "user" | "agent";
+export type OpsGraphEdgeKind = "slot" | "self" | "org" | "external" | "broadcast";
+
+export interface OpsGraphNode {
+  id: string;
+  kind: OpsGraphNodeKind;
+  label: string;
+  parent_id?: string;
+}
+
+export interface OpsGraphEdge {
+  from: string;
+  to: string;
+  kind: OpsGraphEdgeKind;
+  weight: number;
+  threads: number;
+}
+
+export interface OpsGraphBias {
+  self_weight: number;
+  org_weight: number;
+  external_weight: number;
+  broadcast_weight: number;
+  hub_user_id: string | null;
+  hub_label: string | null;
+  /** 1 = all person-to-person traffic touches one user (founder star). */
+  star_share: number;
+  /** Testers with own-agent mail who are not the star hub. */
+  independent_self_users: number;
+}
+
+export interface OpsGraph {
+  nodes: OpsGraphNode[];
+  edges: OpsGraphEdge[];
+  bias: OpsGraphBias;
 }
 
 /** Marketing waitlist survey (public; not agent mail). */

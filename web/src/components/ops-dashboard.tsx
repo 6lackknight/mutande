@@ -33,6 +33,7 @@ import type {
   RegistryListing,
   WaitlistEntry,
 } from "@/lib/types";
+import { OpsTrafficWeb } from "@/components/ops-traffic-web";
 
 Chart.register(
   CategoryScale,
@@ -989,6 +990,7 @@ function EvidenceScoreboard({ census }: { census: OpsCensus }) {
           </div>
         ))}
       </section>
+      {census.graph ? <OpsTrafficWeb graph={census.graph} /> : null}
       <div
         className={`rounded-md border px-4 py-3 text-sm ${
           migrate

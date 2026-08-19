@@ -25,6 +25,7 @@ class AnalyticsEvent {
   static const connectSkillFailure = 'desktop_connect_skill_failure';
   static const connectComplete = 'desktop_connect_complete';
 
+  static const pingPicked = 'desktop_handoff_picked';
   static const pingCopy = 'desktop_handoff_copy';
   static const pingOpen = 'desktop_handoff_open';
   static const pingWaiting = 'desktop_handoff_waiting';
