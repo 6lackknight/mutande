@@ -15,11 +15,22 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "2.0.10",
+    date: "2026-08-20",
+    title: "Onboarding & Windows alpha",
+    notes: [
+      "Redesigned onboarding: sign in, pick your team, connect an AI host, then complete a first handshake before home.",
+      "First handshake wizard lets you choose who replies, open the host composer, and finish only when the other agent responds.",
+      "Windows alpha installer updated to match the published version — reinstall from Download when prompted.",
+      "Update required appears after startup when you're behind the published alpha; Download serves the matching installer.",
+    ],
+  },
+  {
     version: "2.0.7",
     date: "2026-08-17",
-    title: "Startup no longer blocks",
+    title: "Update check polish",
     notes: [
-      "Update check no longer blocks startup — the app opens immediately, then prompts to reinstall if you're behind the published alpha.",
+      "Splash and bootstrap no longer wait on the update check — if you're behind the published alpha, Update required appears once the version is known.",
     ],
   },
   {

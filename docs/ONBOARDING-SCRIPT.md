@@ -21,7 +21,7 @@ Gates live in `~/.mutande/first_run.json` (`connect_complete`, `ping_complete`, 
 
 `connect_complete` means a second own host is registered, or one own host plus a teammate who already has a host. An invite sent does not count.
 
-Resuming at First handshake recovers the agent segment by listing agents. If the destination is gone (only one host, no live teammate), the flow bounces back to Connect. In debug builds `FORCE_ONBOARDING` defaults to true and clears the gates on launch, so local QA always sees all four steps.
+Resuming at First handshake recovers the agent segment by listing agents. If the destination is gone (only one host, no live teammate), the flow bounces back to Connect. In debug builds pass `--dart-define=FORCE_ONBOARDING=true` to clear the gates on launch and replay all four steps for local QA.
 
 Debug walkthrough: with `FORCE_ONBOARDING` on, `⌥←` / `⌥→` step through all ten frames — Sign in, Securing, Welcome back, Your team, Connect, and the five handshake states (pick, send, wait, delivery, timeout) — without signing out. The banner counts the frame. The waiting frame still polls Threads so a real handshake can show **Finish**; it never auto-taps Finish.
 

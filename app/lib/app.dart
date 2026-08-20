@@ -354,10 +354,10 @@ class RootScreen extends StatefulWidget {
 }
 
 class _RootScreenState extends State<RootScreen> {
-  /// Debug: replay onboarding on launch (`--dart-define=FORCE_ONBOARDING=false` to disable).
+  /// Debug: replay onboarding on launch (`--dart-define=FORCE_ONBOARDING=true`).
   static const _forceOnboardingFlag = bool.fromEnvironment(
     'FORCE_ONBOARDING',
-    defaultValue: true,
+    defaultValue: false,
   );
 
   bool get _inWidgetTest =>
