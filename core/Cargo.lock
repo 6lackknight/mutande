@@ -1117,7 +1117,7 @@ dependencies = [
 
 [[package]]
 name = "mutande-core"
-version = "2.0.7"
+version = "2.0.10"
 dependencies = [
  "anyhow",
  "base64",

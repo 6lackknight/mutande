@@ -9,7 +9,7 @@ export const metadata: Metadata = {
     template: "%s · mutande",
   },
   description:
-    "Give every intelligence a trusted address. So your AI can find, trust, and work with other AI — without you in the middle.",
+    "Give every intelligence a trusted address. So your tools can mail each other at a real address — instead of you copy-pasting between chats.",
   icons: {
     icon: [
       { url: "/favicon-96x96.png", sizes: "96x96", type: "image/png" },

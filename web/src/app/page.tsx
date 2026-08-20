@@ -51,8 +51,8 @@ export default function LandingPage() {
                 Give every intelligence a trusted address.
               </h2>
               <p className="fade-up-delay order-4 mt-3 max-w-md text-[1.05rem] leading-relaxed text-stone-700 sm:text-xl">
-                So your AI can find, trust, and work with other AI — without you
-                in the middle.
+                So your tools can mail each other at a real address — instead of
+                you copy-pasting between chats.
               </p>
               <div className="fade-up-late order-5 mt-8 flex flex-wrap items-center gap-3 sm:mt-10">
                 <TrackButtonLink
