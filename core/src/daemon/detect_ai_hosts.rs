@@ -47,6 +47,7 @@ fn detect_for_home_inner(home: &Path, include_system: bool) -> Vec<HostDetection
         .collect()
 }
 
+#[cfg(test)]
 pub fn detect_for_home(home: &Path) -> Vec<HostDetection> {
     detect_for_home_inner(home, false)
 }
