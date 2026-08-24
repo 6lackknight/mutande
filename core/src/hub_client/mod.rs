@@ -296,6 +296,55 @@ impl HubClient {
         self.put_json("/v1/agents/transport-defaults", &body).await
     }
 
+    /// Mint a hosted MCP connector key (`mtc_…`). Plaintext returned once.
+    pub async fn mint_mcp_connector(
+        &self,
+        label: Option<&str>,
+        slug: Option<&str>,
+    ) -> Result<MintMcpConnectorResponse> {
+        let body = MintMcpConnectorRequest {
+            label: label.map(str::to_string),
+            slug: slug.map(str::to_string),
+        };
+        self.post_json("/v1/mcp/connectors", &body, true).await
+    }
+
+    pub async fn list_mcp_connectors(&self) -> Result<Vec<McpConnector>> {
+        let resp: ListMcpConnectorsResponse = self.get_json("/v1/mcp/connectors").await?;
+        Ok(resp.connectors)
+    }
+
+    pub async fn revoke_mcp_connector(&self, connector_id: &str) -> Result<()> {
+        let id = encode_path_segment(connector_id.trim());
+        let path = format!("/v1/mcp/connectors/{id}");
+        let mut attempted_refresh = false;
+        loop {
+            let token = self.access_token();
+            let resp = self
+                .client
+                .delete(self.url(&path))
+                .bearer_auth(&token)
+                .send()
+                .await
+                .with_context(|| format!("DELETE {path}"))?;
+
+            if resp.status().is_success() {
+                return Ok(());
+            }
+            if resp.status() == StatusCode::UNAUTHORIZED
+                && !attempted_refresh
+                && self.try_refresh_after_unauthorized().await
+            {
+                attempted_refresh = true;
+                continue;
+            }
+            return Err(hub_error(
+                resp.status(),
+                resp.text().await.unwrap_or_default(),
+            ));
+        }
+    }
+
     pub async fn list_agents_for_handle(&self, handle: &str) -> Result<AgentsForHandleResponse> {
         let encoded = handle.replace('@', "%40").replace('/', "%2F");
         self.get_json(&format!("/v1/agents?handle={encoded}")).await
@@ -1973,5 +2022,68 @@ mod tests {
         let agent = client.register_agent("cursor").await.unwrap();
         assert_eq!(agent.slug, "cursor");
         assert_eq!(agent.transport.as_deref(), Some("sidecar"));
+    }
+
+    #[tokio::test]
+    async fn mcp_connectors_mint_list_revoke_wire_shapes() {
+        use wiremock::matchers::{body_json, method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        let connector = serde_json::json!({
+            "id": "c-1",
+            "prefix": "mtc_abcd1234",
+            "label": "Grok Bot",
+            "slug": "grok",
+            "created_at": "2026-08-24T12:00:00Z"
+        });
+
+        Mock::given(method("POST"))
+            .and(path("/v1/mcp/connectors"))
+            .and(body_json(serde_json::json!({
+                "label": "Grok Bot",
+                "slug": "grok"
+            })))
+            .respond_with(ResponseTemplate::new(201).set_body_json(&serde_json::json!({
+                "connector": connector,
+                "token": "mtc_plaintext_once"
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/v1/mcp/connectors"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                "connectors": [connector]
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        Mock::given(method("DELETE"))
+            .and(path("/v1/mcp/connectors/c-1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                "ok": true
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let client = HubClient::new(HubConfig::new(server.uri(), "at")).unwrap();
+        let minted = client
+            .mint_mcp_connector(Some("Grok Bot"), Some("grok"))
+            .await
+            .unwrap();
+        assert_eq!(minted.token, "mtc_plaintext_once");
+        assert_eq!(minted.connector.slug.as_deref(), Some("grok"));
+        assert_eq!(minted.connector.label, "Grok Bot");
+
+        let listed = client.list_mcp_connectors().await.unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].id, "c-1");
+        assert!(listed[0].prefix.starts_with("mtc_"));
+
+        client.revoke_mcp_connector("c-1").await.unwrap();
     }
 }

@@ -601,6 +601,24 @@ async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Resu
             let prefs = state.set_transport_default(&slug, &transport).await?;
             Ok(serde_json::to_value(prefs)?)
         }
+        "list_mcp_connectors" => {
+            let connectors = state.list_mcp_connectors().await?;
+            Ok(serde_json::to_value(serde_json::json!({ "connectors": connectors }))?)
+        }
+        "create_mcp_connector" | "mcp_connector_create" => {
+            let label = optional_str(&params, "label");
+            let slug = optional_str(&params, "slug");
+            let minted = state
+                .create_mcp_connector(label.as_deref(), slug.as_deref())
+                .await?;
+            Ok(serde_json::to_value(minted)?)
+        }
+        "revoke_mcp_connector" => {
+            let connector_id = param_str(&params, "connector_id")
+                .or_else(|_| param_str(&params, "id"))?;
+            state.revoke_mcp_connector(&connector_id).await?;
+            Ok(serde_json::json!({ "ok": true }))
+        }
         "get_safety_number" | "own_safety_number" => {
             let result = state.own_safety_number()?;
             Ok(serde_json::to_value(result)?)
@@ -1482,5 +1500,156 @@ mod tests {
             err.to_string().contains("not a file"),
             "got: {err}"
         );
+    }
+
+    #[tokio::test]
+    async fn list_mcp_connectors_requires_login() {
+        let state = Arc::new(DaemonState::new_in_memory_for_test().unwrap());
+        let req = JsonRpcRequest {
+            jsonrpc: Some("2.0".into()),
+            id: Some(serde_json::json!(1)),
+            method: "list_mcp_connectors".into(),
+            params: serde_json::json!({}),
+        };
+        let resp = handle_request(&state, req).await;
+        let err = resp.error.expect("unsigned list_mcp_connectors should fail");
+        assert!(
+            err.message.contains("signed in") || err.message.contains("auth_login"),
+            "got: {}",
+            err.message
+        );
+    }
+
+    #[tokio::test]
+    async fn mcp_connectors_mint_list_revoke_rpc() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let dir = tempfile::tempdir().unwrap();
+        let cfg_path = dir.path().join("config.json");
+        let state = Arc::new(
+            DaemonState::new_in_memory_with_config_path(Some(cfg_path)).unwrap(),
+        );
+
+        let server = MockServer::start().await;
+        let me_ready = serde_json::json!({
+            "auth0_sub": "auth0|u",
+            "email": "a@x.com",
+            "needs_onboarding": false,
+            "onboarded": true,
+            "user": {
+                "id": "u1",
+                "handle": "alice@acme",
+                "org_id": "org-1",
+                "role": "member",
+                "created_at": "2026-01-01T00:00:00Z"
+            },
+            "org": {
+                "id": "org-1",
+                "slug": "acme",
+                "name": "Acme",
+                "created_at": "2026-01-01T00:00:00Z"
+            }
+        });
+        Mock::given(method("GET"))
+            .and(path("/v1/me"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&me_ready))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/v1/devices"))
+            .respond_with(ResponseTemplate::new(201).set_body_json(&serde_json::json!({
+                "device": {
+                    "id": "d1",
+                    "user_id": "u1",
+                    "pubkey": "[0]",
+                    "platform": "macos",
+                    "created_at": "2026-01-01T00:00:00Z"
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        let connector = serde_json::json!({
+            "id": "c-1",
+            "prefix": "mtc_abcd1234",
+            "label": "Grok Bot",
+            "slug": "grok",
+            "created_at": "2026-08-24T12:00:00Z"
+        });
+        Mock::given(method("POST"))
+            .and(path("/v1/mcp/connectors"))
+            .respond_with(ResponseTemplate::new(201).set_body_json(&serde_json::json!({
+                "connector": connector,
+                "token": "mtc_plaintext_once"
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/v1/mcp/connectors"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                "connectors": [connector]
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("DELETE"))
+            .and(path("/v1/mcp/connectors/c-1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&serde_json::json!({
+                "ok": true
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let login = JsonRpcRequest {
+            jsonrpc: Some("2.0".into()),
+            id: Some(serde_json::json!(1)),
+            method: "auth_login".into(),
+            params: serde_json::json!({
+                "hub_url": server.uri(),
+                "access_token": "auth0-at",
+                "auth0_domain": "tenant.example",
+                "auth0_client_id": "native-id",
+                "open_browser": false,
+            }),
+        };
+        assert!(handle_request(&state, login).await.error.is_none());
+
+        let mint = JsonRpcRequest {
+            jsonrpc: Some("2.0".into()),
+            id: Some(serde_json::json!(2)),
+            method: "create_mcp_connector".into(),
+            params: serde_json::json!({
+                "label": "Grok Bot",
+                "slug": "grok",
+            }),
+        };
+        let minted = handle_request(&state, mint).await;
+        assert!(minted.error.is_none(), "{:?}", minted.error);
+        let body = minted.result.unwrap();
+        assert_eq!(body["token"], "mtc_plaintext_once");
+        assert_eq!(body["connector"]["slug"], "grok");
+
+        let list = JsonRpcRequest {
+            jsonrpc: Some("2.0".into()),
+            id: Some(serde_json::json!(3)),
+            method: "list_mcp_connectors".into(),
+            params: serde_json::json!({}),
+        };
+        let listed = handle_request(&state, list).await;
+        assert!(listed.error.is_none(), "{:?}", listed.error);
+        assert_eq!(listed.result.unwrap()["connectors"][0]["id"], "c-1");
+
+        let revoke = JsonRpcRequest {
+            jsonrpc: Some("2.0".into()),
+            id: Some(serde_json::json!(4)),
+            method: "revoke_mcp_connector".into(),
+            params: serde_json::json!({ "connector_id": "c-1" }),
+        };
+        let revoked = handle_request(&state, revoke).await;
+        assert!(revoked.error.is_none(), "{:?}", revoked.error);
+        assert_eq!(revoked.result.unwrap()["ok"], true);
     }
 }

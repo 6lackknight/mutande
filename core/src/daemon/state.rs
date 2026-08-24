@@ -1055,6 +1055,31 @@ impl DaemonState {
         hub.set_transport_default(slug, &transport).await
     }
 
+    pub async fn list_mcp_connectors(&self) -> Result<Vec<crate::hub_client::McpConnector>> {
+        let hub = self
+            .hub_client()
+            .context("not signed in — call auth_login first")?;
+        hub.list_mcp_connectors().await
+    }
+
+    pub async fn create_mcp_connector(
+        &self,
+        label: Option<&str>,
+        slug: Option<&str>,
+    ) -> Result<crate::hub_client::MintMcpConnectorResponse> {
+        let hub = self
+            .hub_client()
+            .context("not signed in — call auth_login first")?;
+        hub.mint_mcp_connector(label, slug).await
+    }
+
+    pub async fn revoke_mcp_connector(&self, connector_id: &str) -> Result<()> {
+        let hub = self
+            .hub_client()
+            .context("not signed in — call auth_login first")?;
+        hub.revoke_mcp_connector(connector_id).await
+    }
+
     async fn default_agent_slug(&self) -> Option<String> {
         if let Some(hub) = self.hub_client() {
             if let Ok(list) = hub.list_agents().await {

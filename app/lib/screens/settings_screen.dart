@@ -11,6 +11,7 @@ import '../services/host_link_store.dart';
 import '../services/notification_prefs_store.dart';
 import '../services/transport_prefs_store.dart';
 import '../util/address_display.dart';
+import '../util/clock_format.dart';
 import '../widgets/ai_host_icon.dart';
 import '../widgets/connect_host_flow.dart';
 import '../widgets/connect_host_picker.dart';
@@ -38,6 +39,7 @@ const double _kSectionGap = 28;
 const double _kHeaderGap = 8;
 const double _kCardRadius = 12;
 const EdgeInsets _kCardPad = EdgeInsets.fromLTRB(14, 14, 14, 14);
+const int _kMaxMcpConnectors = 8;
 
 BoxDecoration _settingsCardDecoration({Color? borderColor, Color? fill}) {
   return BoxDecoration(
@@ -119,6 +121,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   TransportPrefs _transportPrefs = const TransportPrefs();
   List<AgentInfo> _agents = const [];
   bool _loadingTransport = false;
+  List<McpConnectorView> _connectors = const [];
+  bool _loadingConnectors = true;
+  bool _mintingConnector = false;
+  String? _revokingConnectorId;
+  String? _connectorError;
+  MintMcpConnectorResult? _revealedMint;
 
   @override
   void initState() {
@@ -131,6 +139,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _loadHostLinks();
     _loadNotifPrefs();
     _loadTransportPrefs();
+    _loadMcpConnectors();
   }
 
   Future<void> _refreshBundledCoreVersion() async {
@@ -212,6 +221,94 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _hostLinks = links;
       _loadingLinks = false;
     });
+  }
+
+  Future<void> _loadMcpConnectors() async {
+    try {
+      final connectors = await widget.daemon.listMcpConnectors();
+      if (!mounted) return;
+      setState(() {
+        _connectors = connectors;
+        _loadingConnectors = false;
+        _connectorError = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadingConnectors = false;
+        _connectorError = friendlyDaemonError(e, what: 'Connectors');
+      });
+    }
+  }
+
+  Future<void> _mintConnector() async {
+    if (_mintingConnector || _connectors.length >= _kMaxMcpConnectors) return;
+    setState(() {
+      _mintingConnector = true;
+      _connectorError = null;
+    });
+    try {
+      final minted = await widget.daemon.createMcpConnector();
+      if (!mounted) return;
+      setState(() {
+        _mintingConnector = false;
+        _revealedMint = minted;
+        _connectors = [
+          minted.connector,
+          ..._connectors.where((c) => c.id != minted.connector.id),
+        ];
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _mintingConnector = false;
+        _connectorError = friendlyDaemonError(e, what: 'Mint key');
+      });
+    }
+  }
+
+  Future<void> _revokeConnector(McpConnectorView connector) async {
+    if (_revokingConnectorId != null) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Revoke connector key?'),
+        content: Text(
+          'Grok Plugins using “${connector.label}” will stop reaching mutande. '
+          'You can mint a new key after this.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: TextButton.styleFrom(foregroundColor: _kRose),
+            child: const Text('Revoke'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _revokingConnectorId = connector.id);
+    try {
+      await widget.daemon.revokeMcpConnector(connector.id);
+      if (!mounted) return;
+      setState(() {
+        _revokingConnectorId = null;
+        _connectors = _connectors.where((c) => c.id != connector.id).toList();
+        if (_revealedMint?.connector.id == connector.id) {
+          _revealedMint = null;
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _revokingConnectorId = null;
+        _connectorError = friendlyDaemonError(e, what: 'Revoke');
+      });
+    }
   }
 
   Future<void> _loadSafety() async {
@@ -579,6 +676,59 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ],
                 ],
+              ),
+            ),
+            _section(
+              context,
+              label: 'CONNECTORS',
+              trailing: TextButton(
+                onPressed: (_mintingConnector ||
+                        _loadingConnectors ||
+                        _connectors.length >= _kMaxMcpConnectors)
+                    ? null
+                    : _mintConnector,
+                style: TextButton.styleFrom(
+                  foregroundColor: _kBronze,
+                  disabledForegroundColor: _kStone400,
+                  minimumSize: const Size(0, 32),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: _mintingConnector
+                    ? const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          MutandeOrb.loading(
+                            semanticLabel: 'Minting key',
+                          ),
+                          SizedBox(width: 6),
+                          Text(
+                            'Minting…',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      )
+                    : const Text(
+                        'Mint key',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                        ),
+                      ),
+              ),
+              child: _ConnectorsCard(
+                connectors: _connectors,
+                loading: _loadingConnectors,
+                minting: _mintingConnector,
+                revokingId: _revokingConnectorId,
+                error: _connectorError,
+                revealed: _revealedMint,
+                onDismissError: () => setState(() => _connectorError = null),
+                onDismissSecret: () => setState(() => _revealedMint = null),
+                onRevoke: _revokeConnector,
               ),
             ),
             _section(
@@ -1164,6 +1314,276 @@ class _HostTile extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _ConnectorsCard extends StatelessWidget {
+  const _ConnectorsCard({
+    required this.connectors,
+    required this.loading,
+    required this.minting,
+    required this.revokingId,
+    required this.error,
+    required this.revealed,
+    required this.onDismissError,
+    required this.onDismissSecret,
+    required this.onRevoke,
+  });
+
+  final List<McpConnectorView> connectors;
+  final bool loading;
+  final bool minting;
+  final String? revokingId;
+  final String? error;
+  final MintMcpConnectorResult? revealed;
+  final VoidCallback onDismissError;
+  final VoidCallback onDismissSecret;
+  final ValueChanged<McpConnectorView> onRevoke;
+
+  static const _setupHint =
+      'Grok Plugins URL ${AiHostCatalog.hostedMcpUrl}. '
+      'Header X-Mutande-Connector. Optional X-Mutande-Agent-Slug: grok. '
+      'Mail on this path uses app envelope (not E2E).';
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: _kCardPad,
+      decoration: _settingsCardDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Grok Bot',
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+              color: _kStone800,
+            ),
+          ),
+          const SizedBox(height: 2),
+          const Text(
+            'Hosted MCP connector keys for Grok Plugins. Shown once at mint.',
+            style: TextStyle(fontSize: 12, color: _kStone500, height: 1.35),
+          ),
+          if (error != null) ...[
+            const SizedBox(height: 10),
+            _ErrorBanner(message: error!, onDismiss: onDismissError),
+          ],
+          if (revealed != null) ...[
+            const SizedBox(height: 12),
+            _MintedSecretPanel(
+              token: revealed!.token,
+              onDismiss: onDismissSecret,
+            ),
+          ],
+          const SizedBox(height: 10),
+          Text(
+            _setupHint,
+            style: const TextStyle(
+              fontSize: 12,
+              color: _kStone400,
+              height: 1.4,
+            ),
+          ),
+          if (loading) ...[
+            const SizedBox(height: 12),
+            const Text(
+              'Loading…',
+              style: TextStyle(fontSize: 12, color: _kStone400),
+            ),
+          ] else if (connectors.isEmpty && revealed == null) ...[
+            const SizedBox(height: 12),
+            const Text(
+              'No keys yet.',
+              style: TextStyle(fontSize: 12, color: _kStone400),
+            ),
+          ] else if (connectors.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            for (var i = 0; i < connectors.length; i++) ...[
+              if (i > 0)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Divider(height: 1, thickness: 1, color: _kStone100),
+                ),
+              _ConnectorRow(
+                connector: connectors[i],
+                revoking: revokingId == connectors[i].id,
+                enabled: revokingId == null && !minting,
+                onRevoke: () => onRevoke(connectors[i]),
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _MintedSecretPanel extends StatelessWidget {
+  const _MintedSecretPanel({
+    required this.token,
+    required this.onDismiss,
+  });
+
+  final String token;
+  final VoidCallback onDismiss;
+
+  Future<void> _copy(BuildContext context) async {
+    await Clipboard.setData(ClipboardData(text: token));
+    if (!context.mounted) return;
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      const SnackBar(content: Text('Connector key copied')),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+      decoration: BoxDecoration(
+        color: _kBronzeSoft,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE8DCC4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'Copy this key now — mutande will not show it again.',
+            style: TextStyle(
+              fontSize: 12,
+              color: _kStone700,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Material(
+            color: _kStone800,
+            borderRadius: BorderRadius.circular(8),
+            child: InkWell(
+              onTap: () => _copy(context),
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: SelectableText(
+                        token,
+                        style: const TextStyle(
+                          fontFamily: 'Menlo',
+                          fontSize: 12,
+                          height: 1.3,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Icon(
+                      Icons.copy_rounded,
+                      size: 16,
+                      color: Colors.white.withValues(alpha: 0.45),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: onDismiss,
+              style: TextButton.styleFrom(
+                foregroundColor: _kStone700,
+                minimumSize: const Size(0, 32),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: const Text(
+                'Done',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ConnectorRow extends StatelessWidget {
+  const _ConnectorRow({
+    required this.connector,
+    required this.revoking,
+    required this.enabled,
+    required this.onRevoke,
+  });
+
+  final McpConnectorView connector;
+  final bool revoking;
+  final bool enabled;
+  final VoidCallback onRevoke;
+
+  @override
+  Widget build(BuildContext context) {
+    final created = formatRelativeTime(connector.createdAt);
+    final used = connector.lastUsedAt == null || connector.lastUsedAt!.isEmpty
+        ? null
+        : formatRelativeTime(connector.lastUsedAt);
+    final meta = [
+      if (connector.prefix.isNotEmpty) connector.prefix,
+      if (created.isNotEmpty) created,
+      if (used != null && used.isNotEmpty) 'used $used',
+    ].join(' · ');
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                connector.label.isEmpty ? 'Connector' : connector.label,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                  color: _kStone800,
+                ),
+              ),
+              if (meta.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text(
+                  meta,
+                  style: const TextStyle(
+                    fontFamily: 'Menlo',
+                    fontSize: 11,
+                    color: _kStone400,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        TextButton(
+          onPressed: enabled && !revoking ? onRevoke : null,
+          style: TextButton.styleFrom(
+            foregroundColor: _kRose,
+            disabledForegroundColor: _kStone400,
+            minimumSize: const Size(0, 32),
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          child: Text(
+            revoking ? 'Revoking…' : 'Revoke',
+            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+          ),
+        ),
+      ],
     );
   }
 }

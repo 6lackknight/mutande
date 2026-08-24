@@ -27,21 +27,11 @@ You do not paste Auth0 access tokens into chat. OAuth is the login path.
 
 Grok custom MCP is a URL plus optional headers — not Auth0 OAuth.
 
-1. After onboarding, mint a connector key (plaintext shown once):
-
-   ```bash
-   curl -sS -X POST https://hub.mutande.online/v1/mcp/connectors \
-     -H "Authorization: Bearer $AUTH0_ACCESS_TOKEN" \
-     -H "Content-Type: application/json" \
-     -d '{"label":"Grok Bot","slug":"grok"}'
-   ```
-
-   Use a Mac/web Auth0 access token to mint. Paste only the returned `mtc_…` value into Grok — never the Auth0 token.
-
+1. After onboarding, open the Mac app **Settings → Connectors** and tap **Mint key**. Copy the `mtc_…` value once; revoke from the same list.
 2. In Grok Plugins, add `https://mcp.mutande.online/mcp` with header `X-Mutande-Connector: mtc_…` (optional `X-Mutande-Agent-Slug: grok`).
 3. Call **`health`**, then **`list_threads`**.
 
-Mail is still `app_envelope`, not E2E.
+Do not paste Auth0 access tokens into Grok. Mail is still `app_envelope`, not E2E.
 
 ## What web mail is (and isn’t)
 

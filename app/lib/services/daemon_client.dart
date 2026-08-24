@@ -943,6 +943,34 @@ class DaemonClient {
     return map['pubkey'] as String? ?? '';
   }
 
+  /// Hub-minted hosted MCP connector keys (`mtc_…`). Hashed listing — no secrets.
+  Future<List<McpConnectorView>> listMcpConnectors() async {
+    final result = await _call('list_mcp_connectors');
+    final map = result as Map<String, dynamic>? ?? {};
+    final raw = map['connectors'] as List<dynamic>? ?? const [];
+    return raw
+        .map((e) => McpConnectorView.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Mint a connector key. Plaintext `token` is returned once.
+  Future<MintMcpConnectorResult> createMcpConnector({
+    String label = 'Grok Bot',
+    String slug = 'grok',
+  }) async {
+    final result = await _call('create_mcp_connector', {
+      'label': label,
+      'slug': slug,
+    });
+    return MintMcpConnectorResult.fromJson(
+      result as Map<String, dynamic>? ?? {},
+    );
+  }
+
+  Future<void> revokeMcpConnector(String connectorId) async {
+    await _call('revoke_mcp_connector', {'connector_id': connectorId});
+  }
+
   Future<SafetyNumberResult> contactSafetyNumber(String handle) async {
     final result = await _call('contact_safety_number', {'handle': handle});
     return SafetyNumberResult.fromJson(result as Map<String, dynamic>? ?? {});
@@ -2381,6 +2409,54 @@ class PairingPinView {
   final String qrUri;
 }
 
+class McpConnectorView {
+  const McpConnectorView({
+    required this.id,
+    required this.prefix,
+    required this.label,
+    required this.createdAt,
+    this.slug,
+    this.lastUsedAt,
+  });
+
+  factory McpConnectorView.fromJson(Map<String, dynamic> map) {
+    return McpConnectorView(
+      id: map['id'] as String? ?? '',
+      prefix: map['prefix'] as String? ?? '',
+      label: map['label'] as String? ?? '',
+      slug: map['slug'] as String?,
+      createdAt: map['created_at'] as String? ?? '',
+      lastUsedAt: map['last_used_at'] as String?,
+    );
+  }
+
+  final String id;
+  final String prefix;
+  final String label;
+  final String? slug;
+  final String createdAt;
+  final String? lastUsedAt;
+}
+
+class MintMcpConnectorResult {
+  const MintMcpConnectorResult({
+    required this.connector,
+    required this.token,
+  });
+
+  factory MintMcpConnectorResult.fromJson(Map<String, dynamic> map) {
+    return MintMcpConnectorResult(
+      connector: McpConnectorView.fromJson(
+        map['connector'] as Map<String, dynamic>? ?? const {},
+      ),
+      token: map['token'] as String? ?? '',
+    );
+  }
+
+  final McpConnectorView connector;
+  final String token;
+}
+
 class PairRequestView {
   const PairRequestView({
     required this.id,
@@ -3080,6 +3156,9 @@ String friendlyDaemonError(Object error, {String what = 'That'}) {
   }
   if (isHubAuthFailure(lower)) {
     return 'Sign-in expired or was rejected. Open Settings and sign in again.';
+  }
+  if (lower.contains('too many mcp connector')) {
+    return 'You already have 8 connector keys. Revoke one first.';
   }
   if (lower.contains('user not found')) {
     return "Couldn't find that person on the hub. Check the handle or pairing.";

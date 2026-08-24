@@ -36,13 +36,7 @@ Shared Auth0 audiences (`https://hub.mutande.app` + `https://mcp.mutande.online`
 Grok Plugins: public HTTPS URL + optional headers. **Do not** use Grok’s OAuth card (Auth0 DCR is disabled; the cloud loader treats 401 as unreachable).
 
 1. Onboard on Mac or web (Auth0).
-2. Mint a connector token (plaintext once):
-   ```bash
-   curl -sS -X POST https://hub.mutande.online/v1/mcp/connectors \
-     -H "Authorization: Bearer $AUTH0_ACCESS_TOKEN" \
-     -H "Content-Type: application/json" \
-     -d '{"label":"Grok Bot","slug":"grok"}'
-   ```
+2. Mint a connector token in the Mac app: **Settings → Connectors → Mint key** (plaintext once). Revoke from the same list.
 3. Add custom MCP in Grok:
    - URL: `https://mcp.mutande.online/mcp` (optional `?slug=grok`)
    - Header `X-Mutande-Connector`: `mtc_…` (or `mutande-api-key`)
@@ -51,7 +45,7 @@ Grok Plugins: public HTTPS URL + optional headers. **Do not** use Grok’s OAuth
 
 Unauthenticated `initialize` / protocol `ping` return `serverInfo` (v0.1.0, mutande-mcp) so the loader can probe liveness. `tools/list` and `tools/call` require the connector (or Auth0 JWT). `GET /mcp` SSE stays authenticated. Mail is **`app_envelope`**, not E2E.
 
-List/revoke: `GET/DELETE https://hub.mutande.online/v1/mcp/connectors` (Auth0 JWT). Connector tokens cannot mint more keys. Mac Settings UI is not shipped yet.
+Connector tokens cannot mint more keys. Operator fallback: `POST/GET/DELETE https://hub.mutande.online/v1/mcp/connectors` (Auth0 JWT — never paste that token into Grok).
 
 **What works:** app_envelope inbox + compose (`list_threads`, `get_thread`, `reply_to_thread`, `forward_draft`, agents/contacts, close/delete/upvote).  
 **Mac sidecar still required:** E2E seal/open, safety numbers, local drafts, product health/thread `ping`, blobs, router.

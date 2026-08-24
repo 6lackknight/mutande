@@ -342,6 +342,40 @@ pub struct UnpairResponse {
     pub closed_thread_ids: Vec<String>,
 }
 
+/// Public fields for a hub-minted hosted MCP connector key (`mtc_…`).
+/// Plaintext secret is never listed — only returned once at mint.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct McpConnector {
+    pub id: String,
+    pub prefix: String,
+    pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slug: Option<String>,
+    pub created_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_used_at: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct MintMcpConnectorRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub slug: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MintMcpConnectorResponse {
+    pub connector: McpConnector,
+    /// Plaintext `mtc_…` — returned once at mint.
+    pub token: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ListMcpConnectorsResponse {
+    pub connectors: Vec<McpConnector>,
+}
+
 /// Onboarded hub user (Auth0-backed).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct User {

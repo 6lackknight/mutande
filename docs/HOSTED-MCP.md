@@ -26,18 +26,7 @@ Do not paste Auth0 access tokens into chat.
 Grok Bot custom MCP is **name + HTTPS URL + optional headers**. It does not use Auth0 OAuth (DCR is not required for this path).
 
 1. Finish mutande onboarding (Mac or web).
-2. Mint a **connector token** (once) with an Auth0 session against the hub — not an access token you paste into Grok:
-
-```bash
-# AUTH0_ACCESS_TOKEN = Mac/web Auth0 access token (hub audience). Never paste this into Grok.
-curl -sS -X POST https://hub.mutande.online/v1/mcp/connectors \
-  -H "Authorization: Bearer $AUTH0_ACCESS_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"label":"Grok Bot","slug":"grok"}'
-# → { "token": "mtc_…", "connector": { "id", "prefix", "slug": "grok" } }
-# The plaintext token is shown once. Store it; revoke via DELETE /v1/mcp/connectors/:id.
-```
-
+2. In the Mac app: **Settings → Connectors → Mint key**. Copy the `mtc_…` value once (mutande will not show it again). Revoke from the same list.
 3. In Grok → **Plugins / custom MCP**:
    - URL: `https://mcp.mutande.online/mcp` (or `https://mcp.mutande.online/mcp?slug=grok`)
    - Header `X-Mutande-Connector`: `mtc_…`  
@@ -46,9 +35,17 @@ curl -sS -X POST https://hub.mutande.online/v1/mcp/connectors \
      Keys minted without a slug override default to `grok`.
 4. Call **`health`**, then **`list_threads`**.
 
-Auth0 sign-in is **not** required in Grok for this path. Mail is still **`app_envelope`**, not E2E.
+Do not paste Auth0 access tokens into Grok. Auth0 sign-in is **not** required in Grok for this path. Mail is still **`app_envelope`**, not E2E.
 
-Mac Settings UI for mint/revoke is not shipped yet — use the hub API above.
+Operator fallback (hub API, Auth0 Bearer — never paste that token into Grok):
+
+```bash
+curl -sS -X POST https://hub.mutande.online/v1/mcp/connectors \
+  -H "Authorization: Bearer $AUTH0_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"label":"Grok Bot","slug":"grok"}'
+# List: GET /v1/mcp/connectors  Revoke: DELETE /v1/mcp/connectors/:id
+```
 
 ## Product expectations
 
