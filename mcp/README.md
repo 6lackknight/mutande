@@ -42,6 +42,7 @@ Hub prod needs **`APP_ENVELOPE_KEY`** (AES-GCM at rest) for app_envelope mail �
 |--------|------|------|
 | GET | `/health` | — |
 | GET | `/.well-known/oauth-protected-resource` | — (RFC 9728) |
+| GET | `/.well-known/oauth-authorization-server` | — Auth0 AS metadata as JSON |
 | GET | `/mcp` | Bearer — Streamable HTTP SSE (`text/event-stream`) |
 | POST | `/mcp` | Bearer — JSON-RPC (`application/json`) |
 | DELETE | `/mcp` | Bearer + `Mcp-Session-Id` — end session |

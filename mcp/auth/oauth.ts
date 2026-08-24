@@ -128,15 +128,58 @@ export async function createTestTokenVerifier(config: {
 }
 
 /** RFC 9728 Protected Resource Metadata. */
-export function protectedResourceMetadata(config: McpConfig) {
+export function protectedResourceMetadata(
+  config: McpConfig,
+  resource: string = config.publicUrl,
+) {
   const authorizationServer = `https://${config.auth0Domain}/`;
   return {
-    resource: config.publicUrl,
+    resource,
     authorization_servers: [authorizationServer],
     scopes_supported: ["openid", "profile", "email", "offline_access"],
     bearer_methods_supported: ["header"],
     resource_documentation: `${config.publicUrl}/`,
   };
+}
+
+/**
+ * RFC 8414 Authorization Server Metadata for Auth0.
+ *
+ * Hosted MCP is the resource server; Auth0 is the AS. Some MCP loaders
+ * (Grok Bot) fetch this from the MCP origin and do not follow redirects, so
+ * this must be JSON — not a 307 to Auth0.
+ */
+export function authorizationServerMetadata(config: McpConfig) {
+  const issuer = `https://${config.auth0Domain}/`;
+  return {
+    issuer,
+    authorization_endpoint: `${issuer}authorize`,
+    token_endpoint: `${issuer}oauth/token`,
+    registration_endpoint: `${issuer}oidc/register`,
+    jwks_uri: `${issuer}.well-known/jwks.json`,
+    userinfo_endpoint: `${issuer}userinfo`,
+    revocation_endpoint: `${issuer}oauth/revoke`,
+    scopes_supported: ["openid", "profile", "email", "offline_access"],
+    response_types_supported: ["code"],
+    grant_types_supported: ["authorization_code", "refresh_token"],
+    code_challenge_methods_supported: ["S256"],
+    token_endpoint_auth_methods_supported: ["none", "client_secret_post"],
+    client_id_metadata_document_supported: true,
+  };
+}
+
+/** Resolve RFC 9728 path-inserted resource from a PRM request path. */
+export function resourceFromPrmPath(
+  publicUrl: string,
+  path: string,
+): string {
+  const base = publicUrl.replace(/\/+$/, "");
+  if (path.startsWith("/mcp/") || path === "/mcp") return `${base}/mcp`;
+  const marker = "/.well-known/oauth-protected-resource";
+  const idx = path.indexOf(marker);
+  if (idx < 0) return base;
+  const after = path.slice(idx + marker.length).replace(/^\/+|\/+$/g, "");
+  return after ? `${base}/${after}` : base;
 }
 
 /** WWW-Authenticate for 401 responses (MCP clients discover PRM from this). */

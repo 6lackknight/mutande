@@ -1,8 +1,10 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1";
 import {
+  authorizationServerMetadata,
   createTestTokenVerifier,
   expandMcpAudiences,
   protectedResourceMetadata,
+  resourceFromPrmPath,
   wwwAuthenticateHeader,
 } from "./oauth.ts";
 import { loadConfig, type McpConfig } from "../config.ts";
@@ -160,6 +162,79 @@ Deno.test("loadConfig empty AUTH0_MCP_AUDIENCE disables extra aud", () => {
     },
   });
   assertEquals(cfg.auth0McpAudience, null);
+});
+
+Deno.test("authorization server metadata is Auth0 JSON, not a redirect", () => {
+  const meta = authorizationServerMetadata(sampleConfig);
+  assertEquals(meta.issuer, "https://auth.mutande.online/");
+  assertEquals(meta.authorization_endpoint, "https://auth.mutande.online/authorize");
+  assertEquals(
+    meta.registration_endpoint,
+    "https://auth.mutande.online/oidc/register",
+  );
+  assertEquals(meta.code_challenge_methods_supported, ["S256"]);
+  assertEquals(meta.client_id_metadata_document_supported, true);
+});
+
+Deno.test("resourceFromPrmPath keeps origin PRM, suffixes /mcp", () => {
+  const base = "https://mcp.mutande.online";
+  assertEquals(
+    resourceFromPrmPath(base, "/.well-known/oauth-protected-resource"),
+    base,
+  );
+  assertEquals(
+    resourceFromPrmPath(base, "/.well-known/oauth-protected-resource/mcp"),
+    `${base}/mcp`,
+  );
+  assertEquals(
+    resourceFromPrmPath(base, "/mcp/.well-known/oauth-protected-resource"),
+    `${base}/mcp`,
+  );
+});
+
+Deno.test("AS metadata routes return JSON with registration_endpoint", async () => {
+  const routes = createOauthRoutes(sampleConfig);
+  for (
+    const path of [
+      "/.well-known/oauth-authorization-server",
+      "/.well-known/oauth-authorization-server/mcp",
+      "/mcp/.well-known/oauth-authorization-server",
+      "/.well-known/openid-configuration",
+      "/mcp/.well-known/openid-configuration",
+    ]
+  ) {
+    const hit = await routes.request(path);
+    assertEquals(hit.status, 200, path);
+    assertEquals(hit.headers.get("access-control-allow-origin"), "*");
+    const body = await hit.json() as { registration_endpoint?: string };
+    assertEquals(
+      body.registration_endpoint,
+      "https://auth.mutande.online/oidc/register",
+      path,
+    );
+  }
+});
+
+Deno.test("path-aware PRM resource matches /mcp connector URL", async () => {
+  const routes = createOauthRoutes(sampleConfig);
+  const origin = await routes.request("/.well-known/oauth-protected-resource");
+  assertEquals((await origin.json() as { resource: string }).resource, sampleConfig.publicUrl);
+
+  const pathAware = await routes.request(
+    "/.well-known/oauth-protected-resource/mcp",
+  );
+  assertEquals(
+    (await pathAware.json() as { resource: string }).resource,
+    "https://mcp.mutande.online/mcp",
+  );
+
+  const underMcp = await routes.request(
+    "/mcp/.well-known/oauth-protected-resource",
+  );
+  assertEquals(
+    (await underMcp.json() as { resource: string }).resource,
+    "https://mcp.mutande.online/mcp",
+  );
 });
 
 Deno.test("openai-apps-challenge serves the exact token", async () => {
