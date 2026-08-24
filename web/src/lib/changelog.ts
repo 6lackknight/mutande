@@ -15,6 +15,15 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "2.0.12",
+    date: "2026-08-24",
+    title: "Grok Bot connectors",
+    notes: [
+      "Settings → Connectors mints a mutande key (`mtc_…`) for Grok Bot hosted MCP — copy once, revoke anytime.",
+      "Grok Bot connects to mcp.mutande.online with that header; Auth0 sign-in is not required on that path.",
+    ],
+  },
+  {
     version: "2.0.11",
     date: "2026-08-24",
     title: "Faster mail",
