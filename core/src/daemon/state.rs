@@ -563,7 +563,7 @@ pub const BLOB_PLAINTEXT_MAX: usize = 64 * 1024 * 1024;
 
 /// Suggest a different peer when rejecting same-agent self-loops.
 fn same_agent_handoff_hint(from_slug: &str, target_bare: Option<&str>) -> String {
-    const PEERS: &[&str] = &["claude", "cursor", "chatgpt"];
+    const PEERS: &[&str] = &["claude", "cursor", "chatgpt", "grok"];
     let alt = PEERS
         .iter()
         .copied()

@@ -15,42 +15,45 @@ pub struct HostDetection {
     pub config_present: bool,
 }
 
-fn app_bundle_paths(home: &Path, app_name: &str) -> [PathBuf; 2] {
-    [
-        PathBuf::from(format!("/Applications/{app_name}.app")),
-        home.join(format!("Applications/{app_name}.app")),
-    ]
+fn app_installed(home: &Path, app_name: &str, include_system: bool) -> bool {
+    let mut paths = vec![home.join(format!("Applications/{app_name}.app"))];
+    if include_system {
+        paths.push(PathBuf::from(format!("/Applications/{app_name}.app")));
+    }
+    paths.into_iter().any(|p| p.is_dir())
 }
 
-fn app_installed(home: &Path, app_name: &str) -> bool {
-    app_bundle_paths(home, app_name)
-        .into_iter()
-        .any(|p| p.is_dir())
-}
-
-pub fn detect_for_home(home: &Path) -> Vec<HostDetection> {
-    let hosts = [Host::Cursor, Host::Claude, Host::Chatgpt];
+fn detect_for_home_inner(home: &Path, include_system: bool) -> Vec<HostDetection> {
+    let hosts = [Host::Cursor, Host::Claude, Host::Chatgpt, Host::Grok];
     hosts
         .into_iter()
         .map(|h| {
-            let app_name = match h {
-                Host::Cursor => "Cursor",
-                Host::Claude => "Claude",
-                Host::Chatgpt => "ChatGPT",
+            let installed = match h {
+                Host::Cursor => app_installed(home, "Cursor", include_system),
+                Host::Claude => app_installed(home, "Claude", include_system),
+                Host::Chatgpt => app_installed(home, "ChatGPT", include_system),
+                Host::Grok => {
+                    home.join(".grok").is_dir()
+                        || app_installed(home, "Grok Bot", include_system)
+                }
             };
             let config = config_path_for_host(h, home);
             HostDetection {
                 host: h.as_str().to_string(),
-                installed: app_installed(home, app_name),
+                installed,
                 config_present: config.is_file(),
             }
         })
         .collect()
 }
 
+pub fn detect_for_home(home: &Path) -> Vec<HostDetection> {
+    detect_for_home_inner(home, false)
+}
+
 pub fn detect() -> Vec<HostDetection> {
     let home = super::user_home_dir().unwrap_or_else(|| PathBuf::from("."));
-    detect_for_home(&home)
+    detect_for_home_inner(&home, true)
 }
 
 #[cfg(test)]

@@ -67,7 +67,10 @@ deno task check
 | GET/POST | `/v1/agents` | Auth0 Bearer (onboarded); `?handle=` for recipient slug autocomplete |
 | GET/PUT | `/v1/agents/router` | Auth0 Bearer — default agent + routing rules |
 | PUT | `/v1/agents/default` | Auth0 Bearer — set default agent |
-| POST | `/v1/agents/connect/mcp` | Auth0 Bearer — MCP capability handshake; hub assigns `transport: mcp` + `mcp_endpoint` |
+| POST | `/v1/agents/connect/mcp` | Auth0 Bearer **or** MCP connector token — MCP capability handshake; hub assigns `transport: mcp` + `mcp_endpoint` |
+| POST/GET | `/v1/mcp/connectors` | Auth0 Bearer (onboarded) — mint (plaintext once) / list MCP connector keys (`mtc_…`) |
+| GET | `/v1/mcp/connectors/current` | Connector token — public fields for the presented key (slug, prefix) |
+| DELETE | `/v1/mcp/connectors/:id` | Auth0 Bearer — revoke a connector key |
 | POST | `/v1/agents/connect/sidecar` | Auth0 Bearer — sidecar capability handshake; hub assigns `transport: sidecar` |
 | GET/PUT | `/v1/agents/transport-defaults` | Auth0 Bearer — preferred transport per display slug |
 | POST | `/v1/agents/web` | Auth0 Bearer — **compat alias** → same as `/connect/mcp` |

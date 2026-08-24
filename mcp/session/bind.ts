@@ -12,13 +12,14 @@ export interface McpSession {
 }
 
 /**
- * Bind an Auth0 access token to a mutande MCP agent slot via POST /v1/agents/connect/mcp.
+ * Bind an Auth0 JWT or hub-minted connector token to a mutande MCP agent slot
+ * via POST /v1/agents/connect/mcp.
  * Requires the user to already be onboarded on the hub (create/join org on Mac or web).
  */
 export async function bindWebSession(
   hub: HubClient,
   accessToken: string,
-  claims: Auth0Claims,
+  claims: Auth0Claims | null,
   slug: string,
 ): Promise<McpSession> {
   const me = await hub.getMe(accessToken);
@@ -32,9 +33,14 @@ export async function bindWebSession(
     slug: slug.trim().toLowerCase(),
   });
 
+  const sub = claims?.sub || me.auth0_sub;
+  if (!sub) {
+    throw new Error("session bind failed: missing subject");
+  }
+
   return {
     accessToken,
-    claims,
+    claims: { sub, email: claims?.email ?? me.email },
     me,
     agent,
     slug: agent.slug,

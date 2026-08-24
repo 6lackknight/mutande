@@ -123,11 +123,10 @@ pub async fn login_with_loopback(cfg: &Auth0NativeConfig) -> Result<Auth0Tokens>
         let _ = tx.send(result);
     });
 
+    tracing::info!(%authorize, "Auth0 authorize URL");
     if cfg.open_browser {
         tracing::info!(port = AUTH0_LOOPBACK_PORT, "Auth0 opening system browser");
         open_url(&authorize)?;
-    } else {
-        tracing::info!(%authorize, "Auth0 authorize URL (open_browser=false)");
     }
 
     let timed = tokio::time::timeout(AUTH0_CALLBACK_TIMEOUT, rx).await;
@@ -624,7 +623,21 @@ fn open_url(url: &str) -> Result<()> {
             .context("open Auth0 authorize URL")?;
         return Ok(());
     }
-    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    #[cfg(target_os = "linux")]
+    {
+        let status = std::process::Command::new("xdg-open")
+            .arg(url)
+            .spawn();
+        if let Err(err) = status {
+            tracing::warn!(%url, %err, "xdg-open failed — open the Auth0 URL in this machine's browser");
+        }
+        return Ok(());
+    }
+    #[cfg(all(
+        not(target_os = "macos"),
+        not(target_os = "windows"),
+        not(target_os = "linux")
+    ))]
     {
         tracing::warn!(%url, "open browser not implemented on this OS — open URL manually");
         Ok(())

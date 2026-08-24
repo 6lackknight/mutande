@@ -1,0 +1,89 @@
+# Linux x86_64 mutande-core sidecar (Debian 12/13 / Ubuntu 22.04+).
+# Built on ubuntu-22.04 so the glibc requirement stays at 2.35 (runs on trixie 2.41).
+name: Release Linux sidecar
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "linux-sidecar-*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Build mutande-core
+        working-directory: core
+        run: cargo build --release
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          install -m 755 core/target/release/mutande-core mutande-core-linux-x86_64
+          cp scripts/install-linux-sidecar.sh install-linux-sidecar.sh
+          chmod 755 install-linux-sidecar.sh
+          file mutande-core-linux-x86_64
+          ldd mutande-core-linux-x86_64 || true
+          ./mutande-core-linux-x86_64 --help >/dev/null
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutande-core-linux-x86_64
+          path: |
+            mutande-core-linux-x86_64
+            install-linux-sidecar.sh
+          if-no-files-found: error
+          retention-days: 14
+
+  publish-r2:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: mutande-core-linux-x86_64
+          path: dist/linux
+
+      - name: Install AWS CLI
+        run: |
+          if ! command -v aws >/dev/null 2>&1; then
+            pip install --quiet awscli
+          fi
+          aws --version
+
+      - name: Upload to R2 (mutande-releases)
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_DOWNLOADS_ACCESS_KEY_ID: ${{ secrets.R2_DOWNLOADS_ACCESS_KEY_ID }}
+          R2_DOWNLOADS_SECRET_ACCESS_KEY: ${{ secrets.R2_DOWNLOADS_SECRET_ACCESS_KEY }}
+          R2_DOWNLOADS_BUCKET: mutande-releases
+          R2_DOWNLOADS_PUBLIC_BASE: https://downloads.mutande.online
+        run: |
+          set -euo pipefail
+          test -n "${R2_ACCOUNT_ID:-}"
+          test -n "${R2_DOWNLOADS_ACCESS_KEY_ID:-}"
+          test -n "${R2_DOWNLOADS_SECRET_ACCESS_KEY:-}"
+          bin="$(find dist/linux -name 'mutande-core-linux-x86_64' -type f | head -n1)"
+          sh="$(find dist/linux -name 'install-linux-sidecar.sh' -type f | head -n1)"
+          test -n "$bin"
+          test -n "$sh"
+          chmod +x scripts/upload-downloads-r2.sh "$bin" "$sh"
+          ./scripts/upload-downloads-r2.sh "$bin" "$sh"

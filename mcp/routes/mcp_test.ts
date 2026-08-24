@@ -48,6 +48,16 @@ function fakeHub(): HubClient {
         transport: "mcp",
       },
     });
+  hub.currentConnector = () =>
+    Promise.resolve({
+      connector: {
+        id: "con-1",
+        prefix: "mtc_testxxxx",
+        label: "Grok Bot",
+        slug: "grok",
+        created_at: "2026-01-01T00:00:00.000Z",
+      },
+    });
   hub.listThreads = () => Promise.resolve({ threads: [] });
   return hub;
 }
@@ -394,4 +404,207 @@ Deno.test("invalid audience returns 401 invalid_token", async () => {
   assertStringIncludes(www, 'error="invalid_token"');
   const body = await res.json();
   assertEquals(body.error, "unauthorized");
+  assertExists(body.resource_metadata);
+  assertExists(body.authorization_endpoint);
+});
+
+const CONNECTOR = `mtc_${"a".repeat(32)}`;
+
+function initBody() {
+  return JSON.stringify({
+    jsonrpc: "2.0",
+    id: 1,
+    method: "initialize",
+    params: {
+      protocolVersion: "2025-03-26",
+      capabilities: {},
+      clientInfo: { name: "grok", version: "0" },
+    },
+  });
+}
+
+Deno.test("POST initialize without auth returns serverInfo (liveness)", async () => {
+  const { app, hub } = await setup();
+  let connects = 0;
+  const orig = hub.connectMcpAgent.bind(hub);
+  hub.connectMcpAgent = (token, input) => {
+    connects++;
+    return orig(token, input);
+  };
+  const res = await app.request("https://mcp.test/mcp", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: initBody(),
+  });
+  assertEquals(res.status, 200);
+  assertEquals(res.headers.get("Mcp-Session-Id"), null);
+  const body = await res.json();
+  assertEquals(body.result.serverInfo.name, "mutande-mcp");
+  assertEquals(body.result.serverInfo.version, "0.1.0");
+  assertEquals(connects, 0);
+});
+
+Deno.test("POST ping without auth returns 200", async () => {
+  const { app } = await setup();
+  const res = await app.request("https://mcp.test/mcp", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }),
+  });
+  assertEquals(res.status, 200);
+  const body = await res.json();
+  assertEquals(body.result, {});
+});
+
+Deno.test("POST tools/list without auth still 401", async () => {
+  const { app } = await setup();
+  const res = await app.request("https://mcp.test/mcp", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/list",
+      params: {},
+    }),
+  });
+  assertEquals(res.status, 401);
+  assertExists(res.headers.get("WWW-Authenticate"));
+  const body = await res.json();
+  assertEquals(body.error, "unauthorized");
+  assertStringIncludes(body.resource_metadata, "oauth-protected-resource");
+  assertStringIncludes(body.authorization_endpoint, "/authorize");
+});
+
+Deno.test("GET /mcp without auth stays 401 after public initialize", async () => {
+  const { app } = await setup();
+  const res = await app.request("https://mcp.test/mcp", {
+    method: "GET",
+    headers: { Accept: "text/event-stream" },
+  });
+  assertEquals(res.status, 401);
+});
+
+Deno.test("connector header authenticate + grok slug", async () => {
+  const { app, hub } = await setup();
+  let usedSlug = "";
+  const orig = hub.connectMcpAgent.bind(hub);
+  hub.connectMcpAgent = (token, input) => {
+    usedSlug = input.slug;
+    return orig(token, input);
+  };
+
+  const init = await app.request("https://mcp.test/mcp?slug=grok", {
+    method: "POST",
+    headers: {
+      "X-Mutande-Connector": CONNECTOR,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: initBody(),
+  });
+  assertEquals(init.status, 200);
+  const sessionId = init.headers.get("Mcp-Session-Id");
+  assertExists(sessionId);
+  assertEquals(usedSlug, "grok");
+
+  const list = await app.request("https://mcp.test/mcp?slug=grok", {
+    method: "POST",
+    headers: {
+      "X-Mutande-Connector": CONNECTOR,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      "Mcp-Session-Id": sessionId!,
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/list",
+      params: {},
+    }),
+  });
+  assertEquals(list.status, 200);
+  const listBody = await list.json();
+  assertEquals(Array.isArray(listBody.result.tools), true);
+});
+
+Deno.test("mutande-api-key header uses stored connector slug", async () => {
+  const { app, hub } = await setup();
+  let usedSlug = "";
+  const orig = hub.connectMcpAgent.bind(hub);
+  hub.connectMcpAgent = (token, input) => {
+    usedSlug = input.slug;
+    return orig(token, input);
+  };
+  const res = await app.request("https://mcp.test/mcp", {
+    method: "POST",
+    headers: {
+      "mutande-api-key": CONNECTOR,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name: "health", arguments: {} },
+    }),
+  });
+  assertEquals(res.status, 200);
+  assertEquals(usedSlug, "grok");
+  const body = await res.json();
+  const text = body.result.content[0].text as string;
+  assertStringIncludes(text, '"slug": "grok"');
+});
+
+Deno.test("Bearer mtc_ connector token binds", async () => {
+  const { app } = await setup();
+  const res = await app.request("https://mcp.test/mcp", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${CONNECTOR}`,
+      "X-Mutande-Agent-Slug": "grok",
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name: "health", arguments: {} },
+    }),
+  });
+  assertEquals(res.status, 200);
+});
+
+Deno.test("invalid connector token returns 401", async () => {
+  const { app, hub } = await setup();
+  const { HubClientError } = await import("../hub/client.ts");
+  hub.getMe = () => Promise.reject(new HubClientError("nope", 401));
+  const res = await app.request("https://mcp.test/mcp", {
+    method: "POST",
+    headers: {
+      "X-Mutande-Connector": CONNECTOR,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/list",
+      params: {},
+    }),
+  });
+  assertEquals(res.status, 401);
+  const www = res.headers.get("WWW-Authenticate") ?? "";
+  assertStringIncludes(www, 'error="invalid_token"');
 });

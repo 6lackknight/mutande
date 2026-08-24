@@ -2,7 +2,7 @@
 
 Multi-tenant **remote** MCP at [`https://mcp.mutande.online`](https://mcp.mutande.online).
 
-ChatGPT web / Claude.ai connect **to us** as MCP clients. Identity is Auth0 OAuth 2.1 (same account as Mac / hub). Local sidecar MCP (`core` stdio → daemon) is unchanged.
+ChatGPT web / Claude.ai connect **to us** as MCP clients via Auth0 OAuth 2.1 (same account as Mac / hub). **Grok Bot** uses a hub-minted connector token in a custom header (no OAuth). Local sidecar MCP (`core` stdio → daemon) is unchanged.
 
 **End-user connector steps:** [`docs/HOSTED-MCP.md`](../docs/HOSTED-MCP.md) · public site [`/docs/hosted-mcp`](https://mutande.online/docs/hosted-mcp)  
 **Auth0 / ops:** [`docs/AUTH0.md`](../docs/AUTH0.md) §8
@@ -16,7 +16,7 @@ ChatGPT web / Claude.ai connect **to us** as MCP clients. Identity is Auth0 OAut
 | Role | Blind courier + org/agent store | MCP resource server + OAuth discovery |
 | Deploy | Deno Deploy `mutande` → `hub.mutande.online` | Deno Deploy `mutande-mcp` → `mcp.mutande.online` |
 | Auth | Validates Auth0 JWT for HTTP API | Same Auth0 tenant; exposes RFC 9728 PRM for MCP clients |
-| Agent rows | Source of truth (`transport: mcp` via `POST /v1/agents/connect/mcp`) | Binds session → Auth0 user → hub MCP agent slot |
+| Agent rows | Source of truth (`transport: mcp` via `POST /v1/agents/connect/mcp`); connector keys at `/v1/mcp/connectors` | Binds session → Auth0 JWT **or** `mtc_…` connector → hub MCP agent slot |
 
 Shared Auth0 audiences (`https://hub.mutande.app` + `https://mcp.mutande.online`) mean hosted MCP calls hub with the user's Bearer token **without** OBO. ChatGPT DCR issues the MCP resource as `aud`; set `AUTH0_MCP_AUDIENCE` on **both** mcp and hub. Optional later: OBO only (`AUTH0_MCP_AUDIENCE` on mcp, hub stays hub-aud).
 
@@ -31,6 +31,28 @@ Shared Auth0 audiences (`https://hub.mutande.app` + `https://mcp.mutande.online`
 4. Call **`health`** — expect handle + web `agent_id`.
 5. Call **`list_threads`** — empty/`caught_up` when quiet; open with **`get_thread`** / **`reply_to_thread`**.
 
+## Connect Grok Bot (custom MCP)
+
+Grok Plugins: public HTTPS URL + optional headers. **Do not** use Grok’s OAuth card (Auth0 DCR is disabled; the cloud loader treats 401 as unreachable).
+
+1. Onboard on Mac or web (Auth0).
+2. Mint a connector token (plaintext once):
+   ```bash
+   curl -sS -X POST https://hub.mutande.online/v1/mcp/connectors \
+     -H "Authorization: Bearer $AUTH0_ACCESS_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"label":"Grok Bot","slug":"grok"}'
+   ```
+3. Add custom MCP in Grok:
+   - URL: `https://mcp.mutande.online/mcp` (optional `?slug=grok`)
+   - Header `X-Mutande-Connector`: `mtc_…` (or `mutande-api-key`)
+   - Optional `X-Mutande-Agent-Slug: grok`
+4. Call **`health`** then **`list_threads`**.
+
+Unauthenticated `initialize` / protocol `ping` return `serverInfo` (v0.1.0, mutande-mcp) so the loader can probe liveness. `tools/list` and `tools/call` require the connector (or Auth0 JWT). `GET /mcp` SSE stays authenticated. Mail is **`app_envelope`**, not E2E.
+
+List/revoke: `GET/DELETE https://hub.mutande.online/v1/mcp/connectors` (Auth0 JWT). Connector tokens cannot mint more keys. Mac Settings UI is not shipped yet.
+
 **What works:** app_envelope inbox + compose (`list_threads`, `get_thread`, `reply_to_thread`, `forward_draft`, agents/contacts, close/delete/upvote).  
 **Mac sidecar still required:** E2E seal/open, safety numbers, local drafts, product health/thread `ping`, blobs, router.
 
@@ -43,20 +65,20 @@ Hub prod needs **`APP_ENVELOPE_KEY`** (AES-GCM at rest) for app_envelope mail �
 | GET | `/health` | — |
 | GET | `/.well-known/oauth-protected-resource` | — (RFC 9728) |
 | GET | `/.well-known/oauth-authorization-server` | — Auth0 AS metadata as JSON |
-| GET | `/mcp` | Bearer — Streamable HTTP SSE (`text/event-stream`) |
-| POST | `/mcp` | Bearer — JSON-RPC (`application/json`) |
-| DELETE | `/mcp` | Bearer + `Mcp-Session-Id` — end session |
+| GET | `/mcp` | Bearer JWT or connector — Streamable HTTP SSE (`text/event-stream`) |
+| POST | `/mcp` | `initialize` / protocol `ping` allowed without auth (liveness). `tools/*` need JWT or connector |
+| DELETE | `/mcp` | Bearer JWT or connector + `Mcp-Session-Id` — end session |
 
-Streamable HTTP (MCP 2025-03-26): same `/mcp` URL for POST and optional GET SSE. `initialize` returns `Mcp-Session-Id`; send it on later requests. Unauthenticated GET/POST/DELETE never open a stream.
+Streamable HTTP (MCP 2025-03-26): same `/mcp` URL for POST and optional GET SSE. `initialize` returns `Mcp-Session-Id` when authenticated; unauthenticated liveness `initialize` does not mint a user session. Send the session id on later requests. Unauthenticated GET/DELETE never open a stream. Unauthenticated POST `tools/*` is 401 + `WWW-Authenticate`.
 
-On each authenticated `/mcp` call:
+On each **authenticated** `/mcp` call:
 
-1. Verify Auth0 access token (JWKS)
+1. Verify Auth0 access token (JWKS) **or** hub-minted `mtc_…` connector (`Authorization: Bearer`, `X-Mutande-Connector`, or `mutande-api-key`)
 2. `GET {hub}/v1/me` — must be onboarded
 3. `POST {hub}/v1/agents/connect/mcp` `{ slug }` — create/refresh MCP agent row (`transport: mcp`)
 4. Handle MCP JSON-RPC (`initialize`, `tools/list`, `tools/call`, protocol `ping`)
 
-Default slug: `chatgpt` (`MCP_DEFAULT_AGENT_SLUG`). Override with `?slug=` or `X-Mutande-Agent-Slug`.
+Default slug: `chatgpt` (`MCP_DEFAULT_AGENT_SLUG`). Override with `?slug=` or `X-Mutande-Agent-Slug`. Connector keys default minted slug `grok`.
 
 ## Tools
 
@@ -86,10 +108,10 @@ New mail from hosted MCP is **app_envelope-only**. If hub would resolve the reci
 `forward_draft` attachment success (`attachments: [{name, bytes}]`) + tool/instructions copy + mime normalize → **MCP only** (no hub change). Mac fix for missing file chips is **daemon** (`parse_app_envelope_resources`) — rebuild/restart `mutande-core` (and Flutter app for Open/Reveal on inline content). Hub+MCP together when changing `from_agent_id` / create-thread wire:
 
 ```bash
-# Hub (only if hub store/API changed)
+# Hub (required for connector keys)
 cd hub && deployctl deploy --project=mutande
 
-# Hosted MCP — attachment messaging + mime normalize on resources
+# Hosted MCP — Grok liveness + connector header auth
 cd mcp && deno task deploy
 ```
 
@@ -145,10 +167,10 @@ cd mcp && deno task smoke:sentry   # capture a smoke message, then exit
 
 1. Confirm Deploy env matches `.env.example` names: `AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, `AUTH0_MCP_AUDIENCE`, `MUTANDE_HUB_URL`, `MCP_PUBLIC_URL` (optional `MCP_DEFAULT_AGENT_SLUG`). `AUTH0_MCP_AUDIENCE` defaults to `MCP_PUBLIC_URL` when unset; hub defaults to `https://mcp.mutande.online`. GlitchTip DSN for mcp project 26806 is built-in; set `SENTRY_DSN=` (empty) to disable, or override with `MUTANDE_SENTRY_DSN` / `SENTRY_DSN`.
 2. Hub: `MCP_ENDPOINT=https://mcp.mutande.online` if not using the built-in default; prod **`APP_ENVELOPE_KEY`** must stay set. **Redeploy hub too** after dual-aud changes (`cd hub && deno task deploy` or your usual hub ship).
-3. Ship:
+3. Ship **both** (connector keys live on hub; liveness + header auth on mcp):
    ```bash
+   cd hub && deno task deploy
    cd mcp && deno task deploy
-   # and hub (same AUTH0_MCP_AUDIENCE default / env)
    ```
 4. Smoke: `curl -s https://mcp.mutande.online/health` then reconnect ChatGPT and call `health`.
 5. Optional real-token check (Mac Access Token or Auth0 test token with `aud=https://mcp.mutande.online`):

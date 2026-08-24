@@ -68,6 +68,15 @@ pub fn install_skill(host: &str, home_override: Option<&Path>) -> Result<Install
             ],
             "Restart ChatGPT Desktop (or open a new chat) so it picks up the mutande skill.",
         ),
+        Host::Grok => install_auto(
+            h,
+            &[
+                (home.join(".grok/skills/mutande/SKILL.md"), SKILL_MD),
+                (home.join(".grok/skills/handshake/SKILL.md"), HANDSHAKE_SKILL_MD),
+                (home.join(".grok/plugins/mutande/SKILL.md"), SKILL_MD),
+            ],
+            "In Grok Bot, type / and enable the mutande skill for this Bot (Settings → Plugins → Yours if it is missing).",
+        ),
         Host::Claude => install_claude(&home),
     }
 }
@@ -189,6 +198,17 @@ mod tests {
         assert!(home.join(".codex/skills/mutande/SKILL.md").exists());
         assert!(home.join(".agents/skills/handshake/SKILL.md").exists());
         assert!(home.join(".codex/skills/handshake/SKILL.md").exists());
+    }
+
+    #[test]
+    fn grok_writes_skill_paths() {
+        let dir = tempdir().unwrap();
+        let home = dir.path();
+        let r = install_skill("grok", Some(home)).unwrap();
+        assert!(r.ok);
+        assert!(home.join(".grok/skills/mutande/SKILL.md").exists());
+        assert!(home.join(".grok/skills/handshake/SKILL.md").exists());
+        assert!(home.join(".grok/plugins/mutande/SKILL.md").exists());
     }
 
     #[test]

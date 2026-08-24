@@ -1,8 +1,10 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1";
 import {
   authorizationServerMetadata,
+  connectorTokenFromHeaders,
   createTestTokenVerifier,
   expandMcpAudiences,
+  isMcpConnectorToken,
   protectedResourceMetadata,
   resourceFromPrmPath,
   wwwAuthenticateHeader,
@@ -46,6 +48,28 @@ Deno.test("www-authenticate can include invalid_token error", () => {
   });
   assertEquals(header.includes('error="invalid_token"'), true);
   assertEquals(header.includes("Invalid or expired token"), true);
+});
+
+Deno.test("connector token helpers", () => {
+  const token = `mtc_${"b".repeat(32)}`;
+  assertEquals(isMcpConnectorToken(token), true);
+  assertEquals(isMcpConnectorToken("eyJhbGciOiJIUzI1NiJ9.a.b"), false);
+  assertEquals(
+    connectorTokenFromHeaders({ connector: token }),
+    token,
+  );
+  assertEquals(
+    connectorTokenFromHeaders({ apiKey: token }),
+    token,
+  );
+  assertEquals(
+    connectorTokenFromHeaders({ authorization: `Bearer ${token}` }),
+    token,
+  );
+  assertEquals(
+    connectorTokenFromHeaders({ authorization: "Bearer eyJ.a.b" }),
+    null,
+  );
 });
 
 Deno.test("test verifier accepts signed tokens", async () => {

@@ -39,6 +39,12 @@ RPC: `auth_login` → `create_org` / `join_org` → device `POST /v1/devices`. `
 cargo build --release
 ```
 
+Linux x86_64 sidecar (Grok Bot / Debian): GitHub Actions **Release Linux sidecar**, or see [`scripts/release-linux.md`](../scripts/release-linux.md).
+
+```bash
+curl -fsSL https://downloads.mutande.online/install-linux-sidecar.sh | bash
+```
+
 ## Serve
 
 Start the daemon (Unix socket + HTTP dev bridge):
@@ -98,13 +104,14 @@ curl -s -X POST http://127.0.0.1:3847/rpc \
   -d '{"jsonrpc":"2.0","id":1,"method":"connect_host","params":{"host":"all"}}'
 ```
 
-`host`: `cursor` | `claude` | `chatgpt` | `all`
+`host`: `cursor` | `claude` | `chatgpt` | `grok` | `all`
 
-| Host | Config path (macOS) |
+| Host | Config path |
 |------|---------------------|
 | Cursor | `~/.cursor/mcp.json` |
-| Claude Desktop | `~/Library/Application Support/Claude/claude_desktop_config.json` |
-| ChatGPT desktop | `~/Library/Application Support/ChatGPT/mcp.json` (**unconfirmed** — also reported: `mcp_config.json`, `chatgpt_mcp_config.json` in the same dir; check Settings → MCP if ignored) |
+| Claude Desktop | macOS `~/Library/Application Support/Claude/claude_desktop_config.json`; Linux `~/.config/Claude/claude_desktop_config.json` |
+| ChatGPT desktop | macOS `~/Library/Application Support/ChatGPT/mcp.json`; Linux `~/.config/ChatGPT/mcp.json` |
+| Grok Bot / Grok CLI | `~/.grok/config.toml` (stdio `mutande-core mcp`, `MUTANDE_AGENT_SLUG=grok`) |
 
 Command resolution order: `MUTANDE_CORE_PATH` env → `mutande_core_path` in `~/.mutande/config.json` → `which mutande-core` → bare `mutande-core` (host PATH).
 
@@ -137,6 +144,7 @@ curl -s -X POST http://127.0.0.1:3847/rpc \
 |------|----------|
 | Cursor | Writes `~/.cursor/skills/mutande/SKILL.md` (`mode: auto`) |
 | ChatGPT | Writes `~/.agents/skills/mutande/SKILL.md` and `~/.codex/skills/mutande/SKILL.md` |
+| Grok | Writes `~/.grok/skills/mutande/SKILL.md` and `~/.grok/plugins/mutande/SKILL.md` |
 | Claude | Writes `~/.claude/skills/mutande/SKILL.md` for Claude Code (`mode: auto`) and stages `~/.mutande/skills/mutande-claude.zip` for Desktop upload |
 
 Result shape: `{ host, ok, mode, path?, zip_path?, hint? }`. Cursor/ChatGPT/Claude Code return `ok: true` when the file write succeeds. Claude still returns `zip_path` so Desktop can upload if needed; `ok: false` / `mode: manual` only if the Code path could not be written.

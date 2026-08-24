@@ -1,15 +1,16 @@
 # Hosted MCP (web agents)
 
-Desktop assistants talk to mutande through a **local sidecar** on your Mac. Browser agents (ChatGPT web, Claude.ai) cannot reach that sidecar — they connect to mutande’s **hosted** MCP instead.
+Desktop assistants talk to mutande through a **local sidecar** on your Mac. Browser agents (ChatGPT web, Claude.ai, Grok Bot) cannot reach that sidecar — they connect to mutande’s **hosted** MCP instead.
 
 | Where the agent runs | MCP endpoint | Mail encryption |
 |----------------------|--------------|-----------------|
 | Cursor / Claude Desktop / ChatGPT **desktop** | Local sidecar (`mutande-core`), via [Connect your AI](/docs/connect-ai) | End-to-end (`envelope`) |
-| ChatGPT **web** / Claude.ai | `https://mcp.mutande.online` | Not E2E (`app_envelope`) |
+| ChatGPT **web** / Claude.ai | `https://mcp.mutande.online` (Auth0 OAuth) | Not E2E (`app_envelope`) |
+| Grok Bot (custom MCP) | `https://mcp.mutande.online/mcp` + connector header | Not E2E (`app_envelope`) |
 
 Same Auth0 account as the Mac app and the site. Finish [create](/docs/create-team) or [join](/docs/join) before connecting a web host.
 
-## Setup
+## Setup (ChatGPT / Claude.ai)
 
 1. In ChatGPT or Claude.ai, open **Settings → Connectors** (or MCP) and add a remote MCP server.
 2. URL:
@@ -20,7 +21,27 @@ Same Auth0 account as the Mac app and the site. Finish [create](/docs/create-tea
 4. Allow mutande tools when the host asks.
 5. Call **`health`** — you should see your handle and a web agent id. Then **`list_threads`** to check mail (`caught_up` when quiet).
 
-You do not paste tokens into chat. OAuth is the login path.
+You do not paste Auth0 access tokens into chat. OAuth is the login path.
+
+## Setup (Grok Bot)
+
+Grok custom MCP is a URL plus optional headers — not Auth0 OAuth.
+
+1. After onboarding, mint a connector key (plaintext shown once):
+
+   ```bash
+   curl -sS -X POST https://hub.mutande.online/v1/mcp/connectors \
+     -H "Authorization: Bearer $AUTH0_ACCESS_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"label":"Grok Bot","slug":"grok"}'
+   ```
+
+   Use a Mac/web Auth0 access token to mint. Paste only the returned `mtc_…` value into Grok — never the Auth0 token.
+
+2. In Grok Plugins, add `https://mcp.mutande.online/mcp` with header `X-Mutande-Connector: mtc_…` (optional `X-Mutande-Agent-Slug: grok`).
+3. Call **`health`**, then **`list_threads`**.
+
+Mail is still `app_envelope`, not E2E.
 
 ## What web mail is (and isn’t)
 

@@ -74,6 +74,7 @@ upload_one() {
     *.dmg) ctype="application/x-apple-diskimage" ;;
     *.zip) ctype="application/zip" ;;
     *.exe) ctype="application/vnd.microsoft.portable-executable" ;;
+    *.sh) ctype="text/x-shellscript" ;;
   esac
   echo "==> s3://${R2_BUCKET}/${key}"
   aws s3 cp "$file" "s3://${R2_BUCKET}/${key}" \
@@ -87,7 +88,7 @@ if [[ ${#FILES[@]} -eq 0 ]]; then
   if [[ -n "$SRC_DIR" ]]; then
     while IFS= read -r -d '' f; do
       FILES+=("$f")
-    done < <(find "$SRC_DIR" \( -name '*.dmg' -o -name '*.zip' -o -name '*.exe' \) -type f -print0 | sort -z)
+    done < <(find "$SRC_DIR" \( -name '*.dmg' -o -name '*.zip' -o -name '*.exe' -o -name '*.sh' -o -name 'mutande-core-linux-x86_64' \) -type f -print0 | sort -z)
   else
     for cand in \
       dist/macos/mutande-alpha.dmg \
@@ -99,7 +100,11 @@ if [[ ${#FILES[@]} -eq 0 ]]; then
       web/public/downloads/mutande-alpha-windows-setup.exe \
       mutande-alpha-windows-setup.exe \
       web/public/downloads/mutande-alpha-windows.zip \
-      mutande-alpha-windows.zip
+      mutande-alpha-windows.zip \
+      dist/linux/mutande-core-linux-x86_64 \
+      mutande-core-linux-x86_64 \
+      dist/linux/install-linux-sidecar.sh \
+      scripts/install-linux-sidecar.sh
     do
       [[ -f "$cand" ]] && FILES+=("$cand")
     done
@@ -107,7 +112,7 @@ if [[ ${#FILES[@]} -eq 0 ]]; then
 fi
 
 if [[ ${#FILES[@]} -eq 0 ]]; then
-  echo "error: no .dmg/.zip/.exe found. Pass paths or set SRC_DIR=…" >&2
+  echo "error: no .dmg/.zip/.exe/.sh/linux sidecar found. Pass paths or set SRC_DIR=…" >&2
   exit 1
 fi
 

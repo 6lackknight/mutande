@@ -1,6 +1,6 @@
 import { assertEquals } from "jsr:@std/assert@1";
 import { toolDefinitions, IMPLEMENTED_TOOLS } from "./tools.ts";
-import { handleMcpRequest, normalizeForwardDraftBundle } from "./handler.ts";
+import { handleMcpRequest, handlePublicMcpRequest, normalizeForwardDraftBundle } from "./handler.ts";
 import type { McpSession } from "../session/bind.ts";
 import { HubClient, HubClientError } from "../hub/client.ts";
 import {
@@ -259,6 +259,16 @@ Deno.test("initialize returns serverInfo", async () => {
   assertEquals(result.instructions!.includes("publish_handshake"), true);
   assertEquals(result.instructions!.includes("list_collabs then get_collab"), true);
   assertEquals(result.instructions!.includes("named or confirmed"), true);
+});
+
+Deno.test("public initialize does not need a session", () => {
+  const res = handlePublicMcpRequest(
+    { jsonrpc: "2.0", id: 1, method: "initialize", params: {} },
+    "0.1.0",
+  );
+  const result = res!.result as { serverInfo: { name: string; version: string } };
+  assertEquals(result.serverInfo.name, "mutande-mcp");
+  assertEquals(result.serverInfo.version, "0.1.0");
 });
 
 function parseToolText(res: Awaited<ReturnType<typeof handleMcpRequest>>) {

@@ -78,6 +78,22 @@ export class HubClient {
     return this.request<HubMeResponse>("/v1/me", accessToken);
   }
 
+  /** Public fields for the connector token currently presented (no secret). */
+  currentConnector(
+    accessToken: string,
+  ): Promise<{
+    connector: {
+      id: string;
+      prefix: string;
+      label: string;
+      slug: string | null;
+      created_at: string;
+      last_used_at?: string;
+    };
+  }> {
+    return this.request("/v1/mcp/connectors/current", accessToken);
+  }
+
   /**
    * Capability handshake for hosted MCP — hub assigns transport=mcp.
    * Body may only include client-declared fields (slug + optional capabilities).

@@ -11,6 +11,7 @@ import { createFeedbackRoutes } from "./routes/feedback.ts";
 import { createWaitlistRoutes } from "./routes/waitlist.ts";
 import { healthRoutes } from "./routes/health.ts";
 import { createMeRoutes } from "./routes/me.ts";
+import { createMcpConnectorRoutes } from "./routes/mcp_connectors.ts";
 import { createOnboardingRoutes } from "./routes/onboarding.ts";
 import { createOrgRoutes } from "./routes/orgs.ts";
 import { createRegistryRoutes } from "./routes/registry.ts";
@@ -43,6 +44,7 @@ export async function createApp(
   app.route("/v1/onboarding", createOnboardingRoutes(store));
   app.route("/v1/devices", createDeviceRoutes(store));
   app.route("/v1/agents", createAgentRoutes(store));
+  app.route("/v1/mcp/connectors", createMcpConnectorRoutes(store));
   app.route("/v1/admin", createAdminRoutes(store));
   app.route("/v1/registry", createRegistryRoutes(store));
   app.route("/v1/contacts", createContactRoutes(store));

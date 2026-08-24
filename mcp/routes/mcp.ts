@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { McpConfig } from "../config.ts";
 import {
   bearerTokenFromHeader,
+  connectorTokenFromHeaders,
   wwwAuthenticateHeader,
   type TokenVerifier,
   type Auth0Claims,
@@ -9,7 +10,7 @@ import {
 import { HubClient, HubClientError } from "../hub/client.ts";
 import { bindWebSession } from "../session/bind.ts";
 import { captureMcpException } from "../sentry.ts";
-import { handleMcpRequest } from "../protocol/handler.ts";
+import { handleMcpRequest, handlePublicMcpRequest } from "../protocol/handler.ts";
 import type { McpRequest } from "../protocol/types.ts";
 import {
   globalSessionStore,
@@ -60,6 +61,21 @@ function isInitializeRequest(raw: unknown): boolean {
   return r.method === "initialize";
 }
 
+function isLivenessMethod(raw: unknown): boolean {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return false;
+  const r = raw as McpRequest;
+  if (typeof r.method !== "string") return false;
+  if (r.method === "initialize" || r.method === "ping") return true;
+  return r.method.startsWith("notifications/");
+}
+
+/** Unauthenticated initialize/ping only — any tools/* forces 401. */
+function isLivenessOnlyBody(body: unknown): boolean {
+  const items = Array.isArray(body) ? body : [body];
+  if (items.length === 0) return false;
+  return items.every(isLivenessMethod);
+}
+
 function hasJsonRpcRequests(body: unknown): boolean {
   const items = Array.isArray(body) ? body : [body];
   return items.some((raw) => {
@@ -72,6 +88,44 @@ function hasJsonRpcRequests(body: unknown): boolean {
       r.id !== null
     );
   });
+}
+
+function respondPublicLiveness(body: unknown): Response {
+  if (Array.isArray(body) && body.some(isInitializeRequest) && body.length > 1) {
+    return jsonRpcError(
+      400,
+      "Invalid Request: Only one initialization request is allowed",
+      -32600,
+    );
+  }
+  if (!hasJsonRpcRequests(body)) {
+    return new Response(null, { status: 202 });
+  }
+  const requests = Array.isArray(body) ? body : [body];
+  const responses = [];
+  for (const raw of requests) {
+    const req = raw as McpRequest;
+    if (!req || typeof req.method !== "string") {
+      responses.push({
+        jsonrpc: "2.0",
+        id: null,
+        error: { code: -32600, message: "invalid request" },
+      });
+      continue;
+    }
+    const res = handlePublicMcpRequest(req, SERVER_VERSION);
+    if (res) responses.push(res);
+  }
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (Array.isArray(body)) {
+    return new Response(JSON.stringify(responses), { status: 200, headers });
+  }
+  if (responses.length === 0) {
+    return new Response(null, { status: 202, headers });
+  }
+  return new Response(JSON.stringify(responses[0]), { status: 200, headers });
 }
 
 export function createMcpRoutes(
@@ -90,10 +144,16 @@ export function createMcpRoutes(
     const isInvalid = kind === "invalid";
     const msg = message ??
       (isInvalid ? "Invalid or expired token" : "Bearer token required");
+    const resourceMetadata =
+      `${config.publicUrl}/.well-known/oauth-protected-resource`;
+    const authorizationEndpoint =
+      `https://${config.auth0Domain}/authorize`;
     return new Response(
       JSON.stringify({
         error: "unauthorized",
         message: msg,
+        resource_metadata: resourceMetadata,
+        authorization_endpoint: authorizationEndpoint,
         // ChatGPT surfaces this as "Reauthentication required" on 401.
       }),
       {
@@ -109,25 +169,73 @@ export function createMcpRoutes(
     );
   };
 
-  function resolveSlug(c: {
-    req: {
-      query: (k: string) => string | undefined;
-      header: (k: string) => string | undefined;
-    };
-  }): string {
+  type RequestAuth = {
+    token: string;
+    claims: Auth0Claims;
+    kind: "jwt" | "connector";
+    connectorSlug: string | null;
+  };
+
+  function credentialsFromRequest(c: {
+    req: { header: (k: string) => string | undefined };
+  }): { kind: "jwt" | "connector"; token: string } | null {
+    const connector = connectorTokenFromHeaders({
+      authorization: c.req.header("Authorization"),
+      connector: c.req.header("X-Mutande-Connector"),
+      apiKey: c.req.header("mutande-api-key") ??
+        c.req.header("Mutande-Api-Key"),
+    });
+    if (connector) return { kind: "connector", token: connector };
+    const bearer = bearerTokenFromHeader(c.req.header("Authorization"));
+    if (bearer) return { kind: "jwt", token: bearer };
+    return null;
+  }
+
+  function resolveSlug(
+    c: {
+      req: {
+        query: (k: string) => string | undefined;
+        header: (k: string) => string | undefined;
+      };
+    },
+    connectorSlug?: string | null,
+  ): string {
     const fromQuery = c.req.query("slug")?.trim();
     const fromHeader = c.req.header("X-Mutande-Agent-Slug")?.trim();
-    return (fromQuery || fromHeader || config.defaultAgentSlug).toLowerCase();
+    return (fromQuery || fromHeader || connectorSlug || config.defaultAgentSlug)
+      .toLowerCase();
   }
 
   async function authenticate(
-    authorization: string | undefined,
-  ): Promise<{ token: string; claims: Auth0Claims } | Response> {
-    const token = bearerTokenFromHeader(authorization);
-    if (!token) return unauthorized("missing");
+    c: { req: { header: (k: string) => string | undefined } },
+  ): Promise<RequestAuth | Response> {
+    const creds = credentialsFromRequest(c);
+    if (!creds) return unauthorized("missing");
+    if (creds.kind === "connector") {
+      try {
+        const [me, current] = await Promise.all([
+          hub.getMe(creds.token),
+          hub.currentConnector(creds.token).catch(() => null),
+        ]);
+        const sub = me.auth0_sub;
+        if (!sub) return unauthorized("invalid");
+        return {
+          token: creds.token,
+          claims: { sub, email: me.email },
+          kind: "connector",
+          connectorSlug: current?.connector.slug ?? null,
+        };
+      } catch (e) {
+        if (e instanceof HubClientError && (e.status === 401 || e.status === 403)) {
+          return unauthorized("invalid");
+        }
+        captureMcpException(e);
+        return unauthorized("invalid", "Connector token rejected");
+      }
+    }
     try {
-      const claims = await verifier.verifyAccessToken(token);
-      return { token, claims };
+      const claims = await verifier.verifyAccessToken(creds.token);
+      return { token: creds.token, claims, kind: "jwt", connectorSlug: null };
     } catch {
       // Wrong aud/iss/exp → ChatGPT reports MCP_ACTION_DISCOVERY_FAILED /
       // "Reauthentication required" after a successful OAuth code exchange.
@@ -175,12 +283,11 @@ export function createMcpRoutes(
       };
       json: (body: unknown, status?: number) => Response;
     },
-    token: string,
-    claims: Auth0Claims,
+    auth: RequestAuth,
   ) {
-    const slug = resolveSlug(c);
+    const slug = resolveSlug(c, auth.connectorSlug);
     try {
-      return await bindWebSession(hub, token, claims, slug);
+      return await bindWebSession(hub, auth.token, auth.claims, slug);
     } catch (e) {
       if (e instanceof HubClientError && e.status === 401) {
         // Hub rejected the same Bearer (usually missing AUTH0_MCP_AUDIENCE on hub).
@@ -204,7 +311,7 @@ export function createMcpRoutes(
 
   // --- GET /mcp — open standalone SSE stream (Streamable HTTP) ---
   routes.get("/mcp", async (c) => {
-    const auth = await authenticate(c.req.header("Authorization"));
+    const auth = await authenticate(c);
     if (auth instanceof Response) return auth;
 
     if (!acceptsEventStream(c.req.header("Accept"))) {
@@ -239,7 +346,7 @@ export function createMcpRoutes(
     }
 
     // Ensure token still maps to an onboarded user (no hub payload leaked on stream).
-    const bound = await bindOrError(c, auth.token, auth.claims);
+    const bound = await bindOrError(c, auth);
     if (bound instanceof Response) return bound;
 
     // If client had no session yet, mint one so DELETE/reconnect can target it.
@@ -260,7 +367,7 @@ export function createMcpRoutes(
 
   // --- DELETE /mcp — terminate session ---
   routes.delete("/mcp", async (c) => {
-    const auth = await authenticate(c.req.header("Authorization"));
+    const auth = await authenticate(c);
     if (auth instanceof Response) return auth;
 
     if (!protocolVersionOk(c.req.header("Mcp-Protocol-Version"))) {
@@ -303,9 +410,6 @@ export function createMcpRoutes(
       );
     }
 
-    const auth = await authenticate(c.req.header("Authorization"));
-    if (auth instanceof Response) return auth;
-
     let body: unknown;
     try {
       body = await c.req.json();
@@ -319,6 +423,17 @@ export function createMcpRoutes(
         400,
       );
     }
+
+    const creds = credentialsFromRequest(c);
+    if (!creds) {
+      if (isLivenessOnlyBody(body)) {
+        return respondPublicLiveness(body);
+      }
+      return unauthorized("missing");
+    }
+
+    const auth = await authenticate(c);
+    if (auth instanceof Response) return auth;
 
     const initReq = Array.isArray(body)
       ? body.some(isInitializeRequest)
@@ -336,7 +451,7 @@ export function createMcpRoutes(
       // New transport session on initialize (ignore stale client session id).
       transportSession = sessions.create(
         auth.claims.sub,
-        resolveSlug(c),
+        resolveSlug(c, auth.connectorSlug),
       );
     } else {
       const resolved = resolveTransportSession(
@@ -361,7 +476,7 @@ export function createMcpRoutes(
       }
     }
 
-    const bound = await bindOrError(c, auth.token, auth.claims);
+    const bound = await bindOrError(c, auth);
     if (bound instanceof Response) return bound;
 
     if (!hasJsonRpcRequests(body)) {
@@ -414,7 +529,7 @@ export function createMcpRoutes(
           Allow: "GET, POST, DELETE, OPTIONS",
           "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
           "Access-Control-Allow-Headers":
-            "Authorization, Content-Type, Accept, Mcp-Session-Id, Mcp-Protocol-Version, X-Mutande-Agent-Slug",
+            "Authorization, Content-Type, Accept, Mcp-Session-Id, Mcp-Protocol-Version, X-Mutande-Agent-Slug, X-Mutande-Connector, mutande-api-key",
           "Access-Control-Expose-Headers": "Mcp-Session-Id",
         },
       });

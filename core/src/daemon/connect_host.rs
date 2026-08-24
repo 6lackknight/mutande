@@ -1,4 +1,4 @@
-//! Write MCP host configs so Cursor / Claude Desktop / ChatGPT point at `mutande-core mcp`.
+//! Write MCP host configs so Cursor / Claude Desktop / ChatGPT / Grok point at `mutande-core mcp`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -25,6 +25,7 @@ pub enum Host {
     Cursor,
     Claude,
     Chatgpt,
+    Grok,
 }
 
 impl Host {
@@ -33,6 +34,7 @@ impl Host {
             Host::Cursor => "cursor",
             Host::Claude => "claude",
             Host::Chatgpt => "chatgpt",
+            Host::Grok => "grok",
         }
     }
 
@@ -41,7 +43,8 @@ impl Host {
             "cursor" => Ok(Host::Cursor),
             "claude" => Ok(Host::Claude),
             "chatgpt" => Ok(Host::Chatgpt),
-            other => bail!("invalid host: {other} (expected cursor|claude|chatgpt|all)"),
+            "grok" => Ok(Host::Grok),
+            other => bail!("invalid host: {other} (expected cursor|claude|chatgpt|grok|all)"),
         }
     }
 
@@ -55,6 +58,9 @@ impl Host {
             }
             Host::Chatgpt => {
                 "Quit and reopen ChatGPT Desktop so it loads the new MCP config."
+            }
+            Host::Grok => {
+                "Reload Grok Bot plugins (or restart Grok Bot) so it loads ~/.grok/config.toml."
             }
         }
     }
@@ -311,6 +317,8 @@ pub fn config_path_for_host(host: Host, home: &Path) -> PathBuf {
         Host::Claude => {
             if cfg!(windows) {
                 home.join("AppData/Roaming/Claude/claude_desktop_config.json")
+            } else if cfg!(target_os = "linux") {
+                home.join(".config/Claude/claude_desktop_config.json")
             } else {
                 home.join("Library/Application Support/Claude/claude_desktop_config.json")
             }
@@ -318,10 +326,13 @@ pub fn config_path_for_host(host: Host, home: &Path) -> PathBuf {
         Host::Chatgpt => {
             if cfg!(windows) {
                 home.join("AppData/Roaming/ChatGPT/mcp.json")
+            } else if cfg!(target_os = "linux") {
+                home.join(".config/ChatGPT/mcp.json")
             } else {
                 home.join("Library/Application Support/ChatGPT/mcp.json")
             }
         }
+        Host::Grok => home.join(".grok/config.toml"),
     }
 }
 
@@ -330,6 +341,7 @@ pub fn mcp_server_name(host: Host) -> &'static str {
         Host::Cursor => "mutande-cursor",
         Host::Claude => "mutande-claude",
         Host::Chatgpt => "mutande-chatgpt",
+        Host::Grok => "mutande",
     }
 }
 
@@ -379,6 +391,50 @@ pub fn merge_write_mcp_config(path: &Path, command: &str, host: Host) -> Result<
     Ok(())
 }
 
+/// Merge-write stdio MCP into Grok CLI / Grok Bot `~/.grok/config.toml`.
+pub fn merge_write_grok_config(path: &Path, command: &str, host: Host) -> Result<()> {
+    let mut root: toml::Table = if path.exists() {
+        let data = fs::read_to_string(path)
+            .with_context(|| format!("read {}", path.display()))?;
+        if data.trim().is_empty() {
+            toml::Table::new()
+        } else {
+            data.parse::<toml::Table>().with_context(|| {
+                format!("parse existing Grok config {}", path.display())
+            })?
+        }
+    } else {
+        toml::Table::new()
+    };
+
+    let servers = root
+        .entry("mcp_servers")
+        .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+    let servers = servers.as_table_mut().context("mcp_servers must be a TOML table")?;
+
+    let mut env = toml::Table::new();
+    env.insert(
+        "MUTANDE_AGENT_SLUG".into(),
+        toml::Value::String(host.as_str().into()),
+    );
+    let mut entry = toml::Table::new();
+    entry.insert("command".into(), toml::Value::String(command.into()));
+    entry.insert(
+        "args".into(),
+        toml::Value::Array(vec![toml::Value::String("mcp".into())]),
+    );
+    entry.insert("env".into(), toml::Value::Table(env));
+    servers.insert(mcp_server_name(host).into(), toml::Value::Table(entry));
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
+    }
+    let pretty = toml::to_string_pretty(&root)
+        .with_context(|| format!("serialize {}", path.display()))?;
+    fs::write(path, pretty).with_context(|| format!("write {}", path.display()))?;
+    Ok(())
+}
+
 /// Connect one or all hosts. `home_override` / `command_override` are for tests;
 /// production installs a stable binary under `~/.mutande/bin` then writes configs.
 pub fn connect_host(host: &str, home_override: Option<&Path>) -> Result<ConnectHostResult> {
@@ -409,7 +465,12 @@ fn connect_host_inner(
     let mut hosts = Vec::with_capacity(targets.len());
     for h in targets {
         let path = config_path_for_host(h, &home);
-        match merge_write_mcp_config(&path, &command, h) {
+        let wrote = if h == Host::Grok {
+            merge_write_grok_config(&path, &command, h)
+        } else {
+            merge_write_mcp_config(&path, &command, h)
+        };
+        match wrote {
             Ok(()) => hosts.push(HostWriteResult {
                 host: h.as_str().into(),
                 path: path.display().to_string(),
@@ -531,6 +592,44 @@ mod tests {
             .find(|h| h.host == "chatgpt")
             .and_then(|h| h.note.as_ref());
         assert!(chatgpt_note.is_some_and(|n| n.contains("ChatGPT path")));
+    }
+
+    #[test]
+    fn grok_writes_config_toml_and_preserves_other_servers() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        fs::write(
+            &path,
+            r#"
+[mcp_servers.filesystem]
+command = "npx"
+args = ["-y", "mcp-server-filesystem"]
+"#,
+        )
+        .unwrap();
+
+        merge_write_grok_config(&path, "/opt/mutande-core", Host::Grok).unwrap();
+
+        let parsed: toml::Table = fs::read_to_string(&path).unwrap().parse().unwrap();
+        let mutande = parsed["mcp_servers"]["mutande"].as_table().unwrap();
+        assert_eq!(mutande["command"].as_str(), Some("/opt/mutande-core"));
+        assert_eq!(mutande["args"][0].as_str(), Some("mcp"));
+        assert_eq!(
+            mutande["env"]["MUTANDE_AGENT_SLUG"].as_str(),
+            Some("grok")
+        );
+        assert_eq!(
+            parsed["mcp_servers"]["filesystem"]["command"].as_str(),
+            Some("npx")
+        );
+
+        let home = dir.path();
+        let result =
+            connect_host_inner("grok", Some(home), Some("/tmp/fake-mutande-core")).unwrap();
+        assert_eq!(result.hosts.len(), 1);
+        assert!(result.hosts[0].ok);
+        assert_eq!(result.hosts[0].host, "grok");
+        assert!(home.join(".grok/config.toml").exists());
     }
 
     #[test]

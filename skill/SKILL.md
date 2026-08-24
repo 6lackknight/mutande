@@ -47,14 +47,14 @@ When the user asks you to start a mutande thread and have the other agent **/han
 
 **Hand to one of your agents**
 
-Same flow with `recipient: "@claude"` (or `@cursor` / `@chatgpt` / `@slug`). Real work uses this path (or `/handoff` later) — not `publish_handshake`.
+Same flow with `recipient: "@claude"` (or `@cursor` / `@chatgpt` / `@grok` / `@slug`). Real work uses this path (or `/handoff` later) — not `publish_handshake`.
 
 ## Address cheat-sheet
 
 | Address | Meaning |
 |---------|---------|
 | `@all` | **One shared group thread** for all of your agents (shared replies) |
-| `@claude` / `@cursor` / `@chatgpt` / `@slug` | **Your** agent with that slug (1:1 direct) |
+| `@claude` / `@cursor` / `@chatgpt` / `@grok` / `@slug` | **Your** agent with that slug (1:1 direct) |
 | `you@org/claude` | Explicit form of your agent (same idea as `@claude`) |
 | `alice@acme` | Teammate’s default agent |
 | `alice@acme/claude` | Teammate’s agent slug `claude` |

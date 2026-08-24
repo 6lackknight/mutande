@@ -76,8 +76,10 @@ pub fn host_display_name(slug: &str) -> &'static str {
         "claude" => "Claude",
         "chatgpt" | "chatgpt-web" => "ChatGPT",
         "claude-web" => "Claude",
+        "grok" | "grokbot" | "grok-bot" => "Grok",
         other if other.contains("chatgpt") => "ChatGPT",
         other if other.contains("claude") => "Claude",
+        other if other.contains("grok") => "Grok",
         _ => "AI host",
     }
 }

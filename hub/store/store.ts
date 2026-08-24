@@ -11,6 +11,17 @@ import {
 import { isPlatformOpsAdmin } from "./platform_admin.ts";
 import { randomToken } from "./jwt.ts";
 import {
+  isMcpConnectorToken,
+  listMcpConnectorRecords,
+  lookupMcpConnectorByToken,
+  mintMcpConnector as mintMcpConnectorRow,
+  revokeMcpConnector as revokeMcpConnectorRow,
+  toMcpConnectorView,
+  touchMcpConnectorLastUsed,
+  type MintMcpConnectorInput,
+  type McpConnectorView,
+} from "./mcp_connectors.ts";
+import {
   appEnvelopeKey,
   appEnvelopesPrefix,
   assertExclusiveWireUnit,
@@ -1003,16 +1014,65 @@ export class HubStore {
   }
 
   async verifyAuth0Claims(token: string): Promise<Auth0Claims> {
+    if (isMcpConnectorToken(token)) {
+      const { user } = await this.resolveMcpConnectorToken(token);
+      return { sub: user.auth0_sub, email: user.email };
+    }
     return this.verifyAuth0Token(token);
   }
 
   async verifyAccessToken(token: string): Promise<AuthContext> {
+    if (isMcpConnectorToken(token)) {
+      const { user } = await this.resolveMcpConnectorToken(token);
+      if (!isOnboarded(user)) {
+        throw forbidden("Onboarding required");
+      }
+      return authContextFromUser(user);
+    }
     const claims = await this.verifyAuth0Token(token);
     const user = await this.getUserByAuth0Sub(claims.sub);
     if (!isOnboarded(user)) {
       throw forbidden("Onboarding required");
     }
     return authContextFromUser(user!, claims.roles ?? []);
+  }
+
+  async resolveMcpConnectorToken(
+    token: string,
+  ): Promise<{ user: User; connector: McpConnectorView }> {
+    const row = await lookupMcpConnectorByToken(this.kv, token);
+    if (!row) throw unauthorized("Invalid or expired token");
+    const user = await this.getUser(row.user_id);
+    if (!user) throw unauthorized("Invalid or expired token");
+    try {
+      await touchMcpConnectorLastUsed(this.kv, row);
+    } catch {
+      // last_used is best-effort
+    }
+    return { user, connector: toMcpConnectorView(row) };
+  }
+
+  async mintMcpConnector(
+    auth: AuthContext,
+    input: MintMcpConnectorInput = {},
+  ) {
+    return mintMcpConnectorRow(this.kv, auth.userId, input);
+  }
+
+  async listMcpConnectors(
+    auth: AuthContext,
+  ): Promise<{ connectors: McpConnectorView[] }> {
+    const rows = await listMcpConnectorRecords(this.kv, auth.userId);
+    return { connectors: rows.map(toMcpConnectorView) };
+  }
+
+  async revokeMcpConnector(auth: AuthContext, connectorId: string): Promise<void> {
+    await revokeMcpConnectorRow(this.kv, auth.userId, connectorId);
+  }
+
+  async currentMcpConnector(token: string): Promise<McpConnectorView> {
+    const { connector } = await this.resolveMcpConnectorToken(token);
+    return connector;
   }
 
   async createOrgWithAdmin(

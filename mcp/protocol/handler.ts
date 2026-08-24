@@ -36,6 +36,68 @@ export interface HandlerContext {
   hub: HubClient;
 }
 
+/** JSON-RPC initialize result — no user session / hub bind. */
+export function mcpInitializeResult(serverVersion: string) {
+  return {
+    protocolVersion: "2024-11-05",
+    capabilities: { tools: {} },
+    serverInfo: {
+      name: "mutande-mcp",
+      title: "mutande",
+      version: serverVersion,
+      description:
+        "Agent collaboration mail for teams — threads, handoffs, and inbox tools over Auth0.",
+      websiteUrl: "https://mutande.online/docs/hosted-mcp",
+      icons: [
+        {
+          src: "https://mutande.online/brand/icon-192.png",
+          mimeType: "image/png",
+          sizes: ["192x192"],
+        },
+        {
+          src: "https://mutande.online/brand/favicon-32.png",
+          mimeType: "image/png",
+          sizes: ["32x32"],
+        },
+      ],
+    },
+    instructions:
+      "mutande = agent collaboration mail (handoffs, threads, @all). app_envelope only — not E2E (Mac sidecar for E2E). " +
+      "New chat: list_threads (default needs_action); stay quiet if caught_up. Outbound you sent: filter=open. " +
+      "When the user names a project/board, list_collabs then get_collab (do not only search list_threads subjects). Read instructions + existing cards before any write. " +
+      "Prefer reply_to_thread on an existing card. Create titles the human named or confirmed; if they asked to set up the board, propose a short list and confirm it. forward_draft(collab_id) also files a Backlog card. " +
+      "Send with forward_draft(recipient, …). You may pass subject/notes/resources at the top level OR inside bundle (same shape as desktop drafts). " +
+      "Text body → notes (UTF-8). Attachments: resources[{name, content}] UTF-8 — that IS the named file in the thread (Mac shows a file chip; not a stub). NEVER /mnt/data paths, NEVER base64 text. " +
+      "Binary pdf/png only → resources[{name, content_base64, mime}], keep under ~1MB. " +
+      "On success report thread_id, message_id, attachments[{name,bytes}], resource_count, resource_names. " +
+      "When asked to /handshake or introduce yourself, call publish_handshake (thread_id if on a thread). Names only — never tokens or paths.",
+  };
+}
+
+/**
+ * Unauthenticated liveness: initialize + protocol ping only.
+ * Does not bind a hub agent or create a user session.
+ */
+export function handlePublicMcpRequest(
+  req: McpRequest,
+  serverVersion: string,
+): McpResponse | null {
+  if (
+    req.method.startsWith("notifications/") ||
+    req.id === undefined ||
+    req.id === null
+  ) {
+    return null;
+  }
+  if (req.method === "initialize") {
+    return mcpSuccess(req.id, mcpInitializeResult(serverVersion));
+  }
+  if (req.method === "ping") {
+    return mcpSuccess(req.id, {});
+  }
+  return mcpError(req.id, -32601, `method not found: ${req.method}`);
+}
+
 export async function handleMcpRequest(
   req: McpRequest,
   ctx: HandlerContext,
@@ -49,40 +111,7 @@ export async function handleMcpRequest(
 
   switch (req.method) {
     case "initialize":
-      return mcpSuccess(id, {
-        protocolVersion: "2024-11-05",
-        capabilities: { tools: {} },
-        serverInfo: {
-          name: "mutande-mcp",
-          title: "mutande",
-          version: ctx.serverVersion,
-          description:
-            "Agent collaboration mail for teams — threads, handoffs, and inbox tools over Auth0.",
-          websiteUrl: "https://mutande.online/docs/hosted-mcp",
-          icons: [
-            {
-              src: "https://mutande.online/brand/icon-192.png",
-              mimeType: "image/png",
-              sizes: ["192x192"],
-            },
-            {
-              src: "https://mutande.online/brand/favicon-32.png",
-              mimeType: "image/png",
-              sizes: ["32x32"],
-            },
-          ],
-        },
-        instructions:
-          "mutande = agent collaboration mail (handoffs, threads, @all). app_envelope only — not E2E (Mac sidecar for E2E). " +
-          "New chat: list_threads (default needs_action); stay quiet if caught_up. Outbound you sent: filter=open. " +
-          "When the user names a project/board, list_collabs then get_collab (do not only search list_threads subjects). Read instructions + existing cards before any write. " +
-          "Prefer reply_to_thread on an existing card. Create titles the human named or confirmed; if they asked to set up the board, propose a short list and confirm it. forward_draft(collab_id) also files a Backlog card. " +
-          "Send with forward_draft(recipient, …). You may pass subject/notes/resources at the top level OR inside bundle (same shape as desktop drafts). " +
-          "Text body → notes (UTF-8). Attachments: resources[{name, content}] UTF-8 — that IS the named file in the thread (Mac shows a file chip; not a stub). NEVER /mnt/data paths, NEVER base64 text. " +
-          "Binary pdf/png only → resources[{name, content_base64, mime}], keep under ~1MB. " +
-          "On success report thread_id, message_id, attachments[{name,bytes}], resource_count, resource_names. " +
-          "When asked to /handshake or introduce yourself, call publish_handshake (thread_id if on a thread). Names only — never tokens or paths.",
-      });
+      return mcpSuccess(id, mcpInitializeResult(ctx.serverVersion));
     case "tools/list":
       return mcpSuccess(id, { tools: toolDefinitions() });
     case "tools/call": {
@@ -612,6 +641,8 @@ async function callTool(
       ? "Claude"
       : slug.toLowerCase().includes("cursor")
       ? "Cursor"
+      : slug.toLowerCase().includes("grok")
+      ? "Grok"
       : "AI host";
     const card: Record<string, unknown> = {
       host: pick("host") ?? hostGuess,

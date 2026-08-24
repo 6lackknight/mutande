@@ -210,3 +210,29 @@ export function bearerTokenFromHeader(
   const token = authorization.slice("Bearer ".length).trim();
   return token || null;
 }
+
+/** Hub-minted MCP connector secret (`mtc_…`), not an Auth0 access token. */
+export const MCP_CONNECTOR_TOKEN_PREFIX = "mtc_";
+
+export function isMcpConnectorToken(token: string): boolean {
+  return (
+    token.startsWith(MCP_CONNECTOR_TOKEN_PREFIX) &&
+    token.length >= MCP_CONNECTOR_TOKEN_PREFIX.length + 16
+  );
+}
+
+/**
+ * Connector secret from Grok-style custom headers, or Bearer `mtc_…`.
+ * Dedicated headers win so the Plugins form does not have to use OAuth.
+ */
+export function connectorTokenFromHeaders(opts: {
+  authorization?: string;
+  connector?: string;
+  apiKey?: string;
+}): string | null {
+  const dedicated = opts.connector?.trim() || opts.apiKey?.trim() || "";
+  if (dedicated) return dedicated;
+  const bearer = bearerTokenFromHeader(opts.authorization);
+  if (bearer && isMcpConnectorToken(bearer)) return bearer;
+  return null;
+}
