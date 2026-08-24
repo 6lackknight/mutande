@@ -1272,7 +1272,22 @@ impl DaemonState {
 
     pub fn set_draft_notes(&self, notes: &str) {
         let mut draft = self.draft.lock().unwrap();
-        draft.notes = Some(notes.to_string());
+        let trimmed = notes.trim();
+        draft.notes = if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        };
+    }
+
+    pub fn set_draft_subject(&self, subject: &str) {
+        let mut draft = self.draft.lock().unwrap();
+        let trimmed = subject.trim();
+        draft.subject = if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        };
     }
 
     pub fn merge_question(&self, decision: HumanDecision) {

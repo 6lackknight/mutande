@@ -3,6 +3,7 @@ import type { Context } from "hono";
 import type { McpConfig } from "../config.ts";
 import {
   authorizationServerMetadata,
+  issuerFromAsPath,
   protectedResourceMetadata,
   resourceFromPrmPath,
 } from "../auth/oauth.ts";
@@ -18,7 +19,11 @@ export function createOauthRoutes(config: McpConfig) {
       config,
       resourceFromPrmPath(config.publicUrl, path),
     );
-  const as = () => authorizationServerMetadata(config);
+  const as = (path: string) =>
+    authorizationServerMetadata(
+      config,
+      issuerFromAsPath(config.publicUrl, path),
+    );
 
   const json = (c: Context, body: unknown) => {
     const res = c.json(body);
@@ -40,14 +45,26 @@ export function createOauthRoutes(config: McpConfig) {
     return json(c, prm(c.req.path));
   });
 
-  routes.get("/.well-known/oauth-authorization-server", (c) => json(c, as()));
-  routes.get("/.well-known/oauth-authorization-server/*", (c) => json(c, as()));
-  routes.get("/mcp/.well-known/oauth-authorization-server", (c) => json(c, as()));
+  routes.get("/.well-known/oauth-authorization-server", (c) =>
+    json(c, as(c.req.path)),
+  );
+  routes.get("/.well-known/oauth-authorization-server/*", (c) =>
+    json(c, as(c.req.path)),
+  );
+  routes.get("/mcp/.well-known/oauth-authorization-server", (c) =>
+    json(c, as(c.req.path)),
+  );
 
   // OIDC discovery fallback used by some MCP OAuth clients.
-  routes.get("/.well-known/openid-configuration", (c) => json(c, as()));
-  routes.get("/.well-known/openid-configuration/*", (c) => json(c, as()));
-  routes.get("/mcp/.well-known/openid-configuration", (c) => json(c, as()));
+  routes.get("/.well-known/openid-configuration", (c) =>
+    json(c, as(c.req.path)),
+  );
+  routes.get("/.well-known/openid-configuration/*", (c) =>
+    json(c, as(c.req.path)),
+  );
+  routes.get("/mcp/.well-known/openid-configuration", (c) =>
+    json(c, as(c.req.path)),
+  );
 
   // OpenAI plugin domain verification. Token only — no JSON wrapper.
   routes.get("/.well-known/openai-apps-challenge", (c) => {

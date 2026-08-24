@@ -58,7 +58,7 @@ Hub prod needs **`APP_ENVELOPE_KEY`** (AES-GCM at rest) for app_envelope mail �
 |--------|------|------|
 | GET | `/health` | — |
 | GET | `/.well-known/oauth-protected-resource` | — (RFC 9728) |
-| GET | `/.well-known/oauth-authorization-server` | — Auth0 AS metadata as JSON |
+| GET | `/.well-known/oauth-authorization-server` | — JSON; issuer matches this origin (RFC 8414); authorize/token stay on Auth0; no DCR |
 | GET | `/mcp` | Bearer JWT or connector — Streamable HTTP SSE (`text/event-stream`) |
 | POST | `/mcp` | `initialize` / protocol `ping` allowed without auth (liveness). `tools/*` need JWT or connector |
 | DELETE | `/mcp` | Bearer JWT or connector + `Mcp-Session-Id` — end session |

@@ -51,8 +51,15 @@ Future<T?> showMutandeSheet<T>({
   final w = width ?? size.width.clamp(360.0, 480.0);
   final h = height ?? (size.height - 72).clamp(400.0, 560.0);
   final reduce = MediaQuery.disableAnimationsOf(context);
-  final sheet = MacosSheet(
-    child: SizedBox(width: w, height: h, child: child),
+  final sheet = Center(
+    child: SizedBox(
+      width: w,
+      height: h,
+      child: MacosSheet(
+        insetPadding: EdgeInsets.zero,
+        child: child,
+      ),
+    ),
   );
   final alignment = (origin != null && !reduce)
       ? mutandeSheetAlignment(origin, size)

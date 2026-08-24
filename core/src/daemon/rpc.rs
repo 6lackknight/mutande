@@ -418,8 +418,11 @@ async fn dispatch(state: &Arc<DaemonState>, method: &str, params: Value) -> Resu
             let recipient = param_str(&params, "recipient")?;
             let agent_slug = optional_str(&params, "agent_slug");
             let collab_id = optional_str(&params, "collab_id");
-            if let Some(notes) = optional_str(&params, "notes") {
-                state.set_draft_notes(&notes);
+            if let Some(notes) = params.get("notes").and_then(|v| v.as_str()) {
+                state.set_draft_notes(notes);
+            }
+            if let Some(subject) = optional_str(&params, "subject") {
+                state.set_draft_subject(&subject);
             }
             let result = state
                 .forward_draft(&recipient, agent_slug.as_deref(), collab_id.as_deref())

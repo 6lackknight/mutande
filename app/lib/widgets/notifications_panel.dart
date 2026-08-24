@@ -96,6 +96,19 @@ String notificationDetail(NotificationEntry entry, {String? myHandle}) {
   return fromLabel ?? '';
 }
 
+/// Compact list panel: one-third window width, same 420∶560 ratio.
+Size notificationPanelSize(Size screen) {
+  const ratio = 560 / 420;
+  var width = screen.width / 3;
+  var height = width * ratio;
+  final maxH = (screen.height - 48).clamp(240.0, screen.height);
+  if (height > maxH) {
+    height = maxH;
+    width = height / ratio;
+  }
+  return Size(width, height);
+}
+
 Future<String?> showNotificationsPanel({
   required BuildContext context,
   required NotificationHistoryStore history,
@@ -103,12 +116,13 @@ Future<String?> showNotificationsPanel({
   String? myHandle,
 }) async {
   try {
+    final panel = notificationPanelSize(MediaQuery.sizeOf(context));
     return await showMutandeSheet<String>(
       context: context,
       barrierLabel: 'Notifications',
       origin: origin,
-      width: 420,
-      height: 560,
+      width: panel.width,
+      height: panel.height,
       child: NotificationsPanel(history: history, myHandle: myHandle),
     );
   } finally {

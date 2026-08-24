@@ -66,9 +66,13 @@ curl -sS -X POST https://hub.mutande.online/v1/mcp/connectors \
 
 ## Troubleshooting
 
-### Grok Bot “Couldn't start sign-in…” / connector unreachable
+### Grok Bot “didn't provide a sign-in link” / “Couldn't start sign-in…”
 
-Do **not** use Grok’s OAuth card. Use the connector header path above. Unauthenticated `initialize` / protocol `ping` return 200 (liveness); `tools/list` and `tools/call` still require the connector token (or Auth0 JWT). `GET /mcp` SSE stays 401 without credentials.
+Grok custom MCP is **header auth**, not Auth0 OAuth. Mint `mtc_…` and set `X-Mutande-Connector` (see Setup above). Do not use Grok’s Authenticate / OAuth card — Auth0 DCR is off, so that card can never complete.
+
+If the plugin was added **URL-only**, remove it and re-add with the header. Unauthenticated `initialize` / protocol `ping` return 200 (liveness); `tools/list` and `tools/call` still require the connector token (or Auth0 JWT). `GET /mcp` SSE stays 401 without credentials.
+
+MCP-origin `/.well-known/oauth-authorization-server` is JSON with an issuer that matches the fetch URL (RFC 8414) and **does not** advertise `registration_endpoint`. ChatGPT still follows PRM → Auth0’s own metadata.
 
 ### `Error creating connector` / `Dynamic client registration failed` / `400 … dynamic client registration is disabled`
 

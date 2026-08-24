@@ -4,21 +4,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_resizable_container/flutter_resizable_container.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
-import '../models/agent_transport.dart';
 import '../services/app_actions.dart';
 import '../services/daemon_client.dart';
 import '../services/daemon_event_client.dart';
 import '../services/mailbox/mailbox_store.dart';
 import '../services/notification_prefs_store.dart';
 import '../services/thread_list_cache_store.dart';
-import '../services/transport_prefs_store.dart';
 import '../theme/mutande_macos_theme.dart';
 import '../util/address_display.dart';
 import '../util/clock_format.dart';
-import '../util/compose_transport.dart';
 import '../util/mail_trace.dart';
 import '../util/thread_peer.dart';
 import '../widgets/ai_host_icon.dart';
+import '../widgets/compose_dispatch.dart';
 import '../widgets/contact_avatar.dart';
 import '../widgets/pane_quiet_state.dart';
 import '../widgets/mutande_stagger.dart';
@@ -26,7 +24,6 @@ import '../widgets/thread_skeletons.dart';
 import '../widgets/thread_status_badge.dart';
 import '../widgets/downgrade_consent_banner.dart';
 import '../widgets/enterprise_warn_banner.dart';
-import '../widgets/transport_chip.dart';
 import '../widgets/home_chrome_pills.dart';
 import '../widgets/home_chrome_strip.dart';
 import '../widgets/thread_relay_reading.dart';
@@ -254,11 +251,10 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
     final next = widget.composeRecipient?.trim();
     final prev = oldWidget.composeRecipient?.trim();
     if (next != null && next.isNotEmpty && next != prev) {
-      setState(() {
-        _composeOpen = true;
-        _composePrefillRecipient = next;
-      });
       widget.onComposeRecipientHandled?.call();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_openCompose(recipient: next));
+      });
     }
     final openNext = widget.initialThreadId?.trim();
     final openPrev = oldWidget.initialThreadId?.trim();
@@ -546,6 +542,28 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
       )
       .length;
 
+  Future<void> _openCompose({String? recipient}) async {
+    if (_composeOpen) return;
+    setState(() {
+      _composeOpen = true;
+      if (recipient != null && recipient.trim().isNotEmpty) {
+        _composePrefillRecipient = recipient.trim();
+      }
+    });
+    final sent = await showComposeDispatch(
+      context: context,
+      daemon: widget.daemon,
+      myHandle: widget.myHandle,
+      initialRecipient: recipient ?? _composePrefillRecipient,
+    );
+    if (!mounted) return;
+    setState(() {
+      _composeOpen = false;
+      _composePrefillRecipient = null;
+    });
+    if (sent) unawaited(_reload(silent: true));
+  }
+
   @override
   Widget build(BuildContext context) {
     final listPane = Column(
@@ -557,31 +575,9 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
             filter: _filter,
             onFilterChanged: _onFilterChanged,
             needsYouCount: _needsYouCount,
-            onCompose: () => setState(() => _composeOpen = true),
+            onCompose: () => unawaited(_openCompose()),
           ),
         ),
-        if (_composeOpen) ...[
-          const SizedBox(height: 12),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 0, 12, 0),
-            child: _ComposePanel(
-              daemon: widget.daemon,
-              myHandle: widget.myHandle,
-              initialRecipient: _composePrefillRecipient,
-              onSent: () {
-                setState(() {
-                  _composeOpen = false;
-                  _composePrefillRecipient = null;
-                });
-                unawaited(_reload(silent: true));
-              },
-              onCancel: () => setState(() {
-                _composeOpen = false;
-                _composePrefillRecipient = null;
-              }),
-            ),
-          ),
-        ],
         const SizedBox(height: 8),
         Expanded(
           child: Padding(
@@ -1220,296 +1216,6 @@ String? _selfCollabTitle(ThreadSummary t) {
   if (fromBare.isEmpty || audBare.isEmpty || fromBare != audBare) return null;
   if (t.audience == t.from) return null;
   return t.audience;
-}
-
-class _ComposePanel extends StatefulWidget {
-  const _ComposePanel({
-    required this.daemon,
-    this.myHandle,
-    this.initialRecipient,
-    required this.onSent,
-    required this.onCancel,
-  });
-
-  final DaemonClient daemon;
-  final String? myHandle;
-  final String? initialRecipient;
-  final VoidCallback onSent;
-  final VoidCallback onCancel;
-
-  @override
-  State<_ComposePanel> createState() => _ComposePanelState();
-}
-
-class _ComposePanelState extends State<_ComposePanel> {
-  TextEditingController? _recipientController;
-  final _notes = TextEditingController();
-  bool _sending = false;
-  String? _error;
-  bool _seededRecipient = false;
-  ComposeTransportWarning? _transportWarning;
-  bool _enterpriseWarn = false;
-  List<AgentInfo> _agents = const [];
-  TransportPrefs _transportPrefs = const TransportPrefs();
-  Timer? _resolveDebounce;
-  int _resolveGeneration = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    unawaited(_loadTransportContext());
-  }
-
-  @override
-  void dispose() {
-    _resolveDebounce?.cancel();
-    _notes.dispose();
-    super.dispose();
-  }
-
-  Future<void> _loadTransportContext() async {
-    TransportPrefs prefs = const TransportPrefs();
-    List<AgentInfo> agents = const [];
-    try {
-      // Prefer hub defaults when courier is reachable; fall back to local cache.
-      try {
-        prefs = TransportPrefs.fromJson(
-          await widget.daemon.getTransportDefaults(),
-        );
-      } catch (_) {
-        prefs = await TransportPrefsStore().load();
-      }
-    } catch (_) {}
-    try {
-      agents = (await widget.daemon.listAgents()).agents;
-    } catch (_) {}
-    if (!mounted) return;
-    setState(() {
-      _transportPrefs = prefs;
-      _agents = agents;
-    });
-    unawaited(
-      _resolveWarning(_recipientController?.text ?? widget.initialRecipient),
-    );
-  }
-
-  void _onRecipientChanged(String text) {
-    _resolveDebounce?.cancel();
-    _resolveDebounce = Timer(const Duration(milliseconds: 180), () {
-      if (!mounted) return;
-      unawaited(_resolveWarning(text));
-    });
-  }
-
-  Future<void> _resolveWarning(String? text) async {
-    final recipient = text?.trim() ?? '';
-    final gen = ++_resolveGeneration;
-    var warning = resolveComposeTransportWarning(
-      recipient: recipient,
-      agents: _agents,
-      prefs: _transportPrefs,
-    );
-
-    // Registry enterprise address — not in org agent list (§7.2).
-    var enterpriseWarn = warning?.isEnterprise ?? false;
-    if (!enterpriseWarn) {
-      final candidate = registryAddressCandidate(recipient);
-      if (candidate != null) {
-        final listing = await widget.daemon.getRegistryListing(candidate);
-        if (!mounted || gen != _resolveGeneration) return;
-        if (listing != null && listing.showBanner) {
-          enterpriseWarn = true;
-          warning ??= ComposeTransportWarning.fromSlot(
-            transport: AgentTransport.mcp,
-            trustTier: TrustTier.enterprise,
-          );
-        }
-      }
-    }
-
-    if (!mounted || gen != _resolveGeneration) return;
-    if (warning?.label == _transportWarning?.label &&
-        enterpriseWarn == _enterpriseWarn) {
-      return;
-    }
-    setState(() {
-      _transportWarning = warning;
-      _enterpriseWarn = enterpriseWarn;
-    });
-  }
-
-  Future<List<String>> _recipientOptions(String input) async {
-    final trimmed = input.trim();
-    final lower = trimmed.toLowerCase();
-    final orgAll = _orgBroadcastFromHandle(widget.myHandle);
-
-    // Self-collaboration shorthand: @cursor, @claude, @all —
-    // not @all@org (second @ means org broadcast / handle path below).
-    final selfShorthand =
-        trimmed.isEmpty ||
-        (trimmed.startsWith('@') && !trimmed.substring(1).contains('@'));
-    if (selfShorthand) {
-      try {
-        final list = await widget.daemon.listAgents();
-        final suggestions = <String>[
-          '@all',
-          if (orgAll != null) orgAll,
-          ...list.agents.map((a) => '@${a.slug.toLowerCase()}'),
-        ];
-        if (trimmed.isEmpty || lower == '@') return suggestions;
-        return suggestions.where((s) => s.startsWith(lower)).toList();
-      } catch (_) {
-        if (trimmed.isEmpty || lower.startsWith('@')) {
-          return ['@all', if (orgAll != null) orgAll];
-        }
-      }
-    }
-
-    // Org broadcast: @all@acme (gated out of self-shorthand by the second @).
-    if (orgAll != null &&
-        (orgAll.startsWith(lower) || lower.startsWith('@all@'))) {
-      return [orgAll];
-    }
-
-    final bare = _bareHandleFromInput(trimmed);
-    if (bare == null) return const [];
-    try {
-      final list = await widget.daemon.listAgents(handle: bare);
-      return [bare, ...list.agents.map((a) => '$bare/${a.slug.toLowerCase()}')];
-    } catch (_) {
-      return [bare];
-    }
-  }
-
-  /// `alice@acme` / `alice@acme/cursor` → `@all@acme`.
-  static String? _orgBroadcastFromHandle(String? handle) {
-    if (handle == null || handle.isEmpty) return null;
-    final at = handle.lastIndexOf('@');
-    if (at < 0 || at >= handle.length - 1) return null;
-    var org = handle.substring(at + 1);
-    final slash = org.indexOf('/');
-    if (slash >= 0) org = org.substring(0, slash);
-    if (org.isEmpty) return null;
-    return '@all@${org.toLowerCase()}';
-  }
-
-  String? _bareHandleFromInput(String input) {
-    final trimmed = input.trim();
-    if (trimmed.isEmpty) return null;
-    // Bare @all / @slug are handled above — not user handles.
-    if (trimmed.startsWith('@') && !trimmed.substring(1).contains('@')) {
-      return null;
-    }
-    final slash = trimmed.indexOf('/');
-    final base = slash >= 0 ? trimmed.substring(0, slash) : trimmed;
-    final at = base.lastIndexOf('@');
-    if (at <= 0 || at >= base.length - 1) return null;
-    return base.toLowerCase();
-  }
-
-  Future<void> _send() async {
-    final recipient = _recipientController?.text.trim() ?? '';
-    final notes = _notes.text.trim();
-    if (recipient.isEmpty || notes.isEmpty) return;
-    setState(() {
-      _sending = true;
-      _error = null;
-    });
-    try {
-      await widget.daemon.forwardDraft(recipient: recipient, notes: notes);
-      _recipientController?.clear();
-      _notes.clear();
-      widget.onSent();
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _error = friendlyDaemonError(e, what: 'Send'));
-    } finally {
-      if (mounted) setState(() => _sending = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFAFAF9),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE7E5E4)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Autocomplete<String>(
-            optionsBuilder: (text) async => _recipientOptions(text.text),
-            onSelected: (value) {
-              _recipientController?.text = value;
-              unawaited(_resolveWarning(value));
-            },
-            fieldViewBuilder: (context, controller, focusNode, onSubmit) {
-              _recipientController = controller;
-              final seed = widget.initialRecipient?.trim();
-              if (!_seededRecipient && seed != null && seed.isNotEmpty) {
-                _seededRecipient = true;
-                if (controller.text.isEmpty) controller.text = seed;
-              }
-              return TextField(
-                controller: controller,
-                focusNode: focusNode,
-                decoration: const InputDecoration(
-                  hintText: '@claude, @all, or bob@acme/claude',
-                  labelText: 'Recipient',
-                ),
-                enabled: !_sending,
-                onChanged: _onRecipientChanged,
-                onSubmitted: (_) => onSubmit(),
-              );
-            },
-          ),
-          if (_transportWarning != null) ...[
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: ComposeNonE2eChip(warning: _transportWarning!),
-            ),
-          ],
-          if (_enterpriseWarn) ...[
-            const SizedBox(height: 8),
-            const EnterpriseWarnBanner(),
-          ],
-          const SizedBox(height: 8),
-          TextField(
-            controller: _notes,
-            decoration: const InputDecoration(
-              labelText: 'Note',
-              hintText: 'Short note for their agent',
-            ),
-            minLines: 2,
-            maxLines: 4,
-            enabled: !_sending,
-          ),
-          if (_error != null) ...[
-            const SizedBox(height: 8),
-            PaneInlineError(message: _error!),
-          ],
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              TextButton(
-                onPressed: _sending ? null : widget.onCancel,
-                child: const Text('Cancel'),
-              ),
-              const Spacer(),
-              FilledButton(
-                onPressed: _sending ? null : _send,
-                child: Text(_sending ? 'Sending…' : 'Send'),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 class ThreadDetailPanel extends StatefulWidget {

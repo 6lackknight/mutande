@@ -5,6 +5,7 @@ import {
   createTestTokenVerifier,
   expandMcpAudiences,
   isMcpConnectorToken,
+  issuerFromAsPath,
   protectedResourceMetadata,
   resourceFromPrmPath,
   wwwAuthenticateHeader,
@@ -28,6 +29,7 @@ Deno.test("protected resource metadata points at Auth0", () => {
   const meta = protectedResourceMetadata(sampleConfig);
   assertEquals(meta.resource, "https://mcp.mutande.online");
   assertEquals(meta.authorization_servers, ["https://auth.mutande.online/"]);
+  assertEquals(meta.authorization_endpoint, "https://auth.mutande.online/authorize");
   assertEquals(meta.bearer_methods_supported, ["header"]);
 });
 
@@ -188,16 +190,33 @@ Deno.test("loadConfig empty AUTH0_MCP_AUDIENCE disables extra aud", () => {
   assertEquals(cfg.auth0McpAudience, null);
 });
 
-Deno.test("authorization server metadata is Auth0 JSON, not a redirect", () => {
+Deno.test("authorization server metadata is JSON with matching issuer, no DCR", () => {
   const meta = authorizationServerMetadata(sampleConfig);
-  assertEquals(meta.issuer, "https://auth.mutande.online/");
+  assertEquals(meta.issuer, "https://mcp.mutande.online");
   assertEquals(meta.authorization_endpoint, "https://auth.mutande.online/authorize");
-  assertEquals(
-    meta.registration_endpoint,
-    "https://auth.mutande.online/oidc/register",
-  );
+  assertEquals("registration_endpoint" in meta, false);
+  assertEquals("client_id_metadata_document_supported" in meta, false);
   assertEquals(meta.code_challenge_methods_supported, ["S256"]);
-  assertEquals(meta.client_id_metadata_document_supported, true);
+});
+
+Deno.test("issuerFromAsPath matches RFC 8414 fetch URL", () => {
+  const base = "https://mcp.mutande.online";
+  assertEquals(
+    issuerFromAsPath(base, "/.well-known/oauth-authorization-server"),
+    base,
+  );
+  assertEquals(
+    issuerFromAsPath(base, "/.well-known/oauth-authorization-server/mcp"),
+    `${base}/mcp`,
+  );
+  assertEquals(
+    issuerFromAsPath(base, "/mcp/.well-known/oauth-authorization-server"),
+    `${base}/mcp`,
+  );
+  assertEquals(
+    issuerFromAsPath(base, "/mcp/.well-known/openid-configuration"),
+    `${base}/mcp`,
+  );
 });
 
 Deno.test("resourceFromPrmPath keeps origin PRM, suffixes /mcp", () => {
@@ -216,26 +235,31 @@ Deno.test("resourceFromPrmPath keeps origin PRM, suffixes /mcp", () => {
   );
 });
 
-Deno.test("AS metadata routes return JSON with registration_endpoint", async () => {
+Deno.test("AS metadata routes return JSON with path issuer and no DCR", async () => {
   const routes = createOauthRoutes(sampleConfig);
-  for (
-    const path of [
-      "/.well-known/oauth-authorization-server",
-      "/.well-known/oauth-authorization-server/mcp",
-      "/mcp/.well-known/oauth-authorization-server",
-      "/.well-known/openid-configuration",
-      "/mcp/.well-known/openid-configuration",
-    ]
-  ) {
+  const cases: Array<[string, string]> = [
+    ["/.well-known/oauth-authorization-server", "https://mcp.mutande.online"],
+    ["/.well-known/oauth-authorization-server/mcp", "https://mcp.mutande.online/mcp"],
+    ["/mcp/.well-known/oauth-authorization-server", "https://mcp.mutande.online/mcp"],
+    ["/.well-known/openid-configuration", "https://mcp.mutande.online"],
+    ["/mcp/.well-known/openid-configuration", "https://mcp.mutande.online/mcp"],
+  ];
+  for (const [path, issuer] of cases) {
     const hit = await routes.request(path);
     assertEquals(hit.status, 200, path);
     assertEquals(hit.headers.get("access-control-allow-origin"), "*");
-    const body = await hit.json() as { registration_endpoint?: string };
+    const body = await hit.json() as {
+      issuer?: string;
+      authorization_endpoint?: string;
+      registration_endpoint?: string;
+    };
+    assertEquals(body.issuer, issuer, path);
     assertEquals(
-      body.registration_endpoint,
-      "https://auth.mutande.online/oidc/register",
+      body.authorization_endpoint,
+      "https://auth.mutande.online/authorize",
       path,
     );
+    assertEquals(body.registration_endpoint, undefined, path);
   }
 });
 

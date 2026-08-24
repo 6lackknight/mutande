@@ -143,7 +143,9 @@ export function createMcpRoutes(
   ) => {
     const isInvalid = kind === "invalid";
     const msg = message ??
-      (isInvalid ? "Invalid or expired token" : "Bearer token required");
+      (isInvalid
+        ? "Invalid or expired token"
+        : "Bearer token or X-Mutande-Connector required");
     const resourceMetadata =
       `${config.publicUrl}/.well-known/oauth-protected-resource`;
     const authorizationEndpoint =

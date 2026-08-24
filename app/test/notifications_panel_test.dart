@@ -27,6 +27,12 @@ NotificationEntry _entry({
 }
 
 void main() {
+  test('notificationPanelSize is one-third width at 420:560', () {
+    final panel = notificationPanelSize(const Size(1280, 720));
+    expect(panel.width, closeTo(1280 / 3, 0.01));
+    expect(panel.height / panel.width, closeTo(560 / 420, 0.01));
+  });
+
   test('notificationHeadline prefers agent slug over banner copy', () {
     expect(
       notificationHeadline(_entry(id: '1', agentSlug: 'chatgpt')),

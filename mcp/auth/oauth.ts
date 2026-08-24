@@ -136,6 +136,10 @@ export function protectedResourceMetadata(
   return {
     resource,
     authorization_servers: [authorizationServer],
+    // Extra fields: Grok-style loaders look here for a sign-in URL and may
+    // never fetch AS metadata. RFC 9728 clients ignore unknown properties.
+    authorization_endpoint: `${authorizationServer}authorize`,
+    token_endpoint: `${authorizationServer}oauth/token`,
     scopes_supported: ["openid", "profile", "email", "offline_access"],
     bearer_methods_supported: ["header"],
     resource_documentation: `${config.publicUrl}/`,
@@ -143,29 +147,45 @@ export function protectedResourceMetadata(
 }
 
 /**
- * RFC 8414 Authorization Server Metadata for Auth0.
+ * RFC 8414 Authorization Server Metadata served from the MCP origin.
  *
- * Hosted MCP is the resource server; Auth0 is the AS. Some MCP loaders
- * (Grok Bot) fetch this from the MCP origin and do not follow redirects, so
- * this must be JSON — not a 307 to Auth0.
+ * Auth0 is the real AS (authorize / token / JWKS). Hosted MCP is only the
+ * resource server, but Grok Bot fetches well-known from the connector URL and
+ * does not follow redirects — so this must be JSON, not a 307.
+ *
+ * RFC 8414 §3.3: `issuer` MUST match the URL used to fetch this document.
+ * Advertising Auth0's issuer here makes strict clients discard the whole
+ * document (no authorization_endpoint → “didn't provide a sign-in link”).
+ *
+ * Do not advertise `registration_endpoint` or CIMD: Auth0 DCR is disabled.
+ * ChatGPT still discovers Auth0 via PRM `authorization_servers` and Auth0's
+ * own well-known (which still lists DCR for the pre-registered tpc_ client).
  */
-export function authorizationServerMetadata(config: McpConfig) {
-  const issuer = `https://${config.auth0Domain}/`;
+export function authorizationServerMetadata(
+  config: McpConfig,
+  issuer: string = config.publicUrl,
+) {
+  const auth0 = `https://${config.auth0Domain}/`;
+  const iss = issuer.replace(/\/+$/, "");
   return {
-    issuer,
-    authorization_endpoint: `${issuer}authorize`,
-    token_endpoint: `${issuer}oauth/token`,
-    registration_endpoint: `${issuer}oidc/register`,
-    jwks_uri: `${issuer}.well-known/jwks.json`,
-    userinfo_endpoint: `${issuer}userinfo`,
-    revocation_endpoint: `${issuer}oauth/revoke`,
+    issuer: iss,
+    authorization_endpoint: `${auth0}authorize`,
+    token_endpoint: `${auth0}oauth/token`,
+    jwks_uri: `${auth0}.well-known/jwks.json`,
+    userinfo_endpoint: `${auth0}userinfo`,
+    revocation_endpoint: `${auth0}oauth/revoke`,
     scopes_supported: ["openid", "profile", "email", "offline_access"],
     response_types_supported: ["code"],
     grant_types_supported: ["authorization_code", "refresh_token"],
     code_challenge_methods_supported: ["S256"],
     token_endpoint_auth_methods_supported: ["none", "client_secret_post"],
-    client_id_metadata_document_supported: true,
   };
+}
+
+function suffixAfterWellKnown(path: string, marker: string): string | null {
+  const idx = path.indexOf(marker);
+  if (idx < 0) return null;
+  return path.slice(idx + marker.length).replace(/^\/+|\/+$/g, "");
 }
 
 /** Resolve RFC 9728 path-inserted resource from a PRM request path. */
@@ -175,11 +195,32 @@ export function resourceFromPrmPath(
 ): string {
   const base = publicUrl.replace(/\/+$/, "");
   if (path.startsWith("/mcp/") || path === "/mcp") return `${base}/mcp`;
-  const marker = "/.well-known/oauth-protected-resource";
-  const idx = path.indexOf(marker);
-  if (idx < 0) return base;
-  const after = path.slice(idx + marker.length).replace(/^\/+|\/+$/g, "");
+  const after = suffixAfterWellKnown(
+    path,
+    "/.well-known/oauth-protected-resource",
+  );
+  if (after === null) return base;
   return after ? `${base}/${after}` : base;
+}
+
+/**
+ * RFC 8414 §3.3 issuer for AS/OIDC metadata served on this origin.
+ * Must equal the identifier the client used to build the well-known URL.
+ */
+export function issuerFromAsPath(publicUrl: string, path: string): string {
+  const base = publicUrl.replace(/\/+$/, "");
+  if (path.startsWith("/mcp/") || path === "/mcp") return `${base}/mcp`;
+  for (
+    const marker of [
+      "/.well-known/oauth-authorization-server",
+      "/.well-known/openid-configuration",
+    ]
+  ) {
+    const after = suffixAfterWellKnown(path, marker);
+    if (after === null) continue;
+    return after ? `${base}/${after}` : base;
+  }
+  return base;
 }
 
 /** WWW-Authenticate for 401 responses (MCP clients discover PRM from this). */

@@ -730,11 +730,36 @@ class DaemonClient {
   Future<String> forwardDraft({
     required String recipient,
     required String notes,
+    String? subject,
   }) async {
     final result = await _call('forward_draft', {
       'recipient': recipient,
       'notes': notes,
+      if (subject != null && subject.trim().isNotEmpty) 'subject': subject.trim(),
     });
+    final map = result as Map<String, dynamic>? ?? {};
+    return map['thread_id'] as String? ?? '';
+  }
+
+  /// Seal a local file as a blob. Omit [threadId] to open a new thread
+  /// ([recipient] required). Pass [threadId] to attach as a reply.
+  Future<String> forwardBlob({
+    String? recipient,
+    String? threadId,
+    required String path,
+    String? subject,
+    String? inReplyTo,
+  }) async {
+    final result = await _callWithTimeout('forward_blob', {
+      if (recipient != null && recipient.trim().isNotEmpty)
+        'recipient': recipient.trim(),
+      if (threadId != null && threadId.trim().isNotEmpty)
+        'thread_id': threadId.trim(),
+      'path': path,
+      if (subject != null && subject.trim().isNotEmpty) 'subject': subject.trim(),
+      if (inReplyTo != null && inReplyTo.trim().isNotEmpty)
+        'in_reply_to': inReplyTo.trim(),
+    }, const Duration(seconds: 60));
     final map = result as Map<String, dynamic>? ?? {};
     return map['thread_id'] as String? ?? '';
   }
