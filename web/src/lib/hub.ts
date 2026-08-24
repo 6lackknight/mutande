@@ -8,9 +8,12 @@ import {
   type ListContactsResponse,
   type ListFeedbackResponse,
   type ListInvitesResponse,
+  type ListMcpConnectorsResponse,
   type ListPendingPairRequestsResponse,
   type ListWaitlistResponse,
   type MeResponse,
+  type MintMcpConnectorInput,
+  type MintMcpConnectorResult,
   type PairingPinResponse,
   type PairRequest,
   type SeedProfileInput,
@@ -69,18 +72,17 @@ async function hubFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
 
   if (!res.ok) {
-    const detail =
-      typeof body === "object" &&
-      body !== null &&
-      "error" in body &&
-      typeof (body as { error: unknown }).error === "string"
-        ? (body as { error: string }).error
-        : typeof body === "object" &&
-            body !== null &&
-            "message" in body &&
-            typeof (body as { message: unknown }).message === "string"
-          ? (body as { message: string }).message
-          : res.statusText || "Request failed";
+    const obj =
+      typeof body === "object" && body !== null
+        ? (body as { error?: unknown; message?: unknown })
+        : null;
+    const message =
+      typeof obj?.message === "string" && obj.message.trim()
+        ? obj.message
+        : null;
+    const code =
+      typeof obj?.error === "string" && obj.error.trim() ? obj.error : null;
+    const detail = message || code || res.statusText || "Request failed";
     throw new HubError(detail, res.status, body);
   }
 
@@ -223,6 +225,32 @@ export async function unpairExternalContact(
   });
 }
 
+export async function listMcpConnectors(): Promise<ListMcpConnectorsResponse> {
+  const data = await hubFetch<ListMcpConnectorsResponse | McpConnectorLike[]>(
+    "/v1/mcp/connectors",
+  );
+  if (Array.isArray(data)) return { connectors: data };
+  if (Array.isArray(data.connectors)) return data;
+  return { connectors: [] };
+}
+
+export async function mintMcpConnector(
+  input: MintMcpConnectorInput = {},
+): Promise<MintMcpConnectorResult> {
+  return hubFetch<MintMcpConnectorResult>("/v1/mcp/connectors", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function revokeMcpConnector(
+  connectorId: string,
+): Promise<{ ok: boolean }> {
+  return hubFetch(`/v1/mcp/connectors/${encodeURIComponent(connectorId)}`, {
+    method: "DELETE",
+  });
+}
+
 export async function listInvites(): Promise<ListInvitesResponse> {
   const data = await hubFetch<ListInvitesResponse | InviteLike[]>(
     "/v1/admin/invites",
@@ -319,6 +347,9 @@ export function formatHubError(err: unknown): string {
     if (err.status === 503) {
       return `${err.message}. The hub may still be deploying Auth0 routes — UI will work once it lands.`;
     }
+    if (/too many MCP connector keys/i.test(err.message)) {
+      return "You already have 8 connector keys. Revoke one first.";
+    }
     return err.message;
   }
   if (err instanceof Error) return err.message;
@@ -326,3 +357,4 @@ export function formatHubError(err: unknown): string {
 }
 
 type InviteLike = ListInvitesResponse["invites"][number];
+type McpConnectorLike = ListMcpConnectorsResponse["connectors"][number];

@@ -20,6 +20,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     title: "Grok Bot connectors",
     notes: [
       "Settings → Connectors mints a mutande key (`mtc_…`) for Grok Bot hosted MCP — copy once, revoke anytime.",
+      "Mint and revoke the same keys on the web at mutande.online/connectors — no Mac app required.",
       "Grok Bot connects to mcp.mutande.online with that header; Auth0 sign-in is not required on that path.",
     ],
   },

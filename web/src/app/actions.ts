@@ -14,6 +14,7 @@ import {
   listOpsCensus,
   listRegistryAdmin,
   listWaitlistAdmin,
+  mintMcpConnector,
   publishRegistryListing,
   rotatePairingPin,
   submitPairRequest,
@@ -22,12 +23,18 @@ import {
   unpairExternalContact,
   updateOrg,
   updateProfile,
+  revokeMcpConnector,
   verifyRegistryListing,
   approvePairRequest,
 } from "@/lib/hub";
 import { sendInviteEmail } from "@/lib/plunk";
 import { joinUrlForCode, requireSession } from "@/lib/session";
-import type { Feedback, OpsCensus, WaitlistEntry } from "@/lib/types";
+import type {
+  Feedback,
+  McpConnector,
+  OpsCensus,
+  WaitlistEntry,
+} from "@/lib/types";
 
 export type ActionState = {
   error?: string;
@@ -36,6 +43,10 @@ export type ActionState = {
   inviteEmail?: string;
   joinUrl?: string;
   emailSkipped?: string;
+  /** Plaintext `mtc_…` — mint only; never persisted. */
+  connectorToken?: string;
+  connector?: McpConnector;
+  revokedConnectorId?: string;
 };
 
 function slugify(raw: string): string {
@@ -260,6 +271,58 @@ export async function unpairExternalContactAction(
     return { error: formatHubError(err) };
   }
   return { ok: "Contact removed." };
+}
+
+const AGENT_SLUG_RE = /^[a-z0-9-]{1,32}$/;
+const RESERVED_AGENT_SLUGS = new Set(["default", "all"]);
+
+export async function mintConnectorAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  await requireSession("/connectors");
+
+  const label = String(formData.get("label") ?? "").trim().slice(0, 64);
+  const slugRaw = String(formData.get("slug") ?? "")
+    .trim()
+    .toLowerCase();
+  const slug = slugRaw || "grok";
+
+  if (!AGENT_SLUG_RE.test(slug) || RESERVED_AGENT_SLUGS.has(slug)) {
+    return {
+      error:
+        "Agent slug must be 1–32 lowercase letters, digits, or hyphens (not default or all).",
+    };
+  }
+
+  try {
+    const minted = await mintMcpConnector({
+      label: label || "Grok Bot",
+      slug,
+    });
+    return {
+      ok: "Copy this key now — mutande will not show it again.",
+      connectorToken: minted.token,
+      connector: minted.connector,
+    };
+  } catch (err) {
+    return { error: formatHubError(err) };
+  }
+}
+
+export async function revokeConnectorAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  await requireSession("/connectors");
+  const connectorId = String(formData.get("connector_id") ?? "").trim();
+  if (!connectorId) return { error: "Missing connector." };
+  try {
+    await revokeMcpConnector(connectorId);
+    return { ok: "Connector key revoked.", revokedConnectorId: connectorId };
+  } catch (err) {
+    return { error: formatHubError(err) };
+  }
 }
 
 export async function createInviteAction(

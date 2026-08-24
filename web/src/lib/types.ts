@@ -148,6 +148,34 @@ export interface ListInvitesResponse {
   invites: Invite[];
 }
 
+export const MAX_MCP_CONNECTORS = 8;
+export const MCP_CONNECTOR_URL = "https://mcp.mutande.online/mcp";
+
+/** Hub listing — hashed prefix only; plaintext is never stored. */
+export interface McpConnector {
+  id: string;
+  prefix: string;
+  label: string;
+  slug: string | null;
+  created_at: string;
+  last_used_at?: string;
+}
+
+export interface MintMcpConnectorInput {
+  label?: string;
+  slug?: string | null;
+}
+
+export interface MintMcpConnectorResult {
+  connector: McpConnector;
+  /** Plaintext secret — returned once at mint. */
+  token: string;
+}
+
+export interface ListMcpConnectorsResponse {
+  connectors: McpConnector[];
+}
+
 export interface Feedback {
   id: string;
   created_at: string;

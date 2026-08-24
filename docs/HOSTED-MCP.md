@@ -26,7 +26,7 @@ Do not paste Auth0 access tokens into chat.
 Grok Bot custom MCP is **name + HTTPS URL + optional headers**. It does not use Auth0 OAuth (DCR is not required for this path).
 
 1. Finish mutande onboarding (Mac or web).
-2. In the Mac app: **Settings → Connectors → Mint key**. Copy the `mtc_…` value once (mutande will not show it again). Revoke from the same list.
+2. Mint a key on the Mac app (**Settings → Connectors**) or on the web at [mutande.online/connectors](https://mutande.online/connectors). Copy the `mtc_…` value once (mutande will not show it again). Revoke from the same list.
 3. In Grok → **Plugins / custom MCP**:
    - URL: `https://mcp.mutande.online/mcp` (or `https://mcp.mutande.online/mcp?slug=grok`)
    - Header `X-Mutande-Connector`: `mtc_…`  

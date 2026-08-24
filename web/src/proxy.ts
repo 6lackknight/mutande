@@ -6,6 +6,7 @@ const protectedPrefixes = [
   "/signup",
   "/onboarding",
   "/dashboard",
+  "/connectors",
   "/admin",
   "/join",
 ];
