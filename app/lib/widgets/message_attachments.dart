@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
 import '../services/daemon_client.dart';
+import '../services/mailbox/mailbox_store.dart';
 import '../theme/mutande_macos_theme.dart';
 
 /// Quiet file rows under a thread message — preview popular types in-app.
@@ -25,6 +27,25 @@ class MessageAttachments extends StatelessWidget {
       ],
     );
   }
+}
+
+/// Resolve a resource to a local plaintext path (core blob_cache or mailbox preview).
+Future<String?> resolveAttachmentPath(BundleResourceView resource) async {
+  if (resource.hasPath) {
+    final path = resource.path!.trim();
+    if (path.isNotEmpty && await File(path).exists()) return path;
+  }
+  if (resource.hasMediaId) {
+    final box = MailboxStore.instance;
+    if (box != null) {
+      try {
+        return await box.resolveMediaPath(resource);
+      } catch (_) {
+        return null;
+      }
+    }
+  }
+  return materializeInlineAttachment(resource);
 }
 
 Future<void> openAttachmentPath(String path) async {
@@ -87,9 +108,9 @@ class _AttachmentRowState extends State<_AttachmentRow> {
 
   bool get _canInlinePreview {
     if (!r.isAvailable) return false;
-    if (r.isImage && r.hasPath) return true;
-    if (r.isVideo && r.hasPath) return true;
-    if (r.isText && (r.hasContent || r.hasPath)) return true;
+    if (r.isImage && (r.hasPath || r.hasMediaId)) return true;
+    if (r.isVideo && (r.hasPath || r.hasMediaId)) return true;
+    if (r.isText && (r.hasContent || r.hasPath || r.hasMediaId)) return true;
     return false;
   }
 
@@ -99,9 +120,8 @@ class _AttachmentRowState extends State<_AttachmentRow> {
       setState(() => _expanded = !_expanded);
       return;
     }
-    if (r.hasPath) {
-      await openAttachmentPath(r.path!);
-    }
+    final path = await resolveAttachmentPath(r);
+    if (path != null) await openAttachmentPath(path);
   }
 
   @override
@@ -176,37 +196,11 @@ class _AttachmentRowState extends State<_AttachmentRow> {
                         size: 18,
                         color: MutandeColors.stone400,
                       )
-                    else if (r.hasPath)
-                      IconButton(
-                        tooltip: 'Open',
-                        onPressed: () => openAttachmentPath(r.path!),
-                        icon: const Icon(Icons.open_in_new, size: 16),
-                        color: MutandeColors.stone500,
-                        visualDensity: VisualDensity.compact,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(
-                          minWidth: 32,
-                          minHeight: 32,
-                        ),
-                      ),
-                    if (r.hasPath)
-                      IconButton(
-                        tooltip: 'Reveal in Finder',
-                        onPressed: () => revealAttachmentPath(r.path!),
-                        icon: const Icon(Icons.folder_open_outlined, size: 16),
-                        color: MutandeColors.stone500,
-                        visualDensity: VisualDensity.compact,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(
-                          minWidth: 32,
-                          minHeight: 32,
-                        ),
-                      )
-                    else if (r.hasContent) ...[
+                    else if (r.hasPath || r.hasMediaId || r.hasContent)
                       IconButton(
                         tooltip: 'Open',
                         onPressed: () async {
-                          final path = await materializeInlineAttachment(r);
+                          final path = await resolveAttachmentPath(r);
                           if (path != null) await openAttachmentPath(path);
                         },
                         icon: const Icon(Icons.open_in_new, size: 16),
@@ -218,10 +212,11 @@ class _AttachmentRowState extends State<_AttachmentRow> {
                           minHeight: 32,
                         ),
                       ),
+                    if (r.hasPath || r.hasMediaId || r.hasContent)
                       IconButton(
                         tooltip: 'Reveal in Finder',
                         onPressed: () async {
-                          final path = await materializeInlineAttachment(r);
+                          final path = await resolveAttachmentPath(r);
                           if (path != null) await revealAttachmentPath(path);
                         },
                         icon: const Icon(Icons.folder_open_outlined, size: 16),
@@ -233,7 +228,6 @@ class _AttachmentRowState extends State<_AttachmentRow> {
                           minHeight: 32,
                         ),
                       ),
-                    ],
                   ],
                 ],
               ),
@@ -282,21 +276,66 @@ class _FileGlyph extends StatelessWidget {
   }
 }
 
-class _AttachmentPreview extends StatelessWidget {
+class _AttachmentPreview extends StatefulWidget {
   const _AttachmentPreview({required this.resource});
 
   final BundleResourceView resource;
 
   @override
-  Widget build(BuildContext context) {
-    if (resource.isImage && resource.hasPath) {
-      return _ImagePreview(path: resource.path!);
+  State<_AttachmentPreview> createState() => _AttachmentPreviewState();
+}
+
+class _AttachmentPreviewState extends State<_AttachmentPreview> {
+  String? _path;
+  bool _loading = true;
+
+  BundleResourceView get resource => widget.resource;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_resolve());
+  }
+
+  Future<void> _resolve() async {
+    if (resource.hasPath) {
+      setState(() {
+        _path = resource.path;
+        _loading = false;
+      });
+      return;
     }
-    if (resource.isVideo && resource.hasPath) {
-      return _VideoPreview(path: resource.path!, name: resource.name);
+    if (resource.hasMediaId) {
+      final path = await resolveAttachmentPath(resource);
+      if (!mounted) return;
+      setState(() {
+        _path = path;
+        _loading = false;
+      });
+      return;
+    }
+    setState(() => _loading = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const _PreviewShell(
+        child: SizedBox(
+          height: 24,
+          width: 24,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+    if (resource.isImage && _path != null) {
+      return _ImagePreview(path: _path!);
+    }
+    if (resource.isVideo && _path != null) {
+      return _VideoPreview(path: _path!, name: resource.name);
     }
     if (resource.isText) {
-      return _TextPreview(resource: resource);
+      return _TextPreview(resource: resource, resolvedPath: _path);
     }
     return const SizedBox.shrink();
   }
@@ -553,9 +592,10 @@ class _VideoPreviewState extends State<_VideoPreview> {
 }
 
 class _TextPreview extends StatefulWidget {
-  const _TextPreview({required this.resource});
+  const _TextPreview({required this.resource, this.resolvedPath});
 
   final BundleResourceView resource;
+  final String? resolvedPath;
 
   @override
   State<_TextPreview> createState() => _TextPreviewState();
@@ -578,10 +618,13 @@ class _TextPreviewState extends State<_TextPreview> {
       String text;
       if (r.hasContent) {
         text = r.content!;
-      } else if (r.hasPath) {
-        text = await File(r.path!).readAsString();
       } else {
-        text = '';
+        final path = widget.resolvedPath ?? r.path;
+        if (path != null && path.trim().isNotEmpty) {
+          text = await File(path).readAsString();
+        } else {
+          text = '';
+        }
       }
       // Cap preview so giant files don't blow the pane.
       const maxChars = 24000;

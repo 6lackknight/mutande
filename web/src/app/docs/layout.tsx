@@ -38,6 +38,10 @@ export default async function DocsLayout({
         <Footer>
           mutande · agent-to-agent encrypted mail ·{" "}
           <a href="/changelog">Changelog</a>
+          {" · "}
+          <a href="/privacy">Privacy</a>
+          {" · "}
+          <a href="/terms">Terms</a>
         </Footer>
       }
       nextThemes={{ forcedTheme: "light" }}

@@ -61,6 +61,11 @@ String collabCauseAddress({required String ownerHandle, required String slug}) {
   return '$owner/$agent';
 }
 
+const String kCreateCollabInstructionsStarter =
+    'Standing context for this board — goal, constraints, where things live. '
+    'Agents read this before they take a card.';
+const int kCreateCollabInstructionsMinLength = 40;
+
 /// Participants = steerers ∪ roster. Me + one agent is 2; solo me is 1.
 int collabParticipantCount({
   required Iterable<String> steerers,
@@ -302,12 +307,23 @@ class _CreateCollabSheetState extends State<CreateCollabSheet> {
 
   String? get _me => bareCollabHandle(widget.handle);
 
-  bool get _showInstructions =>
-      collabInstructionsVisible(steerers: _steerers, roster: _roster);
+  bool get _showInstructions => true;
+
+  bool get _instructionsReplaced {
+    final text = _instructions.text.trim();
+    return text.isNotEmpty && text != kCreateCollabInstructionsStarter;
+  }
+
+  bool get _instructionsLongEnough =>
+      _instructions.text.trim().length >= kCreateCollabInstructionsMinLength;
+
+  bool get _instructionsValid =>
+      _instructionsReplaced && _instructionsLongEnough;
 
   @override
   void initState() {
     super.initState();
+    _instructions.text = kCreateCollabInstructionsStarter;
     _loadPickers();
   }
 
@@ -664,6 +680,14 @@ class _CreateCollabSheetState extends State<CreateCollabSheet> {
       setState(() => _error = 'Pick at least one agent.');
       return;
     }
+    if (!_instructionsReplaced) {
+      setState(() => _error = 'Replace the starter instructions.');
+      return;
+    }
+    if (!_instructionsLongEnough) {
+      setState(() => _error = 'Add a bit more standing context.');
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
@@ -678,7 +702,7 @@ class _CreateCollabSheetState extends State<CreateCollabSheet> {
             .map((p) => p.rpcHandle)
             .toList(),
         rosterAddresses: _roster.map((a) => a.toLowerCase()).toList(),
-        instructions: _e2e || instructions.isEmpty ? null : instructions,
+        instructions: instructions,
         artifacts: [
           for (final f in _files)
             {
@@ -770,7 +794,11 @@ class _CreateCollabSheetState extends State<CreateCollabSheet> {
                       ),
                   ],
                 ),
-                _CreateButton(busy: _busy, onPressed: _submit),
+                _CreateButton(
+                  busy: _busy,
+                  enabled: _instructionsValid,
+                  onPressed: _submit,
+                ),
               ],
             ),
           ],
@@ -881,12 +909,15 @@ class _CreateCollabSheetState extends State<CreateCollabSheet> {
                           const _SectionLabel('Instructions'),
                           const SizedBox(height: 6),
                           TextField(
+                            key: const Key('collab-instructions'),
                             controller: _instructions,
                             enabled: !_busy,
                             maxLines: 3,
-                            decoration: const InputDecoration(
-                              hintText: 'Standing context for this board',
-                            ),
+                            onChanged: (_) {
+                              if (_error != null) setState(() => _error = null);
+                              setState(() {});
+                            },
+                            decoration: const InputDecoration(),
                           ),
                         ],
                       ),
@@ -1424,15 +1455,20 @@ class CollabPendingChip extends StatelessWidget {
 }
 
 class _CreateButton extends StatelessWidget {
-  const _CreateButton({required this.busy, required this.onPressed});
+  const _CreateButton({
+    required this.busy,
+    required this.enabled,
+    required this.onPressed,
+  });
 
   final bool busy;
+  final bool enabled;
   final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
     return FilledButton(
-      onPressed: busy ? () {} : onPressed,
+      onPressed: busy ? () {} : (enabled ? onPressed : null),
       style: FilledButton.styleFrom(
         minimumSize: const Size(96, 36),
         backgroundColor: MutandeColors.stone800,

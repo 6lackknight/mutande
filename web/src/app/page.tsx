@@ -91,6 +91,12 @@ export default function LandingPage() {
             Changelog
           </a>
           <a
+            href="/privacy"
+            className="text-stone-700 transition hover:text-stone-900"
+          >
+            Privacy
+          </a>
+          <a
             href="/terms"
             className="text-stone-700 transition hover:text-stone-900"
           >

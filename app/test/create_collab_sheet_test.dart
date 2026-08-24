@@ -87,6 +87,24 @@ Future<void> _pumpSheet(
   }
 }
 
+const _kValidInstructions =
+    'Ship the alpha this week; credentials live in 1Password Shared.';
+
+Future<void> _enterValidInstructions(WidgetTester tester) async {
+  await tester.ensureVisible(find.byKey(const Key('collab-instructions')));
+  await tester.enterText(
+    find.byKey(const Key('collab-instructions')),
+    _kValidInstructions,
+  );
+  await tester.pump();
+}
+
+FilledButton _createButton(WidgetTester tester) {
+  return tester.widget<FilledButton>(
+    find.widgetWithText(FilledButton, 'Create'),
+  );
+}
+
 void main() {
   test('bareCollabHandle strips suffix and broadcast', () {
     expect(bareCollabHandle('Alice@Acme/Cursor'), 'alice@acme');
@@ -285,7 +303,9 @@ void main() {
       find.text('Mail in this collab is sealed to steerer devices.'),
       findsOneWidget,
     );
-    expect(find.text('INSTRUCTIONS'), findsNothing);
+    expect(find.text('INSTRUCTIONS'), findsOneWidget);
+    expect(find.text(kCreateCollabInstructionsStarter), findsOneWidget);
+    expect(_createButton(tester).onPressed, isNull);
 
     await tester.tap(find.text('Bob Builder'));
     await tester.pump();
@@ -349,6 +369,13 @@ void main() {
 
     await _pumpSheet(tester, daemon: daemon);
 
+    expect(find.text('INSTRUCTIONS'), findsOneWidget);
+    expect(find.text(kCreateCollabInstructionsStarter), findsOneWidget);
+    expect(_createButton(tester).onPressed, isNull);
+
+    await _enterValidInstructions(tester);
+    expect(_createButton(tester).onPressed, isNotNull);
+
     await tester.tap(find.text('Create'));
     await tester.pump();
     expect(find.text('Name this collab.'), findsOneWidget);
@@ -359,7 +386,7 @@ void main() {
     expect(find.text('Pick at least one agent.'), findsOneWidget);
     expect(find.text('Sprint 12'), findsOneWidget);
     expect(find.text('@cursor'), findsOneWidget);
-    expect(find.text('INSTRUCTIONS'), findsNothing);
+    expect(find.text('INSTRUCTIONS'), findsOneWidget);
 
     await tester.tap(find.text('@cursor'));
     await tester.pump();
@@ -368,7 +395,6 @@ void main() {
       find.text('Mail in this collab is sealed to steerer devices.'),
       findsOneWidget,
     );
-    expect(find.text('Standing context for this board'), findsOneWidget);
   });
 
   testWidgets('picking an agent auto-adds its human and names hosted cause', (
@@ -429,6 +455,7 @@ void main() {
     expect(find.text('INSTRUCTIONS'), findsOneWidget);
 
     await tester.enterText(find.byType(TextField).first, 'Board');
+    await _enterValidInstructions(tester);
     await tester.tap(find.widgetWithText(FilledButton, 'Create'));
     await tester.pump();
     expect(created, isNotNull);
@@ -436,6 +463,7 @@ void main() {
     final roster = (created!['roster_addresses'] as List).cast<String>();
     expect(steerers, containsAll(['alice@acme', 'bob@acme']));
     expect(roster, containsAll(['bob@acme/claude', '@chatgpt']));
+    expect(created!['instructions'], _kValidInstructions);
   });
 
   testWidgets('approved externals sit in People with a quiet mark', (
@@ -600,6 +628,7 @@ void main() {
     await tester.enterText(find.byType(TextField).first, 'Board');
     await tester.tap(find.text('@cursor'));
     await tester.pump();
+    await _enterValidInstructions(tester);
     await tester.tap(find.widgetWithText(FilledButton, 'Create'));
     await tester.pump();
     await tester.tap(find.byType(FilledButton));
@@ -748,6 +777,7 @@ void main() {
     await tester.enterText(find.byType(TextField).first, 'Launch week');
     await tester.tap(find.text('@cursor'));
     await tester.pump();
+    await _enterValidInstructions(tester);
     await tester.tap(find.widgetWithText(FilledButton, 'Create'));
     await tester.pump();
 
@@ -788,6 +818,7 @@ void main() {
     await tester.enterText(find.byType(TextField).first, 'Launch week');
     await tester.tap(find.text('@cursor'));
     await tester.pump();
+    await _enterValidInstructions(tester);
     await tester.tap(find.widgetWithText(FilledButton, 'Create'));
     await tester.pump();
 
@@ -885,7 +916,8 @@ void main() {
     );
     expect(find.text('Cancel'), findsOneWidget);
     expect(find.text('Create'), findsOneWidget);
-    expect(find.byType(TextField), findsNWidgets(3));
+    expect(find.byType(TextField), findsNWidgets(4));
+    expect(find.text('INSTRUCTIONS'), findsOneWidget);
     expect(find.text('Bob Builder'), findsNothing);
 
     gate.complete();
@@ -1064,9 +1096,11 @@ void main() {
     await tester.pump();
     expect(find.text('Staging'), findsWidgets);
 
+    await _enterValidInstructions(tester);
     await tester.tap(find.widgetWithText(FilledButton, 'Create'));
     await tester.pump();
     expect(created, isNotNull);
+    expect(created!['instructions'], _kValidInstructions);
     final artifacts = (created!['artifacts'] as List).cast<Map>();
     expect(
       artifacts.any(
@@ -1138,9 +1172,11 @@ void main() {
     expect(find.text('brief.md'), findsOneWidget);
     expect(find.text('2.0 KB'), findsOneWidget);
 
+    await _enterValidInstructions(tester);
     await tester.tap(find.widgetWithText(FilledButton, 'Create'));
     await tester.pump();
     expect(created, isNotNull);
+    expect(created!['instructions'], _kValidInstructions);
     final artifacts = (created!['artifacts'] as List).cast<Map>();
     expect(
       artifacts.any(
@@ -1225,8 +1261,11 @@ void main() {
     );
     expect(find.text('Staging'), findsWidgets);
 
+    await _enterValidInstructions(tester);
     await tester.tap(find.widgetWithText(FilledButton, 'Create'));
     await tester.pump();
+    expect(created, isNotNull);
+    expect(created!['instructions'], _kValidInstructions);
     final artifacts = (created!['artifacts'] as List).cast<Map>();
     expect(
       artifacts.any(
@@ -1240,5 +1279,98 @@ void main() {
       ),
       isTrue,
     );
+  });
+
+  testWidgets('instructions gate blocks starter and short copy', (tester) async {
+    var creates = 0;
+    final daemon = _mockDaemon((request) async {
+      final body = _rpc(request);
+      final method = body['method'] as String?;
+      if (method == 'list_contacts') {
+        return _rpcOk(body['id'], {'contacts': []});
+      }
+      if (method == 'list_agents') {
+        return _rpcOk(body['id'], {
+          'agents': [
+            {'id': 'a1', 'slug': 'cursor', 'transport': 'sidecar'},
+          ],
+        });
+      }
+      if (method == 'create_collab') {
+        creates += 1;
+        return _rpcOk(body['id'], {
+          'collab': {
+            'id': 'c1',
+            'name': 'Board',
+            'encryption_mode': 'e2e',
+            'lists': <Map<String, dynamic>>[],
+          },
+        });
+      }
+      return _rpcOk(body['id'], {'ok': true});
+    });
+
+    await _pumpSheet(tester, daemon: daemon);
+    await tester.enterText(find.byType(TextField).first, 'Board');
+    await tester.tap(find.text('@cursor'));
+    await tester.pump();
+
+    expect(find.text(kCreateCollabInstructionsStarter), findsOneWidget);
+    expect(_createButton(tester).onPressed, isNull);
+
+    await tester.enterText(
+      find.byKey(const Key('collab-instructions')),
+      'too short',
+    );
+    await tester.pump();
+    expect(_createButton(tester).onPressed, isNull);
+    expect(creates, 0);
+
+    await _enterValidInstructions(tester);
+    expect(_createButton(tester).onPressed, isNotNull);
+    await tester.tap(find.widgetWithText(FilledButton, 'Create'));
+    await tester.pump();
+    expect(creates, 1);
+  });
+
+  testWidgets('e2e create still sends standing instructions', (tester) async {
+    Map<String, dynamic>? created;
+    final daemon = _mockDaemon((request) async {
+      final body = _rpc(request);
+      final method = body['method'] as String?;
+      if (method == 'list_contacts') {
+        return _rpcOk(body['id'], {'contacts': []});
+      }
+      if (method == 'list_agents') {
+        return _rpcOk(body['id'], {
+          'agents': [
+            {'id': 'a1', 'slug': 'cursor', 'transport': 'sidecar'},
+          ],
+        });
+      }
+      if (method == 'create_collab') {
+        created = body['params'] as Map<String, dynamic>?;
+        return _rpcOk(body['id'], {
+          'collab': {
+            'id': 'c1',
+            'name': 'Board',
+            'encryption_mode': 'e2e',
+            'lists': <Map<String, dynamic>>[],
+          },
+        });
+      }
+      return _rpcOk(body['id'], {'ok': true});
+    });
+
+    await _pumpSheet(tester, daemon: daemon);
+    await tester.enterText(find.byType(TextField).first, 'Board');
+    await tester.tap(find.text('@cursor'));
+    await tester.pump();
+    await _enterValidInstructions(tester);
+    await tester.tap(find.widgetWithText(FilledButton, 'Create'));
+    await tester.pump();
+
+    expect(created, isNotNull);
+    expect(created!['instructions'], _kValidInstructions);
   });
 }

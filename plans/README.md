@@ -1,9 +1,12 @@
 # Animation plans
 
-Plans from `improve-animations`. Executors have zero audit context — follow each plan’s Target, Steps, and Boundaries exactly. Do not edit `thinking_orb.dart` motion or the onboarding address rail unless a plan names that file. **013** is stamped **b5369e9**; 001–012 were written at **946c2bc**.
+Plans from `improve-animations`. Executors have zero audit context — follow each plan’s Target, Steps, and Boundaries exactly. Do not edit `thinking_orb.dart` motion or the onboarding address rail unless a plan names that file. **014–016** stamped **f14dae9** (thread-select jank). **013** is stamped **b5369e9**; 001–012 were written at **946c2bc**.
 
 | # | File | Severity | Status | Title |
 | --- | --- | --- | --- | --- |
+| 014 | [014-thread-select-swr-paint.md](014-thread-select-swr-paint.md) | HIGH | done | Paint mailbox cache on thread select |
+| 015 | [015-thread-select-no-stagger-replay.md](015-thread-select-no-stagger-replay.md) | HIGH | done | No message stagger on thread select |
+| 016 | [016-thread-select-no-fade-on-select.md](016-thread-select-no-fade-on-select.md) | HIGH | done | Bypass fade on thread select |
 | 008 | [008-mutande-motion-tokens.md](008-mutande-motion-tokens.md) | LOW | done | Add `MutandeMotion` tokens |
 | 001 | [001-search-palette-no-animation.md](001-search-palette-no-animation.md) | HIGH | done | Remove search palette open animation |
 | 002 | [002-chrome-pills-ease.md](002-chrome-pills-ease.md) | HIGH | done | Ease high-frequency pill/thumb color |
@@ -29,7 +32,9 @@ Plans from `improve-animations`. Executors have zero audit context — follow ea
 
 7. **013** after **008** (needs `MutandeMotion.ui` / `easeOut`). Independent of 001–012. Do not collide with in-flight inner stagger in `create_collab_sheet.dart` — 013 edits `showCreateCollabSheet` only in that file.
 
-Suggested serial path: **008 → 001 → 002 → 003 → 005 → 012 → 004 → 006 → 007 → 009 → 010 → 011 → 013**.
+8. **014 → 015 → 016** — thread list select jank (prototype: `app/lib/prototype/thread_switch/`). **014** first (SWR paint); **015** + **016** after or in parallel once **014** lands.
+
+Suggested serial path: **008 → 001 → 002 → 003 → 005 → 012 → 004 → 006 → 007 → 009 → 010 → 011 → 013 → 014 → 015 → 016**.
 
 ## Dependencies
 
@@ -43,8 +48,12 @@ Suggested serial path: **008 → 001 → 002 → 003 → 005 → 012 → 004 →
      ├─ 009
      ├─ 010
      ├─ 011
-     └─ 013 (showCreateCollabSheet route only; leave MutandeStagger* alone)
+     ├─ 013 (showCreateCollabSheet route only; leave MutandeStagger* alone)
+     └─ 014 ─┬─ 015
+             └─ 016
 ```
+
+- **014–016:** thread select only — do not regress plan **011** cold-load crossfade or list hydrate fade.
 
 - **002 ∩ 003:** `_ScopePill`, `_HeaderThumb`, `_SegmentPill`, `_ScopeChip` belong to 002 only.
 - **003 ∩ 005:** `_ThreadRow` — 003 sets duration gate; 005 only removes ink.

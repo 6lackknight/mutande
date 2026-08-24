@@ -719,12 +719,20 @@ class _PersonChipBone extends StatelessWidget {
 
 /// Opacity-only crossfade for skeleton → content. No translation.
 class MutandeFadeSwap extends StatelessWidget {
-  const MutandeFadeSwap({super.key, required this.child});
+  const MutandeFadeSwap({
+    super.key,
+    required this.child,
+    this.animate = true,
+  });
 
   final Widget child;
 
+  /// When false, child swaps instantly (high-frequency paths e.g. thread select).
+  final bool animate;
+
   @override
   Widget build(BuildContext context) {
+    if (!animate) return child;
     return AnimatedSwitcher(
       duration: MutandeMotion.of(context, MutandeMotion.ui),
       switchInCurve: MutandeMotion.easeOut,

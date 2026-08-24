@@ -516,6 +516,7 @@ class DaemonClient {
             ),
       ],
       enterpriseListingId: thread['enterprise_listing_id'] as String?,
+      updatedAt: thread['updated_at'] as String?,
       pendingDowngrade: pendingRaw == null
           ? null
           : ThreadDowngradeProposalView.fromJson(pendingRaw),
@@ -2524,6 +2525,7 @@ class ThreadDetailResult {
     this.dueOn,
     this.checklist = const [],
     this.enterpriseListingId,
+    this.updatedAt,
     this.pendingDowngrade,
     this.pendingTaskApprovals = const [],
     required this.messages,
@@ -2544,6 +2546,9 @@ class ThreadDetailResult {
   /// Hub billing flag — when set, show enterprise warn banner (§7.2).
   final String? enterpriseListingId;
 
+  /// Hub `thread.updated_at` — mailbox cache fingerprint.
+  final String? updatedAt;
+
   /// L5 pending unanimous downgrade consent (§6.5).
   final ThreadDowngradeProposalView? pendingDowngrade;
 
@@ -2554,6 +2559,32 @@ class ThreadDetailResult {
 
   bool get isEnterpriseThread =>
       shouldShowEnterpriseWarnBanner(enterpriseListingId: enterpriseListingId);
+
+  ThreadDetailResult copyWith({
+    List<ThreadMessageView>? messages,
+    String? updatedAt,
+    ThreadDowngradeProposalView? pendingDowngrade,
+    List<PendingTaskApprovalView>? pendingTaskApprovals,
+  }) {
+    return ThreadDetailResult(
+      id: id,
+      kind: kind,
+      status: status,
+      from: from,
+      audience: audience,
+      yourStatus: yourStatus,
+      awaiting: awaiting,
+      assignedTo: assignedTo,
+      tags: tags,
+      dueOn: dueOn,
+      checklist: checklist,
+      enterpriseListingId: enterpriseListingId,
+      updatedAt: updatedAt ?? this.updatedAt,
+      pendingDowngrade: pendingDowngrade ?? this.pendingDowngrade,
+      pendingTaskApprovals: pendingTaskApprovals ?? this.pendingTaskApprovals,
+      messages: messages ?? this.messages,
+    );
+  }
 }
 
 /// Hub `GET /v1/registry/listing/:idOrAddress` warn payload for compose.
@@ -2595,6 +2626,7 @@ class BundleResourceView {
     this.content,
     this.path,
     this.size,
+    this.mediaId,
   });
 
   factory BundleResourceView.fromJson(Map<String, dynamic> map) {
@@ -2625,6 +2657,7 @@ class BundleResourceView {
       content: content,
       path: map['path'] as String?,
       size: size,
+      mediaId: map['media_id'] as String?,
     );
   }
 
@@ -2676,6 +2709,29 @@ class BundleResourceView {
   final String? path;
   final int? size;
 
+  /// App mailbox media id — encrypted file under Application Support.
+  final String? mediaId;
+
+  BundleResourceView copyWith({
+    String? name,
+    String? mime,
+    String? content,
+    String? path,
+    int? size,
+    String? mediaId,
+    bool clearContent = false,
+    bool clearPath = false,
+  }) {
+    return BundleResourceView(
+      name: name ?? this.name,
+      mime: mime ?? this.mime,
+      content: clearContent ? null : (content ?? this.content),
+      path: clearPath ? null : (path ?? this.path),
+      size: size ?? this.size,
+      mediaId: mediaId ?? this.mediaId,
+    );
+  }
+
   String get extension {
     final dot = name.lastIndexOf('.');
     if (dot < 0 || dot >= name.length - 1) return '';
@@ -2684,9 +2740,10 @@ class BundleResourceView {
 
   bool get hasPath => path != null && path!.trim().isNotEmpty;
   bool get hasContent => content != null && content!.trim().isNotEmpty;
+  bool get hasMediaId => mediaId != null && mediaId!.trim().isNotEmpty;
 
-  /// Local file or inline text the UI can show / open.
-  bool get isAvailable => hasPath || hasContent;
+  /// Local file, inline text, or mailbox media the UI can show / open.
+  bool get isAvailable => hasPath || hasContent || hasMediaId;
 
   bool get isImage {
     final m = mime.toLowerCase();

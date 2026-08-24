@@ -43,6 +43,86 @@ class MutandeSortToggles extends StatelessWidget {
   }
 }
 
+/// Selected-ink filter pill — Threads, Search, and Notifications.
+class MutandeScopePill extends StatelessWidget {
+  const MutandeScopePill({
+    super.key,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.icon,
+    this.badge = 0,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  final IconData? icon;
+  final int badge;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = selected ? MutandeColors.stone50 : MutandeColors.stone600;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: MutandeMotion.of(context, MutandeMotion.hover),
+          curve: MutandeMotion.ease,
+          padding: const EdgeInsets.fromLTRB(10, 6, 12, 6),
+          decoration: BoxDecoration(
+            color: selected ? MutandeColors.stone800 : MutandeColors.stone100,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: selected ? MutandeColors.stone800 : MutandeColors.stone200,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (icon != null) ...[
+                Icon(icon, size: 13, color: color),
+                const SizedBox(width: 6),
+              ],
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: color,
+                ),
+              ),
+              if (badge > 0) ...[
+                const SizedBox(width: 6),
+                Container(
+                  constraints: const BoxConstraints(minWidth: 16),
+                  height: 16,
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: MutandeColors.amber,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    badge > 9 ? '9+' : '$badge',
+                    style: const TextStyle(
+                      color: Color(0xFFFFFFFF),
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                      height: 1,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _SortPill extends StatelessWidget {
   const _SortPill({
     super.key,

@@ -20,6 +20,8 @@ export interface McpConfig {
   hubUrl: string;
   defaultAgentSlug: string;
   port: number;
+  /** Plain token for OpenAI plugin domain verification, or null if unset. */
+  openaiAppsChallenge: string | null;
 }
 
 export function loadConfig(env: {
@@ -62,6 +64,7 @@ export function loadConfig(env: {
   const defaultAgentSlug =
     (env.get("MCP_DEFAULT_AGENT_SLUG")?.trim() || "chatgpt").toLowerCase();
   const port = Number(env.get("PORT") || "3849") || 3849;
+  const challenge = env.get("OPENAI_APPS_CHALLENGE")?.trim() || null;
 
   return {
     publicUrl,
@@ -72,6 +75,7 @@ export function loadConfig(env: {
     hubUrl,
     defaultAgentSlug,
     port,
+    openaiAppsChallenge: challenge,
   };
 }
 

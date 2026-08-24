@@ -60,6 +60,7 @@ class ContactAvatar extends StatelessWidget {
           width: size,
           height: size,
           fit: BoxFit.cover,
+          gaplessPlayback: true,
           errorBuilder: (_, _, _) => fallbackChild,
         );
       } catch (_) {
@@ -72,6 +73,7 @@ class ContactAvatar extends StatelessWidget {
         width: size,
         height: size,
         fit: BoxFit.cover,
+        gaplessPlayback: true,
         // Auth0/Google IdP photos often 403 the default Dart user-agent.
         headers: const {
           'User-Agent':

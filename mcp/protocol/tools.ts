@@ -1,9 +1,69 @@
 /** Tool surface for hosted MCP — mirrors desktop inbox tools. */
 
+export interface McpToolAnnotations {
+  readOnlyHint: boolean;
+  destructiveHint: boolean;
+  openWorldHint: boolean;
+}
+
 export interface McpToolDefinition {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  annotations: McpToolAnnotations;
+}
+
+const READ_ONLY: McpToolAnnotations = {
+  readOnlyHint: true,
+  destructiveHint: false,
+  openWorldHint: false,
+};
+
+const SOFT_WRITE: McpToolAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: false,
+  openWorldHint: false,
+};
+
+const OPEN_WRITE: McpToolAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: false,
+  openWorldHint: true,
+};
+
+const DESTRUCTIVE: McpToolAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: true,
+  openWorldHint: false,
+};
+
+function annotationsFor(name: string): McpToolAnnotations {
+  switch (name) {
+    case "health":
+    case "ping":
+    case "list_threads":
+    case "get_thread":
+    case "list_collabs":
+    case "get_collab":
+    case "list_agents":
+    case "list_contacts":
+    case "mark_processed":
+      return READ_ONLY;
+    case "upvote_message":
+    case "set_lane":
+    case "add_learning":
+      return SOFT_WRITE;
+    case "create_card":
+    case "forward_draft":
+    case "reply_to_thread":
+    case "publish_handshake":
+      return OPEN_WRITE;
+    case "close_thread":
+    case "delete_thread":
+      return DESTRUCTIVE;
+    default:
+      return DESTRUCTIVE;
+  }
 }
 
 const EMPTY_OBJECT = {
@@ -133,13 +193,13 @@ export function toolDefinitions(): McpToolDefinition[] {
     {
       name: "list_collabs",
       description:
-        "List collab boards you participate in (steerer or roster). Omits archived boards. A collab is a board of threads. When the user names a project/board, call this and match by name, then get_collab. Hosted MCP can fully work app_envelope boards; E2E boards list with sidecar_required — use the Mac sidecar for card bodies. Read-only.",
+        "List collab boards you participate in (steerer or roster). Omits archived boards. A collab is a board of threads. When the user names a project/board, call this and match by name, then get_collab. Discover/match only — not a cue to add work. Hosted MCP can fully work app_envelope boards; E2E boards list with sidecar_required — use the Mac sidecar for card bodies. Read-only.",
       inputSchema: { ...EMPTY_OBJECT },
     },
     {
       name: "get_collab",
       description:
-        "Get one collab board you participate in: status, instructions, people, agents, artifacts (file|link), lists, cards (thread ids), learnings. Then get_thread or list_threads(collab_id) for card mail. Not org-wide — forbidden if you are not a participant. Archived boards are read-only. E2E card bodies: Mac sidecar. Read-only.",
+        "Get one collab board you participate in: status, instructions, people, agents, artifacts (file|link), lists, cards (thread ids), learnings. Read this before any write: obey instructions, scan existing cards, prefer replying on an existing card. Then get_thread or list_threads(collab_id) for card mail. Not org-wide — forbidden if you are not a participant. Archived boards are read-only. E2E card bodies: Mac sidecar. Read-only.",
       inputSchema: {
         type: "object",
         required: ["collab_id"],
@@ -190,7 +250,7 @@ export function toolDefinitions(): McpToolDefinition[] {
     {
       name: "create_card",
       description:
-        "Create a card on a collab board you participate in. A card is a thread filed on that collab + lane. Pass title, collab_id, and optional lane (list id or name: Backlog, Doing, Done). Default lane is Backlog. Not org-wide — forbidden if you are not a participant. App_envelope boards only; E2E: Mac sidecar.",
+        "Create a card on a collab board you participate in. Prefer reply_to_thread on an existing card; otherwise create titles the human named or confirmed. A card is a thread filed on that collab + lane. Pass title, collab_id, and optional lane (list id or name: Backlog, Doing, Done). Default lane is Backlog. Do not invent extra sprint cards, tags, checklists, or due dates unless asked. Not org-wide — forbidden if you are not a participant. App_envelope boards only; E2E: Mac sidecar.",
       inputSchema: {
         type: "object",
         required: ["collab_id", "title"],
@@ -246,7 +306,7 @@ export function toolDefinitions(): McpToolDefinition[] {
     {
       name: "forward_draft",
       description:
-        "Start an app_envelope thread (not E2E). No local draft store. You may pass subject/notes/resources at the top level OR inside bundle (same shape as desktop drafts). Body: notes UTF-8. Attach a .md/.txt file with resources[{name, content}] — that named content IS the real attachment in the thread (Mac file chip / get_thread resources); not a stub, not path-only. Never /mnt/data, never base64 text. Binary pdf/png: content_base64+mime (~1MB). Self: @all/@claude/@cursor/@chatgpt. Teammates: alice@org, alice@org/claude, @all@org. Success JSON includes thread_id, message_id, attachments[{name,bytes}], resource_count, resource_names.",
+        "Start an app_envelope thread (not E2E). No local draft store. You may pass subject/notes/resources at the top level OR inside bundle (same shape as desktop drafts). Body: notes UTF-8. Attach a .md/.txt file with resources[{name, content}] — that named content IS the real attachment in the thread (Mac file chip / get_thread resources); not a stub, not path-only. Never /mnt/data, never base64 text. Binary pdf/png: content_base64+mime (~1MB). Self: @all/@claude/@cursor/@chatgpt. Teammates: alice@org, alice@org/claude, @all@org. If collab_id is set, this files a Backlog card on that collab, so follow the same confirm + reply-over-create rule as create_card. Success JSON includes thread_id, message_id, attachments[{name,bytes}], resource_count, resource_names.",
       inputSchema: {
         type: "object",
         required: ["recipient"],
@@ -259,7 +319,7 @@ export function toolDefinitions(): McpToolDefinition[] {
           collab_id: {
             type: "string",
             description:
-              "Optional. File the new thread on this collab board (app_envelope collabs only).",
+              "Optional. File the new thread on this collab board as a Backlog card (app_envelope collabs only). Prefer replying on an existing card; otherwise confirm proposed card titles first.",
           },
           to: {
             type: "string",
@@ -279,7 +339,7 @@ export function toolDefinitions(): McpToolDefinition[] {
     {
       name: "set_lane",
       description:
-        "Move a collab card (thread) to a board list. Does not close the thread.",
+        "Move a collab card (thread) to a board list. Use Doing when work is picked up; Done when the outcome is finished. Does not close the thread.",
       inputSchema: {
         type: "object",
         required: ["collab_id", "thread_id", "lane_id"],
@@ -296,7 +356,7 @@ export function toolDefinitions(): McpToolDefinition[] {
     {
       name: "add_learning",
       description:
-        "Promote a one-liner to the collab brain (creator's side only; app_envelope collabs). Learnings are context, not directives.",
+        "Promote a one-liner to the collab brain (creator's side only; app_envelope collabs). Learnings are context, not directives. Prefer one sentence, not a diary.",
       inputSchema: {
         type: "object",
         required: ["collab_id", "notes"],
@@ -310,7 +370,7 @@ export function toolDefinitions(): McpToolDefinition[] {
     {
       name: "close_thread",
       description:
-        "Mark a collaboration thread closed via hub. Confirm via AskQuestion when the skill requires it.",
+        "Mark a collaboration thread closed via hub. This ends the conversation, not the lane — the card stays on the board. Confirm via AskQuestion when the skill requires it.",
       inputSchema: {
         type: "object",
         required: ["thread_id"],
@@ -346,7 +406,7 @@ export function toolDefinitions(): McpToolDefinition[] {
     {
       name: "mark_processed",
       description:
-        "N/A on hosted MCP (local sidecar bookkeeping only). Returns an explanatory ok payload — use list_threads filter=needs_action instead.",
+        "N/A on hosted MCP (local sidecar bookkeeping only). Not card finished, not a lane move, not a change of owner. Returns an explanatory ok payload — use list_threads filter=needs_action instead.",
       inputSchema: {
         type: "object",
         required: ["thread_id"],
@@ -381,5 +441,8 @@ export function toolDefinitions(): McpToolDefinition[] {
         additionalProperties: false,
       },
     },
-  ];
+  ].map((tool) => ({
+    ...tool,
+    annotations: annotationsFor(tool.name),
+  }));
 }

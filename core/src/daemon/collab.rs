@@ -6,7 +6,8 @@ use serde_json::Value;
 
 use crate::crypto::DevicePubKey;
 use crate::hub_client::{
-    Collab, CollabArtifactSummary, CollabCardSummary, CollabChecklistItem, CollabLane,
+    Collab, CollabArtifactSummary, CollabCardSummary, CollabChecklistItem,
+    CollabInstructionsSealed, CollabLane,
     ListCollabsResponse,
 };
 
@@ -63,6 +64,7 @@ impl DaemonState {
             .hub_client()
             .context("not signed in — call auth_login first")?;
         let mut collab = hub.get_collab(collab_id).await?;
+        self.open_collab_instructions(&mut collab).await;
         self.open_hub_collab_artifacts(&mut collab).await;
         if collab.encryption_mode == "app_envelope"
             && collab.cards.iter().all(|c| {
@@ -180,13 +182,17 @@ impl DaemonState {
                 files.push(draft);
             }
         }
-        // Omit plaintext instructions until we know encryption_mode (XOR).
+        // Omit instructions until we know encryption_mode (XOR).
         let collab = hub
-            .create_collab(name, steerer_handles, roster_addresses, None, &links)
+            .create_collab(name, steerer_handles, roster_addresses, None, None, &links)
             .await?;
-        if collab.encryption_mode == "app_envelope" {
-            if let Some(text) = instructions.map(str::trim).filter(|s| !s.is_empty()) {
-                hub.update_collab_instructions(&collab.id, Some(text))
+        if let Some(text) = instructions.map(str::trim).filter(|s| !s.is_empty()) {
+            if collab.encryption_mode == "app_envelope" {
+                hub.update_collab_instructions(&collab.id, Some(text), None)
+                    .await?;
+            } else {
+                let sealed = self.seal_collab_instructions(&collab, text).await?;
+                hub.update_collab_instructions(&collab.id, None, Some(&sealed))
                     .await?;
             }
         }
@@ -264,11 +270,12 @@ impl DaemonState {
         let collab = hub.get_collab(collab_id).await?;
         assert_not_archived(&collab)?;
         if collab.encryption_mode == "e2e" {
-            bail!(
-                "E2E collab instructions stay on-device — plaintext updates are only for app_envelope collabs"
-            );
+            let sealed = self.seal_collab_instructions(&collab, instructions).await?;
+            return hub
+                .update_collab_instructions(collab_id, None, Some(&sealed))
+                .await;
         }
-        hub.update_collab_instructions(collab_id, Some(instructions))
+        hub.update_collab_instructions(collab_id, Some(instructions), None)
             .await
     }
 
@@ -578,6 +585,62 @@ impl DaemonState {
         }
         Ok(out)
     }
+
+    async fn seal_collab_instructions(
+        &self,
+        collab: &Collab,
+        instructions: &str,
+    ) -> Result<CollabInstructionsSealed> {
+        let bundle = MutandeBundle {
+            subject: Some("instructions".into()),
+            notes: Some(instructions.to_string()),
+            ..Default::default()
+        };
+        let plain = serde_json::to_vec(&bundle)?;
+        let keys = self.collab_steerer_pubkeys(collab).await?;
+        let env = self.seal_inline_or_blob(&plain, &keys).await?;
+        let hub = self
+            .hub_client()
+            .context("not signed in — call auth_login first")?;
+        let draft_id = match collab.instructions_sealed.as_ref() {
+            Some(sealed) if !sealed.envelope_id.trim().is_empty() => {
+                hub.update_draft(&sealed.envelope_id, &env).await?.id
+            }
+            _ => hub.create_draft(&env).await?.id,
+        };
+        Ok(CollabInstructionsSealed {
+            envelope_id: draft_id,
+            updated_by: collab.created_by.clone(),
+        })
+    }
+
+    async fn open_collab_instructions(&self, collab: &mut Collab) {
+        if collab.instructions.as_ref().is_some_and(|s| !s.trim().is_empty()) {
+            return;
+        }
+        let Some(sealed) = collab.instructions_sealed.as_ref() else {
+            return;
+        };
+        if sealed.envelope_id.trim().is_empty() {
+            return;
+        }
+        let Some(hub) = self.hub_client() else {
+            return;
+        };
+        let Ok(draft) = hub.get_draft(&sealed.envelope_id).await else {
+            return;
+        };
+        let Ok(plain) = self.open_envelope(&draft.envelope) else {
+            return;
+        };
+        let Ok(bundle) = serde_json::from_slice::<MutandeBundle>(&plain) else {
+            return;
+        };
+        let text = bundle.notes.as_deref().map(str::trim).unwrap_or_default();
+        if !text.is_empty() {
+            collab.instructions = Some(text.to_string());
+        }
+    }
 }
 
 fn link_artifact_for_hub(draft: &CollabArtifactDraft) -> Result<CollabArtifactSummary> {
@@ -833,6 +896,7 @@ mod tests {
             schema_version: 1,
             encryption_mode: "e2e".into(),
             instructions: None,
+            instructions_sealed: None,
             lists: vec![],
             roster: vec![crate::hub_client::CollabRosterEntry {
                 user_id: "u1".into(),

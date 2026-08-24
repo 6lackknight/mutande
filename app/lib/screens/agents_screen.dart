@@ -6,6 +6,8 @@ import 'package:flutter/services.dart';
 
 import '../services/daemon_client.dart';
 import '../services/host_link_store.dart';
+import '../services/app_actions.dart';
+import '../services/mailbox/mailbox_store.dart';
 import '../theme/mutande_macos_theme.dart';
 import '../util/address_display.dart';
 import '../util/thread_peer.dart';
@@ -116,18 +118,64 @@ class _AgentsPanelState extends State<AgentsPanel> {
   String? _selectedAgentId;
   String? _selectedPeerId;
   Map<String, HostLinkRecord> _hostLinks = const {};
+  int _reloadGen = 0;
 
   @override
   void initState() {
     super.initState();
     widget.onReloadReady?.call(() => _reload(soft: true));
-    _reload();
+    AppActions.mailEpoch.addListener(_onMailEpoch);
+    _hydrateThenReload();
   }
 
   @override
   void dispose() {
+    AppActions.mailEpoch.removeListener(_onMailEpoch);
     widget.onReloadReady?.call(null);
     super.dispose();
+  }
+
+  void _onMailEpoch() {
+    unawaited(_paintFromMailbox());
+  }
+
+  Future<void> _paintFromMailbox() async {
+    final box = MailboxStore.instance;
+    if (box == null || !mounted) return;
+    try {
+      final cached = await box.loadAgentsSnapshot();
+      if (cached == null || !mounted) return;
+      setState(() {
+        _list = cached.own;
+        _orgContacts = cached.orgContacts;
+        _externalContacts = cached.externalContacts;
+        _peerAgents = cached.peerAgents;
+        _directoryError = null;
+        _loading = false;
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _hydrateThenReload() async {
+    final box = MailboxStore.instance;
+    if (box != null) {
+      try {
+        final cached = await box.loadAgentsSnapshot();
+        if (cached != null && mounted) {
+          setState(() {
+            _list = cached.own;
+            _orgContacts = cached.orgContacts;
+            _externalContacts = cached.externalContacts;
+            _peerAgents = cached.peerAgents;
+            _directoryError = null;
+            _loading = false;
+          });
+          await _reload(soft: true);
+          return;
+        }
+      } catch (_) {}
+    }
+    await _reload();
   }
 
   Future<void> _loadHostLinks() async {
@@ -137,6 +185,7 @@ class _AgentsPanelState extends State<AgentsPanel> {
   }
 
   Future<void> _reload({bool soft = false}) async {
+    final gen = ++_reloadGen;
     if (!soft) {
       setState(() {
         _loading = true;
@@ -145,30 +194,64 @@ class _AgentsPanelState extends State<AgentsPanel> {
     }
     try {
       final list = await widget.daemon.listAgents();
+      if (!mounted || gen != _reloadGen) return;
       final links = await widget.hostLinkStore.load();
+      if (!mounted || gen != _reloadGen) return;
       var org = const <ContactView>[];
       var external = const <ContactView>[];
+      var orgOk = false;
+      var externalOk = false;
       String? directoryError;
       try {
         org = await widget.daemon.listContacts();
+        orgOk = true;
       } catch (e) {
         directoryError = e.toString();
       }
       try {
         external = await widget.daemon.listExternalContacts();
+        externalOk = true;
       } catch (_) {}
-      if (!mounted) return;
+      if (!mounted || gen != _reloadGen) return;
       setState(() {
         _list = list;
         _hostLinks = links;
-        _orgContacts = org;
-        _externalContacts = external;
-        _directoryError = directoryError;
+        if (orgOk) {
+          _orgContacts = org;
+          _directoryError = null;
+        } else {
+          _directoryError = directoryError;
+        }
+        if (externalOk) {
+          _externalContacts = external;
+        }
         _loading = false;
+        _error = null;
       });
-      unawaited(_hydratePeerAgents(own: list, org: org));
+      // Cache own agents (+ directory slices that succeeded) before peer RPCs.
+      try {
+        await MailboxStore.instance?.saveAgentsSnapshot(
+          own: list,
+          orgContacts: orgOk ? org : null,
+          externalContacts: externalOk ? external : null,
+        );
+      } catch (_) {}
+      if (!mounted || gen != _reloadGen) return;
+      unawaited(
+        _hydratePeerAgents(
+          gen: gen,
+          own: list,
+          org: org,
+          orgOk: orgOk,
+          external: externalOk ? external : null,
+        ),
+      );
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || gen != _reloadGen) return;
+      if (soft && _list != null) {
+        setState(() => _loading = false);
+        return;
+      }
       setState(() {
         _error = e.toString();
         _loading = false;
@@ -495,30 +578,44 @@ class _AgentsPanelState extends State<AgentsPanel> {
       _peerAgents[bareMailHandle(handle)] ?? const [];
 
   Future<void> _hydratePeerAgents({
+    required int gen,
     required AgentListResult own,
     required List<ContactView> org,
+    required bool orgOk,
+    List<ContactView>? external,
   }) async {
     final mine = widget.handle?.trim();
     final out = <String, List<String>>{
+      if (!orgOk) ..._peerAgents,
       if (mine != null && mine.isNotEmpty)
         bareMailHandle(mine): _uniqueAgentSlugs(own.agents),
     };
-    final room = (mine != null && mine.isNotEmpty) ? 11 : 12;
-    final peers = org
-        .where((c) => !c.isBroadcast && c.handle.trim().isNotEmpty)
-        .take(room)
-        .toList();
-    await Future.wait([
-      for (final c in peers)
-        () async {
-          try {
-            final list = await widget.daemon.listAgents(handle: c.handle);
-            out[bareMailHandle(c.handle)] = _uniqueAgentSlugs(list.agents);
-          } catch (_) {}
-        }(),
-    ]);
-    if (!mounted) return;
+    if (orgOk) {
+      final room = (mine != null && mine.isNotEmpty) ? 11 : 12;
+      final peers = org
+          .where((c) => !c.isBroadcast && c.handle.trim().isNotEmpty)
+          .take(room)
+          .toList();
+      await Future.wait([
+        for (final c in peers)
+          () async {
+            try {
+              final list = await widget.daemon.listAgents(handle: c.handle);
+              out[bareMailHandle(c.handle)] = _uniqueAgentSlugs(list.agents);
+            } catch (_) {}
+          }(),
+      ]);
+    }
+    if (!mounted || gen != _reloadGen) return;
     setState(() => _peerAgents = out);
+    try {
+      await MailboxStore.instance?.saveAgentsSnapshot(
+        own: own,
+        orgContacts: orgOk ? org : null,
+        externalContacts: external,
+        peerAgents: out,
+      );
+    } catch (_) {}
   }
 
   static List<String> _uniqueAgentSlugs(Iterable<AgentInfo> agents) {

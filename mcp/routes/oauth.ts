@@ -27,5 +27,12 @@ export function createOauthRoutes(config: McpConfig) {
     );
   });
 
+  // OpenAI plugin domain verification. Token only — no JSON wrapper.
+  routes.get("/.well-known/openai-apps-challenge", (c) => {
+    const token = config.openaiAppsChallenge;
+    if (!token) return c.body(null, 404);
+    return c.text(token);
+  });
+
   return routes;
 }

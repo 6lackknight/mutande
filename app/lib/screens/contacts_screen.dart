@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' show Platform, Process;
 
 import 'package:flutter/material.dart';
@@ -5,7 +6,9 @@ import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../config/app_config.dart';
+import '../services/app_actions.dart';
 import '../services/daemon_client.dart';
+import '../services/mailbox/mailbox_store.dart';
 import '../theme/mutande_macos_theme.dart';
 import '../util/address_display.dart';
 import '../widgets/collab/collab_dash_card.dart';
@@ -49,14 +52,61 @@ class _ContactsPanelState extends State<ContactsPanel> {
   @override
   void initState() {
     super.initState();
-    widget.onReloadReady?.call(_reload);
-    _reload();
+    widget.onReloadReady?.call(() => _reload(soft: true));
+    AppActions.mailEpoch.addListener(_onMailEpoch);
+    _hydrateThenReload();
   }
 
   @override
   void dispose() {
+    AppActions.mailEpoch.removeListener(_onMailEpoch);
     widget.onReloadReady?.call(null);
     super.dispose();
+  }
+
+  void _onMailEpoch() {
+    unawaited(_paintFromMailbox());
+  }
+
+  Future<void> _paintFromMailbox() async {
+    final box = MailboxStore.instance;
+    if (box == null || !mounted) return;
+    try {
+      final cached = await box.loadPeopleSnapshot();
+      if (cached == null || !mounted) return;
+      setState(() {
+        _contacts = cached.contacts;
+        _external = cached.external;
+        _incoming = cached.incoming;
+        _outgoing = cached.outgoing;
+        _selfDisplayName = cached.selfDisplayName;
+        _selfAvatarUrl = cached.selfAvatarUrl;
+        _loading = false;
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _hydrateThenReload() async {
+    final box = MailboxStore.instance;
+    if (box != null) {
+      try {
+        final cached = await box.loadPeopleSnapshot();
+        if (cached != null && mounted) {
+          setState(() {
+            _contacts = cached.contacts;
+            _external = cached.external;
+            _incoming = cached.incoming;
+            _outgoing = cached.outgoing;
+            _selfDisplayName = cached.selfDisplayName;
+            _selfAvatarUrl = cached.selfAvatarUrl;
+            _loading = false;
+          });
+          await _reload(soft: true);
+          return;
+        }
+      } catch (_) {}
+    }
+    await _reload();
   }
 
   Future<void> _reload({bool soft = false}) async {
@@ -68,36 +118,60 @@ class _ContactsPanelState extends State<ContactsPanel> {
     }
     try {
       final contacts = await widget.daemon.listContacts();
-      List<ContactView> external = const [];
-      List<PairRequestView> incoming = const [];
-      List<PairRequestView> outgoing = const [];
+      List<ContactView>? external;
+      List<PairRequestView>? incoming;
+      List<PairRequestView>? outgoing;
+      var pairingOk = false;
       String? selfDisplayName;
       String? selfAvatarUrl;
+      var selfOk = false;
       try {
         final status = await widget.daemon.getStatus();
         selfDisplayName = status.displayName;
         selfAvatarUrl = status.avatarUrl;
+        selfOk = true;
       } catch (_) {}
       try {
         external = await widget.daemon.listExternalContacts();
         final pending = await widget.daemon.listPendingPairRequests();
         incoming = pending.incoming;
         outgoing = pending.outgoing;
+        pairingOk = true;
       } catch (_) {
-        // External APIs may be unreachable on older daemons — org contacts still show.
+        // External APIs may be unreachable — keep prior pairing/external.
       }
+      try {
+        await MailboxStore.instance?.savePeopleSnapshot(
+          contacts: contacts,
+          external: pairingOk ? external : null,
+          incoming: pairingOk ? incoming : null,
+          outgoing: pairingOk ? outgoing : null,
+          selfDisplayName: selfDisplayName,
+          selfAvatarUrl: selfAvatarUrl,
+          updateSelfProfile: selfOk,
+        );
+      } catch (_) {}
       if (!mounted) return;
       setState(() {
         _contacts = contacts;
-        _external = external;
-        _incoming = incoming;
-        _outgoing = outgoing;
-        _selfDisplayName = selfDisplayName;
-        _selfAvatarUrl = selfAvatarUrl;
+        if (pairingOk) {
+          _external = external ?? const [];
+          _incoming = incoming ?? const [];
+          _outgoing = outgoing ?? const [];
+        }
+        if (selfOk) {
+          _selfDisplayName = selfDisplayName;
+          _selfAvatarUrl = selfAvatarUrl;
+        }
         _loading = false;
+        _error = null;
       });
     } catch (e) {
       if (!mounted) return;
+      if (soft && _contacts.isNotEmpty) {
+        setState(() => _loading = false);
+        return;
+      }
       setState(() {
         _error = friendlyContactsError(e);
         _loading = false;

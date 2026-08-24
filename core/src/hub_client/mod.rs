@@ -714,6 +714,7 @@ impl HubClient {
         steerer_handles: &[String],
         roster_addresses: &[String],
         instructions: Option<&str>,
+        instructions_sealed: Option<&CollabInstructionsSealed>,
         artifacts: &[CollabArtifactSummary],
     ) -> Result<Collab> {
         let steerer_ref = if steerer_handles.is_empty() {
@@ -736,6 +737,7 @@ impl HubClient {
             steerer_handles: steerer_ref,
             roster_addresses: roster_ref,
             instructions,
+            instructions_sealed,
             artifacts: artifacts_ref,
         };
         let resp: CollabResponse = self.post_json("/v1/collabs", &body, true).await?;
@@ -787,8 +789,12 @@ impl HubClient {
         &self,
         collab_id: &str,
         instructions: Option<&str>,
+        instructions_sealed: Option<&CollabInstructionsSealed>,
     ) -> Result<Collab> {
-        let body = UpdateInstructionsRequest { instructions };
+        let body = UpdateInstructionsRequest {
+            instructions,
+            instructions_sealed,
+        };
         let resp: CollabResponse = self
             .post_json(
                 &format!("/v1/collabs/{collab_id}/instructions"),

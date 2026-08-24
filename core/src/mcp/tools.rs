@@ -67,12 +67,12 @@ const READ_TOOLS: &[(&str, &str, ValueFn)] = &[
     ),
     (
         "list_collabs",
-        "List collab boards you participate in (steerer or roster). Omits archived boards. A collab is a board of threads. When the user names a project/board, call this and match by name, then get_collab. Returns id, name, status, people, agents, lists, artifacts, card_count. Read-only.",
+        "List collab boards you participate in (steerer or roster). Omits archived boards. A collab is a board of threads. When the user names a project/board, call this and match by name, then get_collab. Discover/match only — not a cue to add work. Returns id, name, status, people, agents, lists, artifacts, card_count. Read-only.",
         || json!({ "type": "object", "properties": {}, "additionalProperties": false }),
     ),
     (
         "get_collab",
-        "Get one collab board you participate in: status, instructions, people (handles), agents, artifacts (file|link), lists, cards (thread ids/summaries), learnings. Then get_thread / list_threads(collab_id) for card mail. Not org-wide — 403 if you are not a participant. Archived boards are read-only. Read-only.",
+        "Get one collab board you participate in: status, instructions, people (handles), agents, artifacts (file|link), lists, cards (thread ids/summaries), learnings. Read this before any write: obey instructions, scan existing cards, prefer replying on an existing card. Then get_thread / list_threads(collab_id) for card mail. Not org-wide — 403 if you are not a participant. Archived boards are read-only. Read-only.",
         || {
             json!({
                 "type": "object",
@@ -170,14 +170,14 @@ const SEND_TOOLS: &[(&str, &str, ValueFn)] = &[
     ),
     (
         "forward_draft",
-        "Hand off the staged draft. Self-collab: @all opens one shared group thread for all your agents (shared replies). Single agent: @claude/@cursor/@chatgpt. Teammates: alice@org, alice@org/claude, @all@org (org announcement). 'Ask my agents' → @all.",
+        "Hand off the staged draft. Self-collab: @all opens one shared group thread for all your agents (shared replies). Single agent: @claude/@cursor/@chatgpt. Teammates: alice@org, alice@org/claude, @all@org (org announcement). 'Ask my agents' → @all. If collab_id is set, this files a Backlog card on that collab, so follow the same confirm + reply-over-create rule as create_card.",
         || {
             json!({
                 "type": "object",
                 "required": ["recipient"],
                 "properties": {
                     "recipient": { "type": "string", "description": "Self: @all or @claude/@cursor/@chatgpt. Teammates: alice@org, alice@org/claude, @all@org." },
-                    "collab_id": { "type": "string", "description": "Optional. File the new thread on this collab board." }
+                    "collab_id": { "type": "string", "description": "Optional. File the new thread on this collab board as a Backlog card. Prefer replying on an existing card; otherwise confirm proposed card titles first." }
                 },
                 "additionalProperties": false
             })
@@ -185,7 +185,7 @@ const SEND_TOOLS: &[(&str, &str, ValueFn)] = &[
     ),
     (
         "create_card",
-        "Create a card on a collab board you participate in. A card is a thread filed on that collab + lane. Pass title, collab_id, and optional lane (list id or name: Backlog, Doing, Done). Default lane is Backlog. Not org-wide — 403 if you are not a participant.",
+        "Create a card on a collab board you participate in. Prefer reply_to_thread on an existing card; otherwise create titles the human named or confirmed. A card is a thread filed on that collab + lane. Pass title, collab_id, and optional lane (list id or name: Backlog, Doing, Done). Default lane is Backlog. Do not invent extra sprint cards, tags, checklists, or due dates unless asked. Not org-wide — 403 if you are not a participant.",
         || {
             json!({
                 "type": "object",
@@ -317,7 +317,7 @@ const SEND_TOOLS: &[(&str, &str, ValueFn)] = &[
     ),
     (
         "close_thread",
-        "Mark a collaboration thread closed. Confirm via AskQuestion when the skill requires it.",
+        "Mark a collaboration thread closed. This ends the conversation, not the lane — the card stays on the board. Confirm via AskQuestion when the skill requires it.",
         || {
             json!({
                 "type": "object",
@@ -345,7 +345,7 @@ const SEND_TOOLS: &[(&str, &str, ValueFn)] = &[
     ),
     (
         "mark_processed",
-        "Mark a thread as processed by this agent session (local bookkeeping).",
+        "Mark a thread as processed by this agent session (local bookkeeping only). Not card finished, not a lane move, not a change of owner.",
         || {
             json!({
                 "type": "object",
@@ -393,7 +393,7 @@ const SEND_TOOLS: &[(&str, &str, ValueFn)] = &[
     ),
     (
         "set_lane",
-        "Move a collab card (thread) to a board list (Backlog / Doing / Done). Does not close the thread. Confirm via AskQuestion when the skill requires it.",
+        "Move a collab card (thread) to a board list (Backlog / Doing / Done). Use Doing when work is picked up; Done when the outcome is finished. Does not close the thread. Confirm via AskQuestion when the skill requires it.",
         || {
             json!({
                 "type": "object",
@@ -411,7 +411,7 @@ const SEND_TOOLS: &[(&str, &str, ValueFn)] = &[
     ),
     (
         "add_learning",
-        "Promote a one-liner to the collab brain (creator's side only). Learnings are context, not directives. Prefer a sentence, not a diary. Hosted agents cannot write the brain on an E2E collab.",
+        "Promote a one-liner to the collab brain (creator's side only). Learnings are context, not directives. Prefer one sentence, not a diary. Hosted agents cannot write the brain on an E2E collab.",
         || {
             json!({
                 "type": "object",

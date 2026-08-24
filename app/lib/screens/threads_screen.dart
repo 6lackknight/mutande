@@ -5,8 +5,10 @@ import 'package:flutter_resizable_container/flutter_resizable_container.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../models/agent_transport.dart';
+import '../services/app_actions.dart';
 import '../services/daemon_client.dart';
 import '../services/daemon_event_client.dart';
+import '../services/mailbox/mailbox_store.dart';
 import '../services/notification_prefs_store.dart';
 import '../services/thread_list_cache_store.dart';
 import '../services/transport_prefs_store.dart';
@@ -14,6 +16,7 @@ import '../theme/mutande_macos_theme.dart';
 import '../util/address_display.dart';
 import '../util/clock_format.dart';
 import '../util/compose_transport.dart';
+import '../util/mail_trace.dart';
 import '../util/thread_peer.dart';
 import '../widgets/ai_host_icon.dart';
 import '../widgets/contact_avatar.dart';
@@ -24,6 +27,7 @@ import '../widgets/thread_status_badge.dart';
 import '../widgets/downgrade_consent_banner.dart';
 import '../widgets/enterprise_warn_banner.dart';
 import '../widgets/transport_chip.dart';
+import '../widgets/home_chrome_pills.dart';
 import '../widgets/home_chrome_strip.dart';
 import '../widgets/thread_relay_reading.dart';
 import '../widgets/thread_inspector_sidebar.dart';
@@ -158,19 +162,34 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
     }
     _loadMuted();
     unawaited(_hydrateFromCacheThenReload());
+    AppActions.mailEpoch.addListener(_onMailEpoch);
     final events = widget.inboxEvents;
     if (events != null && !_inWidgetTest) {
+      // SyncCoordinator owns decrypt-on-receive; list paints from mailbox via
+      // mailEpoch. Keep a light listen to soft-refresh the open detail pane.
       _inboxSub = events.events.listen((_) {
-        unawaited(_reload(silent: true));
+        _detailKey.currentState?.softRefresh();
       });
       events.connected.addListener(_onInboxConnectionChanged);
       _syncPollingMode();
     }
   }
 
+  void _onMailEpoch() {
+    unawaited(_paintListFromMailbox());
+  }
+
+  Future<void> _paintListFromMailbox() async {
+    if (!mounted) return;
+    final cached = await _threadCache.load(_filterKey);
+    if (!mounted || cached == null) return;
+    _applyThreadList(cached, clearError: true);
+  }
+
   void _onInboxConnectionChanged() => _syncPollingMode();
 
   Future<void> _hydrateFromCacheThenReload() async {
+    final sw = MailTrace.start('threads.list.hydrate filter=$_filterKey');
     if (!_inWidgetTest) {
       final cached = await _threadCache.load(_filterKey);
       if (!mounted) return;
@@ -180,10 +199,24 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
           _loading = false;
           _error = null;
         });
+        MailTrace.end(
+          sw,
+          'threads.list.hydrate',
+          fields: {
+            'source': 'mailbox',
+            'count': cached.length,
+            'mailbox': MailboxStore.instance != null,
+          },
+        );
         unawaited(_reload(silent: true));
         return;
       }
     }
+    MailTrace.end(
+      sw,
+      'threads.list.hydrate',
+      fields: {'source': 'miss', 'mailbox': MailboxStore.instance != null},
+    );
     await _reload();
   }
 
@@ -239,6 +272,7 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
 
   @override
   void dispose() {
+    AppActions.mailEpoch.removeListener(_onMailEpoch);
     widget.inboxEvents?.connected.removeListener(_onInboxConnectionChanged);
     unawaited(_inboxSub?.cancel());
     _pollTimer?.cancel();
@@ -284,6 +318,9 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
   /// Full reload shows the orb; [silent] merges without tearing down the list.
   Future<void> _reload({bool silent = false}) async {
     if (!mounted) return;
+    final sw = MailTrace.start(
+      'threads.list.reload filter=$_filterKey silent=$silent',
+    );
     if (silent) {
       if (_loading || _silentRefreshInFlight) return;
       _silentRefreshInFlight = true;
@@ -310,16 +347,30 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
         unawaited(_threadCache.save(_filterKey, threads));
       }
       _syncPollingMode();
+      MailTrace.end(
+        sw,
+        'threads.list.reload',
+        fields: {'source': 'daemon', 'count': threads.length},
+      );
     } catch (e) {
       if (!mounted) return;
       if (silent && _threads.isNotEmpty) {
-        // Keep last-known list on poll blips.
+        MailTrace.end(
+          sw,
+          'threads.list.reload',
+          fields: {'source': 'daemon_fail_keep', 'error': '$e'},
+        );
         return;
       }
       setState(() {
         _error = friendlyDaemonError(e, what: 'Threads');
         _loading = false;
       });
+      MailTrace.end(
+        sw,
+        'threads.list.reload',
+        fields: {'source': 'daemon_fail', 'error': '$e'},
+      );
     } finally {
       if (silent) _silentRefreshInFlight = false;
     }
@@ -462,6 +513,9 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
     if (ok != true || !mounted) return;
     try {
       await widget.daemon.deleteThread(threadId);
+      try {
+        await MailboxStore.instance?.deleteThread(threadId);
+      } catch (_) {}
       if (!mounted) return;
       _removeThreadLocally(threadId);
     } catch (e) {
@@ -498,7 +552,7 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+          padding: const EdgeInsets.fromLTRB(2, 12, 0, 0),
           child: _ThreadsChrome(
             filter: _filter,
             onFilterChanged: _onFilterChanged,
@@ -544,6 +598,14 @@ class _ThreadsPanelState extends State<ThreadsPanel> {
             key: _detailKey,
             daemon: widget.daemon,
             threadId: _openId!,
+            listUpdatedAt: () {
+              final id = _openId;
+              if (id == null) return null;
+              for (final t in _threads) {
+                if (t.id == id) return t.updatedAt;
+              }
+              return null;
+            }(),
             myHandle: widget.myHandle,
             embedded: true,
             muted: _mutedIds.contains(_openId),
@@ -687,38 +749,38 @@ class _ThreadsChrome extends StatelessWidget {
             scrollDirection: Axis.horizontal,
             child: Row(
               children: [
-                _ScopePill(
+                MutandeScopePill(
                   label: 'All',
                   selected: filter == 'all',
                   onTap: () => onFilterChanged('all'),
                 ),
                 const SizedBox(width: 4),
-                _ScopePill(
+                MutandeScopePill(
                   label: 'Needs you',
                   selected: filter == 'needs_action',
                   badge: needsYouCount,
                   onTap: () => onFilterChanged('needs_action'),
                 ),
                 const SizedBox(width: 4),
-                _ScopePill(
+                MutandeScopePill(
                   label: 'Open',
                   selected: filter == 'open',
                   onTap: () => onFilterChanged('open'),
                 ),
                 const SizedBox(width: 4),
-                _ScopePill(
+                MutandeScopePill(
                   label: 'Closed',
                   selected: filter == 'closed',
                   onTap: () => onFilterChanged('closed'),
                 ),
                 const SizedBox(width: 4),
-                _ScopePill(
+                MutandeScopePill(
                   label: 'Collab',
                   selected: filter == 'collab',
                   onTap: () => onFilterChanged('collab'),
                 ),
                 const SizedBox(width: 4),
-                _ScopePill(
+                MutandeScopePill(
                   label: 'Unfiled',
                   selected: filter == 'unfiled',
                   onTap: () => onFilterChanged('unfiled'),
@@ -727,98 +789,28 @@ class _ThreadsChrome extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(width: 8),
+        // const SizedBox(width: 8),
         Tooltip(
           message: 'Compose (C)',
-          child: Material(
-            color: MutandeColors.stone800,
-            shape: const CircleBorder(),
+          child: Container(
+            decoration: BoxDecoration(
+              color: MutandeColors.stone800,
+              shape: BoxShape.circle,
+            ),
+            width: 32,
+            height: 32,
             child: InkWell(
               onTap: onCompose,
               customBorder: const CircleBorder(),
-              child: const SizedBox(
-                width: 32,
-                height: 32,
-                child: Icon(
-                  LucideIcons.circleFadingPlus,
-                  size: 15,
-                  color: MutandeColors.stone50,
-                ),
+              child: Icon(
+                LucideIcons.circleFadingPlus,
+                size: 22,
+                color: MutandeColors.stone50,
               ),
             ),
           ),
         ),
       ],
-    );
-  }
-}
-
-class _ScopePill extends StatelessWidget {
-  const _ScopePill({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-    this.badge = 0,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-  final int badge;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: MutandeMotion.of(context, MutandeMotion.hover),
-        curve: MutandeMotion.ease,
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: selected ? MutandeColors.stone800 : MutandeColors.stone100,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(
-            color: selected ? MutandeColors.stone800 : MutandeColors.stone200,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: selected
-                    ? MutandeColors.stone50
-                    : MutandeColors.stone600,
-              ),
-            ),
-            if (badge > 0) ...[
-              const SizedBox(width: 6),
-              Container(
-                constraints: const BoxConstraints(minWidth: 16),
-                height: 16,
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: MutandeColors.amber,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  badge > 9 ? '9+' : '$badge',
-                  style: const TextStyle(
-                    color: Color(0xFFFFFFFF),
-                    fontSize: 9,
-                    fontWeight: FontWeight.w700,
-                    height: 1,
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
     );
   }
 }
@@ -894,9 +886,7 @@ class _ThreadRow extends StatelessWidget {
               if (value == 'delete') onDelete?.call();
             });
           },
-          child: AnimatedContainer(
-            duration: MutandeMotion.of(context, MutandeMotion.hover),
-            curve: Curves.easeOutCubic,
+          child: Container(
             padding: const EdgeInsets.fromLTRB(10, 9, 12, 9),
             color: selected ? MutandeColors.stone100 : Colors.transparent,
             child: Row(
@@ -1528,6 +1518,8 @@ class ThreadDetailPanel extends StatefulWidget {
     required this.daemon,
     required this.threadId,
     required this.onBack,
+    this.listUpdatedAt,
+    this.mailbox,
     this.myHandle,
     this.embedded = false,
     this.onListChanged,
@@ -1540,6 +1532,13 @@ class ThreadDetailPanel extends StatefulWidget {
 
   final DaemonClient daemon;
   final String threadId;
+
+  /// List-row `updated_at` for mailbox stale-while-revalidate.
+  final String? listUpdatedAt;
+
+  /// Injectable mailbox (tests); defaults to [MailboxStore.instance].
+  final MailboxStore? mailbox;
+
   final VoidCallback onBack;
   final String? myHandle;
 
@@ -1566,6 +1565,7 @@ class ThreadDetailPanel extends StatefulWidget {
 class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
   bool _loading = true;
   bool _silentLoadInFlight = false;
+  bool _softRefreshPending = false;
   String? _error;
   ThreadDetailResult? _detail;
   final _reply = TextEditingController();
@@ -1577,6 +1577,8 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
   int? _hotDivider;
   bool _inspectorVisible = true;
   bool _inspectorLaidOut = true;
+  int _openGen = 0;
+  bool _animateReadingEnter = true;
 
   ResizableDivider _splitDivider(int id) {
     final hot = _hotDivider == id;
@@ -1646,7 +1648,7 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
         proposalId: proposal.id,
       );
       if (!mounted) return;
-      await _load(silent: true);
+      await _load(silent: true, force: true);
       widget.onListChanged?.call();
     } catch (e) {
       if (!mounted) return;
@@ -1666,7 +1668,7 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
         proposalId: proposal.id,
       );
       if (!mounted) return;
-      await _load(silent: true);
+      await _load(silent: true, force: true);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1702,21 +1704,66 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
   void didUpdateWidget(covariant ThreadDetailPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.threadId != widget.threadId) {
+      final leaving = _detail?.id == oldWidget.threadId ? _detail : null;
+      unawaited(_mailbox?.clearPreviewsForDetail(leaving));
       _reply.clear();
       _replyToMessageId = null;
       _replyToHandle = null;
-      _load();
+      _softRefreshPending = false;
+      final gen = ++_openGen;
+      unawaited(_switchThread(gen: gen));
+    } else if (oldWidget.listUpdatedAt != widget.listUpdatedAt) {
+      softRefresh();
     }
+  }
+
+  Future<void> _switchThread({required int gen}) async {
+    _animateReadingEnter = false;
+    final box = _mailbox;
+    ThreadDetailResult? cached;
+    if (box != null) {
+      try {
+        cached = await box.loadThreadDetail(widget.threadId);
+      } catch (_) {}
+    }
+    if (!mounted || gen != _openGen) return;
+
+    if (cached != null) {
+      setState(() {
+        _detail = cached;
+        _loading = false;
+        _error = null;
+      });
+      unawaited(_load(silent: true, gen: gen));
+      return;
+    }
+
+    if (_detail != null) {
+      unawaited(_load(silent: true, gen: gen));
+      return;
+    }
+
+    unawaited(_load(gen: gen));
   }
 
   @override
   void dispose() {
     _reply.dispose();
+    final detail = _detail;
+    unawaited(_mailbox?.clearPreviewsForDetail(detail));
     super.dispose();
   }
 
+  MailboxStore? get _mailbox => widget.mailbox ?? MailboxStore.instance;
+
   /// Quiet refresh when the list row fingerprint for this thread changes.
-  void softRefresh() => unawaited(_load(silent: true));
+  void softRefresh() {
+    if (_silentLoadInFlight || _loading) {
+      _softRefreshPending = true;
+      return;
+    }
+    unawaited(_load(silent: true));
+  }
 
   Future<void> _loadInspectorPref() async {
     final prefs = await widget.notificationPrefs.load();
@@ -1738,33 +1785,149 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
     );
   }
 
-  Future<void> _load({bool silent = false}) async {
+  Future<void> _load({
+    bool silent = false,
+    bool force = false,
+    int? gen,
+  }) async {
+    final openGen = gen ?? _openGen;
+    final sw = MailTrace.start(
+      'thread.open id=${widget.threadId} silent=$silent force=$force',
+    );
     if (silent) {
-      if (_loading || _silentLoadInFlight) return;
+      if (_loading || _silentLoadInFlight) {
+        _softRefreshPending = true;
+        return;
+      }
       _silentLoadInFlight = true;
-    } else {
-      setState(() {
-        _loading = true;
-        _error = null;
-      });
+    } else if (!silent) {
+      // Keep prior detail visible while force-refreshing (SWR paint).
+      if (_detail == null) {
+        setState(() {
+          _loading = true;
+          _error = null;
+        });
+      } else {
+        setState(() => _error = null);
+      }
     }
+
     try {
+      final box = _mailbox;
+      // Always paint cache first when present (including force).
+      if (box != null) {
+        try {
+          final cached = await box.loadThreadDetail(widget.threadId);
+          if (cached != null && mounted && openGen == _openGen) {
+            setState(() {
+              _detail = cached;
+              _loading = false;
+              if (silent) _error = null;
+            });
+            if (!force) {
+              final fresh = await box.threadDetailIsFresh(
+                widget.threadId,
+                widget.listUpdatedAt,
+              );
+              if (fresh) {
+                MailTrace.end(
+                  sw,
+                  'thread.open',
+                  fields: {
+                    'path': 'mailbox_fresh',
+                    'msgs': cached.messages.length,
+                  },
+                );
+                return;
+              }
+              MailTrace.end(
+                sw,
+                'thread.open',
+                fields: {
+                  'path': 'mailbox_stale_bg',
+                  'msgs': cached.messages.length,
+                  'listAt': widget.listUpdatedAt,
+                },
+              );
+              unawaited(_revalidateInBackground());
+              return;
+            }
+          }
+        } catch (e) {
+          MailTrace.event(
+            'thread.open mailbox_read_fail — falling through to daemon',
+            fields: {'error': '$e'},
+          );
+        }
+      } else {
+        MailTrace.event(
+          'thread.open mailbox=null — cold path will hit daemon',
+          fields: {'id': widget.threadId},
+        );
+      }
+
+      final rpcSw = MailTrace.start('thread.get_thread id=${widget.threadId}');
       final detail = await widget.daemon.getThread(widget.threadId);
-      if (!mounted) return;
+      MailTrace.end(rpcSw, 'thread.get_thread');
+      ThreadDetailResult painted = detail;
+      if (box != null) {
+        try {
+          await box.upsertThreadDetail(detail);
+          painted = await box.loadThreadDetail(widget.threadId) ?? detail;
+        } catch (_) {}
+      }
+      if (!mounted || openGen != _openGen) return;
       setState(() {
-        _detail = detail;
+        _detail = painted;
         _loading = false;
         if (silent) _error = null;
       });
+      MailTrace.end(
+        sw,
+        'thread.open',
+        fields: {
+          'path': force ? 'daemon_force' : 'daemon_miss',
+          'msgs': painted.messages.length,
+        },
+      );
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || openGen != _openGen) return;
       if (silent && _detail != null) return;
       setState(() {
         _error = friendlyDaemonError(e, what: 'This thread');
         _loading = false;
       });
+      MailTrace.end(
+        sw,
+        'thread.open',
+        fields: {'path': 'error', 'error': '$e'},
+      );
     } finally {
       if (silent) _silentLoadInFlight = false;
+      if (_softRefreshPending && mounted) {
+        _softRefreshPending = false;
+        unawaited(_load(silent: true, gen: _openGen));
+      }
+    }
+  }
+
+  Future<void> _revalidateInBackground() async {
+    final sw = MailTrace.start('thread.bg_revalidate id=${widget.threadId}');
+    try {
+      final detail = await widget.daemon.getThread(widget.threadId);
+      final box = _mailbox;
+      ThreadDetailResult painted = detail;
+      if (box != null) {
+        try {
+          await box.upsertThreadDetail(detail);
+          painted = await box.loadThreadDetail(widget.threadId) ?? detail;
+        } catch (_) {}
+      }
+      if (!mounted) return;
+      setState(() => _detail = painted);
+      MailTrace.end(sw, 'thread.bg_revalidate', fields: {'ok': true});
+    } catch (e) {
+      MailTrace.end(sw, 'thread.bg_revalidate', fields: {'error': '$e'});
     }
   }
 
@@ -1784,7 +1947,7 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
       if (!mounted) return;
       _reply.clear();
       _clearReplyTarget();
-      await _load(silent: true);
+      await _load(silent: true, force: true);
       widget.onListChanged?.call();
     } catch (e) {
       if (!mounted) return;
@@ -1812,7 +1975,7 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
       }
       // Parent may have cleared selection (filter dropped this row).
       if (!mounted) return;
-      await _load(silent: true);
+      await _load(silent: true, force: true);
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = friendlyDaemonError(e, what: 'Close thread'));
@@ -1831,6 +1994,9 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
     if (ok != true || !mounted) return;
     try {
       await widget.daemon.deleteThread(widget.threadId);
+      try {
+        await _mailbox?.deleteThread(widget.threadId);
+      } catch (_) {}
       if (!mounted) return;
       if (widget.onGone != null) {
         widget.onGone!();
@@ -1845,6 +2011,61 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final fadeReading = _loading && _detail == null;
+    final Widget readingChild;
+    if (_loading && _detail == null) {
+      readingChild = const ThreadReadingSkeleton(key: ValueKey('sk'));
+    } else if (_detail == null) {
+      readingChild = PaneQuietState(
+        key: const ValueKey('missing'),
+        title: 'Thread unavailable',
+        body: _error ?? 'This thread couldn’t be opened.',
+        onRetry: _load,
+        icon: Icons.mark_email_unread_outlined,
+      );
+    } else {
+      readingChild = ThreadRelayReading(
+        key: ValueKey('read-${widget.threadId}'),
+        detail: _detail!,
+        animateEnter: _animateReadingEnter,
+        myHandle: widget.myHandle,
+        muted: widget.muted,
+        reply: _reply,
+        sending: _sending,
+        replyToHandle: _replyToHandle == null
+            ? null
+            : formatMailAddress(_replyToHandle!, myHandle: widget.myHandle),
+        nested: _replyToMessageId != null,
+        onSend: _sendReply,
+        onClearTarget: _clearReplyTarget,
+        onReply: _startReplyTo,
+        onUpvote: _toggleUpvote,
+        upvotingId: _upvotingMessageId,
+        onRefresh: () => unawaited(
+          _load(silent: widget.embedded && _detail != null, force: true),
+        ),
+        onClose: _detail!.status == 'closed' ? null : _closeThread,
+        onDelete: _deleteThread,
+        onMuteToggle: widget.onMuteToggle,
+        inspectorVisible: _inspectorVisible,
+        onInspectorToggle: widget.embedded ? _toggleInspector : null,
+        leading: [
+          if (_detail!.isEnterpriseThread) const EnterpriseWarnBanner(),
+          if (_detail!.pendingDowngrade?.isPending == true)
+            DowngradeConsentBanner(
+              prompt:
+                  _detail!.pendingDowngrade!.prompt ??
+                  'Adding @${_detail!.pendingDowngrade!.proposedSlug} (web) ends E2E for this thread',
+              busy: _downgradeBusy,
+              onApprove: () => _approveDowngrade(_detail!.pendingDowngrade!),
+              onDeny: () => _denyDowngrade(_detail!.pendingDowngrade!),
+            ),
+          if (_error != null)
+            PaneInlineError(message: _error!, onRetry: () => _load()),
+        ],
+      );
+    }
+
     final pane = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1868,7 +2089,7 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
               const Spacer(),
               IconButton(
                 tooltip: 'Refresh',
-                onPressed: _loading ? null : _load,
+                onPressed: _loading ? null : () => _load(force: true),
                 icon: const Icon(LucideIcons.arrowUp, size: 20),
                 color: const Color(0xFF78716C),
                 visualDensity: VisualDensity.compact,
@@ -1895,68 +2116,7 @@ class _ThreadDetailPanelState extends State<ThreadDetailPanel> {
             ],
           ),
         Expanded(
-          child: MutandeFadeSwap(
-            child: _loading
-                ? const ThreadReadingSkeleton(key: ValueKey('sk'))
-                : _detail == null
-                ? PaneQuietState(
-                    key: const ValueKey('missing'),
-                    title: 'Thread unavailable',
-                    body: _error ?? 'This thread couldn’t be opened.',
-                    onRetry: _load,
-                    icon: Icons.mark_email_unread_outlined,
-                  )
-                : ThreadRelayReading(
-                    key: const ValueKey('read'),
-                    detail: _detail!,
-                    myHandle: widget.myHandle,
-                    muted: widget.muted,
-                    reply: _reply,
-                    sending: _sending,
-                    replyToHandle: _replyToHandle == null
-                        ? null
-                        : formatMailAddress(
-                            _replyToHandle!,
-                            myHandle: widget.myHandle,
-                          ),
-                    nested: _replyToMessageId != null,
-                    onSend: _sendReply,
-                    onClearTarget: _clearReplyTarget,
-                    onReply: _startReplyTo,
-                    onUpvote: _toggleUpvote,
-                    upvotingId: _upvotingMessageId,
-                    onRefresh: () => unawaited(
-                      _load(silent: widget.embedded && _detail != null),
-                    ),
-                    onClose: _detail!.status == 'closed' ? null : _closeThread,
-                    onDelete: _deleteThread,
-                    onMuteToggle: widget.onMuteToggle,
-                    inspectorVisible: _inspectorVisible,
-                    onInspectorToggle: widget.embedded
-                        ? _toggleInspector
-                        : null,
-                    leading: [
-                      if (_detail!.isEnterpriseThread)
-                        const EnterpriseWarnBanner(),
-                      if (_detail!.pendingDowngrade?.isPending == true)
-                        DowngradeConsentBanner(
-                          prompt:
-                              _detail!.pendingDowngrade!.prompt ??
-                              'Adding @${_detail!.pendingDowngrade!.proposedSlug} (web) ends E2E for this thread',
-                          busy: _downgradeBusy,
-                          onApprove: () =>
-                              _approveDowngrade(_detail!.pendingDowngrade!),
-                          onDeny: () =>
-                              _denyDowngrade(_detail!.pendingDowngrade!),
-                        ),
-                      if (_error != null)
-                        PaneInlineError(
-                          message: _error!,
-                          onRetry: () => _load(),
-                        ),
-                    ],
-                  ),
-          ),
+          child: MutandeFadeSwap(animate: fadeReading, child: readingChild),
         ),
       ],
     );

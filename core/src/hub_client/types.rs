@@ -895,6 +895,12 @@ pub struct CollabLearning {
     pub sealed: Option<bool>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CollabInstructionsSealed {
+    pub envelope_id: String,
+    pub updated_by: String,
+}
+
 /// Hub board card — subset of thread meta (lane + identity). Not a full [ThreadMeta].
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CollabCardSummary {
@@ -1015,6 +1021,8 @@ pub struct Collab {
     pub encryption_mode: String,
     #[serde(default)]
     pub instructions: Option<String>,
+    #[serde(default)]
+    pub instructions_sealed: Option<CollabInstructionsSealed>,
     #[serde(default)]
     pub lists: Vec<CollabLane>,
     #[serde(default)]
@@ -1150,6 +1158,8 @@ pub struct CreateCollabRequest<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub instructions: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub instructions_sealed: Option<&'a CollabInstructionsSealed>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub artifacts: Option<&'a [CollabArtifactSummary]>,
 }
 
@@ -1179,6 +1189,8 @@ pub struct AddLearningRequest<'a> {
 pub struct UpdateInstructionsRequest<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub instructions: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instructions_sealed: Option<&'a CollabInstructionsSealed>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]

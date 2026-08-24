@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
@@ -55,18 +56,20 @@ Future<void> main() async {
       // Paint the welcome splash immediately — do not block on Keychain /
       // mutande-core health (can take tens of seconds while the user authorizes).
       runApp(
-        MutandeApp(
-          config: config,
-          appVersion: appVersion,
-          onRestartCourier: () async {
-            // Kills :3847 listener (stale or current), then spawns bundled
-            // Resources/mutande-core. stillStarting = Keychain unlock in progress
-            // — do not surface as a hard failure (AGENTS.md 60s wait).
-            final result = await sidecar.restart();
-            if (result.stillStarting) return null;
-            if (result.ok) return null;
-            return result.error ?? 'Could not restart mutande-core';
-          },
+        ProviderScope(
+          child: MutandeApp(
+            config: config,
+            appVersion: appVersion,
+            onRestartCourier: () async {
+              // Kills :3847 listener (stale or current), then spawns bundled
+              // Resources/mutande-core. stillStarting = Keychain unlock in progress
+              // — do not surface as a hard failure (AGENTS.md 60s wait).
+              final result = await sidecar.restart();
+              if (result.stillStarting) return null;
+              if (result.ok) return null;
+              return result.error ?? 'Could not restart mutande-core';
+            },
+          ),
         ),
       );
 

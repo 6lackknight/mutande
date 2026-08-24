@@ -77,7 +77,8 @@ List<SearchHit> filterSearchHits({
         continue;
       }
       final via = t.agentBadge;
-      final host = (via != null &&
+      final host =
+          (via != null &&
               via.isNotEmpty &&
               via != 'default' &&
               AiHostIcon.assetFor(via) != null)
@@ -136,7 +137,9 @@ List<SearchHit> filterSearchHits({
           kind: SearchHitKind.contact,
           id: handle,
           title: name.isNotEmpty ? name : handle,
-          subtitle: name.isNotEmpty ? handle : (c.isBroadcast ? 'broadcast' : c.kind),
+          subtitle: name.isNotEmpty
+              ? handle
+              : (c.isBroadcast ? 'broadcast' : c.kind),
           updatedAt: c.linkedAt,
         ),
       );
@@ -368,7 +371,7 @@ class _SearchDialogState extends State<SearchDialog> {
                             spacing: 6,
                             runSpacing: 6,
                             children: [
-                              _ScopeChip(
+                              MutandeScopePill(
                                 key: const Key('search-scope-all'),
                                 icon: CupertinoIcons.square_stack,
                                 label: 'All',
@@ -376,7 +379,7 @@ class _SearchDialogState extends State<SearchDialog> {
                                 onTap: () =>
                                     setState(() => _scope = SearchScope.all),
                               ),
-                              _ScopeChip(
+                              MutandeScopePill(
                                 key: const Key('search-scope-threads'),
                                 icon: CupertinoIcons.envelope,
                                 label: 'Threads',
@@ -385,16 +388,15 @@ class _SearchDialogState extends State<SearchDialog> {
                                   () => _scope = SearchScope.threads,
                                 ),
                               ),
-                              _ScopeChip(
+                              MutandeScopePill(
                                 key: const Key('search-scope-collab'),
                                 icon: CupertinoIcons.rectangle_split_3x1,
                                 label: 'Collab',
                                 selected: _scope == SearchScope.collab,
-                                onTap: () => setState(
-                                  () => _scope = SearchScope.collab,
-                                ),
+                                onTap: () =>
+                                    setState(() => _scope = SearchScope.collab),
                               ),
-                              _ScopeChip(
+                              MutandeScopePill(
                                 key: const Key('search-scope-contacts'),
                                 icon: CupertinoIcons.person,
                                 label: 'Contacts',
@@ -444,10 +446,7 @@ class _SearchDialogState extends State<SearchDialog> {
       );
     }
     if (q.isEmpty && _scope == SearchScope.all) {
-      return _EmptySearch(
-        recent: widget.recentQueries,
-        onPick: _pickRecent,
-      );
+      return _EmptySearch(recent: widget.recentQueries, onPick: _pickRecent);
     }
     final hits = _hits;
     if (hits.isEmpty) {
@@ -473,10 +472,7 @@ class _SearchDialogState extends State<SearchDialog> {
 }
 
 class _DialogSearchField extends StatelessWidget {
-  const _DialogSearchField({
-    required this.controller,
-    required this.focusNode,
-  });
+  const _DialogSearchField({required this.controller, required this.focusNode});
 
   final TextEditingController controller;
   final FocusNode focusNode;
@@ -506,7 +502,9 @@ class _DialogSearchField extends StatelessWidget {
               Icon(
                 CupertinoIcons.search,
                 size: 16,
-                color: focused ? MutandeColors.stone800 : MutandeColors.stone400,
+                color: focused
+                    ? MutandeColors.stone800
+                    : MutandeColors.stone400,
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -516,9 +514,9 @@ class _DialogSearchField extends StatelessWidget {
                   autofocus: true,
                   cursorColor: MutandeColors.stone800,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: MutandeColors.stone800,
-                        fontSize: 15,
-                      ),
+                    color: MutandeColors.stone800,
+                    fontSize: 15,
+                  ),
                   decoration: const InputDecoration(
                     hintText: 'Search collabs, threads, contacts',
                     hintStyle: TextStyle(
@@ -557,59 +555,6 @@ class _DialogSearchField extends StatelessWidget {
           ),
         );
       },
-    );
-  }
-}
-
-class _ScopeChip extends StatelessWidget {
-  const _ScopeChip({
-    super.key,
-    required this.icon,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = selected ? MutandeColors.stone50 : MutandeColors.stone600;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: MutandeMotion.of(context, MutandeMotion.hover),
-          curve: MutandeMotion.ease,
-          padding: const EdgeInsets.fromLTRB(10, 6, 12, 6),
-          decoration: BoxDecoration(
-            color: selected ? MutandeColors.stone800 : MutandeColors.stone100,
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(
-              color: selected ? MutandeColors.stone800 : MutandeColors.stone200,
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 13, color: color),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: color,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }
@@ -667,18 +612,18 @@ class _EmptySearch extends StatelessWidget {
           Text(
             'Type to search collabs, threads, and contacts',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: MutandeColors.stone600,
-                  height: 1.4,
-                ),
+              color: MutandeColors.stone600,
+              height: 1.4,
+            ),
           ),
           if (recent.isNotEmpty) ...[
             const SizedBox(height: 28),
             Text(
               'Recent',
               style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: MutandeColors.stone500,
-                    fontWeight: FontWeight.w600,
-                  ),
+                color: MutandeColors.stone500,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             const SizedBox(height: 8),
             ...recent.map(
@@ -741,12 +686,7 @@ class _HitList extends StatelessWidget {
           SearchHitKind.contact => 'Contacts',
         };
         final n = hits.where((h) => h.kind == hit.kind).length;
-        rows.add(
-          _SectionHeader(
-            label: '$label · $n',
-            padTop: rows.isEmpty,
-          ),
-        );
+        rows.add(_SectionHeader(label: '$label · $n', padTop: rows.isEmpty));
       }
       rows.add(_SearchHitRow(hit: hit, onTap: () => onPick(hit)));
     }
@@ -777,9 +717,9 @@ class _SectionHeader extends StatelessWidget {
       child: Text(
         label,
         style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: MutandeColors.stone500,
-              fontWeight: FontWeight.w600,
-            ),
+          color: MutandeColors.stone500,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }
@@ -819,15 +759,15 @@ class _SearchHitRow extends StatelessWidget {
               child: hit.hostSlug != null
                   ? AiHostIcon(hit.hostSlug!, size: 28, showPlate: false)
                   : hit.kind == SearchHitKind.contact
-                      ? Text(
-                          letter,
-                          style: const TextStyle(
-                            color: MutandeColors.stone500,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 12,
-                          ),
-                        )
-                      : Icon(icon, size: 15, color: MutandeColors.stone500),
+                  ? Text(
+                      letter,
+                      style: const TextStyle(
+                        color: MutandeColors.stone500,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                      ),
+                    )
+                  : Icon(icon, size: 15, color: MutandeColors.stone500),
             ),
             const SizedBox(width: 12),
             Expanded(

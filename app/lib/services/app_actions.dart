@@ -13,6 +13,9 @@ class AppActions {
   /// True after bootstrap: local courier health + mail path (`list_threads`) ok.
   static final ValueNotifier<bool> sessionReady = ValueNotifier(false);
 
+  /// Bumped after mailbox write-through (decrypt-on-receive / list save).
+  static final ValueNotifier<int> mailEpoch = ValueNotifier(0);
+
   static void requestConnectHosts() {
     connectHostsTick.value++;
   }
@@ -21,5 +24,9 @@ class AppActions {
     final id = threadId.trim();
     if (id.isEmpty) return;
     openThreadRequest.value = id;
+  }
+
+  static void notifyMailboxChanged() {
+    mailEpoch.value++;
   }
 }

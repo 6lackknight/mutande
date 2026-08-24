@@ -5,17 +5,23 @@ import 'package:flutter/foundation.dart';
 
 import '../platform/user_home.dart';
 import 'daemon_client.dart';
+import 'mailbox/mailbox_store.dart';
 
 /// Last-known thread list rows per filter — stale-while-revalidate for the UI.
 ///
-/// Ciphertext stays on the hub; this only stores metadata the daemon already
-/// returned from a prior successful `list_threads` (snippets, status, times).
+/// Prefers [MailboxStore] when open; falls back to plaintext JSON for bootstrap
+/// before the mailbox is ready (and for older installs).
 class ThreadListCacheStore {
-  ThreadListCacheStore({this.path});
+  ThreadListCacheStore({this.path, this.mailbox});
 
   final String? path;
 
+  /// Optional injected mailbox (tests). Defaults to [MailboxStore.instance].
+  final MailboxStore? mailbox;
+
   static const _fileName = 'thread_list_cache.json';
+
+  MailboxStore? get _box => mailbox ?? MailboxStore.instance;
 
   String get _filePath {
     if (path != null) return path!;
@@ -34,6 +40,10 @@ class ThreadListCacheStore {
     String filter = 'all',
     Duration maxAge = const Duration(days: 7),
   }) async {
+    final box = _box;
+    if (box != null) {
+      return box.hasRecentThreadList(filter: filter, maxAge: maxAge);
+    }
     final snap = await _readFilter(filter);
     if (snap == null) return false;
     final saved = DateTime.tryParse(snap.savedAt);
@@ -42,6 +52,10 @@ class ThreadListCacheStore {
   }
 
   Future<List<ThreadSummary>?> load(String filter) async {
+    final box = _box;
+    if (box != null) {
+      return box.loadThreadList(filter);
+    }
     final snap = await _readFilter(filter);
     if (snap == null) return null;
     return snap.threads;
@@ -49,12 +63,26 @@ class ThreadListCacheStore {
 
   Future<void> save(String filter, List<ThreadSummary> threads) async {
     if (kIsWeb) return;
+    final box = _box;
+    if (box != null) {
+      await box.saveThreadList(filter, threads);
+      // Drop plaintext fallback once mailbox owns the list.
+      await _deleteLegacyFile();
+      return;
+    }
     final root = await _readRoot();
     root[filter] = _FilterSnapshot(
       savedAt: DateTime.now().toUtc().toIso8601String(),
       threads: threads,
     );
     await _writeRoot(root);
+  }
+
+  Future<void> _deleteLegacyFile() async {
+    try {
+      final file = File(_filePath);
+      if (await file.exists()) await file.delete();
+    } catch (_) {}
   }
 
   Future<_FilterSnapshot?> _readFilter(String filter) async {

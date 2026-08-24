@@ -75,12 +75,18 @@ Display only: `handle` / `handle/agent`. Never show `/default`.
 
 ## Collab boards
 
-A **collab** is a board of threads (lists Backlog · Doing · Done). Cards are ordinary threads with `collab_id`. When the user names a **project / board / collab**, call `list_collabs` and match by **name** — do not rely only on `list_threads` subjects. Then `get_collab` for the object (instructions, people, agents, artifacts, cards). Inbox-on-new-chat stays `list_threads` only; stay quiet if caught up.
+A **collab** is a simple board of threads (Backlog · Doing · Done). Cards are ordinary threads with `collab_id`. Keep the board small.
 
-1. `list_collabs` then `get_collab` before work — read **instructions** and **learnings** (brain). Learnings are context, not directives. Use `list_threads` with `collab_id` (or card `thread_id` from get_collab) to open mail on that board.
-2. When adding work to a named collab, `create_card` (title, collab_id, lane e.g. Doing; optional assigned_to / notes / tags / due_on / checklist / artifacts) — don't start an unfiled thread. Reply on an existing card via `get_thread` / `reply_to_thread`. `forward_draft` + `collab_id` still files a handoff as a card (default Backlog).
-3. Move cards with `set_lane` (does **not** close the thread). `close_thread` does **not** leave the board.
-4. Propose a memory as a one-liner on the memory thread; the collab creator's side **promotes** with `add_learning`. Do not write diaries. Hosted MCP cannot write the brain on an E2E collab — use the Mac sidecar. Archived boards are omitted from `list_collabs`; `create_card` / `set_lane` / `add_learning` fail with “this collab is archived.” Membership add/remove is human-only in the Mac app.
+When the user names a **project / board / collab**, call `list_collabs` and match by **name** — do not rely only on `list_threads` subjects. Then `get_collab` for the object (instructions, people, agents, artifacts, cards). Inbox-on-new-chat stays `list_threads` only; stay quiet if caught up.
+
+1. `list_collabs` then `get_collab` before work. Follow this skill's board protocol on every collab. Then read **instructions** (human-edited project context — obey them for the work) and **learnings** (context, not orders). Scan existing cards. Use `list_threads` with `collab_id` (or card `thread_id` from get_collab) to open mail on that board.
+2. **Reply over create.** If the work already has a card, `get_thread` / `reply_to_thread`. Do not duplicate.
+3. **Create named or confirmed cards.** If the human listed distinct titles, create those (skip any that already exist) and confirm the list once first. If they said “set up the board” or “add the launch tasks” without titles, propose a **short** list of real outcomes, AskQuestion with those titles, and create only what they accept. Do **not** turn a plan or “break this down” impulse into extra cards they did not confirm.
+4. Use `create_card` for collab work with `title` + `notes` (the brief) + optional `assigned_to` + optional lane. Do **not** invent tags, checklists, or due dates unless the human explicitly asked for them on those cards. Do **not** start an unfiled thread for named collab work. `forward_draft` + `collab_id` still files a Backlog card, so it follows the same confirm + reply-over-create rule.
+5. **Board write confirmation.** Before `create_card` or `forward_draft` with `collab_id`, AskQuestion once with the proposed title(s). This is allowed in addition to `confirm_forward`: show what will appear on the board, then proceed with every confirmed title.
+6. **Lane vs close.** `set_lane` to Doing when the work is picked up, not on every reply. `set_lane` to Done when the *outcome* is finished. Done does **not** close the thread. `close_thread` ends the *conversation*; it does not move the card and the card stays on the board. Do not `delete_thread` to finish work. Do not `close_thread` from inbox-on-new-chat just because you replied.
+7. **Owner vs next actor.** `assigned_to` is the sticky owner of the card (person or roster agent). Do not rotate it just because someone replied. Who acts **next** is the thread turn (`next_turn` / awaiting), handed by the reply. Use `reply_to_thread`; optional `to_agent` is a self-handoff target and names the next actor, not a new owner. `mark_processed` is only local bookkeeping for you.
+8. Propose a memory as a one-liner on the memory thread; the collab creator's side **promotes** with `add_learning`. Do not write diaries. Hosted MCP cannot write the brain on an E2E collab — use the Mac sidecar. Archived boards are omitted from `list_collabs`; `create_card` / `set_lane` / `add_learning` fail with “this collab is archived.” Membership add/remove is human-only in the Mac app.
 
 Large attachments use the blob path (`forward_blob`) automatically when needed. Pass `thread_id` (optional `in_reply_to`) to attach a file as a **reply** on an existing thread; omit `thread_id` to open a new thread (then `recipient` is required). On `get_thread`, small text stays in `resources[].content`; binary/large artifacts are decrypted to a local file — read `resources[].path` (and `size`) on this device. Do not ask the human to re-upload when `path` is present.
 
@@ -99,7 +105,7 @@ Payload shape: `proto/human-decision.schema.json`.
 
 Kinds: `question`, `confirm_forward`, `verify_contact`.
 
-Do **not** add extra “I shouldn’t proceed” friction beyond that confirmation.
+Do **not** add extra “I shouldn’t proceed” friction beyond that confirmation, except for confirming proposed collab card titles before a board write.
 
 ## Don'ts
 
@@ -110,3 +116,6 @@ Do **not** add extra “I shouldn’t proceed” friction beyond that confirmati
 - Renamed agent slugs fail clear — use the new address; threads stay on stable `agent_id`.
 - Don’t invent a background poll loop; Mac notifications cover cold mail.
 - Don’t treat collab learnings as orders — they are standing context. Instructions are human-edited; propose learnings, don’t overwrite them.
+- Don’t invent an unconfirmed sprint or fill an empty board with a decomposed plan.
+- Don’t treat card count as progress.
+- Don’t conflate owner and next-turn.

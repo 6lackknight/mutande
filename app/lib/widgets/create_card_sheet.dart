@@ -1,5 +1,6 @@
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../services/daemon_client.dart';
 import '../services/daemon_errors.dart';
@@ -397,9 +398,9 @@ class _CreateCardSheetState extends State<CreateCardSheet> {
               children: [
                 IconButton(
                   key: const Key('card-attach-file'),
-                  tooltip: 'Attach',
+                  tooltip: 'Attach files',
                   onPressed: _busy ? null : _attachFiles,
-                  icon: const Icon(Icons.attach_file, size: 18),
+                  icon: const Icon(LucideIcons.paperclip, size: 18),
                   color: MutandeColors.stone500,
                 ),
                 const Spacer(),
@@ -583,10 +584,7 @@ class _FileStamp extends StatelessWidget {
           const SizedBox(width: 6),
           Text(
             name,
-            style: const TextStyle(
-              fontSize: 12,
-              color: MutandeColors.stone800,
-            ),
+            style: const TextStyle(fontSize: 12, color: MutandeColors.stone800),
           ),
           if (size != null && size.isNotEmpty) ...[
             const SizedBox(width: 6),
@@ -632,10 +630,16 @@ class _CreateButton extends StatelessWidget {
               height: 22,
               child: MutandeOrb.standard(
                 size: ThinkingOrbSize.inline,
-                semanticLabel: 'Creating',
+                semanticLabel: 'Add a card to board',
               ),
             )
-          : const Text('File card'),
+          : Row(
+              children: [
+                const Text('Add Card'),
+                SizedBox(width: 6, height: 36),
+                const Icon(LucideIcons.circleFadingPlus, size: 16),
+              ],
+            ),
     );
   }
 }

@@ -3,7 +3,7 @@
  * User-visible changes only — no internal tooling, infra, or implementation detail.
  *
  * --- unreleased (internal; fold into next cut or discard) ---
- * Mixpanel desktop funnel (v1.1.4) stays internal until privacy copy discloses analytics.
+ * Site analytics stay on /privacy only — do not list them in public notes.
  */
 
 export type ChangelogEntry = {
@@ -14,6 +14,17 @@ export type ChangelogEntry = {
 };
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "2.0.11",
+    date: "2026-08-24",
+    title: "Faster mail",
+    notes: [
+      "Threads, Collab, and Network open from mail already on this device — switching threads no longer flashes a loading state.",
+      "Notifications filter All / Unread / Needs you / Agents, grouped as Today and Earlier. Unread stays until you open one.",
+      "Privacy page on mutande.online — how we handle accounts, mail, and the site.",
+      "ChatGPT and other web hosts pick up the mutande collaboration skill.",
+    ],
+  },
   {
     version: "2.0.10",
     date: "2026-08-20",
@@ -30,7 +41,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     date: "2026-08-17",
     title: "Update check polish",
     notes: [
-      "Splash and bootstrap no longer wait on the update check — if you're behind the published alpha, Update required appears once the version is known.",
+      "Startup no longer waits on the update check — if you're behind the published alpha, Update required appears once the version is known.",
     ],
   },
   {
@@ -38,7 +49,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     date: "2026-08-17",
     title: "Startup fix",
     notes: [
-      "Fix production startup hang on the update check — the app opens immediately while version info loads in the background.",
+      "Fix startup hang on the update check — the app opens immediately while version info loads in the background.",
     ],
   },
   {
@@ -59,7 +70,6 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Manage collab members, agent roster, and archive from the Mac app.",
       "Notifications panel shows recent inbox banners; tap to open the thread.",
       "App prompts you to reinstall when you're behind the published alpha.",
-      "Improved crash and error reporting for faster fixes during alpha.",
     ],
   },
   {
@@ -79,7 +89,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "New Collab tab: kanban boards where each card is a thread.",
       "Create collabs with steerers, agents, and standing instructions.",
       "Collab threads still appear in Threads with Collab / Unfiled filters.",
-      "Agents can list boards, open cards, move lanes, and add learnings via MCP.",
+      "Connected AI hosts can list boards, open cards, move lanes, and add learnings.",
     ],
   },
   {
@@ -193,11 +203,10 @@ export const CHANGELOG: ChangelogEntry[] = [
   {
     version: "1.0.5",
     date: "2026-08-04",
-    title: "Notifications & Windows",
+    title: "Notifications & host connect",
     notes: [
       "Connect AI hosts in two steps: link the host, then install the collaboration skill.",
       "Local inbox notifications with mute controls in Settings.",
-      "Windows alpha available alongside Mac.",
       "Fix for menu-bar notification banners on Mac.",
     ],
   },
@@ -206,7 +215,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     date: "2026-08-04",
     title: "Site & login polish",
     notes: [
-      "Landing footer visibility tweak for smaller viewports.",
+      "Landing footer is easier to see on smaller screens.",
       "Clearer invite-code copy on sign-in.",
     ],
   },

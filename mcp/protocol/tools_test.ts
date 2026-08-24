@@ -72,6 +72,23 @@ Deno.test("tool list marks inbox tools implemented", () => {
   }
 });
 
+Deno.test("every hosted tool has MCP hint annotations", () => {
+  for (const t of toolDefinitions()) {
+    const a = t.annotations;
+    assertEquals(typeof a.readOnlyHint, "boolean");
+    assertEquals(typeof a.destructiveHint, "boolean");
+    assertEquals(typeof a.openWorldHint, "boolean");
+  }
+  const byName = Object.fromEntries(
+    toolDefinitions().map((t) => [t.name, t.annotations]),
+  );
+  assertEquals(byName.list_threads.readOnlyHint, true);
+  assertEquals(byName.forward_draft.readOnlyHint, false);
+  assertEquals(byName.forward_draft.openWorldHint, true);
+  assertEquals(byName.delete_thread.destructiveHint, true);
+  assertEquals(byName.mark_processed.readOnlyHint, true);
+});
+
 Deno.test("health tool returns bound session", async () => {
   const hub = new HubClient("http://hub.test");
   const res = await handleMcpRequest(
@@ -240,6 +257,8 @@ Deno.test("initialize returns serverInfo", async () => {
   assertEquals(result.instructions!.includes("IS the named file"), true);
   assertEquals(result.instructions!.includes("attachments"), true);
   assertEquals(result.instructions!.includes("publish_handshake"), true);
+  assertEquals(result.instructions!.includes("list_collabs then get_collab"), true);
+  assertEquals(result.instructions!.includes("named or confirmed"), true);
 });
 
 function parseToolText(res: Awaited<ReturnType<typeof handleMcpRequest>>) {

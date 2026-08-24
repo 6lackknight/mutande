@@ -1,10 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../services/daemon_client.dart';
+import '../services/mailbox/mailbox_store.dart';
+import '../services/app_actions.dart';
 import '../theme/mutande_macos_theme.dart';
 import '../util/address_display.dart';
 import '../util/clock_format.dart';
+import '../util/mail_trace.dart';
 import '../util/thread_peer.dart';
 import '../widgets/ai_host_icon.dart';
 import '../widgets/collab/collab_activity_calendar.dart';
@@ -91,7 +96,26 @@ class _CollabPanelState extends State<CollabPanel> {
         widget.onInitialCollabHandled?.call();
       });
     }
+    AppActions.mailEpoch.addListener(_onMailEpoch);
     _reload();
+  }
+
+  void _onMailEpoch() {
+    unawaited(_paintFromMailbox());
+  }
+
+  Future<void> _paintFromMailbox() async {
+    final box = MailboxStore.instance;
+    if (box == null || !mounted) return;
+    try {
+      final cached = await box.loadCollabList(archived: _showArchived);
+      if (cached == null || !mounted) return;
+      setState(() {
+        _collabs = cached.collabs;
+        _portfolio = cached.portfolio;
+        _loading = false;
+      });
+    } catch (_) {}
   }
 
   @override
@@ -107,6 +131,7 @@ class _CollabPanelState extends State<CollabPanel> {
 
   @override
   void dispose() {
+    AppActions.mailEpoch.removeListener(_onMailEpoch);
     widget.onReloadReady?.call(null);
     super.dispose();
   }
@@ -117,8 +142,30 @@ class _CollabPanelState extends State<CollabPanel> {
       if (!hasList) _loading = true;
       _error = null;
     });
+    final box = MailboxStore.instance;
+    if (!hasList && box != null) {
+      try {
+        final cached = await box.loadCollabList(archived: _showArchived);
+        if (cached != null && mounted) {
+          setState(() {
+            _collabs = cached.collabs;
+            _portfolio = cached.portfolio;
+            _loading = false;
+          });
+        }
+      } catch (_) {}
+    }
     try {
       final listed = await widget.daemon.listCollabs(archived: _showArchived);
+      if (box != null) {
+        try {
+          await box.saveCollabList(
+            collabs: listed.collabs,
+            portfolio: listed.portfolio,
+            archived: _showArchived,
+          );
+        } catch (_) {}
+      }
       if (!mounted) return;
       setState(() {
         _collabs = listed.collabs;
@@ -128,6 +175,10 @@ class _CollabPanelState extends State<CollabPanel> {
       });
     } catch (e) {
       if (!mounted) return;
+      if (_collabs.isNotEmpty) {
+        setState(() => _loading = false);
+        return;
+      }
       setState(() {
         _loading = false;
         _error = collabFetchErrorCopy(e);
@@ -190,6 +241,14 @@ class _CollabPanelState extends State<CollabPanel> {
       return _CollabBoard(
         daemon: widget.daemon,
         collabId: _openId!,
+        listUpdatedAt: () {
+          final id = _openId;
+          if (id == null) return null;
+          for (final c in _collabs) {
+            if (c.id == id) return c.updatedAt;
+          }
+          return null;
+        }(),
         handle: widget.handle,
         userId: widget.userId,
         avatarUrls: _avatarsByHandle,
@@ -367,6 +426,7 @@ class _CollabBoard extends StatefulWidget {
     required this.daemon,
     required this.collabId,
     required this.onBack,
+    this.listUpdatedAt,
     this.handle,
     this.userId,
     this.avatarUrls = const {},
@@ -376,6 +436,7 @@ class _CollabBoard extends StatefulWidget {
   final DaemonClient daemon;
   final String collabId;
   final VoidCallback onBack;
+  final String? listUpdatedAt;
   final String? handle;
   final String? userId;
   final Map<String, String> avatarUrls;
@@ -399,29 +460,133 @@ class _CollabBoardState extends State<_CollabBoard> {
     _reload();
   }
 
-  Future<void> _reload() async {
+  Future<void> _reload({bool force = false}) async {
+    final sw = MailTrace.start(
+      'collab.open id=${widget.collabId} force=$force',
+    );
+    final box = MailboxStore.instance;
+    var hadCache = false;
+    if (box != null) {
+      try {
+        final cached = await box.loadCollabDetail(widget.collabId);
+        if (cached != null && mounted) {
+          hadCache = true;
+          setState(() {
+            _collab = cached;
+            _loading = false;
+            _error = null;
+          });
+          // Skip RPC when list fingerprint still matches what we cached.
+          if (!force) {
+            final fresh = await box.collabDetailIsFresh(
+              widget.collabId,
+              widget.listUpdatedAt,
+            );
+            if (fresh) {
+              MailTrace.end(
+                sw,
+                'collab.open',
+                fields: {
+                  'path': 'mailbox_fresh',
+                  'cards': cached.cards.length,
+                },
+              );
+              _schedulePendingCard();
+              return;
+            }
+            MailTrace.event(
+              'collab.open mailbox_stale — will get_collab',
+              fields: {
+                'id': widget.collabId,
+                'listAt': widget.listUpdatedAt,
+              },
+            );
+          }
+        }
+      } catch (_) {}
+    } else {
+      MailTrace.event(
+        'collab.open mailbox=null — cold path',
+        fields: {'id': widget.collabId},
+      );
+    }
+    // Spinner only on cold open — keep cached board visible while revalidating.
+    if (!hadCache && mounted) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     try {
+      final rpcSw = MailTrace.start('collab.get_collab id=${widget.collabId}');
       final c = await widget.daemon.getCollab(widget.collabId);
+      MailTrace.end(rpcSw, 'collab.get_collab');
       if (!mounted) return;
       setState(() {
         _collab = c;
         _loading = false;
         _error = null;
       });
-      final pending = _pendingCardId;
-      if (pending != null && pending.isNotEmpty) {
-        _pendingCardId = null;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _openCard(pending);
-        });
+      _schedulePendingCard();
+      MailTrace.end(
+        sw,
+        'collab.open',
+        fields: {
+          'path': hadCache ? 'daemon_revalidate' : 'daemon_miss',
+          'cards': c.cards.length,
+        },
+      );
+      // Heavy media ingest must not block board paint.
+      if (box != null) {
+        unawaited(() async {
+          final upsertSw = MailTrace.start(
+            'collab.upsert id=${widget.collabId}',
+          );
+          try {
+            await box.upsertCollabDetail(
+              c,
+              listFingerprint: widget.listUpdatedAt,
+            );
+            final painted = await box.loadCollabDetail(widget.collabId);
+            if (painted != null && mounted) {
+              setState(() => _collab = painted);
+            }
+            MailTrace.end(upsertSw, 'collab.upsert', fields: {'ok': true});
+          } catch (e) {
+            MailTrace.end(upsertSw, 'collab.upsert', fields: {'error': '$e'});
+          }
+        }());
       }
     } catch (e) {
       if (!mounted) return;
+      if (_collab != null) {
+        setState(() => _loading = false);
+        MailTrace.end(
+          sw,
+          'collab.open',
+          fields: {'path': 'error_keep_cache', 'error': '$e'},
+        );
+        return;
+      }
       setState(() {
         _loading = false;
         _error = collabFetchErrorCopy(e);
       });
+      MailTrace.end(
+        sw,
+        'collab.open',
+        fields: {'path': 'error', 'error': '$e'},
+      );
     }
+  }
+
+  void _schedulePendingCard() {
+    final pending = _pendingCardId;
+    if (pending == null || pending.isEmpty) return;
+    _pendingCardId = null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _openCard(pending);
+    });
   }
 
   Future<void> _newCard(String laneId, {Rect? origin}) async {
@@ -444,7 +609,7 @@ class _CollabBoardState extends State<_CollabBoard> {
       handle: widget.handle,
     );
     if (id == null || id.isEmpty) return;
-    await _reload();
+    await _reload(force: true);
     if (!mounted) return;
     await _openCard(id);
   }
@@ -461,7 +626,7 @@ class _CollabBoardState extends State<_CollabBoard> {
         laneId: laneId,
         beforeThreadId: beforeId,
       );
-      await _reload();
+      await _reload(force: true);
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = friendlyDaemonError(e, what: 'Move card'));
@@ -480,7 +645,7 @@ class _CollabBoardState extends State<_CollabBoard> {
       ),
     );
     if (!mounted) return;
-    await _reload();
+    await _reload(force: true);
   }
 
   @override
@@ -523,7 +688,7 @@ class _CollabBoardState extends State<_CollabBoard> {
               onUnarchive: collab.isArchived
                   ? () async {
                       await widget.daemon.unarchiveCollab(widget.collabId);
-                      await _reload();
+                      await _reload(force: true);
                     }
                   : null,
             ),
@@ -540,13 +705,13 @@ class _CollabBoardState extends State<_CollabBoard> {
                     await widget.daemon.approveCollabPendingMembership(
                       widget.collabId,
                     );
-                    await _reload();
+                    await _reload(force: true);
                   },
                   onDeny: () async {
                     await widget.daemon.denyCollabPendingMembership(
                       widget.collabId,
                     );
-                    await _reload();
+                    await _reload(force: true);
                   },
                 ),
               ),

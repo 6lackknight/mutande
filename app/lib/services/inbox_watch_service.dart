@@ -18,9 +18,9 @@ class InboxWatchService {
     NotificationPrefsStore? prefs,
     NotificationHistoryStore? history,
     this.pollInterval = const Duration(seconds: 30),
-  })  : _daemon = daemon,
-        _prefs = prefs ?? NotificationPrefsStore(),
-        _history = history;
+  }) : _daemon = daemon,
+       _prefs = prefs ?? NotificationPrefsStore(),
+       _history = history;
 
   final DaemonClient _daemon;
   final NotificationPrefsStore _prefs;
@@ -77,7 +77,8 @@ class InboxWatchService {
     if (Platform.isMacOS) {
       await _plugin
           .resolvePlatformSpecificImplementation<
-              MacOSFlutterLocalNotificationsPlugin>()
+            MacOSFlutterLocalNotificationsPlugin
+          >()
           ?.requestPermissions(alert: true, badge: false, sound: false);
     }
     _initialized = true;
@@ -123,9 +124,9 @@ class InboxWatchService {
         }
         final agentSlug = agentFromAwaiting ?? _audienceAgentSlug(t.audience);
         final isGroup = t.audience.trim() == '@all';
-        final forAgent = prefs.mailForAgents &&
-            (isGroup ||
-                (agentSlug != null && prefs.isAgentEnabled(agentSlug)));
+        final forAgent =
+            prefs.mailForAgents &&
+            (isGroup || (agentSlug != null && prefs.isAgentEnabled(agentSlug)));
         final forHuman = needsYou && prefs.needsYou;
 
         if (!forHuman && !forAgent) {
@@ -172,6 +173,7 @@ class InboxWatchService {
     final from = t.from.trim().isNotEmpty
         ? formatMailAddress(t.from)
         : 'someone';
+    final subject = (t.lastSubject ?? '').trim();
     final String body;
     if (needsYou) {
       body = 'Needs you — from $from';
@@ -194,7 +196,7 @@ class InboxWatchService {
     );
     await _history?.record(
       threadId: t.id,
-      title: 'mutande',
+      title: subject.isNotEmpty ? subject : 'mutande',
       body: body,
       needsYou: needsYou,
       agentSlug: agentSlug,

@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:macos_ui/macos_ui.dart';
@@ -10,6 +10,11 @@ import 'package:window_manager/window_manager.dart';
 
 import 'config/app_config.dart';
 import 'analytics_events.dart';
+import 'providers/core_providers.dart';
+import 'repositories/collab_repository.dart';
+import 'repositories/network_repository.dart';
+import 'repositories/sync_coordinator.dart';
+import 'repositories/thread_repository.dart';
 import 'screens/collab_screen.dart';
 import 'screens/network_screen.dart';
 import 'screens/onboarding_flow_screen.dart';
@@ -23,6 +28,7 @@ import 'services/daemon_event_client.dart';
 import 'services/first_run_store.dart';
 import 'services/host_link_store.dart';
 import 'services/inbox_watch_service.dart';
+import 'services/mailbox/mailbox_store.dart';
 import 'services/notification_history_store.dart';
 import 'services/notification_prefs_store.dart';
 import 'services/thread_list_cache_store.dart';
@@ -37,6 +43,7 @@ import 'widgets/mutande_sheet.dart';
 import 'widgets/mutande_error_widget.dart';
 import 'widgets/notifications_panel.dart';
 import 'widgets/search_dialog.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'widgets/thinking_orb.dart';
 import 'widgets/onboarding_chrome.dart';
 import 'widgets/update_required_screen.dart';
@@ -594,6 +601,7 @@ class _RootScreenState extends State<RootScreen> {
         Analytics.syncIdentityFromStatus(status);
         AppActions.sessionReady.value = true;
         _emitBootstrapPhase();
+        unawaited(_openMailbox(status));
         if (_pendingConnectHosts && status.configured) {
           _pendingConnectHosts = false;
           await _runConnectHosts();
@@ -713,15 +721,40 @@ class _RootScreenState extends State<RootScreen> {
       _status = status;
       _statusError = null;
     });
+    unawaited(_openMailbox(status));
     if (_pendingConnectHosts) {
       _pendingConnectHosts = false;
       _runConnectHosts();
     }
   }
 
+  Future<void> _openMailbox(DaemonStatusResult status) async {
+    final uid = status.userId?.trim();
+    if (uid == null || uid.isEmpty) return;
+    if (_inWidgetTest) return;
+    final sw = Stopwatch()..start();
+    try {
+      await MailboxStore.openForUser(uid);
+      debugPrint(
+        '[mutande.mail] ← mailbox.open ${sw.elapsedMilliseconds}ms '
+        'uid=${uid.length > 12 ? '${uid.substring(0, 12)}…' : uid} ok=true',
+      );
+    } catch (e) {
+      debugPrint(
+        '[mutande.mail] ← mailbox.open ${sw.elapsedMilliseconds}ms ok=false error=$e',
+      );
+      // Mailbox is a speed cache — never block Home on open failure.
+    }
+  }
+
   void _onSignedOut(DaemonStatusResult status) {
     Analytics.track(AnalyticsEvent.signOut);
     Analytics.reset();
+    // Await close so a quick re-login does not race a closing DB.
+    unawaited(() async {
+      final box = MailboxStore.instance;
+      if (box != null) await box.close();
+    }());
     setState(() {
       _status = status;
       _statusError = null;
@@ -876,7 +909,7 @@ class _RootScreenState extends State<RootScreen> {
   }
 }
 
-class HomeScreen extends StatefulWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({
     super.key,
     required this.config,
@@ -917,17 +950,13 @@ class HomeScreen extends StatefulWidget {
   final Future<String?> Function()? onRestartCourier;
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _checking = false;
   DaemonHealthResult? _health;
   int _tab = 0; // 0 threads · 1 collab · 2 network
-  VoidCallback? _reloadThreads;
-  VoidCallback? _reloadCollab;
-  VoidCallback? _reloadAgents;
-  VoidCallback? _reloadContacts;
   String? _composeRecipient;
   String? _openThreadId;
   String? _openCollabId;
@@ -939,21 +968,12 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _notificationsOpen = false;
   int _unreadNotifications = 0;
   final List<String> _recentQueries = [];
+  bool _syncStarted = false;
+  SyncCoordinator? _sync;
 
-  void _registerThreadsReload(VoidCallback? reload) {
-    _reloadThreads = reload;
-  }
-
-  void _registerCollabReload(VoidCallback? reload) {
-    _reloadCollab = reload;
-  }
-
-  void _registerAgentsReload(VoidCallback? reload) {
-    _reloadAgents = reload;
-  }
-
-  void _registerContactsReload(VoidCallback? reload) {
-    _reloadContacts = reload;
+  void _onMailboxChanged() {
+    AppActions.notifyMailboxChanged();
+    ref.read(mailEpochProvider.notifier).state++;
   }
 
   @override
@@ -968,6 +988,35 @@ class _HomeScreenState extends State<HomeScreen> {
     _checkDaemon();
     widget.notificationHistory?.addListener(_onNotificationHistoryChanged);
     unawaited(_refreshUnreadNotifications());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _ensureSync());
+  }
+
+  void _ensureSync() {
+    if (_syncStarted || !mounted) return;
+    _syncStarted = true;
+    void Function()? tick = _onMailboxChanged;
+    _sync = SyncCoordinator(
+      threads: ThreadRepository(
+        daemon: widget.daemon,
+        mailbox: () => MailboxStore.instance,
+        onMailboxChanged: tick,
+      ),
+      collabs: CollabRepository(
+        daemon: widget.daemon,
+        mailbox: () => MailboxStore.instance,
+        onMailboxChanged: tick,
+      ),
+      network: NetworkRepository(
+        daemon: widget.daemon,
+        mailbox: () => MailboxStore.instance,
+        onMailboxChanged: tick,
+      ),
+      events: _inboxEvents,
+      myHandle: widget.status.handle,
+    );
+    _sync!.start();
+    // Initial decrypt-on-receive pass so opens hit a warm mailbox.
+    unawaited(_sync!.syncAll());
   }
 
   @override
@@ -993,6 +1042,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     widget.notificationHistory?.removeListener(_onNotificationHistoryChanged);
+    unawaited(_sync?.dispose() ?? Future<void>.value());
     unawaited(_inboxEvents.dispose());
     super.dispose();
   }
@@ -1137,6 +1187,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final threadId = await showNotificationsPanel(
         context: context,
         history: history,
+        myHandle: widget.status.handle,
       );
       if (!mounted) return;
       await _refreshUnreadNotifications();
@@ -1163,67 +1214,61 @@ class _HomeScreenState extends State<HomeScreen> {
     const tabs = ['threads', 'collab', 'network'];
     Analytics.track(AnalyticsEvent.tabSelect, {'tab': tabs[i]});
     setState(() => _tab = i);
-    if (i == 0) _reloadThreads?.call();
-    if (i == 1) _reloadCollab?.call();
-    if (i == 2) {
-      _reloadContacts?.call();
-      _reloadAgents?.call();
-    }
+    // SyncCoordinator keeps mailbox warm — no force-reload on tab switch.
   }
 
   Widget _tabBody() {
-    if (_tab == 0) {
-      return ThreadsPanel(
-        daemon: widget.daemon,
-        inboxEvents: _inboxEvents,
-        myHandle: widget.status.handle,
-        onReloadReady: _registerThreadsReload,
-        composeRecipient: _composeRecipient,
-        notificationPrefs: widget.notificationPrefs,
-        onComposeRecipientHandled: () {
-          if (_composeRecipient != null) {
-            setState(() => _composeRecipient = null);
-          }
-        },
-        initialThreadId: _openThreadId,
-        onInitialThreadHandled: () {
-          if (_openThreadId != null) {
-            setState(() => _openThreadId = null);
-          }
-        },
-      );
-    }
-    if (_tab == 1) {
-      return CollabPanel(
-        daemon: widget.daemon,
-        handle: widget.status.handle,
-        userId: widget.status.userId,
-        onReloadReady: _registerCollabReload,
-        initialCollabId: _openCollabId,
-        onInitialCollabHandled: () {
-          if (_openCollabId != null) {
-            setState(() => _openCollabId = null);
-          }
-        },
-      );
-    }
-    return NetworkPanel(
-      key: ValueKey(_networkReset),
-      daemon: widget.daemon,
-      handle: widget.status.handle,
-      inviteWebUrl: widget.config.webAppUrl,
-      appVersion: widget.appVersion,
-      hostLinkStore: widget.hostLinkStore,
-      initialSegment: _networkSegment,
-      onReloadPeople: _registerContactsReload,
-      onReloadAgents: _registerAgentsReload,
-      onViewThreads: () => _selectTab(0),
-      onStartThread: (handle) {
-        setState(() {
-          _tab = 0;
-          _composeRecipient = handle;
-        });
-      },
+    // Keep all tabs alive so selection/scroll survive (Telegram-style).
+    return IndexedStack(
+      index: _tab,
+      sizing: StackFit.expand,
+      children: [
+        ThreadsPanel(
+          daemon: widget.daemon,
+          inboxEvents: _inboxEvents,
+          myHandle: widget.status.handle,
+          composeRecipient: _composeRecipient,
+          notificationPrefs: widget.notificationPrefs,
+          onComposeRecipientHandled: () {
+            if (_composeRecipient != null) {
+              setState(() => _composeRecipient = null);
+            }
+          },
+          initialThreadId: _openThreadId,
+          onInitialThreadHandled: () {
+            if (_openThreadId != null) {
+              setState(() => _openThreadId = null);
+            }
+          },
+        ),
+        CollabPanel(
+          daemon: widget.daemon,
+          handle: widget.status.handle,
+          userId: widget.status.userId,
+          initialCollabId: _openCollabId,
+          onInitialCollabHandled: () {
+            if (_openCollabId != null) {
+              setState(() => _openCollabId = null);
+            }
+          },
+        ),
+        NetworkPanel(
+          key: ValueKey(_networkReset),
+          daemon: widget.daemon,
+          handle: widget.status.handle,
+          inviteWebUrl: widget.config.webAppUrl,
+          appVersion: widget.appVersion,
+          hostLinkStore: widget.hostLinkStore,
+          initialSegment: _networkSegment,
+          onViewThreads: () => _selectTab(0),
+          onStartThread: (handle) {
+            setState(() {
+              _tab = 0;
+              _composeRecipient = handle;
+            });
+          },
+        ),
+      ],
     );
   }
 
@@ -1413,6 +1458,13 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           );
 
-    return Focus(autofocus: true, onKeyEvent: _onHomeKey, child: shell);
+    return ProviderScope(
+      overrides: [
+        daemonClientProvider.overrideWithValue(widget.daemon),
+        daemonEventClientProvider.overrideWithValue(_inboxEvents),
+        sessionHandleProvider.overrideWithValue(widget.status.handle),
+      ],
+      child: Focus(autofocus: true, onKeyEvent: _onHomeKey, child: shell),
+    );
   }
 }

@@ -6,6 +6,7 @@ import {
   wwwAuthenticateHeader,
 } from "./oauth.ts";
 import { loadConfig, type McpConfig } from "../config.ts";
+import { createOauthRoutes } from "../routes/oauth.ts";
 
 const sampleConfig: McpConfig = {
   publicUrl: "https://mcp.mutande.online",
@@ -16,6 +17,7 @@ const sampleConfig: McpConfig = {
   hubUrl: "https://hub.mutande.online",
   defaultAgentSlug: "chatgpt",
   port: 3849,
+  openaiAppsChallenge: null,
 };
 
 Deno.test("protected resource metadata points at Auth0", () => {
@@ -142,6 +144,7 @@ Deno.test("loadConfig defaults AUTH0_MCP_AUDIENCE to publicUrl", () => {
   });
   assertEquals(cfg.auth0McpAudience, "https://mcp.mutande.online");
   assertEquals(cfg.issuerAliases.includes("chevrondigital.auth0.com"), true);
+  assertEquals(cfg.openaiAppsChallenge, null);
 });
 
 Deno.test("loadConfig empty AUTH0_MCP_AUDIENCE disables extra aud", () => {
@@ -157,4 +160,20 @@ Deno.test("loadConfig empty AUTH0_MCP_AUDIENCE disables extra aud", () => {
     },
   });
   assertEquals(cfg.auth0McpAudience, null);
+});
+
+Deno.test("openai-apps-challenge serves the exact token", async () => {
+  const routes = createOauthRoutes({
+    ...sampleConfig,
+    openaiAppsChallenge: "tok_review_only",
+  });
+  const hit = await routes.request("/.well-known/openai-apps-challenge");
+  assertEquals(hit.status, 200);
+  assertEquals(await hit.text(), "tok_review_only");
+  assertEquals(hit.headers.get("content-type")?.includes("text/plain"), true);
+
+  const missing = await createOauthRoutes(sampleConfig).request(
+    "/.well-known/openai-apps-challenge",
+  );
+  assertEquals(missing.status, 404);
 });

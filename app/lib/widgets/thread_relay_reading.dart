@@ -41,6 +41,7 @@ class ThreadRelayReading extends StatelessWidget {
     this.inspectorVisible = true,
     this.onInspectorToggle,
     this.leading = const [],
+    this.animateEnter = true,
   });
 
   final ThreadDetailResult detail;
@@ -62,6 +63,9 @@ class ThreadRelayReading extends StatelessWidget {
   final bool inspectorVisible;
   final VoidCallback? onInspectorToggle;
   final List<Widget> leading;
+
+  /// Stagger on first cold paint only — false on thread select (high frequency).
+  final bool animateEnter;
 
   @override
   Widget build(BuildContext context) {
@@ -278,10 +282,19 @@ class _PackageLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final available = resource.isAvailable;
     return InkWell(
-      onTap: resource.hasPath ? () => openAttachmentPath(resource.path!) : null,
-      onSecondaryTap: resource.hasPath
-          ? () => revealAttachmentPath(resource.path!)
+      onTap: available
+          ? () async {
+              final path = await resolveAttachmentPath(resource);
+              if (path != null) await openAttachmentPath(path);
+            }
+          : null,
+      onSecondaryTap: available
+          ? () async {
+              final path = await resolveAttachmentPath(resource);
+              if (path != null) await revealAttachmentPath(path);
+            }
           : null,
       borderRadius: BorderRadius.circular(6),
       child: Padding(
@@ -895,65 +908,35 @@ class _RelayTimelineState extends State<_RelayTimeline> {
       openId = nodes.isNotEmpty ? nodes.last.message.id : op?.id;
     }
 
+    Widget timeline = ListView.builder(
+      padding: const EdgeInsets.only(bottom: 12),
+      itemCount: (op != null ? 1 : 0) + nodes.length,
+      itemBuilder: (context, i) => _buildRailRow(
+        host: host,
+        op: op,
+        nodes: nodes,
+        byId: byId,
+        openId: openId,
+        closed: closed,
+        index: i,
+        stagger: host.animateEnter,
+      ),
+    );
+
+    if (host.animateEnter) {
+      timeline = MutandeStaggerScope(
+        key: ValueKey(d.id),
+        child: timeline,
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _RelayHeader(host: host, op: op, subject: op?.bundleSubject),
         for (final w in host.leading) ...[const SizedBox(height: 10), w],
         const SizedBox(height: 12),
-        Expanded(
-          // Keyed by thread: remounts on open/select; freeze holds across
-          // silent poll, upvote, and send. Builder so off-screen nested
-          // history does not claim stagger slots.
-          child: MutandeStaggerScope(
-            key: ValueKey(d.id),
-            child: ListView.builder(
-              padding: const EdgeInsets.only(bottom: 12),
-              itemCount: (op != null ? 1 : 0) + nodes.length,
-              itemBuilder: (context, i) {
-                if (op != null && i == 0) {
-                  return MutandeStaggerIn(
-                    key: ValueKey(op.id),
-                    id: op.id,
-                    child: _RailItem(
-                      host: host,
-                      message: op,
-                      isOp: true,
-                      open: openId == op.id,
-                      latest: false,
-                      closed: closed,
-                      indented: false,
-                      first: true,
-                      last: nodes.isEmpty,
-                      onToggle: () => _toggle(op.id),
-                    ),
-                  );
-                }
-                final ni = op == null ? i : i - 1;
-                final n = nodes[ni];
-                return MutandeStaggerIn(
-                  key: ValueKey(n.message.id),
-                  id: n.message.id,
-                  child: _RailItem(
-                    host: host,
-                    message: n.message,
-                    isOp: false,
-                    open: openId == n.message.id,
-                    latest: ni == nodes.length - 1,
-                    closed: closed,
-                    indented: n.depth >= 1,
-                    replyToLabel: n.depth > 1
-                        ? _parentLabel(byId, n.message)
-                        : null,
-                    first: op == null && ni == 0,
-                    last: ni == nodes.length - 1,
-                    onToggle: () => _toggle(n.message.id),
-                  ),
-                );
-              },
-            ),
-          ),
-        ),
+        Expanded(child: timeline),
         _CapsuleComposer(
           controller: host.reply,
           sending: host.sending,
@@ -964,6 +947,59 @@ class _RelayTimelineState extends State<_RelayTimeline> {
           onSend: host.onSend,
         ),
       ],
+    );
+  }
+
+  Widget _buildRailRow({
+    required ThreadRelayReading host,
+    required ThreadMessageView? op,
+    required List<ThreadMessageNode> nodes,
+    required Map<String, ThreadMessageView> byId,
+    required String? openId,
+    required bool closed,
+    required int index,
+    required bool stagger,
+  }) {
+    if (op != null && index == 0) {
+      final item = _RailItem(
+        host: host,
+        message: op,
+        isOp: true,
+        open: openId == op.id,
+        latest: false,
+        closed: closed,
+        indented: false,
+        first: true,
+        last: nodes.isEmpty,
+        onToggle: () => _toggle(op.id),
+      );
+      if (!stagger) return item;
+      return MutandeStaggerIn(
+        key: ValueKey(op.id),
+        id: op.id,
+        child: item,
+      );
+    }
+    final ni = op == null ? index : index - 1;
+    final n = nodes[ni];
+    final item = _RailItem(
+      host: host,
+      message: n.message,
+      isOp: false,
+      open: openId == n.message.id,
+      latest: ni == nodes.length - 1,
+      closed: closed,
+      indented: n.depth >= 1,
+      replyToLabel: n.depth > 1 ? _parentLabel(byId, n.message) : null,
+      first: op == null && ni == 0,
+      last: ni == nodes.length - 1,
+      onToggle: () => _toggle(n.message.id),
+    );
+    if (!stagger) return item;
+    return MutandeStaggerIn(
+      key: ValueKey(n.message.id),
+      id: n.message.id,
+      child: item,
     );
   }
 
