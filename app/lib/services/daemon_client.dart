@@ -456,7 +456,7 @@ class DaemonClient {
     final result = await _callWithTimeout(
       'list_threads',
       params.isEmpty ? null : params,
-      requestTimeout,
+      const Duration(seconds: 30),
     );
     final map = result as Map<String, dynamic>? ?? {};
     final raw = map['threads'] as List<dynamic>? ?? const [];

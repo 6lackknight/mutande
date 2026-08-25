@@ -1,11 +1,50 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show Platform;
+import 'dart:ffi' show Abi;
+import 'dart:io' show Platform, Process;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 
 import 'version_compare.dart';
+
+/// Machine we should fetch an installer for (hardware, not Rosetta ABI).
+enum DesktopCpu {
+  macArm64,
+  macX64,
+  windows,
+  other;
+
+  /// Apple Silicon via `sysctl` even when the process is x86_64 under Rosetta.
+  static DesktopCpu detect() {
+    if (kIsWeb) return other;
+    if (Platform.isWindows) return windows;
+    if (!Platform.isMacOS) return other;
+    if (_appleSiliconHardware()) return macArm64;
+    return switch (Abi.current()) {
+      Abi.macosArm64 => macArm64,
+      Abi.macosX64 => macX64,
+      _ => other,
+    };
+  }
+
+  static bool _appleSiliconHardware() {
+    try {
+      final result = Process.runSync('sysctl', ['-n', 'hw.optional.arm64']);
+      return result.exitCode == 0 && result.stdout.toString().trim() == '1';
+    } catch (_) {
+      return false;
+    }
+  }
+}
+
+/// Soft vs blocking prompt when the published alpha is newer.
+class UpdatePrompt {
+  const UpdatePrompt({required this.latest, required this.skippable});
+
+  final DesktopVersionInfo latest;
+  final bool skippable;
+}
 
 /// Latest desktop alpha metadata from mutande.online.
 class DesktopVersionInfo {
@@ -13,9 +52,12 @@ class DesktopVersionInfo {
     required this.version,
     required this.channel,
     required this.downloadUrl,
+    this.minVersion,
     this.macArm64Url,
     this.macIntelUrl,
     this.winUrl,
+    this.macIntelPublished = true,
+    this.winPublished = true,
   });
 
   factory DesktopVersionInfo.fromJson(Map<String, dynamic> json) {
@@ -28,9 +70,12 @@ class DesktopVersionInfo {
       channel: json['channel'] as String? ?? 'alpha',
       downloadUrl: json['download_url'] as String? ??
           'https://mutande.online/download',
+      minVersion: VersionCompare.normalize(json['min_version'] as String?),
       macArm64Url: json['mac_arm64_url'] as String?,
       macIntelUrl: json['mac_intel_url'] as String?,
       winUrl: json['win_url'] as String?,
+      macIntelPublished: json['mac_intel_published'] != false,
+      winPublished: json['win_published'] != false,
     );
   }
 
@@ -46,23 +91,55 @@ class DesktopVersionInfo {
   final String version;
   final String channel;
   final String downloadUrl;
+
+  /// When set, builds older than this cannot skip — they must reinstall.
+  final String? minVersion;
   final String? macArm64Url;
   final String? macIntelUrl;
   final String? winUrl;
+  final bool macIntelPublished;
+  final bool winPublished;
 
-  /// Best direct installer URL for this platform, else the download picker page.
-  String preferredDownloadUrl() {
-    if (!kIsWeb && Platform.isWindows) {
-      final win = winUrl?.trim();
-      if (win != null && win.isNotEmpty) return win;
+  static String? _nonEmpty(String? value) {
+    final trimmed = value?.trim();
+    if (trimmed == null || trimmed.isEmpty) return null;
+    return trimmed;
+  }
+
+  /// Direct installer for this CPU, else the waitlist download page.
+  String preferredDownloadUrl({DesktopCpu? cpu}) {
+    cpu ??= DesktopCpu.detect();
+    switch (cpu) {
+      case DesktopCpu.windows:
+        if (winPublished) {
+          final win = _nonEmpty(winUrl);
+          if (win != null) return win;
+        }
+        return downloadUrl;
+      case DesktopCpu.macArm64:
+        return _nonEmpty(macArm64Url) ?? downloadUrl;
+      case DesktopCpu.macX64:
+        if (macIntelPublished) {
+          final intel = _nonEmpty(macIntelUrl);
+          if (intel != null) return intel;
+        }
+        return downloadUrl;
+      case DesktopCpu.other:
+        return downloadUrl;
     }
-    if (!kIsWeb && Platform.isMacOS) {
-      final arm = macArm64Url?.trim();
-      final intel = macIntelUrl?.trim();
-      if (arm != null && arm.isNotEmpty) return arm;
-      if (intel != null && intel.isNotEmpty) return intel;
-    }
-    return downloadUrl;
+  }
+
+  String downloadButtonLabel({DesktopCpu? cpu}) {
+    cpu ??= DesktopCpu.detect();
+    return switch (cpu) {
+      DesktopCpu.macArm64 => 'Download Silicon update',
+      DesktopCpu.macX64
+          when macIntelPublished && _nonEmpty(macIntelUrl) != null =>
+        'Download Intel update',
+      DesktopCpu.windows when winPublished && _nonEmpty(winUrl) != null =>
+        'Download Windows update',
+      _ => 'Download update',
+    };
   }
 }
 
@@ -107,11 +184,28 @@ class UpdateGateClient {
     required String currentVersion,
     required DesktopVersionInfo latest,
   }) {
-    final current = VersionCompare.normalize(currentVersion);
-    final published = VersionCompare.normalize(latest.version);
-    if (current == null || published == null) return null;
-    if (VersionCompare.isOlder(current, published)) return latest;
-    return null;
+    return prompt(
+      currentVersion: currentVersion,
+      latest: latest,
+    )?.latest;
+  }
+
+  /// Newer published alpha: skippable unless [latest.minVersion] is above us.
+  UpdatePrompt? prompt({
+    required String currentVersion,
+    required DesktopVersionInfo latest,
+    String? skippedVersion,
+  }) {
+    if (!VersionCompare.isOlder(currentVersion, latest.version)) return null;
+
+    final min = latest.minVersion;
+    final required = min != null && VersionCompare.isOlder(currentVersion, min);
+    if (!required) {
+      final skipped = VersionCompare.normalize(skippedVersion);
+      final published = VersionCompare.normalize(latest.version);
+      if (skipped != null && skipped == published) return null;
+    }
+    return UpdatePrompt(latest: latest, skippable: !required);
   }
 
   void close() => _http.close();

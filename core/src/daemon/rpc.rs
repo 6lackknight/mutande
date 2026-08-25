@@ -74,7 +74,7 @@ pub async fn handle_request(state: &Arc<DaemonState>, req: JsonRpcRequest) -> Js
         Ok(result) => JsonRpcResponse::success(id, result),
         Err(err) => {
             capture_rpc_error(&req.method, err.as_ref());
-            JsonRpcResponse::error(id, INTERNAL_ERROR, err.to_string())
+            JsonRpcResponse::error(id, INTERNAL_ERROR, format!("{err:#}"))
         }
     }
 }

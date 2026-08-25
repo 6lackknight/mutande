@@ -38,4 +38,5 @@ class AnalyticsEvent {
   static const signOut = 'desktop_sign_out';
 
   static const updateRequired = 'desktop_update_required';
+  static const updateSkipped = 'desktop_update_skipped';
 }

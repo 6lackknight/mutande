@@ -24,7 +24,15 @@ export const MAC_DMG_CHANNEL =
   process.env.NEXT_PUBLIC_MAC_DMG_CHANNEL ?? "alpha";
 
 export const MAC_DMG_VERSION =
-  process.env.NEXT_PUBLIC_MAC_DMG_VERSION ?? "2.0.12";
+  process.env.NEXT_PUBLIC_MAC_DMG_VERSION ?? "2.0.13";
+
+/**
+ * Desktop shells older than this cannot skip the update screen.
+ * Unset / empty → Skip is allowed for every newer published cut.
+ */
+export const DESKTOP_MIN_VERSION = (
+  process.env.NEXT_PUBLIC_DESKTOP_MIN_VERSION ?? ""
+).trim();
 
 /**
  * Apple Silicon — rolling public alias.

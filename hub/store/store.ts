@@ -2048,24 +2048,59 @@ export class HubStore {
     throw new HubError("Failed to create thread", "internal", 500);
   }
 
+  /** Deno KV getMany is capped at 10; same chunk size for parallel get. */
+  private static readonly KV_GET_CHUNK = 10;
+
+  private async getManyValues<T>(keys: Deno.KvKey[]): Promise<(T | null)[]> {
+    const out: (T | null)[] = [];
+    for (let i = 0; i < keys.length; i += HubStore.KV_GET_CHUNK) {
+      const chunk = keys.slice(i, i + HubStore.KV_GET_CHUNK);
+      const rows = await Promise.all(chunk.map((key) => this.kv.get<T>(key)));
+      for (const row of rows) out.push(row.value ?? null);
+    }
+    return out;
+  }
+
   async listThreads(
     auth: AuthContext,
     filter?: ThreadFilter,
   ): Promise<{ threads: ThreadMeta[] }> {
-    const threads: ThreadMeta[] = [];
+    const inboxRows: InboxEntry[] = [];
     const iter = this.kv.list<InboxEntry>({ prefix: this.inboxPrefix(auth.userId) });
-
     for await (const entry of iter) {
-      const inbox = entry.value;
-      const threadRes = await this.kv.get<ThreadMeta>(this.threadKey(inbox.thread_id));
-      const thread = threadRes.value ? this.normalizeThread(threadRes.value) : null;
+      if (entry.value) inboxRows.push(entry.value);
+    }
+
+    const threadVals = await this.getManyValues<ThreadMeta>(
+      inboxRows.map((inbox) => this.threadKey(inbox.thread_id)),
+    );
+    const collabIds = [
+      ...new Set(
+        threadVals
+          .map((raw) => (raw ? this.normalizeThread(raw).collab_id : undefined))
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const collabVals = await this.getManyValues<{ name?: string }>(
+      collabIds.map((id) => this.collabKey(id)),
+    );
+    const collabName = new Map<string, string>();
+    for (let i = 0; i < collabIds.length; i++) {
+      const name = collabVals[i]?.name?.trim();
+      if (name) collabName.set(collabIds[i], name);
+    }
+
+    const threads: ThreadMeta[] = [];
+    for (let i = 0; i < inboxRows.length; i++) {
+      const raw = threadVals[i];
+      const thread = raw ? this.normalizeThread(raw) : null;
       if (!thread || !this.threadVisibleToOrg(auth, thread)) continue;
 
       const enriched: ThreadMeta = {
         ...thread,
-        your_status: this.effectiveYourStatus(auth, thread, inbox),
+        your_status: this.effectiveYourStatus(auth, thread, inboxRows[i]),
         collab_name: thread.collab_id
-          ? await collabNameForThread(this.collabCtx(), thread.collab_id)
+          ? collabName.get(thread.collab_id)
           : undefined,
       };
 

@@ -52,7 +52,9 @@ bool isHubAuthFailure(String lowerError) {
 }
 
 bool isTimeoutError(String lowerError) {
-  return lowerError.contains('timeout') || lowerError.contains('timed out');
+  return lowerError.contains('timeout') ||
+      lowerError.contains('timed out') ||
+      lowerError.contains('operation timed out');
 }
 
 /// Missing RPC/route (404, method not found). Not a sign-in failure.

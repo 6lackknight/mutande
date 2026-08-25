@@ -101,10 +101,14 @@ Installer packs Flutter `Release/` + `mutande-core.exe` sidecar into
 - Ship fixes by redistributing a new `.dmg`.
 - Release builds poll `https://mutande.online/api/desktop-version` in the
   background after launch (fail open on timeout/error — splash is never
-  blocked). When the published alpha semver is newer, the shell then shows
-  Update required until reinstall (`SKIP_UPDATE_GATE=1` skips; debug
+  blocked). When the published alpha semver is newer, the shell shows
+  **Update available** (Skip this version) or **Update required** when the
+  machine is older than `min_version`. Download opens the Silicon, Intel, or
+  Windows installer for this CPU (`SKIP_UPDATE_GATE=1` skips the check; debug
   `flutter run` skips unless `PREVIEW_UPDATE_GATE=1` or `FORCE_UPDATE_GATE=1`).
-  Sparkle / Settings “Check for updates” will replace this later.
+  Raise the floor with Vercel `NEXT_PUBLIC_DESKTOP_MIN_VERSION` (empty = skip
+  always allowed). Skipped cuts are stored in `~/.mutande/update_prefs.json`
+  until a newer published version (or a min-version floor) appears.
 - `mutande-core` is bundled as a sidecar in `Contents/Resources/mutande-core`
   (see `app/macos/Runner/Scripts/bundle_mutande_core.sh`); bump both app and
   core together.

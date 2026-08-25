@@ -90,9 +90,11 @@ impl HubClient {
     pub fn new(config: HubConfig) -> Result<Self> {
         let client = Client::builder()
             .user_agent("mutande-core/0.1")
-            // Bound hub RTT so local RPCs (e.g. get_status → /me) cannot hang
-            // past the Flutter client's status timeout.
-            .timeout(std::time::Duration::from_secs(10))
+            // Inbox list can be a slow KV scan; keep this under the Mac
+            // `list_threads` RPC timeout (30s) and well above `/me`.
+            .timeout(std::time::Duration::from_secs(25))
+            .connect_timeout(std::time::Duration::from_secs(8))
+            .http1_only()
             .build()
             .context("build HTTP client")?;
         Ok(Self {

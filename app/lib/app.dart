@@ -34,6 +34,7 @@ import 'services/notification_prefs_store.dart';
 import 'services/thread_list_cache_store.dart';
 import 'services/transport_prefs_store.dart';
 import 'services/update_gate.dart';
+import 'services/update_prefs_store.dart';
 import 'theme/mutande_macos_theme.dart';
 import 'widgets/daemon_error_screen.dart';
 import 'widgets/feedback_dialog.dart';
@@ -65,6 +66,7 @@ class MutandeApp extends StatefulWidget {
     this.startupRetryAttempts = 15,
     this.onRestartCourier,
     this.updateGate,
+    this.updatePrefs,
   });
 
   final AppConfig config;
@@ -96,6 +98,9 @@ class MutandeApp extends StatefulWidget {
   /// Injectable for tests; defaults to web `/api/desktop-version` in release.
   final UpdateGateClient? updateGate;
 
+  /// Skipped published version (`~/.mutande/update_prefs.json`).
+  final UpdatePrefsStore? updatePrefs;
+
   @override
   State<MutandeApp> createState() => _MutandeAppState();
 }
@@ -113,8 +118,10 @@ class _MutandeAppState extends State<MutandeApp> {
   int _shellGen = 0;
 
   UpdateGateClient? _updateGate;
+  UpdatePrefsStore? _updatePrefs;
   bool _updateChecking = false;
   DesktopVersionInfo? _updateRequired;
+  bool _updateSkippable = false;
   String? _updateRecheckError;
   bool _trackedUpdateRequired = false;
 
@@ -147,6 +154,8 @@ class _MutandeAppState extends State<MutandeApp> {
       macIntelUrl: 'https://downloads.mutande.online/mutande-alpha-intel.dmg',
       winUrl:
           'https://downloads.mutande.online/mutande-alpha-windows-setup.exe',
+      macIntelPublished: true,
+      winPublished: true,
     );
   }
 
@@ -154,8 +163,10 @@ class _MutandeAppState extends State<MutandeApp> {
   void initState() {
     super.initState();
     MutandeErrorWidget.bindRetry(_retryFromErrorWidget);
+    _updatePrefs = widget.updatePrefs ?? UpdatePrefsStore();
     if (_shouldPreviewUpdateGate) {
       _updateRequired = _previewUpdateInfo();
+      _updateSkippable = true;
       _updateChecking = false;
     } else if (_shouldRunUpdateGate) {
       _updateGate =
@@ -177,6 +188,7 @@ class _MutandeAppState extends State<MutandeApp> {
       setState(() {
         _updateChecking = false;
         _updateRequired = _previewUpdateInfo();
+        _updateSkippable = true;
         _updateRecheckError = null;
       });
       return;
@@ -207,21 +219,25 @@ class _MutandeAppState extends State<MutandeApp> {
         });
         return;
       }
-      final required = gate.gateTarget(
+      await _updatePrefs?.load();
+      final found = gate.prompt(
         currentVersion: widget.appVersion,
         latest: latest,
+        skippedVersion: _updatePrefs?.skippedVersion,
       );
       if (!mounted) return;
       setState(() {
         _updateChecking = false;
-        _updateRequired = required;
+        _updateRequired = found?.latest;
+        _updateSkippable = found?.skippable ?? false;
         _updateRecheckError = null;
       });
-      if (required != null && !_trackedUpdateRequired) {
+      if (found != null && !_trackedUpdateRequired) {
         _trackedUpdateRequired = true;
         Analytics.track(AnalyticsEvent.updateRequired, {
           'current': widget.appVersion,
-          'latest': required.version,
+          'latest': found.latest.version,
+          'skippable': found.skippable,
         });
       }
     } catch (_) {
@@ -237,6 +253,21 @@ class _MutandeAppState extends State<MutandeApp> {
         setState(() => _updateChecking = false);
       }
     }
+  }
+
+  Future<void> _skipUpdate() async {
+    final latest = _updateRequired;
+    if (latest == null || !_updateSkippable) return;
+    await _updatePrefs?.skipVersion(latest.version);
+    Analytics.track(AnalyticsEvent.updateSkipped, {
+      'current': widget.appVersion,
+      'latest': latest.version,
+    });
+    if (!mounted) return;
+    setState(() {
+      _updateRequired = null;
+      _updateSkippable = false;
+    });
   }
 
   @override
@@ -293,9 +324,11 @@ class _MutandeAppState extends State<MutandeApp> {
         UpdateRequiredScreen(
           currentVersion: widget.appVersion,
           latest: _updateRequired!,
+          skippable: _updateSkippable,
           rechecking: _updateChecking,
           recheckError: _updateRecheckError,
           onRecheck: () => _checkForUpdate(recheck: true),
+          onSkip: _updateSkippable ? _skipUpdate : null,
         ),
       );
     }
@@ -542,7 +575,7 @@ class _RootScreenState extends State<RootScreen> {
     Object? lastError;
     for (var attempt = 0; attempt < maxAttempts; attempt++) {
       try {
-        await _daemon.listThreads();
+        await _daemon.listThreads(enrich: false);
         return;
       } catch (e) {
         lastError = e;

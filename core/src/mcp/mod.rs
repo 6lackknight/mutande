@@ -90,7 +90,7 @@ async fn handle_mcp_request(req: McpRequest) -> Option<McpResponse> {
                 Err(err) => McpResponse::success(
                     id,
                     json!({
-                        "content": [{ "type": "text", "text": err.to_string() }],
+                        "content": [{ "type": "text", "text": format!("{err:#}") }],
                         "isError": true
                     }),
                 ),

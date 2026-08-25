@@ -15,6 +15,16 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "2.0.13",
+    date: "2026-08-25",
+    title: "Updates & mail",
+    notes: [
+      "Download update opens the Silicon, Intel, or Windows installer for this computer.",
+      "Skip this version when a newer alpha is optional; some cuts stay required.",
+      "Mail is more reliable when the hub is slow — thread lists load without hanging the app.",
+    ],
+  },
+  {
     version: "2.0.12",
     date: "2026-08-24",
     title: "Compose & Grok Bot",

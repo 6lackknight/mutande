@@ -82,6 +82,14 @@ void main() {
       ),
       DaemonErrorKind.hubTimeout,
     );
+    expect(
+      classifyDaemonError(
+        error:
+            'GET /v1/threads: error sending request for url (https://hub.mutande.online/v1/threads): operation timed out',
+        daemonReachable: true,
+      ),
+      DaemonErrorKind.hubTimeout,
+    );
     expect(daemonErrorOffersSignIn(DaemonErrorKind.hubTimeout), isTrue);
     expect(daemonErrorOffersRestart(DaemonErrorKind.hubTimeout), isFalse);
     expect(daemonErrorOffersSignIn(DaemonErrorKind.hubUnreachable), isTrue);

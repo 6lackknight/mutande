@@ -8,22 +8,28 @@ import '../services/update_gate.dart';
 import '../theme/mutande_macos_theme.dart';
 import 'morphing_orb_button.dart';
 
-/// Blocks the alpha shell until the user reinstalls a newer desktop build.
+/// Blocks or nags until the user reinstalls a newer desktop build.
 class UpdateRequiredScreen extends StatefulWidget {
   const UpdateRequiredScreen({
     super.key,
     required this.currentVersion,
     required this.latest,
     required this.onRecheck,
+    this.onSkip,
+    this.skippable = false,
     this.rechecking = false,
     this.recheckError,
+    this.cpu,
   });
 
   final String currentVersion;
   final DesktopVersionInfo latest;
   final Future<void> Function() onRecheck;
+  final VoidCallback? onSkip;
+  final bool skippable;
   final bool rechecking;
   final String? recheckError;
+  final DesktopCpu? cpu;
 
   @override
   State<UpdateRequiredScreen> createState() => _UpdateRequiredScreenState();
@@ -32,10 +38,12 @@ class UpdateRequiredScreen extends StatefulWidget {
 class _UpdateRequiredScreenState extends State<UpdateRequiredScreen> {
   bool _opening = false;
 
+  DesktopCpu get _cpu => widget.cpu ?? DesktopCpu.detect();
+
   Future<void> _openDownload() async {
     if (_opening || widget.rechecking) return;
     setState(() => _opening = true);
-    final url = widget.latest.preferredDownloadUrl();
+    final url = widget.latest.preferredDownloadUrl(cpu: _cpu);
     try {
       if (!kIsWeb && Platform.isMacOS) {
         await Process.run('open', [url]);
@@ -60,6 +68,13 @@ class _UpdateRequiredScreenState extends State<UpdateRequiredScreen> {
     final latest = widget.latest.version;
     final current = widget.currentVersion;
     final busy = widget.rechecking || _opening;
+    final skippable = widget.skippable && widget.onSkip != null;
+    final title = skippable ? 'Update available' : 'Update required';
+    final body = skippable
+        ? 'mutande $latest (${widget.latest.channel}) is available. '
+            'You’re on v$current — reinstall when you can, or skip this cut.'
+        : 'mutande $latest (${widget.latest.channel}) is required. '
+            'You’re on v$current — reinstall to keep using the alpha.';
 
     return Scaffold(
       backgroundColor: MutandeColors.stone100,
@@ -88,7 +103,7 @@ class _UpdateRequiredScreenState extends State<UpdateRequiredScreen> {
                   ),
                   const SizedBox(height: 20),
                   Text(
-                    'Update required',
+                    title,
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                           color: MutandeColors.stone800,
@@ -97,8 +112,7 @@ class _UpdateRequiredScreenState extends State<UpdateRequiredScreen> {
                   ),
                   const SizedBox(height: 10),
                   Text(
-                    'mutande $latest (${widget.latest.channel}) is available. '
-                    'You’re on v$current — reinstall to keep using the alpha.',
+                    body,
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: MutandeColors.stone600,
@@ -117,7 +131,7 @@ class _UpdateRequiredScreenState extends State<UpdateRequiredScreen> {
                   ],
                   const SizedBox(height: 28),
                   MorphingOrbButton(
-                    label: 'Download update',
+                    label: widget.latest.downloadButtonLabel(cpu: _cpu),
                     loading: _opening,
                     loadingLabel: 'Opening…',
                     onPressed: busy ? null : _openDownload,
@@ -140,6 +154,17 @@ class _UpdateRequiredScreenState extends State<UpdateRequiredScreen> {
                       ),
                     ),
                   ),
+                  if (skippable) ...[
+                    const SizedBox(height: 8),
+                    TextButton(
+                      onPressed: busy ? null : widget.onSkip,
+                      style: TextButton.styleFrom(
+                        foregroundColor: MutandeColors.stone500,
+                        minimumSize: const Size.fromHeight(40),
+                      ),
+                      child: const Text('Skip this version'),
+                    ),
+                  ],
                 ],
               ),
             ),

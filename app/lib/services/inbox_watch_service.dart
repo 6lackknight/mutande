@@ -91,7 +91,7 @@ class InboxWatchService {
       final prefs = await _prefs.load();
       if (!prefs.enabled) return;
 
-      final threads = await _daemon.listThreads();
+      final threads = await _daemon.listThreads(enrich: false);
       final openIds = <String>{};
 
       if (!_hasBaseline) {
