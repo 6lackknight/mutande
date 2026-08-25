@@ -775,9 +775,9 @@ class DaemonClient {
   }
 
   Future<CollabListResult> listCollabs({bool archived = false}) async {
-    final result = await _call('list_collabs', {
+    final result = await _callWithTimeout('list_collabs', {
       if (archived) 'include_archived': true,
-    });
+    }, const Duration(seconds: 45));
     final map = result as Map<String, dynamic>? ?? {};
     final raw = map['collabs'] as List<dynamic>? ?? const [];
     final collabs = raw

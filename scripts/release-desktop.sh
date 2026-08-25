@@ -5,6 +5,8 @@
 #   3) push main (if ahead) and run Windows Actions → publish-r2
 #   4) set Vercel version envs + redeploy production web
 #
+# Hub (hub.mutande.online) deploys from git via Deno Deploy — do not call
+# deployctl / deno task deploy from this script.
 # Prereqs: same as release-macos-dmg.sh + upload-downloads-r2.sh,
 #          gh auth, vercel linked to web/, R2_DOWNLOADS_* secrets on the repo.
 #

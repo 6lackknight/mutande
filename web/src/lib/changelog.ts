@@ -15,6 +15,15 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "2.0.14",
+    date: "2026-08-25",
+    title: "Collab boards",
+    notes: [
+      "Collab home waits for a slow hub instead of sticking on older board counts.",
+      "New boards (including ones created from the web) show up on the next open.",
+    ],
+  },
+  {
     version: "2.0.13",
     date: "2026-08-25",
     title: "Updates & mail",

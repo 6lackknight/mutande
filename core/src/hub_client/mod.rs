@@ -90,9 +90,9 @@ impl HubClient {
     pub fn new(config: HubConfig) -> Result<Self> {
         let client = Client::builder()
             .user_agent("mutande-core/0.1")
-            // Inbox list can be a slow KV scan; keep this under the Mac
-            // `list_threads` RPC timeout (30s) and well above `/me`.
-            .timeout(std::time::Duration::from_secs(25))
+            // Inbox/collab lists are slow KV scans. Stay under the Mac
+            // `list_collabs` / `get_collab` RPC timeout (45s).
+            .timeout(std::time::Duration::from_secs(40))
             .connect_timeout(std::time::Duration::from_secs(8))
             .http1_only()
             .build()

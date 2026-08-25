@@ -130,17 +130,13 @@ When any of `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_
 
 ## Deploy
 
-1. Copy values from `hub/.env.example` (or a local `hub/.env`) into the Deno Deploy project **Settings → Environment Variables**:
-   `AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, plus R2 vars. GlitchTip DSN for hub project 26611 is built-in; set `SENTRY_DSN=` (empty) to disable, or override with `MUTANDE_SENTRY_DSN` / `SENTRY_DSN`.
-2. Then:
+Prod hub is **Deno Deploy Git integration** on this repo (`main` → project `mutande`). A push to `main` ships `hub/`; do **not** add `deployctl` or `deno task deploy` to `scripts/release-*.sh` or other desktop/site release scripts.
 
-```bash
-cd hub && deno task deploy
-```
+Env vars live in the Deno Deploy project **Settings → Environment Variables** (`AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, R2, etc.). Copy from `hub/.env.example` (or a local `hub/.env`). GlitchTip DSN for hub project 26611 is built-in; set `SENTRY_DSN=` (empty) to disable, or override with `MUTANDE_SENTRY_DSN` / `SENTRY_DSN`. Do not commit secrets.
 
-`deployctl` targets project `mutande`. Do not commit secrets.
+`deno task deploy` (`deployctl`) is a manual override only, not the release path.
 
-**Agent registry:** prod must serve `GET/POST /v1/agents`, `/v1/agents/router`, `/v1/agents/default`, and `PATCH /v1/agents/:agentId` for self-collaboration addressing (`@slug`, bare `@all`, renameable slugs). Redeploy the hub after those routes land locally.
+**Agent registry:** prod must serve `GET/POST /v1/agents`, `/v1/agents/router`, `/v1/agents/default`, and `PATCH /v1/agents/:agentId` for self-collaboration addressing (`@slug`, bare `@all`, renameable slugs). Those routes ship when the change lands on `main`.
 
 ### L4 Enterprise registry + billing
 
