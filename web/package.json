@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "next dev",
     "prototype:participants": "next dev -p 3001",
+    "prototype:compose": "next dev -p 3001",
     "build": "next build --webpack",
     "postbuild": "pagefind --site .next/server/app --output-path public/_pagefind",
     "postinstall": "patch-package",
