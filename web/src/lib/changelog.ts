@@ -15,6 +15,15 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "2.0.15",
+    date: "2026-08-25",
+    title: "Collab boards",
+    notes: [
+      "Opening Collab re-checks the hub so new boards show up without restarting.",
+      "An older on-device list no longer hides boards the app already loaded.",
+    ],
+  },
+  {
     version: "2.0.14",
     date: "2026-08-25",
     title: "Collab boards",

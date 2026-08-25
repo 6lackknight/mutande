@@ -84,6 +84,8 @@ class _CollabPanelState extends State<CollabPanel> {
   String? _pendingCardId;
   bool _showArchived = false;
   MutandeListSort _sort = MutandeListSort.recent;
+  bool _gotDaemonList = false;
+  bool _reloadInFlight = false;
 
   @override
   void initState() {
@@ -102,6 +104,7 @@ class _CollabPanelState extends State<CollabPanel> {
 
   void _onMailEpoch() {
     unawaited(_paintFromMailbox());
+    if (!_gotDaemonList) unawaited(_reload());
   }
 
   Future<void> _paintFromMailbox() async {
@@ -110,6 +113,12 @@ class _CollabPanelState extends State<CollabPanel> {
     try {
       final cached = await box.loadCollabList(archived: _showArchived);
       if (cached == null || !mounted) return;
+      final have = {for (final c in _collabs) c.id};
+      final next = {for (final c in cached.collabs) c.id};
+      final missing = have.difference(next);
+      if (missing.isNotEmpty && next.length < have.length) {
+        return;
+      }
       setState(() {
         _collabs = cached.collabs;
         _portfolio = cached.portfolio;
@@ -137,6 +146,16 @@ class _CollabPanelState extends State<CollabPanel> {
   }
 
   Future<void> _reload() async {
+    if (_reloadInFlight) return;
+    _reloadInFlight = true;
+    try {
+      await _reloadBody();
+    } finally {
+      _reloadInFlight = false;
+    }
+  }
+
+  Future<void> _reloadBody() async {
     final hasList = _collabs.isNotEmpty;
     setState(() {
       if (!hasList) _loading = true;
@@ -172,6 +191,7 @@ class _CollabPanelState extends State<CollabPanel> {
         _portfolio = listed.portfolio;
         _loading = false;
         _error = null;
+        _gotDaemonList = true;
       });
     } catch (e) {
       if (!mounted) return;

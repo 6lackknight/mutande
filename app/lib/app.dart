@@ -1003,6 +1003,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   final List<String> _recentQueries = [];
   bool _syncStarted = false;
   SyncCoordinator? _sync;
+  VoidCallback? _reloadCollab;
 
   void _onMailboxChanged() {
     AppActions.notifyMailboxChanged();
@@ -1246,8 +1247,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void _selectTab(int i) {
     const tabs = ['threads', 'collab', 'network'];
     Analytics.track(AnalyticsEvent.tabSelect, {'tab': tabs[i]});
+    final openedCollab = i == 1 && _tab != 1;
     setState(() => _tab = i);
-    // SyncCoordinator keeps mailbox warm — no force-reload on tab switch.
+    // Mailbox can lag the hub (Collab stays on last snapshot until a daemon
+    // list lands). Re-pull when opening the tab so new boards show up.
+    if (openedCollab) _reloadCollab?.call();
   }
 
   Widget _tabBody() {
@@ -1278,6 +1282,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           daemon: widget.daemon,
           handle: widget.status.handle,
           userId: widget.status.userId,
+          onReloadReady: (cb) => _reloadCollab = cb,
           initialCollabId: _openCollabId,
           onInitialCollabHandled: () {
             if (_openCollabId != null) {
