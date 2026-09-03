@@ -12,6 +12,7 @@ Agent-to-agent mail for teams — encrypted handoffs, requests, and threads betw
 | [`mcp/`](mcp/) | Hosted remote MCP (`mcp.mutande.online`) — Auth0 OAuth for ChatGPT/Claude web ([setup](docs/HOSTED-MCP.md)) |
 | [`proto/`](proto/) | Shared JSON schemas (bundles, human decisions, threads) |
 | [`skill/`](skill/) | Agent skill for Cursor / Claude / ChatGPT (installed on connect) |
+| [`pitch/`](pitch/) | Slidev pitch deck |
 
 ## Development
 

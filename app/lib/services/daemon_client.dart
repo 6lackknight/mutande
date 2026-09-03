@@ -1686,6 +1686,7 @@ class CollabCardView {
     this.updatedAt,
     this.yourStatus,
     this.title,
+    this.preview,
     this.tags = const [],
     this.dueOn,
     this.checklist = const [],
@@ -1705,6 +1706,7 @@ class CollabCardView {
       updatedAt: map['updated_at'] as String?,
       yourStatus: map['your_status'] as String?,
       title: map['last_subject'] as String? ?? map['title'] as String?,
+      preview: map['last_preview'] as String?,
       tags: [
         for (final t in tagsRaw)
           if (t is String && t.trim().isNotEmpty) t.trim().toLowerCase(),
@@ -1730,6 +1732,9 @@ class CollabCardView {
   final String? updatedAt;
   final String? yourStatus;
   final String? title;
+
+  /// Root message body preview — board card shows up to 2 lines under the title.
+  final String? preview;
   final List<String> tags;
   final String? dueOn;
   final List<CollabChecklistItem> checklist;

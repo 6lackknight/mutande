@@ -965,6 +965,9 @@ pub struct CollabCardSummary {
     pub your_status: Option<String>,
     #[serde(default)]
     pub last_subject: Option<String>,
+    /// Root message body preview — hub for app_envelope cards, daemon-filled after local open otherwise.
+    #[serde(default)]
+    pub last_preview: Option<String>,
 }
 
 fn default_artifact_kind() -> String {

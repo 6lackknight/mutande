@@ -665,6 +665,95 @@ void main() {
     expect(find.byKey(const Key('collab-card-close')), findsNothing);
   });
 
+  testWidgets('board card shows title and two-line body preview', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final daemon = DaemonClient(
+      httpClient: MockClient((request) async {
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        if (body['method'] == 'get_collab') {
+          return http.Response(
+            jsonEncode({
+              'jsonrpc': '2.0',
+              'id': body['id'],
+              'result': {
+                'id': 'c1',
+                'name': 'Launch',
+                'encryption_mode': 'e2e',
+                'lists': [
+                  {'id': 'l1', 'name': 'Backlog', 'position': 0},
+                ],
+                'cards': [
+                  {
+                    'id': 't1',
+                    'lane_id': 'l1',
+                    'status': 'open',
+                    'from': 'alice@acme/cursor',
+                    'last_subject': 'Auth migration handoff',
+                    'last_preview':
+                        'The auth migration is staged. Open items: rotation.',
+                  },
+                  {
+                    'id': 't2',
+                    'lane_id': 'l1',
+                    'status': 'open',
+                    'from': 'alice@acme/claude',
+                    'last_subject': 'No body card',
+                  },
+                ],
+              },
+            }),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }
+        return http.Response(
+          jsonEncode({
+            'jsonrpc': '2.0',
+            'id': body['id'],
+            'result': {'collabs': [], 'portfolio': {}},
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+      httpToken: 'test-token',
+      requestTimeout: const Duration(seconds: 2),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: mutandeMaterialTheme(),
+        home: Scaffold(
+          body: SizedBox(
+            width: 1280,
+            height: 800,
+            child: CollabPanel(
+              daemon: daemon,
+              handle: 'alice@acme',
+              initialCollabId: 'c1',
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Auth migration handoff'), findsOneWidget);
+    final preview = tester.widget<Text>(
+      find.byKey(const Key('collab-card-preview-t1')),
+    );
+    expect(preview.maxLines, 2);
+    expect(
+      preview.data,
+      'The auth migration is staged. Open items: rotation.',
+    );
+    expect(find.text('No body card'), findsOneWidget);
+    expect(find.byKey(const Key('collab-card-preview-t2')), findsNothing);
+  });
+
   testWidgets('board loading keeps header and dossier chrome', (tester) async {
     tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1.0;

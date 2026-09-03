@@ -3402,7 +3402,7 @@ fn bundle_subject(bundle: Option<&MutandeBundle>) -> Option<String> {
 }
 
 /// Body preview for the list row — notes / question / answer / resource (not subject).
-fn bundle_body_preview(b: &MutandeBundle) -> Option<String> {
+pub(super) fn bundle_body_preview(b: &MutandeBundle) -> Option<String> {
     if let Some(n) = b.notes.as_ref().map(|n| n.trim()).filter(|n| !n.is_empty()) {
         return Some(n.to_string());
     }
@@ -3429,7 +3429,7 @@ fn bundle_body_preview(b: &MutandeBundle) -> Option<String> {
         .map(|d| format!("Resource: {d}"))
 }
 
-fn truncate_preview(s: &str, max_chars: usize) -> String {
+pub(super) fn truncate_preview(s: &str, max_chars: usize) -> String {
     let collapsed = s.split_whitespace().collect::<Vec<_>>().join(" ");
     if collapsed.chars().count() <= max_chars {
         return collapsed;

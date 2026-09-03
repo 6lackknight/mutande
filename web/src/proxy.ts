@@ -1,15 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { auth0 } from "@/lib/auth0";
-
-const protectedPrefixes = [
-  "/signup",
-  "/onboarding",
-  "/dashboard",
-  "/connectors",
-  "/admin",
-  "/join",
-];
+import { isPitchPath, needsAuth } from "@/lib/proxy-rules";
 
 export async function proxy(request: NextRequest) {
   const authRes = await auth0.middleware(request);
@@ -20,11 +12,12 @@ export async function proxy(request: NextRequest) {
     return authRes;
   }
 
-  const needsAuth = protectedPrefixes.some(
-    (p) => pathname === p || pathname.startsWith(`${p}/`),
-  );
+  // The Slidev deck is public static output; skip auth on the decoded pathname.
+  if (isPitchPath(pathname)) {
+    return authRes;
+  }
 
-  if (needsAuth) {
+  if (needsAuth(pathname)) {
     const session = await auth0.getSession(request);
     if (!session) {
       const login = new URL("/auth/login", request.url);

@@ -5,6 +5,9 @@
   "packageManager": "pnpm@10.33.0",
   "scripts": {
     "dev": "next dev",
+    "build:pitch": "(pnpm --dir ../pitch install --frozen-lockfile && pnpm --dir ../pitch run build:site) || echo 'PITCH_BUILD_FAILED: deploying site without /pitch' >&2",
+    "prebuild": "pnpm run build:pitch",
+    "test": "node --experimental-strip-types --test src/lib/proxy-rules.test.ts",
     "prototype:participants": "next dev -p 3001",
     "prototype:compose": "next dev -p 3001",
     "build": "next build --webpack",

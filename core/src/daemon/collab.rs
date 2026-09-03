@@ -12,8 +12,8 @@ use crate::hub_client::{
 };
 
 use super::state::{
-    bundle_for_blob_artifact, BundleResource, DaemonState, MutandeBundle, OpenedThreadDetail,
-    TurnActor, TurnEntry, TurnReason,
+    bundle_body_preview, bundle_for_blob_artifact, truncate_preview, BundleResource, DaemonState,
+    MutandeBundle, OpenedThreadDetail, TurnActor, TurnEntry, TurnReason,
 };
 
 /// Flutter/RPC draft — `path` is read by RPC; this carries bytes, never a hub path.
@@ -114,6 +114,16 @@ impl DaemonState {
             .map(str::to_string);
         if root_subject.is_some() {
             card.last_subject = root_subject;
+        }
+        let root_preview = detail
+            .messages
+            .iter()
+            .find(|message| message.parent_message_id.is_none())
+            .and_then(|message| message.bundle.as_ref())
+            .and_then(bundle_body_preview)
+            .map(|s| truncate_preview(&s, 96));
+        if root_preview.is_some() {
+            card.last_preview = root_preview;
         }
         let card_title = card
             .last_subject
@@ -940,6 +950,95 @@ mod tests {
         assert_eq!(arts.len(), 1);
         assert_eq!(arts[0].name, "brief.md");
         assert_eq!(arts[0].content.as_deref(), Some("# hi"));
+    }
+
+    #[test]
+    fn card_enrichment_sets_subject_and_body_preview() {
+        use crate::daemon::state::OpenedThreadMessage;
+        use crate::hub_client::{ThreadKind, ThreadMeta, ThreadStatus, YourStatus};
+
+        let mut card = CollabCardSummary {
+            id: "t1".into(),
+            lane_id: None,
+            lane_position: None,
+            assigned_to: None,
+            watchers: None,
+            tags: None,
+            due_on: None,
+            checklist: None,
+            status: None,
+            from: Some("alice@acme/cursor".into()),
+            audience: Some("bob@acme".into()),
+            updated_at: None,
+            your_status: None,
+            last_subject: None,
+            last_preview: None,
+        };
+        let detail = OpenedThreadDetail {
+            thread: ThreadMeta {
+                id: "t1".into(),
+                kind: ThreadKind::Direct,
+                status: ThreadStatus::Open,
+                from: "alice@acme/cursor".into(),
+                from_user_id: "u-alice".into(),
+                from_agent_id: None,
+                audience: "bob@acme".into(),
+                audience_agent_id: None,
+                audience_wire_path: None,
+                org_id: "o1".into(),
+                participant_count: 2,
+                reply_count: 0,
+                your_status: Some(YourStatus::Replied),
+                created_at: "2026-01-01T00:00:00Z".into(),
+                updated_at: "2026-01-01T00:00:00Z".into(),
+                encryption_mode: Some("e2e".into()),
+                downgrade_point: None,
+                enterprise_listing_id: None,
+                last_from: None,
+                last_subject: None,
+                last_preview: None,
+                awaiting: None,
+                collab_id: None,
+                lane_id: None,
+                lane_position: None,
+                assigned_to: None,
+                watchers: None,
+                tags: None,
+                due_on: None,
+                checklist: None,
+                collab_name: None,
+            },
+            messages: vec![OpenedThreadMessage {
+                id: "m1".into(),
+                thread_id: "t1".into(),
+                from_user_id: "u-alice".into(),
+                from_handle: "alice@acme/cursor".into(),
+                created_at: "2026-01-01T00:00:00Z".into(),
+                sender_only: None,
+                parent_message_id: None,
+                bundle: Some(MutandeBundle {
+                    subject: Some("Auth migration handoff".into()),
+                    notes: Some(
+                        "The auth migration is staged.\nOpen items: rotation.".into(),
+                    ),
+                    ..Default::default()
+                }),
+                envelope: None,
+                open_error: None,
+                upvotes: None,
+                receipts: None,
+                task_pending_approval: None,
+            }],
+            pending_downgrade: None,
+            pending_task_approvals: None,
+        };
+        let mut artifacts = Vec::new();
+        DaemonState::apply_opened_thread_to_card(&mut card, &detail, &mut artifacts);
+        assert_eq!(card.last_subject.as_deref(), Some("Auth migration handoff"));
+        assert_eq!(
+            card.last_preview.as_deref(),
+            Some("The auth migration is staged. Open items: rotation.")
+        );
     }
 }
 

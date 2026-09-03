@@ -1120,6 +1120,8 @@ export interface CollabCardSummary {
   your_status?: "pending" | "replied";
   /** Root message subject for app_envelope cards (hub-readable). */
   last_subject?: string;
+  /** Root message notes preview for app_envelope cards (hub-readable). */
+  last_preview?: string;
 }
 
 /** Derived card tallies — never stored. */

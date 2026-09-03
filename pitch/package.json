@@ -1,0 +1,16 @@
+{
+  "name": "mutande-pitch",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "dev": "slidev --open",
+    "build": "slidev build",
+    "build:site": "rm -rf ../web/public/pitch-next && slidev build --base /pitch/ --out ../web/public/pitch-next --without-notes && rm -rf ../web/public/pitch && mv ../web/public/pitch-next ../web/public/pitch",
+    "export": "slidev export"
+  },
+  "dependencies": {
+    "@slidev/cli": "^52.19.1",
+    "@slidev/theme-default": "^0.25.0"
+  }
+}

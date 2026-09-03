@@ -36,6 +36,7 @@ import type {
   AddRosterInput,
   AddSteererInput,
   Agent,
+  AppEnvelopePayload,
   ApplyCollabDowngradeInput,
   AuthContext,
   Collab,
@@ -67,6 +68,8 @@ import type {
   User,
 } from "./types.ts";
 import { MAX_ENVELOPE_BYTES } from "./types.ts";
+import { openAppEnvelope } from "./app_envelope.ts";
+import type { AppEnvelopeRecord } from "./app_envelope.ts";
 
 export const COLLAB_SCHEMA_VERSION = 1 as const;
 export const LANE_GAP = 1024;
@@ -986,11 +989,12 @@ export async function getCollab(
   return viewCollab(ctx, auth, collab);
 }
 
-async function cardLastSubject(
+/** Root message app_envelope payload — content lives in the separate record, not the message row. */
+async function cardRootAppPayload(
   ctx: CollabKvCtx,
   threadId: string,
   encryptionMode: Collab["encryption_mode"],
-): Promise<string | undefined> {
+): Promise<AppEnvelopePayload | undefined> {
   if (encryptionMode !== "app_envelope") return undefined;
   const iter = ctx.kv.list<ThreadMessage>({
     prefix: ctx.messagesPrefix(threadId),
@@ -998,12 +1002,38 @@ async function cardLastSubject(
   for await (const entry of iter) {
     const msg = entry.value;
     if (msg.parent_message_id) continue;
-    const subject = typeof msg.app_envelope?.subject === "string"
-      ? msg.app_envelope.subject.trim()
-      : "";
-    return subject || undefined;
+    const recordRes = await ctx.kv.get<AppEnvelopeRecord>(
+      ctx.appEnvelopeKey(threadId, msg.id),
+    );
+    if (!recordRes.value) return undefined;
+    return await openAppEnvelope(recordRes.value);
   }
   return undefined;
+}
+
+async function cardLastSubject(
+  ctx: CollabKvCtx,
+  threadId: string,
+  encryptionMode: Collab["encryption_mode"],
+): Promise<string | undefined> {
+  const payload = await cardRootAppPayload(ctx, threadId, encryptionMode);
+  const subject = typeof payload?.subject === "string"
+    ? payload.subject.trim()
+    : "";
+  return subject || undefined;
+}
+
+/** Root message notes, whitespace-collapsed and truncated — board card body preview. */
+async function cardLastPreview(
+  ctx: CollabKvCtx,
+  threadId: string,
+  encryptionMode: Collab["encryption_mode"],
+): Promise<string | undefined> {
+  const payload = await cardRootAppPayload(ctx, threadId, encryptionMode);
+  const notes = typeof payload?.notes === "string" ? payload.notes.trim() : "";
+  if (!notes) return undefined;
+  const collapsed = notes.split(/\s+/).join(" ");
+  return collapsed.length > 96 ? `${collapsed.slice(0, 95)}…` : collapsed;
 }
 
 async function listCards(
@@ -1027,6 +1057,11 @@ async function listCards(
       thread.id,
       collab.encryption_mode,
     );
+    const lastPreview = await cardLastPreview(
+      ctx,
+      thread.id,
+      collab.encryption_mode,
+    );
     cards.push({
       id: thread.id,
       lane_id: thread.lane_id,
@@ -1042,6 +1077,7 @@ async function listCards(
       updated_at: thread.updated_at,
       your_status: inbox.value?.your_status,
       last_subject: lastSubject,
+      last_preview: lastPreview,
     });
   }
   cards.sort((a, b) => (a.lane_position ?? 0) - (b.lane_position ?? 0));

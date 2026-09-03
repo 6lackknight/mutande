@@ -541,6 +541,10 @@ Deno.test("get_collab cards include app_envelope last_subject", async () => {
   await withTestStore(async ({ store }) => {
     const { aliceAuth } = await setupOrg(store);
     await store.connectAgent(aliceAuth, "mcp", { slug: "chatgpt" });
+    await store.setTransportDefault(aliceAuth, {
+      slug: "chatgpt",
+      transport: "mcp",
+    });
     const collab = await store.createCollab(aliceAuth, {
       name: "Titles",
       roster_addresses: ["@chatgpt"],
@@ -548,12 +552,20 @@ Deno.test("get_collab cards include app_envelope last_subject", async () => {
     });
     await store.createThread(aliceAuth, {
       to: "alice@acme",
-      app_envelope: { version: 1, subject: "Ship landing copy" },
+      app_envelope: {
+        version: 1,
+        subject: "Ship landing copy",
+        notes: "Hero rewrite is staged.\nOpen items: final CTA.",
+      },
       collab_id: collab.id,
     });
     const got = await store.getCollab(aliceAuth, collab.id);
     assertEquals(got.cards.length, 1);
     assertEquals(got.cards[0].last_subject, "Ship landing copy");
+    assertEquals(
+      got.cards[0].last_preview,
+      "Hero rewrite is staged. Open items: final CTA.",
+    );
   });
 });
 

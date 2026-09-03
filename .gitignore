@@ -30,6 +30,13 @@ Thumbs.db
 /web/node_modules/
 /web/.next/
 
+# Pitch (Slidev)
+/pitch/node_modules/
+/pitch/dist/
+/pitch/.slidev/
+/web/public/pitch/
+/web/public/pitch-next/
+
 # Remotion (video)
 /video/node_modules/
 /video-mc/node_modules/

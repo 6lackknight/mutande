@@ -1305,6 +1305,7 @@ class _CardTile extends StatelessWidget {
       myHandle: myHandle,
       avatarUrls: avatarUrls,
     );
+    final preview = card.preview?.trim();
     final rail = card.needsYou ? MutandeColors.bronze : MutandeColors.stone200;
     final footer = faces.isNotEmpty || due.isNotEmpty || time.isNotEmpty;
     return Container(
@@ -1345,6 +1346,20 @@ class _CardTile extends StatelessWidget {
                         color: MutandeColors.stone800,
                       ),
                     ),
+                    if (preview != null && preview.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        preview,
+                        key: Key('collab-card-preview-${card.id}'),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          height: 1.35,
+                          color: MutandeColors.stone500,
+                        ),
+                      ),
+                    ],
                     if (footer) ...[
                       const SizedBox(height: 6),
                       Row(
