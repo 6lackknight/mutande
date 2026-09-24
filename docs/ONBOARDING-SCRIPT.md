@@ -17,7 +17,7 @@ Gates live in `~/.mutande/first_run.json` (`connect_complete`, `ping_complete`, 
 - not configured → **Sign in**
 - configured, destination not ready → **Your team** then **Connect**
 - destination ready (`connect_complete`), no handshake reply → **First handshake**
-- `ping_complete` is set only when the other agent publishes a handshake on the thread. There is no skip.
+- `ping_complete` is set when the other agent publishes a handshake on the thread, or when a solo-agent user skips.
 
 `connect_complete` means a second own host is registered, or one own host plus a teammate who already has a host. An invite sent does not count.
 
@@ -143,8 +143,8 @@ Address: `alice@acme/______`, agent slot breathing.
 Heading is the goal, and changes once it's met:
 
 - Nothing linked: **Pick a host to connect.** / Desktop apps on this Mac, or ChatGPT and Claude in the browser.
-- One own host, no live teammate: **Cursor is ready to carry mail.** / A handshake needs a second host of yours, or a teammate who already has mutande. No Continue — pick another host, *Invite on the web*, or *Check again*. Connecting a host returns here; it does not skip to First handshake.
-- Destination ready (two own hosts, or one host plus a live teammate): **Cursor and Claude Desktop are ready to carry mail.** / Continue to your first handshake. **Continue** marks connect complete and moves to First handshake.
+- One own host, no live teammate: **Cursor is ready to carry mail.** / A handshake needs a second host of yours, or a teammate who already has mutande. No Continue — pick another host, *Invite on the web*, *Check again*, or *Skip for now* (marks connect + ping complete and unlocks home). Connecting a host returns here; it does not skip to First handshake.
+- Destination ready (two own hosts, or one host plus a live teammate): **Cursor and Claude Desktop are ready to carry mail.** / Continue to your first handshake. **Continue** marks connect complete and moves to First handshake. One own host plus a live teammate also shows *Skip for now*. Two or more own hosts cannot skip.
 
 Same roster chips as the team step. Title is the product (Cursor, Claude, ChatGPT); subtitle is Desktop, Browser, or Install. Connected hosts show a check; Default stays on the current default; **Make default** appears after you select another connected host. Tap a chip to open its mini-flow, then return here.
 
@@ -203,7 +203,7 @@ Same overlay grammar. Copy `https://mcp.mutande.online/mcp`, open the host, add 
 
 Address complete: `alice@acme/cursor`.
 
-There is no skip. Quit and relaunch resumes here.
+*Skip for now* only when there is a single own agent. Two or more own agents cannot skip. Quit and relaunch resumes here unless they skipped.
 
 ### 4a. Pick who to handshake with
 

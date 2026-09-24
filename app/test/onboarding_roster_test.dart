@@ -464,6 +464,79 @@ void main() {
     );
     expect(find.text('Continue'), findsNothing);
     expect(find.text('Invite on the web'), findsOneWidget);
+    expect(find.text('Skip for now'), findsOneWidget);
+  });
+
+  testWidgets('one host can skip handshake and unlock home', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final daemon = _mockDaemon((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      final method = body['method'] as String?;
+      if (method == 'get_status') {
+        return _rpcOk(body['id'], {
+          'configured': true,
+          'signed_in': true,
+          'handle': 'alice@acme',
+          'hub_url': 'http://localhost:8000',
+        });
+      }
+      if (method == 'detect_ai_hosts') {
+        return _rpcOk(body['id'], {
+          'hosts': [
+            {'host': 'cursor', 'installed': true, 'config_present': true},
+            {'host': 'claude', 'installed': true, 'config_present': false},
+          ],
+        });
+      }
+      if (method == 'list_agents') {
+        return _rpcOk(body['id'], {
+          'agents': [
+            {'id': 'a1', 'slug': 'cursor'},
+          ],
+        });
+      }
+      if (method == 'list_contacts') {
+        return _rpcOk(body['id'], {
+          'contacts': [
+            {'handle': 'alice@acme', 'kind': 'org'},
+          ],
+        });
+      }
+      return _rpcOk(body['id'], {'ok': true});
+    });
+
+    final store = FirstRunStore.memory();
+    var completed = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: mutandeMaterialTheme(),
+        home: OnboardingFlowScreen(
+          config: const AppConfig(hubUrl: 'http://localhost:8000'),
+          daemon: daemon,
+          firstRunStore: store,
+          hostLinkStore: HostLinkStore.memory(),
+          onComplete: (_, _) => completed = true,
+          initialStatus: const DaemonStatusResult(
+            configured: true,
+            signedIn: true,
+            handle: 'alice@acme',
+            hubUrl: 'http://localhost:8000',
+          ),
+          initialStep: OnboardingStep.connect,
+        ),
+      ),
+    );
+    await _pumpUntil(tester, find.text('Skip for now'));
+    await tester.tap(find.text('Skip for now'));
+    await tester.pumpAndSettle();
+    expect(completed, isTrue);
+    expect(store.connectComplete, isTrue);
+    expect(store.pingComplete, isTrue);
   });
 
   testWidgets('two own agents unlock Continue to handoff', (
@@ -524,6 +597,7 @@ void main() {
     );
     await _pumpUntil(tester, find.text('Continue'));
     expect(find.text('Continue'), findsOneWidget);
+    expect(find.text('Skip for now'), findsNothing);
     expect(find.text('Make default'), findsNothing);
     expect(find.text('Default'), findsNothing);
 

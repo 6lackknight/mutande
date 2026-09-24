@@ -121,6 +121,40 @@ void main() {
 
     expect(find.text('Who gets this handshake.'), findsNothing);
     expect(find.text('Open this in Cursor.'), findsOneWidget);
+    expect(find.text('Skip for now'), findsNothing);
+  });
+
+  testWidgets('solo agent can skip the handshake', (tester) async {
+    final daemon = _mockDaemon((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      return _rpcOk(body['id'], {'threads': <Object>[]});
+    });
+    final store = FirstRunStore.memory(notificationsComplete: true)
+      ..loadMemorySync();
+    var skipped = false;
+
+    await _pumpWizard(
+      tester,
+      child: FirstRunPingWizard(
+        daemon: daemon,
+        firstRunStore: store,
+        address: const OnboardingAddress(
+          name: 'alice',
+          org: 'acme',
+          agent: 'cursor',
+        ),
+        target: 'orinea@tbhco',
+        choices: const ['orinea@tbhco'],
+        ownAgents: const [AgentInfo(id: 'a1', slug: 'cursor')],
+        onSkip: () => skipped = true,
+        onComplete: (_) {},
+      ),
+    );
+
+    expect(find.text('Skip for now'), findsOneWidget);
+    await tester.tap(find.text('Skip for now'));
+    await tester.pump();
+    expect(skipped, isTrue);
   });
 
   testWidgets('Open Cursor prefills then waits', (tester) async {
@@ -658,10 +692,7 @@ void main() {
     expect(find.text('Find work worth a handoff.'), findsOneWidget);
     expect(find.text('Check this with me.'), findsOneWidget);
     expect(find.text('Invite someone.'), findsOneWidget);
-    expect(
-      find.textContaining('Ask Cursor and Claude'),
-      findsOneWidget,
-    );
+    expect(find.textContaining('Ask Cursor and Claude'), findsOneWidget);
     expect(find.textContaining('Foucault'), findsOneWidget);
 
     await tester.tap(find.text('Invite someone.'));

@@ -375,6 +375,7 @@ class OnboardingActions extends StatelessWidget {
     this.primary,
     this.secondary,
     this.tertiary,
+    this.extras = const [],
     this.topSpacing = OnboardingSpace.lg,
     this.hugPrimary = false,
   });
@@ -382,6 +383,7 @@ class OnboardingActions extends StatelessWidget {
   final Widget? primary;
   final Widget? secondary;
   final Widget? tertiary;
+  final List<Widget> extras;
   final double topSpacing;
 
   /// When true, the primary button sizes to its label instead of [primaryWidth].
@@ -392,7 +394,7 @@ class OnboardingActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final links = <Widget>[?secondary, ?tertiary];
+    final links = <Widget>[?secondary, ?tertiary, ...extras];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

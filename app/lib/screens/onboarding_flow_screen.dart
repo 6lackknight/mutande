@@ -26,8 +26,8 @@ import '../widgets/thread_skeletons.dart';
 import 'first_run_ping_wizard.dart';
 
 /// Guided 4-step onboarding (sign in → team → connect → first handshake).
-/// Connect stays until a second host or a live teammate exists; the last
-/// step completes only when that recipient replies on a work thread.
+/// Connect stays until a second host, a live teammate, or a solo-agent skip;
+/// handshake completes when the recipient replies, or is skipped with one agent.
 class OnboardingFlowScreen extends StatefulWidget {
   const OnboardingFlowScreen({
     super.key,
@@ -180,6 +180,23 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
     await widget.firstRunStore.markConnectComplete();
     if (!mounted) return;
     setState(() => _step = OnboardingStep.ping);
+  }
+
+  Future<void> _skipHandshake() async {
+    Analytics.track(AnalyticsEvent.pingNext, {'kind': 'skip'});
+    await widget.firstRunStore.markConnectComplete();
+    await widget.firstRunStore.markPingComplete();
+    if (!mounted) return;
+    var status = _status;
+    if (status == null) {
+      try {
+        status = await widget.daemon.getStatus();
+      } catch (_) {
+        return;
+      }
+    }
+    if (!mounted) return;
+    widget.onComplete(status, null);
   }
 
   OnboardingStep _initialStepFromStatus() {
@@ -806,6 +823,12 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
           debugBanner: debugBanner,
           preview: frame == null ? null : _debugFrames[frame].ping,
           onInvite: _openInvitesWeb,
+          onSkip:
+              firstRunHandshakeSkippable(
+                ownAgents: firstRunOwnAgentCount(_agents),
+              )
+              ? _skipHandshake
+              : null,
           onComplete: (threadId) {
             final status = _status;
             if (status != null) {
@@ -1145,6 +1168,12 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
           );
 
     final showContinue = !_hostsLoading && _destinationReady;
+    final showSkip =
+        !_hostsLoading && firstRunHandshakeSkippable(ownAgents: ownCount);
+    TextButton skipButton() => TextButton(
+      onPressed: _skipHandshake,
+      child: const Text('Skip for now'),
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1209,7 +1238,11 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
                     onPressed: () => _beginConnectHost(_selectedHost!),
                     child: const Text('Retry'),
                   )
-                : null,
+                : (showSkip ? skipButton() : null),
+            extras: [
+              if (_selectedHost != null && _error != null && showSkip)
+                skipButton(),
+            ],
           )
         else if (_selectedHost != null && _error != null)
           OnboardingActions(
@@ -1218,6 +1251,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
               onPressed: () => _beginConnectHost(_selectedHost!),
               child: const Text('Retry'),
             ),
+            extras: [if (showSkip) skipButton()],
           )
         else if (!_hostsLoading && ownCount >= 1)
           OnboardingActions(
@@ -1230,6 +1264,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
               onPressed: () => unawaited(_loadHosts()),
               child: const Text('Check again'),
             ),
+            extras: [if (showSkip) skipButton()],
           ),
       ],
     );

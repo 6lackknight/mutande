@@ -17,6 +17,10 @@ bool firstRunDestinationReady({
   required bool liveTeammate,
 }) => ownAgents >= 2 || (ownAgents >= 1 && liveTeammate);
 
+/// Solo-agent setups can leave the handshake for later — there is no
+/// second host of theirs to reply. Two or more own agents must handshake.
+bool firstRunHandshakeSkippable({required int ownAgents}) => ownAgents == 1;
+
 const _ownHostOrder = ['cursor', 'claude', 'chatgpt'];
 
 List<String> _ownHandoffSlugs({
@@ -217,16 +221,10 @@ String _firstRunTeammateLabel(String target, Iterable<ContactView> contacts) {
       ownAgents: ownAgents,
       sendingSlug: sendingSlug,
     );
-    return (
-      first: first,
-      second: firstRunHandoffChoiceLabel(other ?? target),
-    );
+    return (first: first, second: firstRunHandoffChoiceLabel(other ?? target));
   }
   if (firstRunTargetIsTeammate(target)) {
-    return (
-      first: first,
-      second: _firstRunTeammateLabel(target, contacts),
-    );
+    return (first: first, second: _firstRunTeammateLabel(target, contacts));
   }
   return (first: first, second: firstRunHandoffChoiceLabel(target));
 }

@@ -441,7 +441,7 @@ class _RootScreenState extends State<RootScreen> {
   bool _forceOnboardingPending = false;
 
   // Notifications ride along with the handoff wait; they never gate the flow.
-  // First-run is done only when a work handoff gets a reply (`ping_complete`).
+  // First-run is done when handshake replies, or a solo-agent skip (`ping_complete`).
   bool _needsOnboardingFlow() {
     if (_forceOnboardingPending) return true;
     return !_firstRunStore.pingComplete;

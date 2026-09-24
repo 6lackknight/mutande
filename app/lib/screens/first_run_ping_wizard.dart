@@ -24,8 +24,8 @@ import '../widgets/thinking_orb.dart';
 enum PingPreview { pick, copy, waiting, delivered, timeout }
 
 /// Opens a host composer with the handshake prompt (copy as fallback), then
-/// waits for the other agent to publish a handshake. Skip does not exist —
-/// a handshake reply is the only way through.
+/// waits for the other agent to publish a handshake. Skip is only offered
+/// when the sender has a single own agent.
 ///
 /// After send, the thread fills the letterhead’s right side. A first-job
 /// card or Finish unlocks home; the notification ask rides along with the wait.
@@ -47,6 +47,7 @@ class FirstRunPingWizard extends StatefulWidget {
     this.sendingTransport,
     this.targetTransport,
     this.onInvite,
+    this.onSkip,
   });
 
   final DaemonClient daemon;
@@ -90,6 +91,9 @@ class FirstRunPingWizard extends StatefulWidget {
 
   /// Opens the web invite page. Null hides the invite card even when solo.
   final VoidCallback? onInvite;
+
+  /// Solo-agent escape — marks ping complete and unlocks home.
+  final VoidCallback? onSkip;
 
   static String promptFor(String target) => firstRunHandshakePrompt(target);
 
@@ -589,6 +593,8 @@ class _FirstRunPingWizardState extends State<FirstRunPingWizard> {
     widget.onInvite?.call();
   }
 
+  void _skip() => widget.onSkip?.call();
+
   Future<void> _allowBanners() async {
     if (Platform.isMacOS) {
       try {
@@ -633,6 +639,7 @@ class _FirstRunPingWizardState extends State<FirstRunPingWizard> {
           contacts: widget.contacts,
           hostsByHandle: widget.hostsByHandle,
           onPick: _pickTarget,
+          onSkip: widget.onSkip == null ? null : _skip,
         ),
         _PingStep.copy => _CopyStep(
           theme: theme,
@@ -645,6 +652,7 @@ class _FirstRunPingWizardState extends State<FirstRunPingWizard> {
           onCopy: _copyPrompt,
           onOpen: _openHost,
           onGoBack: _goBackFromCopy,
+          onSkip: widget.onSkip == null ? null : _skip,
         ),
         _PingStep.waiting => _WaitingStep(
           error: _error,
@@ -658,6 +666,7 @@ class _FirstRunPingWizardState extends State<FirstRunPingWizard> {
           onCopyReply: _copyReplyPrompt,
           onOpenReply: _openReplyHost,
           onGoBack: _goBackFromWaiting,
+          onSkip: widget.onSkip == null ? null : _skip,
           showBannerAsk: !_bannersAsked,
           bannersGranted: _bannersGranted,
           onAllowBanners: _allowBanners,
@@ -683,6 +692,7 @@ class _FirstRunPingWizardState extends State<FirstRunPingWizard> {
         _PingStep.timeout => _TimeoutStep(
           onKeepWaiting: _resumeWait,
           onStartOver: _startOver,
+          onSkip: widget.onSkip == null ? null : _skip,
         ),
       },
     );
@@ -695,12 +705,14 @@ class _PickStep extends StatelessWidget {
     required this.contacts,
     required this.hostsByHandle,
     required this.onPick,
+    this.onSkip,
   });
 
   final List<String> choices;
   final List<ContactView> contacts;
   final Map<String, List<String>> hostsByHandle;
   final ValueChanged<String> onPick;
+  final VoidCallback? onSkip;
 
   ContactView? _contact(String handle) {
     final key = handle.trim().toLowerCase();
@@ -739,6 +751,14 @@ class _PickStep extends StatelessWidget {
               ),
           ],
         ),
+        if (onSkip != null)
+          OnboardingActions(
+            topSpacing: OnboardingSpace.md,
+            secondary: TextButton(
+              onPressed: onSkip,
+              child: const Text('Skip for now'),
+            ),
+          ),
       ],
     );
   }
@@ -787,6 +807,7 @@ class _CopyStep extends StatelessWidget {
     required this.onCopy,
     required this.onOpen,
     required this.onGoBack,
+    this.onSkip,
   });
 
   final ThemeData theme;
@@ -799,6 +820,7 @@ class _CopyStep extends StatelessWidget {
   final VoidCallback onCopy;
   final VoidCallback onOpen;
   final VoidCallback onGoBack;
+  final VoidCallback? onSkip;
 
   String get _title {
     if (canOpen && hostName != null) return 'Open this in $hostName.';
@@ -839,6 +861,10 @@ class _CopyStep extends StatelessWidget {
             onPressed: onGoBack,
             child: const Text('Go back'),
           ),
+          extras: [
+            if (onSkip != null)
+              TextButton(onPressed: onSkip, child: const Text('Skip for now')),
+          ],
         ),
       ],
     );
@@ -942,6 +968,7 @@ class _WaitingStep extends StatelessWidget {
     required this.onCopyReply,
     required this.onOpenReply,
     required this.onGoBack,
+    this.onSkip,
     required this.showBannerAsk,
     required this.bannersGranted,
     required this.onAllowBanners,
@@ -959,6 +986,7 @@ class _WaitingStep extends StatelessWidget {
   final VoidCallback onCopyReply;
   final VoidCallback onOpenReply;
   final VoidCallback onGoBack;
+  final VoidCallback? onSkip;
   final bool showBannerAsk;
   final bool bannersGranted;
   final VoidCallback onAllowBanners;
@@ -998,6 +1026,13 @@ class _WaitingStep extends StatelessWidget {
               onPressed: onGoBack,
               child: const Text('Go back'),
             ),
+            extras: [
+              if (onSkip != null)
+                TextButton(
+                  onPressed: onSkip,
+                  child: const Text('Skip for now'),
+                ),
+            ],
           ),
         ] else
           OnboardingActions(
@@ -1006,6 +1041,13 @@ class _WaitingStep extends StatelessWidget {
               onPressed: onGoBack,
               child: const Text('Go back'),
             ),
+            extras: [
+              if (onSkip != null)
+                TextButton(
+                  onPressed: onSkip,
+                  child: const Text('Skip for now'),
+                ),
+            ],
           ),
         if (error != null) ...[
           const SizedBox(height: OnboardingSpace.sm),
@@ -1232,10 +1274,15 @@ class _NextJobCard extends StatelessWidget {
 }
 
 class _TimeoutStep extends StatelessWidget {
-  const _TimeoutStep({required this.onKeepWaiting, required this.onStartOver});
+  const _TimeoutStep({
+    required this.onKeepWaiting,
+    required this.onStartOver,
+    this.onSkip,
+  });
 
   final VoidCallback onKeepWaiting;
   final VoidCallback onStartOver;
+  final VoidCallback? onSkip;
 
   @override
   Widget build(BuildContext context) {
@@ -1260,6 +1307,10 @@ class _TimeoutStep extends StatelessWidget {
             onPressed: onStartOver,
             child: const Text('Start over'),
           ),
+          extras: [
+            if (onSkip != null)
+              TextButton(onPressed: onSkip, child: const Text('Skip for now')),
+          ],
         ),
       ],
     );
