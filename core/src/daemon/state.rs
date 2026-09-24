@@ -3622,7 +3622,7 @@ pub(super) fn bundle_to_app_envelope(
         },
     };
     let size = serde_json::to_vec(&payload)?.len();
-    const MAX_APP_ENVELOPE: usize = 60 * 1024;
+    const MAX_APP_ENVELOPE: usize = 48 * 1024;
     if size > MAX_APP_ENVELOPE {
         bail!(
             "app_envelope too large ({size} bytes, max {MAX_APP_ENVELOPE}) — shrink the payload or use E2E blob path for sidecar recipients"

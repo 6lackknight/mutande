@@ -59,6 +59,7 @@ Deno.test("tool list marks inbox tools implemented", () => {
     "get_collab",
     "create_card",
     "set_lane",
+    "set_checklist_item",
     "add_learning",
     "forward_draft",
     "close_thread",

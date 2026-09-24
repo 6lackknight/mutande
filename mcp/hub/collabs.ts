@@ -208,6 +208,22 @@ export async function setLaneAsUser(
   return hub.setLane(accessToken, collabId, input);
 }
 
+export async function setChecklistItemAsUser(
+  hub: HubClient,
+  accessToken: string,
+  collabId: string,
+  input: {
+    thread_id: string;
+    item_id: string;
+    done?: boolean;
+  },
+): Promise<{ thread: unknown }> {
+  const { collab } = await hub.getCollab(accessToken, collabId);
+  assertNotArchived(collab);
+  assertAppEnvelopeCollab(collab);
+  return hub.setChecklistItem(accessToken, collabId, input);
+}
+
 export async function addLearningAsWebAgent(
   hub: HubClient,
   accessToken: string,
@@ -249,6 +265,7 @@ export async function createCardAsUser(
     tags?: string[];
     due_on?: string;
     checklist?: { id?: string; text: string; done?: boolean }[];
+    idempotency_key?: string;
   },
   from: { handle: string; slug: string; agentId: string },
 ): Promise<{
@@ -297,6 +314,9 @@ export async function createCardAsUser(
     ...(input.due_on ? { due_on: input.due_on } : {}),
     ...(input.checklist?.length ? { checklist: input.checklist } : {}),
     ...(turn ? { turns: [turn] } : {}),
+    ...(input.idempotency_key
+      ? { idempotency_key: input.idempotency_key }
+      : {}),
   });
   const threadId = result?.thread?.id?.trim();
   if (!threadId) {

@@ -346,6 +346,109 @@ Deno.test("card assigned_to + tags + due + checklist persist; wrap stays steerer
   });
 });
 
+Deno.test("set_checklist_item ticks and toggles card items", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth, bobAuth } = await setupOrg(store);
+    const collab = await store.createCollab(aliceAuth, {
+      name: "Checks",
+      steerer_handles: ["bob@acme"],
+      instructions_sealed: undefined,
+      roster_addresses: ["bob@acme/claude"],
+    });
+    const { thread } = await store.createThread(aliceAuth, {
+      to: "bob@acme/claude",
+      envelope: sampleEnvelope("check"),
+      collab_id: collab.id,
+      checklist: [
+        { id: "c1", text: "Draft" },
+        { id: "c2", text: "Ship", done: false },
+      ],
+    });
+    const ticked = await store.setChecklistItem(aliceAuth, collab.id, {
+      thread_id: thread.id,
+      item_id: "c1",
+      done: true,
+    });
+    assertEquals(ticked.thread.checklist?.[0].done, true);
+    assertEquals(ticked.thread.checklist?.[1].done, false);
+
+    const toggled = await store.setChecklistItem(bobAuth, collab.id, {
+      thread_id: thread.id,
+      item_id: "c1",
+    });
+    assertEquals(toggled.thread.checklist?.[0].done, false);
+
+    await assertRejects(
+      () =>
+        store.setChecklistItem(aliceAuth, collab.id, {
+          thread_id: thread.id,
+          item_id: "missing",
+          done: true,
+        }),
+      HubError,
+      "Checklist item not found",
+    );
+  });
+});
+
+Deno.test("card defaults assigned_to to audience; outsider audience rejected; assignee needs_action", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth, bob, bobAuth } = await setupOrg(store);
+    const inv = await store.createInvite(aliceAuth);
+    const { user: carol } = await store.joinOrg(
+      { sub: "auth0|carol", email: "carol@example.com" },
+      { invite_code: inv.code, handle: "carol@acme" },
+    );
+    await store.registerDevice(store.authContextFromUser(carol), {
+      pubkey: "carol-pk",
+      platform: "macos",
+    });
+    await store.registerAgent(store.authContextFromUser(carol), {
+      slug: "claude",
+    });
+
+    const collab = await store.createCollab(aliceAuth, {
+      name: "Delivery",
+      steerer_handles: ["bob@acme"],
+      instructions_sealed: undefined,
+      roster_addresses: ["bob@acme/claude"],
+    });
+
+    await assertRejects(
+      () =>
+        store.createThread(aliceAuth, {
+          to: "carol@acme/claude",
+          envelope: sampleEnvelope("outsider"),
+          collab_id: collab.id,
+        }),
+      HubError,
+      "Audience must be a collab participant",
+    );
+
+    const { thread } = await store.createThread(aliceAuth, {
+      to: "bob@acme/claude",
+      envelope: sampleEnvelope("default-assign"),
+      collab_id: collab.id,
+    });
+    assertEquals(thread.assigned_to, "bob@acme/claude");
+    assertEquals(
+      thread.awaiting?.some((t) => t.user_id === bob.id),
+      true,
+    );
+
+    const bobInbox = await store.listThreads(bobAuth, "needs_action");
+    assertEquals(
+      bobInbox.threads.some((t) => t.id === thread.id),
+      true,
+    );
+    const aliceInbox = await store.listThreads(aliceAuth, "needs_action");
+    assertEquals(
+      aliceInbox.threads.some((t) => t.id === thread.id),
+      false,
+    );
+  });
+});
+
 Deno.test("set_lane inserts at midpoint without touching status", async () => {
   await withTestStore(async ({ store }) => {
     const { aliceAuth } = await setupOrg(store);

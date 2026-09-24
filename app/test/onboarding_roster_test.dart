@@ -597,7 +597,8 @@ void main() {
     );
     await _pumpUntil(tester, find.text('Continue'));
     expect(find.text('Continue'), findsOneWidget);
-    expect(find.text('Skip for now'), findsNothing);
+    expect(find.text('Skip for now'), findsOneWidget);
+    expect(find.text('Start over'), findsOneWidget);
     expect(find.text('Make default'), findsNothing);
     expect(find.text('Default'), findsNothing);
 
@@ -617,5 +618,220 @@ void main() {
       find.text('Host link was cancelled. Pick a host to continue.'),
       findsNothing,
     );
+  });
+
+  testWidgets('sign in has no escape links', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: mutandeMaterialTheme(),
+        home: OnboardingFlowScreen(
+          config: const AppConfig(hubUrl: 'http://localhost:8000'),
+          daemon: _mockDaemon(
+            (request) async => _rpcOk(
+              (jsonDecode(request.body) as Map)['id'],
+              {'ok': true},
+            ),
+          ),
+          firstRunStore: FirstRunStore.memory(),
+          hostLinkStore: HostLinkStore.memory(),
+          onComplete: (_, _) {},
+          initialStep: OnboardingStep.signIn,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Sign in with Auth0'), findsOneWidget);
+    expect(find.text('Skip for now'), findsNothing);
+    expect(find.text('Start over'), findsNothing);
+  });
+
+  testWidgets('create/join offers Start over without Skip', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: mutandeMaterialTheme(),
+        home: OnboardingFlowScreen(
+          config: const AppConfig(hubUrl: 'http://localhost:8000'),
+          daemon: _mockDaemon((request) async {
+            final body = jsonDecode(request.body) as Map<String, dynamic>;
+            if (body['method'] == 'get_status') {
+              return _rpcOk(body['id'], {
+                'configured': false,
+                'signed_in': true,
+                'hub_url': 'http://localhost:8000',
+                'email': 'alice@example.com',
+              });
+            }
+            return _rpcOk(body['id'], {'ok': true});
+          }),
+          firstRunStore: FirstRunStore.memory(),
+          hostLinkStore: HostLinkStore.memory(),
+          onComplete: (_, _) {},
+          initialStatus: const DaemonStatusResult(
+            configured: false,
+            signedIn: true,
+            hubUrl: 'http://localhost:8000',
+            email: 'alice@example.com',
+          ),
+          initialStep: OnboardingStep.team,
+        ),
+      ),
+    );
+    await _pumpUntil(tester, find.text('Pick the org half of your address.'));
+
+    expect(find.text('Start over'), findsOneWidget);
+    expect(find.text('Skip for now'), findsNothing);
+  });
+
+  testWidgets('zero hosts still offers Skip and Start over', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: mutandeMaterialTheme(),
+        home: OnboardingFlowScreen(
+          config: const AppConfig(hubUrl: 'http://localhost:8000'),
+          daemon: _mockDaemon((request) async {
+            final body = jsonDecode(request.body) as Map<String, dynamic>;
+            final method = body['method'] as String?;
+            if (method == 'get_status') {
+              return _rpcOk(body['id'], {
+                'configured': true,
+                'signed_in': true,
+                'handle': 'alice@acme',
+                'hub_url': 'http://localhost:8000',
+              });
+            }
+            if (method == 'detect_ai_hosts') {
+              return _rpcOk(body['id'], {
+                'hosts': [
+                  {'host': 'cursor', 'installed': true, 'config_present': false},
+                ],
+              });
+            }
+            if (method == 'list_agents') {
+              return _rpcOk(body['id'], {'agents': <Object>[]});
+            }
+            if (method == 'list_contacts') {
+              return _rpcOk(body['id'], {
+                'contacts': [
+                  {'handle': 'alice@acme', 'kind': 'org'},
+                ],
+              });
+            }
+            return _rpcOk(body['id'], {'ok': true});
+          }),
+          firstRunStore: FirstRunStore.memory(),
+          hostLinkStore: HostLinkStore.memory(),
+          onComplete: (_, _) {},
+          initialStatus: const DaemonStatusResult(
+            configured: true,
+            signedIn: true,
+            handle: 'alice@acme',
+            hubUrl: 'http://localhost:8000',
+          ),
+          initialStep: OnboardingStep.connect,
+        ),
+      ),
+    );
+    await _pumpUntil(tester, find.text('Pick a host to connect.'));
+
+    expect(find.text('Skip for now'), findsOneWidget);
+    expect(find.text('Start over'), findsOneWidget);
+    expect(find.text('Invite on the web'), findsOneWidget);
+  });
+
+  testWidgets('Start over signs out and returns to Sign in', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    var loggedOut = false;
+    DaemonStatusResult? signedOutStatus;
+    final store = FirstRunStore.memory(connectComplete: true);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: mutandeMaterialTheme(),
+        home: OnboardingFlowScreen(
+          config: const AppConfig(hubUrl: 'http://localhost:8000'),
+          daemon: _mockDaemon((request) async {
+            final body = jsonDecode(request.body) as Map<String, dynamic>;
+            final method = body['method'] as String?;
+            if (method == 'auth_logout') {
+              loggedOut = true;
+              return _rpcOk(body['id'], {
+                'configured': false,
+                'signed_in': false,
+                'hub_url': 'http://localhost:8000',
+              });
+            }
+            if (method == 'get_status') {
+              return _rpcOk(body['id'], {
+                'configured': true,
+                'signed_in': true,
+                'handle': 'alice@acme',
+                'hub_url': 'http://localhost:8000',
+              });
+            }
+            if (method == 'detect_ai_hosts') {
+              return _rpcOk(body['id'], {'hosts': <Object>[]});
+            }
+            if (method == 'list_agents') {
+              return _rpcOk(body['id'], {'agents': <Object>[]});
+            }
+            if (method == 'list_contacts') {
+              return _rpcOk(body['id'], {
+                'contacts': [
+                  {'handle': 'alice@acme', 'kind': 'org'},
+                ],
+              });
+            }
+            return _rpcOk(body['id'], {'ok': true});
+          }),
+          firstRunStore: store,
+          hostLinkStore: HostLinkStore.memory(),
+          onComplete: (_, _) {},
+          onSignedOut: (s) => signedOutStatus = s,
+          initialStatus: const DaemonStatusResult(
+            configured: true,
+            signedIn: true,
+            handle: 'alice@acme',
+            hubUrl: 'http://localhost:8000',
+          ),
+          initialStep: OnboardingStep.connect,
+        ),
+      ),
+    );
+    await _pumpUntil(tester, find.text('Start over'));
+    await tester.tap(find.text('Start over'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Start over?'), findsOneWidget);
+    await tester.tap(find.widgetWithText(TextButton, 'Start over').last);
+    await tester.pumpAndSettle();
+
+    expect(loggedOut, isTrue);
+    expect(signedOutStatus?.signedIn, isFalse);
+    expect(store.connectComplete, isFalse);
+    expect(store.pingComplete, isFalse);
+    expect(find.text('Sign in with Auth0'), findsOneWidget);
+    expect(find.text('Skip for now'), findsNothing);
   });
 }

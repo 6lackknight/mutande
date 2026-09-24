@@ -16,6 +16,7 @@ import {
   getCollabAsUser,
   listCollabsAsUser,
   setLaneAsUser,
+  setChecklistItemAsUser,
   createCardAsUser,
 } from "../hub/collabs.ts";
 import type { ThreadFilter } from "../hub/types.ts";
@@ -358,6 +359,7 @@ async function callTool(
     if (!bundle) {
       return toolTextResult("bundle object is required", true);
     }
+    const idempotencyKey = requireString(args, "idempotency_key") || undefined;
     const result = await replyAsWebAgent(
       ctx.hub,
       ctx.session.accessToken,
@@ -365,6 +367,7 @@ async function callTool(
       ctx.session.slug,
       threadId,
       bundle,
+      idempotencyKey,
     );
     return toolTextResult(JSON.stringify({ ok: true, ...result }, null, 2));
   }
@@ -414,6 +417,7 @@ async function callTool(
     const notes = requireString(args, "notes") || undefined;
     const assignedTo = requireString(args, "assigned_to") || undefined;
     const dueOn = requireString(args, "due_on") || undefined;
+    const idempotencyKey = requireString(args, "idempotency_key") || undefined;
     const tags = Array.isArray(args.tags)
       ? args.tags.filter((t): t is string => typeof t === "string")
       : undefined;
@@ -441,6 +445,7 @@ async function callTool(
         checklist: checklist as
           | { id?: string; text: string; done?: boolean }[]
           | undefined,
+        idempotency_key: idempotencyKey,
       },
       {
         handle,
@@ -467,6 +472,30 @@ async function callTool(
         lane_id: laneId,
         before_thread_id: requireString(args, "before_thread_id") || undefined,
         after_thread_id: requireString(args, "after_thread_id") || undefined,
+      },
+    );
+    return toolTextResult(JSON.stringify(result, null, 2));
+  }
+
+  if (name === "set_checklist_item") {
+    const collabId = requireString(args, "collab_id");
+    const threadId = requireString(args, "thread_id");
+    const itemId = requireString(args, "item_id");
+    if (!collabId || !threadId || !itemId) {
+      return toolTextResult(
+        "collab_id, thread_id, and item_id are required",
+        true,
+      );
+    }
+    const done = typeof args.done === "boolean" ? args.done : undefined;
+    const result = await setChecklistItemAsUser(
+      ctx.hub,
+      ctx.session.accessToken,
+      collabId,
+      {
+        thread_id: threadId,
+        item_id: itemId,
+        ...(done === undefined ? {} : { done }),
       },
     );
     return toolTextResult(JSON.stringify(result, null, 2));

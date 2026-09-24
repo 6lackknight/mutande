@@ -107,6 +107,19 @@ Deno.test("threadForWebAgent matches dual-slot audience slug", () => {
   assertEquals(threadForWebAgent(thread, "web-chatgpt", "claude"), false);
 });
 
+Deno.test("threadForWebAgent matches assigned_to agent slug on collab cards", () => {
+  const thread = baseMeta({
+    id: "t-assign",
+    audience: "alice@acme/cursor",
+    audience_agent_id: "alice-cursor",
+    assigned_to: "bob@acme/claude",
+    encryption_mode: "app_envelope",
+  });
+  assertEquals(threadForWebAgent(thread, "bob-claude", "claude"), true);
+  assertEquals(threadForWebAgent(thread, "bob-claude", "grok"), false);
+  assertEquals(threadForWebAgent(thread, "alice-cursor", "cursor"), true);
+});
+
 Deno.test("isE2eWireError detects hub E2E refusals", () => {
   assertEquals(
     isE2eWireError(new Error("E2E threads require envelope (not app_envelope)")),

@@ -54,9 +54,23 @@ export function assertAppEnvelopeSize(payload: AppEnvelopePayload): void {
   const size = new TextEncoder().encode(JSON.stringify(payload)).byteLength;
   if (size > MAX_APP_ENVELOPE_BYTES) {
     throw new HubError(
-      `app_envelope too large (${size} bytes, max ${MAX_APP_ENVELOPE_BYTES})`,
+      `app_envelope too large (${size} bytes, max ${MAX_APP_ENVELOPE_BYTES}). Shrink notes or attach via blob / forward_blob.`,
       "envelope_too_large",
-      413,
+      400,
+    );
+  }
+}
+
+/** Deno KV value cap — sealed record JSON must fit in one entry. */
+export const MAX_KV_VALUE_BYTES = 65_536;
+
+export function assertAppEnvelopeRecordSize(record: AppEnvelopeRecord): void {
+  const size = new TextEncoder().encode(JSON.stringify(record)).byteLength;
+  if (size > MAX_KV_VALUE_BYTES) {
+    throw new HubError(
+      `app_envelope record too large after seal (${size} bytes, max ${MAX_KV_VALUE_BYTES}). Shrink notes or attach via blob / forward_blob.`,
+      "envelope_too_large",
+      400,
     );
   }
 }
@@ -254,7 +268,7 @@ export async function buildAppEnvelopeRecord(opts: {
   payload: AppEnvelopePayload;
 }): Promise<AppEnvelopeRecord> {
   const sealed = await sealAppEnvelope(opts.payload);
-  return {
+  const record: AppEnvelopeRecord = {
     thread_id: opts.threadId,
     message_id: opts.messageId,
     from_user_id: opts.fromUserId,
@@ -264,6 +278,8 @@ export async function buildAppEnvelopeRecord(opts: {
     at_rest: sealed.at_rest,
     body: sealed.body,
   };
+  assertAppEnvelopeRecordSize(record);
+  return record;
 }
 
 /** Normalize legacy ThreadMeta rows that predate encryption_mode. */

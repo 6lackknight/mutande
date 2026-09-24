@@ -675,6 +675,11 @@ export interface CreateThreadInput {
   due_on?: string;
   /** Structured checklist items. */
   checklist?: CollabChecklistItem[];
+  /**
+   * Optional client key — retries with the same key return the original
+   * thread/message instead of creating a duplicate.
+   */
+  idempotency_key?: string;
 }
 
 export interface ReplyInput {
@@ -692,6 +697,11 @@ export interface ReplyInput {
   parent_message_id?: string;
   /** Post-merge awaiting set computed by sender core. */
   turns?: HubAwaitingEntry[];
+  /**
+   * Optional client key scoped to this thread — retries return the original
+   * message_id instead of posting a duplicate.
+   */
+  idempotency_key?: string;
 }
 
 /** Fetch options for web/MCP pull of app_envelope content. */
@@ -761,8 +771,11 @@ export interface SetRouterInput {
 export type ThreadFilter = "needs_action" | "open" | "closed";
 
 export const MAX_ENVELOPE_BYTES = 60 * 1024;
-/** Same KV-friendly ceiling as E2E inline envelopes (§4.2.1 size awareness). */
-export const MAX_APP_ENVELOPE_BYTES = 60 * 1024;
+/**
+ * App-envelope plaintext ceiling. Kept under Deno KV’s 64KiB value limit after
+ * AES-GCM + base64 seal and record metadata (~48KiB leaves headroom).
+ */
+export const MAX_APP_ENVELOPE_BYTES = 48 * 1024;
 /** Hard upper bound — 30 days (§4.2.1 / §13). Applied via Deno KV expireIn. */
 export const APP_ENVELOPE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 export const APP_ENVELOPE_RETENTION_DAYS = 30;
@@ -1049,6 +1062,14 @@ export interface SetLaneInput {
   before_thread_id?: string;
   /** Insert after this thread. Ignored when before_thread_id is set. */
   after_thread_id?: string;
+}
+
+/** Tick or untick one checklist item on a collab card. */
+export interface SetChecklistItemInput {
+  thread_id: string;
+  item_id: string;
+  /** When omitted, toggles the current done state. */
+  done?: boolean;
 }
 
 export interface AddLearningInput {

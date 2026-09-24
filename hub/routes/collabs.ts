@@ -52,6 +52,20 @@ export function createCollabRoutes(store: HubStore) {
     return c.json(result);
   });
 
+  routes.post("/:id/checklist", async (c) => {
+    const body = await c.req.json<{
+      thread_id: string;
+      item_id: string;
+      done?: boolean;
+    }>();
+    const result = await store.setChecklistItem(
+      c.get("auth"),
+      c.req.param("id"),
+      body,
+    );
+    return c.json(result);
+  });
+
   routes.post("/:id/learnings", async (c) => {
     const body = await c.req.json<{
       notes: string;

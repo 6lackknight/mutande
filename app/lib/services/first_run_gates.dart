@@ -17,10 +17,6 @@ bool firstRunDestinationReady({
   required bool liveTeammate,
 }) => ownAgents >= 2 || (ownAgents >= 1 && liveTeammate);
 
-/// Solo-agent setups can leave the handshake for later — there is no
-/// second host of theirs to reply. Two or more own agents must handshake.
-bool firstRunHandshakeSkippable({required int ownAgents}) => ownAgents == 1;
-
 const _ownHostOrder = ['cursor', 'claude', 'chatgpt'];
 
 List<String> _ownHandoffSlugs({

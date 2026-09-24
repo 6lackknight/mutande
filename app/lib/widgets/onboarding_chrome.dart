@@ -54,6 +54,7 @@ class OnboardingShell extends StatelessWidget {
     this.debugBanner,
     this.contentMaxWidth = 420,
     this.centerContent = false,
+    this.footer,
   });
 
   final OnboardingStep step;
@@ -72,6 +73,9 @@ class OnboardingShell extends StatelessWidget {
   final String? debugBanner;
   final double contentMaxWidth;
   final bool centerContent;
+
+  /// Pinned under the scroll column so escape links stay visible while waiting.
+  final Widget? footer;
 
   @override
   Widget build(BuildContext context) {
@@ -147,9 +151,59 @@ class OnboardingShell extends StatelessWidget {
                       ],
                     ),
             ),
+            if (footer != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  OnboardingSpace.xl,
+                  0,
+                  OnboardingSpace.xl,
+                  OnboardingSpace.xl,
+                ),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: contentMaxWidth),
+                    child: footer!,
+                  ),
+                ),
+              ),
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Escape links pinned under the onboarding body (Skip / Start over).
+class OnboardingEscapeFooter extends StatelessWidget {
+  const OnboardingEscapeFooter({
+    super.key,
+    this.onSkip,
+    this.onStartOver,
+  });
+
+  final VoidCallback? onSkip;
+  final VoidCallback? onStartOver;
+
+  @override
+  Widget build(BuildContext context) {
+    if (onSkip == null && onStartOver == null) {
+      return const SizedBox.shrink();
+    }
+    return OnboardingActions(
+      topSpacing: OnboardingSpace.sm,
+      secondary: onSkip == null
+          ? null
+          : TextButton(
+              onPressed: onSkip,
+              child: const Text('Skip for now'),
+            ),
+      tertiary: onStartOver == null
+          ? null
+          : TextButton(
+              onPressed: onStartOver,
+              child: const Text('Start over'),
+            ),
     );
   }
 }

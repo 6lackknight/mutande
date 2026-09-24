@@ -1230,6 +1230,48 @@ export async function setLane(
   return { thread: updated };
 }
 
+export async function setChecklistItem(
+  ctx: CollabKvCtx,
+  auth: AuthContext,
+  collabId: string,
+  input: {
+    thread_id: string;
+    item_id: string;
+    done?: boolean;
+  },
+): Promise<{ thread: ThreadMeta }> {
+  const collab = await loadCollab(ctx, collabId);
+  if (!collab) throw notFound("Collab");
+  assertMember(collab, auth);
+  assertNotArchived(collab);
+
+  const itemId = input.item_id?.trim();
+  if (!itemId) {
+    throw new HubError("item_id is required", "invalid_argument", 400);
+  }
+
+  const threadRes = await ctx.kv.get<ThreadMeta>(ctx.threadKey(input.thread_id));
+  const thread = threadRes.value ? ctx.normalizeThread(threadRes.value) : null;
+  if (!thread || thread.collab_id !== collabId) throw notFound("Thread");
+
+  const checklist = [...(thread.checklist ?? [])];
+  const idx = checklist.findIndex((c) => c.id === itemId);
+  if (idx < 0) {
+    throw new HubError("Checklist item not found", "not_found", 404);
+  }
+  const current = checklist[idx];
+  const done = input.done === undefined ? !current.done : input.done === true;
+  checklist[idx] = { ...current, done };
+
+  const updated: ThreadMeta = {
+    ...thread,
+    checklist,
+    updated_at: ctx.nowIso(),
+  };
+  await ctx.kv.set(ctx.threadKey(thread.id), updated);
+  return { thread: updated };
+}
+
 export async function addLearning(
   ctx: CollabKvCtx,
   auth: AuthContext,
@@ -1893,6 +1935,8 @@ export async function resolveCollabCardCreate(
   opts?: {
     lane_id?: string;
     assigned_to?: string;
+    /** Thread audience (`to`) — must be a board participant; defaults assigned_to when omitted. */
+    audience?: string;
     watchers?: string[];
     tags?: string[];
     due_on?: string;
@@ -1905,6 +1949,8 @@ export async function resolveCollabCardCreate(
   lane_id: string;
   lane_position: number;
   assigned_to?: string;
+  /** Hub awaiting entry for the assignee (drives needs_action). */
+  assignee_turn?: { user_id: string; actor: "agent" | "human" };
   watchers?: string[];
   tags?: string[];
   due_on?: string;
@@ -1919,10 +1965,20 @@ export async function resolveCollabCardCreate(
     throw new HubError("Unknown lane", "invalid_argument", 400);
   }
   const lane_position = await nextLanePosition(ctx, auth, collab, laneId);
-  const assigned_to = opts?.assigned_to?.trim().toLowerCase() || undefined;
-  if (assigned_to) {
-    await assertCardAssignee(ctx, collab, assigned_to);
+  const audience = opts?.audience?.trim().toLowerCase() || undefined;
+  if (audience) {
+    await assertCardParticipant(ctx, collab, audience, "Audience");
   }
+  let assigned_to = opts?.assigned_to?.trim().toLowerCase() || undefined;
+  if (!assigned_to && audience) {
+    assigned_to = audience;
+  }
+  if (assigned_to) {
+    await assertCardParticipant(ctx, collab, assigned_to, "Assignee");
+  }
+  const assignee_turn = assigned_to
+    ? await resolveAssigneeTurn(ctx, collab, assigned_to)
+    : undefined;
   return {
     collab,
     recipientIds: [...collab.steerer_user_ids],
@@ -1930,6 +1986,7 @@ export async function resolveCollabCardCreate(
     lane_id: laneId,
     lane_position,
     assigned_to,
+    assignee_turn,
     watchers: opts?.watchers?.map((w) => w.trim().toLowerCase()).filter(Boolean),
     tags: normalizeCardTags(opts?.tags),
     due_on: normalizeDueOn(opts?.due_on),
@@ -1999,24 +2056,49 @@ export function normalizeChecklist(
   return out.length ? out : undefined;
 }
 
-async function assertCardAssignee(
+async function assertCardParticipant(
   ctx: CollabKvCtx,
   collab: Collab,
-  assignedTo: string,
+  address: string,
+  label: "Assignee" | "Audience",
 ): Promise<void> {
   const roster = new Set(
     collab.roster.map((r) => r.address.trim().toLowerCase()),
   );
-  if (roster.has(assignedTo)) return;
+  if (roster.has(address)) return;
+  const bare = address.includes("/") ? address.split("/")[0]! : address;
   for (const userId of collab.steerer_user_ids) {
     const handle = await steererHandle(ctx, userId);
-    if (handle === assignedTo) return;
+    if (handle === address || handle === bare) return;
   }
   throw new HubError(
-    "Assignee must be a collab participant",
+    `${label} must be a collab participant`,
     "invalid_argument",
     400,
   );
+}
+
+/** Resolve awaiting turn for a card assignee (person or roster agent). */
+export async function resolveAssigneeTurn(
+  ctx: CollabKvCtx,
+  collab: Collab,
+  assignedTo: string,
+): Promise<{ user_id: string; actor: "agent" | "human" } | undefined> {
+  const addr = assignedTo.trim().toLowerCase();
+  const actor: "agent" | "human" = addr.includes("/") ? "agent" : "human";
+  for (const r of collab.roster) {
+    if (r.address.trim().toLowerCase() === addr) {
+      return { user_id: r.user_id, actor };
+    }
+  }
+  const bare = addr.includes("/") ? addr.split("/")[0]! : addr;
+  for (const userId of collab.steerer_user_ids) {
+    const handle = await steererHandle(ctx, userId);
+    if (handle === addr || handle === bare) {
+      return { user_id: userId, actor };
+    }
+  }
+  return undefined;
 }
 
 export async function indexCollabThread(

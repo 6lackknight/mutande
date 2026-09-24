@@ -51,6 +51,7 @@ function annotationsFor(name: string): McpToolAnnotations {
       return READ_ONLY;
     case "upvote_message":
     case "set_lane":
+    case "set_checklist_item":
     case "add_learning":
       return SOFT_WRITE;
     case "create_card":
@@ -133,6 +134,7 @@ export const IMPLEMENTED_TOOLS = new Set([
   "get_collab",
   "create_card",
   "set_lane",
+  "set_checklist_item",
   "add_learning",
   "forward_draft",
   "close_thread",
@@ -210,7 +212,7 @@ export function toolDefinitions(): McpToolDefinition[] {
     {
       name: "reply_to_thread",
       description:
-        "Reply on an app_envelope thread. Put body in bundle.notes (UTF-8). Attachments: resources[{name, content}] IS the named file; content_base64 only for binary. Never /mnt/data paths.",
+        "Reply on an app_envelope thread. Put body in bundle.notes (UTF-8). Attachments: resources[{name, content}] IS the named file; content_base64 only for binary. Never /mnt/data paths. Pass idempotency_key on retries after timeout so the same reply is not posted twice.",
       inputSchema: {
         type: "object",
         required: ["thread_id", "bundle"],
@@ -220,6 +222,11 @@ export function toolDefinitions(): McpToolDefinition[] {
             type: "object",
             description: "Reply payload: notes/subject + optional resources (inline only).",
             properties: BUNDLE_PROPERTIES,
+          },
+          idempotency_key: {
+            type: "string",
+            description:
+              "Optional. Retries with the same key return the original message_id instead of duplicating.",
           },
         },
         additionalProperties: false,
@@ -299,6 +306,11 @@ export function toolDefinitions(): McpToolDefinition[] {
             },
             description: "Optional structured checklist items (not markdown).",
           },
+          idempotency_key: {
+            type: "string",
+            description:
+              "Optional. Retries with the same key return the original thread instead of creating a duplicate card.",
+          },
         },
         additionalProperties: false,
       },
@@ -349,6 +361,25 @@ export function toolDefinitions(): McpToolDefinition[] {
           lane_id: { type: "string" },
           before_thread_id: { type: "string" },
           after_thread_id: { type: "string" },
+        },
+        additionalProperties: false,
+      },
+    },
+    {
+      name: "set_checklist_item",
+      description:
+        "Tick or untick one checklist item on a collab card. Pass item_id from the card checklist; omit done to toggle.",
+      inputSchema: {
+        type: "object",
+        required: ["collab_id", "thread_id", "item_id"],
+        properties: {
+          collab_id: { type: "string" },
+          thread_id: { type: "string" },
+          item_id: { type: "string" },
+          done: {
+            type: "boolean",
+            description: "Explicit done state. Omit to toggle.",
+          },
         },
         additionalProperties: false,
       },

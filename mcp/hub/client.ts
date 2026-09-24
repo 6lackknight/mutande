@@ -160,6 +160,7 @@ export class HubClient {
       due_on?: string;
       checklist?: { id?: string; text: string; done?: boolean }[];
       turns?: { user_id: string; actor: "agent" | "human" }[];
+      idempotency_key?: string;
     },
   ): Promise<CreateThreadResponse> {
     return this.request<CreateThreadResponse>("/v1/threads", accessToken, {
@@ -177,6 +178,7 @@ export class HubClient {
       from_agent_id?: string;
       to_agent?: string;
       parent_message_id?: string;
+      idempotency_key?: string;
     },
   ): Promise<ReplyResponse> {
     return this.request<ReplyResponse>(
@@ -296,6 +298,22 @@ export class HubClient {
   ): Promise<{ thread: ThreadMeta }> {
     return this.request(
       `/v1/collabs/${encodeURIComponent(collabId)}/lane`,
+      accessToken,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  }
+
+  setChecklistItem(
+    accessToken: string,
+    collabId: string,
+    input: {
+      thread_id: string;
+      item_id: string;
+      done?: boolean;
+    },
+  ): Promise<{ thread: ThreadMeta }> {
+    return this.request(
+      `/v1/collabs/${encodeURIComponent(collabId)}/checklist`,
       accessToken,
       { method: "POST", body: JSON.stringify(input) },
     );

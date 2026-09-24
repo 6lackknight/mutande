@@ -7,7 +7,7 @@ import {
   createStoreWithTestAuth,
 } from "./store.ts";
 import type { Auth0Claims, Envelope } from "./types.ts";
-import { MAX_ENVELOPE_BYTES, ORG_BLOB_QUOTA_BYTES } from "./types.ts";
+import { MAX_ENVELOPE_BYTES, MAX_APP_ENVELOPE_BYTES, ORG_BLOB_QUOTA_BYTES } from "./types.ts";
 
 function sampleEnvelope(tag = "a"): Envelope {
   return {
@@ -873,6 +873,78 @@ Deno.test("oversized envelope rejected", async () => {
       to: "bob@acme",
       envelope: { version: 1, content_nonce: [], ciphertext: Array(MAX_ENVELOPE_BYTES).fill(1), wraps: [] },
     }));
+  });
+});
+
+Deno.test("oversized app_envelope returns 400 not 500", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth, bobAuth } = await setupOrgWithUsers(store);
+    await store.connectAgent(aliceAuth, "mcp", { slug: "chatgpt" });
+    await store.setTransportDefault(aliceAuth, {
+      slug: "chatgpt",
+      transport: "mcp",
+    });
+    const { thread } = await store.createThread(aliceAuth, {
+      to: "bob@acme",
+      app_envelope: { version: 1, notes: "seed" },
+      from_agent: "chatgpt",
+    });
+    const huge = "x".repeat(MAX_APP_ENVELOPE_BYTES);
+    const err = await assertRejects(
+      () =>
+        store.postReply(aliceAuth, thread.id, {
+          app_envelope: { version: 1, notes: huge },
+          from_agent: "chatgpt",
+        }),
+      HubError,
+    ) as HubError;
+    assertEquals(err.status, 400);
+    assertEquals(err.code, "envelope_too_large");
+
+    // ~10k notes stay under the cap.
+    const mid = await store.postReply(bobAuth, thread.id, {
+      app_envelope: { version: 1, notes: "y".repeat(10_000) },
+    });
+    assertExists(mid.message_id);
+  });
+});
+
+Deno.test("idempotency_key dedupes create and reply", async () => {
+  await withTestStore(async ({ store }) => {
+    const { aliceAuth, bobAuth } = await setupOrgWithUsers(store);
+    await store.connectAgent(aliceAuth, "mcp", { slug: "chatgpt" });
+    await store.setTransportDefault(aliceAuth, {
+      slug: "chatgpt",
+      transport: "mcp",
+    });
+
+    const first = await store.createThread(aliceAuth, {
+      to: "bob@acme",
+      app_envelope: { version: 1, notes: "hello" },
+      from_agent: "chatgpt",
+      idempotency_key: "create-1",
+    });
+    const again = await store.createThread(aliceAuth, {
+      to: "bob@acme",
+      app_envelope: { version: 1, notes: "hello again" },
+      from_agent: "chatgpt",
+      idempotency_key: "create-1",
+    });
+    assertEquals(again.thread.id, first.thread.id);
+    assertEquals(again.message_id, first.message_id);
+
+    const r1 = await store.postReply(bobAuth, first.thread.id, {
+      app_envelope: { version: 1, notes: "pong" },
+      idempotency_key: "reply-1",
+    });
+    const r2 = await store.postReply(bobAuth, first.thread.id, {
+      app_envelope: { version: 1, notes: "pong duplicate" },
+      idempotency_key: "reply-1",
+    });
+    assertEquals(r2.message_id, r1.message_id);
+
+    const detail = await store.getThread(aliceAuth, first.thread.id);
+    assertEquals(detail.messages.length, 2);
   });
 });
 

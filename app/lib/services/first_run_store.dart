@@ -130,8 +130,8 @@ class FirstRunStore {
     await _persist();
   }
 
-  /// Debug-only: clear first-run gates so onboarding replays.
-  Future<void> resetForDebug() async {
+  /// Clear first-run gates so onboarding replays (Start over / debug).
+  Future<void> reset() async {
     _connectComplete = false;
     _pingComplete = false;
     _notificationsComplete = false;
@@ -139,4 +139,7 @@ class FirstRunStore {
     _loaded = true;
     await _persist();
   }
+
+  /// Debug-only alias for [reset].
+  Future<void> resetForDebug() => reset();
 }

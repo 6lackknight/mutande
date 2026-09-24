@@ -26,8 +26,8 @@ import '../widgets/thread_skeletons.dart';
 import 'first_run_ping_wizard.dart';
 
 /// Guided 4-step onboarding (sign in → team → connect → first handshake).
-/// Connect stays until a second host, a live teammate, or a solo-agent skip;
-/// handshake completes when the recipient replies, or is skipped with one agent.
+/// Once the account has an org, Skip unlocks home; Start over signs out and
+/// replays from Sign in. Create/join (signed in, no org) only offers Start over.
 class OnboardingFlowScreen extends StatefulWidget {
   const OnboardingFlowScreen({
     super.key,
@@ -36,6 +36,7 @@ class OnboardingFlowScreen extends StatefulWidget {
     required this.firstRunStore,
     required this.hostLinkStore,
     required this.onComplete,
+    this.onSignedOut,
     this.initialStatus,
     this.forceDebug = false,
     this.initialStep,
@@ -47,6 +48,10 @@ class OnboardingFlowScreen extends StatefulWidget {
   final HostLinkStore hostLinkStore;
   final void Function(DaemonStatusResult status, String? openThreadId)
   onComplete;
+
+  /// After Start over logout — parent clears mailbox and identity.
+  final ValueChanged<DaemonStatusResult>? onSignedOut;
+
   final DaemonStatusResult? initialStatus;
   final bool forceDebug;
   final OnboardingStep? initialStep;
@@ -182,21 +187,99 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
     setState(() => _step = OnboardingStep.ping);
   }
 
-  Future<void> _skipHandshake() async {
+  Future<void> _skipForNow() async {
     Analytics.track(AnalyticsEvent.pingNext, {'kind': 'skip'});
     await widget.firstRunStore.markConnectComplete();
     await widget.firstRunStore.markPingComplete();
     if (!mounted) return;
     var status = _status;
-    if (status == null) {
+    if (status == null || !status.configured) {
       try {
         status = await widget.daemon.getStatus();
-      } catch (_) {
+      } catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _error = friendlyDaemonError(e, what: 'Skip');
+        });
         return;
       }
     }
     if (!mounted) return;
+    if (!status.configured) {
+      setState(() {
+        _error = 'Join or create a team before skipping to home.';
+      });
+      return;
+    }
     widget.onComplete(status, null);
+  }
+
+  Future<void> _startOver() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Start over?'),
+        content: const Text(
+          'You’ll sign out and begin setup again. '
+          'Your device keys stay on this machine.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFFE11D48),
+            ),
+            child: const Text('Start over'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+    try {
+      final status = await widget.daemon.authLogout();
+      await widget.firstRunStore.reset();
+      if (!mounted) return;
+      widget.onSignedOut?.call(status);
+      setState(() {
+        _status = status;
+        _submitting = false;
+        _step = OnboardingStep.signIn;
+        _teamMode = _TeamMode.setupChoose;
+        _securing = false;
+        _welcomeBack = false;
+        _agents = const [];
+        _hosts = const [];
+        _agentSlug = null;
+        _contacts = const [];
+        _liveTeammateHandles = const [];
+        _error = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _submitting = false;
+        _error = friendlyDaemonError(e, what: 'Start over');
+      });
+    }
+  }
+
+  /// Footer escapes: Start over when signed in; Skip once an org exists.
+  Widget? _escapeFooter() {
+    final signedIn = _status?.signedIn == true || _status?.configured == true;
+    if (!signedIn) return null;
+    final configured = _status?.configured == true;
+    return OnboardingEscapeFooter(
+      onSkip: configured ? () => unawaited(_skipForNow()) : null,
+      onStartOver: () => unawaited(_startOver()),
+    );
   }
 
   OnboardingStep _initialStepFromStatus() {
@@ -757,6 +840,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
         ? 'Debug — onboarding preview · ⌥← ⌥→ to step'
               '${frame == null ? '' : ' (${frame + 1}/${_debugFrames.length})'}'
         : null;
+    final escape = _escapeFooter();
 
     if (_securing) {
       return OnboardingShell(
@@ -783,6 +867,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
           step: _step,
           address: _address,
           debugBanner: debugBanner,
+          footer: escape,
           child: _teamBody(),
         );
       case OnboardingStep.connect:
@@ -791,6 +876,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
           address: _address,
           debugBanner: debugBanner,
           contentMaxWidth: 560,
+          footer: escape,
           child: _connectBody(),
         );
       case OnboardingStep.ping:
@@ -800,6 +886,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
             step: OnboardingStep.ping,
             address: _address,
             debugBanner: debugBanner,
+            footer: escape,
             child: const SizedBox.shrink(),
           );
         }
@@ -823,12 +910,8 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
           debugBanner: debugBanner,
           preview: frame == null ? null : _debugFrames[frame].ping,
           onInvite: _openInvitesWeb,
-          onSkip:
-              firstRunHandshakeSkippable(
-                ownAgents: firstRunOwnAgentCount(_agents),
-              )
-              ? _skipHandshake
-              : null,
+          onSkip: () => unawaited(_skipForNow()),
+          onStartOver: () => unawaited(_startOver()),
           onComplete: (threadId) {
             final status = _status;
             if (status != null) {
@@ -1168,12 +1251,6 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
           );
 
     final showContinue = !_hostsLoading && _destinationReady;
-    final showSkip =
-        !_hostsLoading && firstRunHandshakeSkippable(ownAgents: ownCount);
-    TextButton skipButton() => TextButton(
-      onPressed: _skipHandshake,
-      child: const Text('Skip for now'),
-    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1238,11 +1315,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
                     onPressed: () => _beginConnectHost(_selectedHost!),
                     child: const Text('Retry'),
                   )
-                : (showSkip ? skipButton() : null),
-            extras: [
-              if (_selectedHost != null && _error != null && showSkip)
-                skipButton(),
-            ],
+                : null,
           )
         else if (_selectedHost != null && _error != null)
           OnboardingActions(
@@ -1251,9 +1324,8 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
               onPressed: () => _beginConnectHost(_selectedHost!),
               child: const Text('Retry'),
             ),
-            extras: [if (showSkip) skipButton()],
           )
-        else if (!_hostsLoading && ownCount >= 1)
+        else if (!_hostsLoading)
           OnboardingActions(
             topSpacing: OnboardingSpace.md,
             secondary: TextButton(
@@ -1264,7 +1336,6 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
               onPressed: () => unawaited(_loadHosts()),
               child: const Text('Check again'),
             ),
-            extras: [if (showSkip) skipButton()],
           ),
       ],
     );

@@ -48,6 +48,13 @@ export function threadForWebAgent(
     if (aud.endsWith(`/${s}`) || aud === `@${s}`) return true;
   }
 
+  // Collab cards wrap all steerers but target one assignee — surface those
+  // cards to the assigned agent even when audience is the creator.
+  const assigned = (thread.assigned_to ?? "").trim().toLowerCase();
+  if (assigned && s) {
+    if (assigned.endsWith(`/${s}`) || assigned === `@${s}`) return true;
+  }
+
   return false;
 }
 
@@ -328,6 +335,7 @@ export async function replyAsWebAgent(
   slug: string,
   threadId: string,
   bundle: Record<string, unknown>,
+  idempotencyKey?: string,
 ): Promise<{ message_id: string }> {
   // Ensure the thread is an app_envelope thread this agent can see.
   await getWebAgentThread(hub, accessToken, agentId, threadId, slug);
@@ -340,6 +348,7 @@ export async function replyAsWebAgent(
       from_agent: slug,
       from_agent_id: agentId,
       parent_message_id: parent,
+      ...(idempotencyKey ? { idempotency_key: idempotencyKey } : {}),
     });
   } catch (e) {
     throw mapHubSendError(e);

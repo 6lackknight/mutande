@@ -14,12 +14,6 @@ void main() {
     expect(firstRunDestinationReady(ownAgents: 1, liveTeammate: true), isTrue);
   });
 
-  test('handshake is skippable only with a single own agent', () {
-    expect(firstRunHandshakeSkippable(ownAgents: 0), isFalse);
-    expect(firstRunHandshakeSkippable(ownAgents: 1), isTrue);
-    expect(firstRunHandshakeSkippable(ownAgents: 2), isFalse);
-  });
-
   test('handoff target prefers the other own agent, else the teammate', () {
     const agents = [
       AgentInfo(id: '1', slug: 'cursor'),

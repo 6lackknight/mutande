@@ -124,7 +124,7 @@ void main() {
     expect(find.text('Skip for now'), findsNothing);
   });
 
-  testWidgets('solo agent can skip the handshake', (tester) async {
+  testWidgets('footer skip unlocks when onSkip is wired', (tester) async {
     final daemon = _mockDaemon((request) async {
       final body = jsonDecode(request.body) as Map<String, dynamic>;
       return _rpcOk(body['id'], {'threads': <Object>[]});
@@ -155,6 +155,38 @@ void main() {
     await tester.tap(find.text('Skip for now'));
     await tester.pump();
     expect(skipped, isTrue);
+  });
+
+  testWidgets('footer start over is wired when provided', (tester) async {
+    final daemon = _mockDaemon((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      return _rpcOk(body['id'], {'threads': <Object>[]});
+    });
+    final store = FirstRunStore.memory(notificationsComplete: true)
+      ..loadMemorySync();
+    var startedOver = false;
+
+    await _pumpWizard(
+      tester,
+      child: FirstRunPingWizard(
+        daemon: daemon,
+        firstRunStore: store,
+        address: const OnboardingAddress(
+          name: 'alice',
+          org: 'acme',
+          agent: 'cursor',
+        ),
+        target: '@claude',
+        choices: const ['@claude'],
+        onStartOver: () => startedOver = true,
+        onComplete: (_) {},
+      ),
+    );
+
+    expect(find.text('Start over'), findsOneWidget);
+    await tester.tap(find.text('Start over'));
+    await tester.pump();
+    expect(startedOver, isTrue);
   });
 
   testWidgets('Open Cursor prefills then waits', (tester) async {
@@ -585,7 +617,7 @@ void main() {
     expect(find.text('Still waiting for a reply'), findsOneWidget);
     expect(find.text('Retry'), findsNothing);
     expect(find.text('Keep waiting'), findsOneWidget);
-    expect(find.text('Start over'), findsOneWidget);
+    expect(find.text('Try again'), findsOneWidget);
 
     await tester.tap(find.widgetWithText(FilledButton, 'Keep waiting'));
     await tester.pump();
@@ -594,7 +626,7 @@ void main() {
     expect(find.text('Still waiting for a reply'), findsNothing);
   });
 
-  testWidgets('timeout Start over returns to the prompt', (tester) async {
+  testWidgets('timeout Try again returns to the prompt', (tester) async {
     final daemon = _mockDaemon((request) async {
       final body = jsonDecode(request.body) as Map<String, dynamic>;
       return _rpcOk(body['id'], {'threads': <Object>[]});
@@ -618,14 +650,14 @@ void main() {
       ),
     );
 
-    await tester.tap(find.text('Start over'));
+    await tester.tap(find.text('Try again'));
     await tester.pump();
 
     expect(find.text('Open this in Cursor.'), findsOneWidget);
     expect(find.text('Still waiting for a reply'), findsNothing);
   });
 
-  testWidgets('timeout Start over returns to the participant picker', (
+  testWidgets('timeout Try again returns to the participant picker', (
     tester,
   ) async {
     final daemon = _mockDaemon((request) async {
@@ -652,7 +684,7 @@ void main() {
       ),
     );
 
-    await tester.tap(find.text('Start over'));
+    await tester.tap(find.text('Try again'));
     await tester.pump();
 
     expect(find.text('Who gets this handshake.'), findsOneWidget);

@@ -8,6 +8,14 @@ Motion budget, all skipped under reduced motion: the breathing slot; a segment l
 
 Actions are one committed primary at 260px with everything else as inline links beneath — never a stack of full-width buttons.
 
+Escape links sit in a **pinned footer** under the scrolling body (`OnboardingEscapeFooter` on `OnboardingShell`), so a waiting state cannot hide them:
+
+- **Sign in** (and Securing / Welcome back): no footer.
+- **Signed in, no org** (choose / create / join): **Start over** only (signs out, clears `first_run.json` gates, returns to Sign in).
+- **Has an org** (roster, connect — including zero hosts and the registration wait — and every handshake state): **Skip for now** (marks connect + ping complete and unlocks home) and **Start over**.
+
+The connect-host overlay already has Cancel. Its skill-step **Skip for now** still means skip the skill install, not the whole flow.
+
 ---
 
 ## Entry point
@@ -17,9 +25,9 @@ Gates live in `~/.mutande/first_run.json` (`connect_complete`, `ping_complete`, 
 - not configured → **Sign in**
 - configured, destination not ready → **Your team** then **Connect**
 - destination ready (`connect_complete`), no handshake reply → **First handshake**
-- `ping_complete` is set when the other agent publishes a handshake on the thread, or when a solo-agent user skips.
+- `ping_complete` is set when the other agent publishes a handshake on the thread, or when the user skips after joining an org.
 
-`connect_complete` means a second own host is registered, or one own host plus a teammate who already has a host. An invite sent does not count.
+`connect_complete` means a second own host is registered, or one own host plus a teammate who already has a host. An invite sent does not count. Skip can also mark both gates without a destination.
 
 Resuming at First handshake recovers the agent segment by listing agents. If the destination is gone (only one host, no live teammate), the flow bounces back to Connect. In debug builds pass `--dart-define=FORCE_ONBOARDING=true` to clear the gates on launch and replay all four steps for local QA.
 
@@ -84,6 +92,8 @@ If not onboarded.
 - **Create a team**
 - *I have an invite* (link)
 
+Footer: *Start over* (no Skip until an org exists).
+
 ### 2b. Create a team
 
 **Create a team**
@@ -134,6 +144,8 @@ Teammates need mutande on Mac to receive agent mail.
 - *Invite on the web* (link)
 - *Copy link* (link — copies `{web}/admin/invites`, a page, not a minted invite; toast: Copied: {url})
 
+Footer: *Skip for now* · *Start over*.
+
 ---
 
 ## 3. Connect a host
@@ -143,8 +155,9 @@ Address: `alice@acme/______`, agent slot breathing.
 Heading is the goal, and changes once it's met:
 
 - Nothing linked: **Pick a host to connect.** / Desktop apps on this Mac, or ChatGPT and Claude in the browser.
-- One own host, no live teammate: **Cursor is ready to carry mail.** / A handshake needs a second host of yours, or a teammate who already has mutande. No Continue — pick another host, *Invite on the web*, *Check again*, or *Skip for now* (marks connect + ping complete and unlocks home). Connecting a host returns here; it does not skip to First handshake.
-- Destination ready (two own hosts, or one host plus a live teammate): **Cursor and Claude Desktop are ready to carry mail.** / Continue to your first handshake. **Continue** marks connect complete and moves to First handshake. One own host plus a live teammate also shows *Skip for now*. Two or more own hosts cannot skip.
+- One own host, no live teammate: **Cursor is ready to carry mail.** / A handshake needs a second host of yours, or a teammate who already has mutande. No Continue — pick another host, *Invite on the web*, *Check again*. Footer: *Skip for now* · *Start over*. Connecting a host returns here; it does not skip to First handshake.
+- Destination ready (two own hosts, or one host plus a live teammate): **Cursor and Claude Desktop are ready to carry mail.** / Continue to your first handshake. **Continue** marks connect complete and moves to First handshake. Footer still has *Skip for now* · *Start over*.
+- Zero hosts: same Invite / Check again primary links, plus the footer escapes.
 
 Same roster chips as the team step. Title is the product (Cursor, Claude, ChatGPT); subtitle is Desktop, Browser, or Install. Connected hosts show a check; Default stays on the current default; **Make default** appears after you select another connected host. Tap a chip to open its mini-flow, then return here.
 
@@ -203,7 +216,7 @@ Same overlay grammar. Copy `https://mcp.mutande.online/mcp`, open the host, add 
 
 Address complete: `alice@acme/cursor`.
 
-*Skip for now* only when there is a single own agent. Two or more own agents cannot skip. Quit and relaunch resumes here unless they skipped.
+Footer always offers *Skip for now* and *Start over* once the account has an org. Quit and relaunch resumes here unless they skipped.
 
 ### 4a. Pick who to handshake with
 
@@ -286,4 +299,6 @@ After 5 minutes.
 Make sure the other host opened the thread and used /handshake. A ping does not count.
 
 - **Keep waiting** (watches the same thread again)
-- *Start over* (back to the prompt — a new thread)
+- *Try again* (back to the prompt — a new thread)
+
+Footer still has *Skip for now* · *Start over* (sign out).

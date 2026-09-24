@@ -24,6 +24,7 @@ import {
 import {
   appEnvelopeKey,
   appEnvelopesPrefix,
+  assertAppEnvelopeSize,
   assertExclusiveWireUnit,
   buildAppEnvelopeRecord,
   isEnterpriseAgentStub,
@@ -77,6 +78,7 @@ import type {
   RemoveSteererInput,
   RenameCollabListInput,
   SetLaneInput,
+  SetChecklistItemInput,
   UpdateCollabInstructionsInput,
   Device,
   DevicePlatform,
@@ -181,6 +183,7 @@ import {
   renameList as renameCollabListFn,
   resolveCollabCardCreate,
   setLane as setCollabLane,
+  setChecklistItem as setCollabChecklistItem,
   unarchiveCollab as unarchiveCollabFn,
   updateInstructions as updateCollabInstructionsFn,
   userCollabKey,
@@ -482,6 +485,25 @@ export class HubStore {
   }
   private threadKey(id: string) { return ["threads", id]; }
   private inboxKey(userId: string, threadId: string) { return ["inbox", userId, threadId]; }
+  private idempotencyKey(userId: string, key: string) {
+    return ["idempotency", userId, key];
+  }
+
+  private static readonly IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
+  private static readonly IDEMPOTENCY_KEY_MAX = 128;
+
+  private normalizeIdempotencyKey(raw: string | undefined): string | null {
+    const k = raw?.trim() ?? "";
+    if (!k) return null;
+    if (k.length > HubStore.IDEMPOTENCY_KEY_MAX) {
+      throw new HubError(
+        `idempotency_key is too long (max ${HubStore.IDEMPOTENCY_KEY_MAX})`,
+        "invalid_argument",
+        400,
+      );
+    }
+    return k;
+  }
   private inboxPrefix(userId: string) { return ["inbox", userId]; }
   private messageKey(threadId: string, messageId: string) { return ["messages", threadId, messageId]; }
   private messagesPrefix(threadId: string) { return ["messages", threadId]; }
@@ -754,6 +776,14 @@ export class HubStore {
     input: SetLaneInput,
   ): Promise<{ thread: ThreadMeta }> {
     return setCollabLane(this.collabCtx(), auth, collabId, input);
+  }
+
+  async setChecklistItem(
+    auth: AuthContext,
+    collabId: string,
+    input: SetChecklistItemInput,
+  ): Promise<{ thread: ThreadMeta }> {
+    return setCollabChecklistItem(this.collabCtx(), auth, collabId, input);
   }
 
   async addLearning(
@@ -1705,6 +1735,28 @@ export class HubStore {
     const wireKind = assertExclusiveWireUnit(input);
     if (wireKind === "e2e") {
       this.assertEnvelopeSize(input.envelope!);
+    } else {
+      assertAppEnvelopeSize(input.app_envelope!);
+    }
+
+    const idemKey = this.normalizeIdempotencyKey(input.idempotency_key);
+    if (idemKey) {
+      const prior = await this.kv.get<{
+        kind: string;
+        thread_id: string;
+        message_id: string;
+      }>(this.idempotencyKey(auth.userId, idemKey));
+      if (prior.value?.kind === "create_thread" && prior.value.thread_id) {
+        const threadRes = await this.kv.get<ThreadMeta>(
+          this.threadKey(prior.value.thread_id),
+        );
+        const thread = threadRes.value
+          ? this.normalizeThread(threadRes.value)
+          : null;
+        if (thread && this.threadVisibleToOrg(auth, thread)) {
+          return { thread, message_id: prior.value.message_id };
+        }
+      }
     }
 
     const sender = await this.getUser(auth.userId);
@@ -1878,6 +1930,7 @@ export class HubStore {
         {
           lane_id: input.lane_id,
           assigned_to: input.assigned_to,
+          audience,
           watchers: input.watchers,
           tags: input.tags,
           due_on: input.due_on,
@@ -1926,7 +1979,12 @@ export class HubStore {
       });
     }
 
-    const turns = this.normalizeTurns(input.turns);
+    let turns = this.normalizeTurns(input.turns);
+    // Collab cards: when the client omitted turns, mirror assignee → awaiting so
+    // needs_action reaches the intended participant (not only the wrap list).
+    if (collabCard?.assignee_turn && turns === null) {
+      turns = [collabCard.assignee_turn];
+    }
     const thread: ThreadMeta = {
       id: threadId,
       kind: isBroadcast ? "broadcast" : "direct",
@@ -2038,6 +2096,19 @@ export class HubStore {
           role: isSender ? (selfDelivery ? "recipient" : "sender") : "recipient",
           updated_at: ts,
         } satisfies InboxEntry);
+      }
+
+      if (idemKey) {
+        tx.set(
+          this.idempotencyKey(auth.userId, idemKey),
+          {
+            kind: "create_thread",
+            thread_id: threadId,
+            message_id: messageId,
+            created_at: ts,
+          },
+          { expireIn: HubStore.IDEMPOTENCY_TTL_MS },
+        );
       }
 
       const res = await tx.commit();
@@ -2431,6 +2502,24 @@ export class HubStore {
     const wireKind = assertExclusiveWireUnit(input);
     if (wireKind === "e2e") {
       this.assertEnvelopeSize(input.envelope!);
+    } else {
+      assertAppEnvelopeSize(input.app_envelope!);
+    }
+
+    const idemKey = this.normalizeIdempotencyKey(input.idempotency_key);
+    if (idemKey) {
+      const prior = await this.kv.get<{
+        kind: string;
+        thread_id: string;
+        message_id: string;
+      }>(this.idempotencyKey(auth.userId, idemKey));
+      if (
+        prior.value?.kind === "reply" &&
+        prior.value.thread_id === threadId &&
+        prior.value.message_id
+      ) {
+        return { message_id: prior.value.message_id };
+      }
     }
 
     const inbox = await this.getInboxEntry(auth.userId, threadId);
@@ -2651,6 +2740,18 @@ export class HubStore {
             });
           }
         }
+      }
+      if (idemKey) {
+        tx.set(
+          this.idempotencyKey(auth.userId, idemKey),
+          {
+            kind: "reply",
+            thread_id: threadId,
+            message_id: messageId,
+            created_at: ts,
+          },
+          { expireIn: HubStore.IDEMPOTENCY_TTL_MS },
+        );
       }
       const res = await tx.commit();
       if (res.ok) return { message_id: messageId };

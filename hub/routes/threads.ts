@@ -28,6 +28,7 @@ export function createThreadRoutes(store: HubStore) {
       tags?: string[];
       due_on?: string;
       checklist?: { id?: string; text: string; done?: boolean }[];
+      idempotency_key?: string;
     }>();
     const result = await store.createThread(c.get("auth"), body);
     return c.json(result, 201);
@@ -65,6 +66,7 @@ export function createThreadRoutes(store: HubStore) {
       to_agent?: string;
       parent_message_id?: string;
       turns?: { user_id: string; actor: "agent" | "human" }[];
+      idempotency_key?: string;
     }>();
     const result = await store.postReply(c.get("auth"), c.req.param("id"), body);
     return c.json(result, 201);
@@ -79,6 +81,7 @@ export function createThreadRoutes(store: HubStore) {
       to_agent?: string;
       parent_message_id?: string;
       turns?: { user_id: string; actor: "agent" | "human" }[];
+      idempotency_key?: string;
     }>();
     const result = await store.postReply(c.get("auth"), c.req.param("id"), body);
     return c.json(result, 201);

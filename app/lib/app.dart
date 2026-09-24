@@ -912,6 +912,7 @@ class _RootScreenState extends State<RootScreen> {
           }
           _refreshFirstRunGate();
         },
+        onSignedOut: _onSignedOut,
       );
     }
 

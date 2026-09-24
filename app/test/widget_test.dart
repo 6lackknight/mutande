@@ -1589,7 +1589,8 @@ void main() {
     expect(find.byTooltip('Copy prompt'), findsOneWidget);
     expect(find.text('Go back'), findsOneWidget);
     expect(find.text('Copy prompt'), findsNothing);
-    expect(find.text('Skip for now'), findsNothing);
+    expect(find.text('Skip for now'), findsOneWidget);
+    expect(find.text('Start over'), findsOneWidget);
   });
 
   testWidgets('first handshake asks who when several hosts are connected', (
@@ -1653,7 +1654,7 @@ void main() {
     expect(find.text(FirstRunPingWizard.promptFor('@chatgpt')), findsOneWidget);
   });
 
-  testWidgets('handoff wizard has no skip and does not mark complete', (
+  testWidgets('handoff wizard skip unlocks home without a reply', (
     WidgetTester tester,
   ) async {
     final daemon = _mockDaemon((request) async {
@@ -1695,9 +1696,15 @@ void main() {
 
     expect(find.text('Open Cursor'), findsOneWidget);
     expect(find.text('Go back'), findsOneWidget);
-    expect(find.text('Skip for now'), findsNothing);
+    expect(find.text('Skip for now'), findsOneWidget);
     expect(firstRun.pingComplete, isFalse);
     expect(find.text('Threads'), findsNothing);
+
+    await tester.tap(find.text('Skip for now'));
+    await tester.pumpAndSettle();
+
+    expect(firstRun.pingComplete, isTrue);
+    expect(find.text('Threads'), findsOneWidget);
   });
 
   testWidgets('collab tab shows empty create shell', (
