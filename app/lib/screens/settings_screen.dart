@@ -243,6 +243,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _mintConnector() async {
     if (_mintingConnector || _connectors.length >= _kMaxMcpConnectors) return;
+    final hasHandle = (widget.handle?.trim().isNotEmpty ?? false) ||
+        (_ours?.handle.trim().isNotEmpty ?? false);
+    if (!hasHandle) {
+      try {
+        final ours = await widget.daemon.getSafetyNumber();
+        if (mounted) {
+          setState(() {
+            _ours = ours;
+            _loadingSafety = false;
+          });
+        }
+      } catch (_) {
+        // Reveal may omit agent address if handle stays unknown.
+      }
+    }
+    if (!mounted) return;
     final draft = await showDialog<({String label, String slug})>(
       context: context,
       builder: (ctx) => const _MintConnectorDialog(),
@@ -1338,7 +1354,10 @@ class _MintConnectorDialogState extends State<_MintConnectorDialog> {
   final _label = TextEditingController(text: 'Grok Bot');
   final _slug = TextEditingController(text: 'grok');
   static final _slugPattern = RegExp(r'^[a-z0-9-]{1,32}$');
+  static const _reservedSlugs = {'default', 'all'};
   String? _submitError;
+
+  bool _slugReserved(String slug) => _reservedSlugs.contains(slug);
 
   @override
   void dispose() {
@@ -1361,7 +1380,7 @@ class _MintConnectorDialogState extends State<_MintConnectorDialog> {
       );
       return;
     }
-    if (slug == 'default' || slug == 'all') {
+    if (_slugReserved(slug)) {
       setState(() => _submitError = 'That agent slug is reserved.');
       return;
     }
@@ -1371,7 +1390,9 @@ class _MintConnectorDialogState extends State<_MintConnectorDialog> {
   @override
   Widget build(BuildContext context) {
     final slug = _slug.text.trim().toLowerCase();
-    final slugOk = slug.isNotEmpty && _slugPattern.hasMatch(slug);
+    final slugOk = slug.isNotEmpty &&
+        _slugPattern.hasMatch(slug) &&
+        !_slugReserved(slug);
     return AlertDialog(
       title: const Text('Mint connector key'),
       content: SizedBox(
@@ -1402,9 +1423,13 @@ class _MintConnectorDialogState extends State<_MintConnectorDialog> {
               decoration: InputDecoration(
                 labelText: 'Agent slug',
                 isDense: true,
-                errorText: slug.isEmpty || slugOk
+                errorText: slug.isEmpty
                     ? null
-                    : '1–32 lowercase letters, digits, or hyphens',
+                    : _slugReserved(slug)
+                        ? 'That agent slug is reserved.'
+                        : slugOk
+                            ? null
+                            : '1–32 lowercase letters, digits, or hyphens',
               ),
               maxLength: 32,
               autocorrect: false,

@@ -6,8 +6,8 @@ use anyhow::{Context, Result, bail};
 use clap::Subcommand;
 use serde_json::{Value, json};
 
-use crate::daemon::rpc::{JsonRpcRequest, JsonRpcResponse};
-use crate::daemon::{DEFAULT_HTTP_BIND, expand_path, http_token_path};
+use mutande_core::daemon::rpc::{JsonRpcRequest, JsonRpcResponse};
+use mutande_core::daemon::{DEFAULT_HTTP_BIND, expand_path, http_token_path};
 
 const RESERVED_AGENT_SLUGS: &[&str] = &["default", "all"];
 
@@ -74,6 +74,7 @@ pub async fn run(command: RpcCommands) -> Result<()> {
                 if label.is_empty() {
                     bail!("label must not be empty");
                 }
+                let label: String = label.chars().take(64).collect();
                 let result = rpc_call(
                     "create_mcp_connector",
                     json!({ "label": label, "slug": slug }),
@@ -94,7 +95,7 @@ pub async fn run(command: RpcCommands) -> Result<()> {
                 if json {
                     print_json(result)?;
                 } else {
-                    print_revoke_human(&result, &connector_id);
+                    print_revoke_human(&result, &connector_id)?;
                 }
             }
         },
@@ -163,12 +164,14 @@ fn print_connectors_list_human(result: &Value) {
     }
 }
 
-fn print_revoke_human(result: &Value, connector_id: &str) {
-    let ok = result.get("ok").and_then(|v| v.as_bool()).unwrap_or(true);
-    if ok {
-        println!("Revoked connector {connector_id}");
-    } else {
-        println!("{result}");
+fn print_revoke_human(result: &Value, connector_id: &str) -> Result<()> {
+    match result.get("ok").and_then(|v| v.as_bool()) {
+        Some(true) => {
+            println!("Revoked connector {connector_id}");
+            Ok(())
+        }
+        Some(false) => bail!("revoke failed: {result}"),
+        None => bail!("revoke response missing ok: {result}"),
     }
 }
 
@@ -275,22 +278,60 @@ async fn call_daemon_http(req: &JsonRpcRequest) -> Result<JsonRpcResponse> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wiremock::matchers::{method, path};
+    use std::env;
+    use wiremock::matchers::{bearer_token, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    /// Serializes env overrides so parallel tests do not clobber each other.
+    struct TestEnv {
+        saved: Vec<(String, Option<String>)>,
+    }
+
+    impl TestEnv {
+        fn set(vars: &[(&str, &str)]) -> Self {
+            let mut saved = Vec::with_capacity(vars.len());
+            for (key, val) in vars {
+                saved.push(((*key).to_string(), env::var(key).ok()));
+                unsafe { env::set_var(key, *val) };
+            }
+            Self { saved }
+        }
+    }
+
+    impl Drop for TestEnv {
+        fn drop(&mut self) {
+            for (key, prev) in self.saved.drain(..) {
+                match prev {
+                    Some(v) => unsafe { env::set_var(&key, v) },
+                    None => unsafe { env::remove_var(&key) },
+                }
+            }
+        }
+    }
 
     #[test]
     fn normalize_slug_matches_hub_rules() {
         assert_eq!(normalize_connector_slug("COS").unwrap(), "cos");
         assert!(normalize_connector_slug("").is_err());
         assert!(normalize_connector_slug("default").is_err());
+        assert!(normalize_connector_slug("all").is_err());
         assert!(normalize_connector_slug("bad slug").is_err());
     }
 
+    #[test]
+    fn human_printers_smoke() {
+        assert!(print_revoke_human(&json!({}), "c1").is_err());
+        assert!(print_revoke_human(&json!({ "ok": false }), "c1").is_err());
+        assert!(print_revoke_human(&json!({ "ok": true }), "c1").is_ok());
+        print_connectors_list_human(&json!({ "connectors": [] }));
+    }
+
     #[tokio::test]
-    async fn rpc_ping_uses_http_bridge() {
+    async fn rpc_ping_uses_http_bridge_and_bearer() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/rpc"))
+            .and(bearer_token("test-token"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "jsonrpc": "2.0",
                 "id": 1,
@@ -303,20 +344,28 @@ mod tests {
         let token_file = dir.path().join("daemon_http_token");
         std::fs::write(&token_file, "test-token\n").unwrap();
 
-        unsafe {
-            std::env::set_var("MUTANDE_HTTP_BIND", server.address().to_string());
-            std::env::set_var(
-                "MUTANDE_HTTP_TOKEN_PATH",
-                token_file.to_string_lossy().as_ref(),
-            );
-        }
+        let bind = server.address().to_string();
+        let token_path = token_file.to_string_lossy().into_owned();
+        let _env = TestEnv::set(&[
+            ("MUTANDE_HTTP_BIND", bind.as_str()),
+            ("MUTANDE_HTTP_TOKEN_PATH", token_path.as_str()),
+        ]);
 
         let result = rpc_call("health", json!({})).await.unwrap();
         assert_eq!(result["version"], "9.9.9");
+    }
 
-        unsafe {
-            std::env::remove_var("MUTANDE_HTTP_BIND");
-            std::env::remove_var("MUTANDE_HTTP_TOKEN_PATH");
-        }
+    #[tokio::test]
+    async fn mint_rejects_invalid_slug_before_http() {
+        let err = run(RpcCommands::Connectors {
+            command: ConnectorsCommands::Mint {
+                label: "x".into(),
+                slug: "default".into(),
+                json: false,
+            },
+        })
+        .await
+        .unwrap_err();
+        assert!(err.to_string().contains("reserved"));
     }
 }

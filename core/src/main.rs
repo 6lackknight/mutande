@@ -3,7 +3,9 @@ use std::time::Duration;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use mutande_core::cli_rpc::{self, RpcCommands};
+mod cli_rpc;
+
+use cli_rpc::RpcCommands;
 use mutande_core::daemon;
 use mutande_core::mcp;
 use tracing_subscriber::EnvFilter;
