@@ -5,19 +5,19 @@ import {
   encodeSseMessage,
 } from "./sessions.ts";
 
-Deno.test("SessionStore create get delete and ownership", () => {
+Deno.test("SessionStore create get delete and ownership", async () => {
   const store = new SessionStore();
-  const a = store.create("auth0|a", "chatgpt");
-  assertEquals(store.get(a.id)?.auth0Sub, "auth0|a");
-  assertEquals(store.getForUser(a.id, "auth0|b"), undefined);
-  assertEquals(store.getForUser(a.id, "auth0|a")?.id, a.id);
-  assertEquals(store.delete(a.id), true);
-  assertEquals(store.get(a.id), undefined);
+  const a = await store.create("auth0|a", "chatgpt");
+  assertEquals((await store.get(a.id))?.auth0Sub, "auth0|a");
+  assertEquals(await store.getForUser(a.id, "auth0|b"), undefined);
+  assertEquals((await store.getForUser(a.id, "auth0|a"))?.id, a.id);
+  assertEquals(await store.delete(a.id), true);
+  assertEquals(await store.get(a.id), undefined);
 });
 
-Deno.test("SessionStore allows only one SSE attachment", () => {
+Deno.test("SessionStore allows only one SSE attachment", async () => {
   const store = new SessionStore();
-  const s = store.create("auth0|a", "chatgpt");
+  const s = await store.create("auth0|a", "chatgpt");
   const cancel = () => {};
   const controller = {
     enqueue: () => {},
@@ -28,6 +28,25 @@ Deno.test("SessionStore allows only one SSE attachment", () => {
   assertEquals(store.attachSse(s.id, controller, cancel), false);
   store.detachSse(s.id);
   assertEquals(store.attachSse(s.id, controller, cancel), true);
+});
+
+Deno.test("SessionStore resumes from Deno KV on a fresh isolate map", async () => {
+  const kv = await Deno.openKv(":memory:");
+  try {
+    const a = new SessionStore(kv);
+    const created = await a.create("auth0|a", "grok");
+    // Simulate another Deploy isolate: new local map, same KV.
+    const b = new SessionStore(kv);
+    const resumed = await b.getForUser(created.id, "auth0|a");
+    assertEquals(resumed?.id, created.id);
+    assertEquals(resumed?.agentSlug, "grok");
+    assertEquals(await b.getForUser(created.id, "auth0|other"), undefined);
+
+    await b.delete(created.id);
+    assertEquals(await a.get(created.id), undefined);
+  } finally {
+    kv.close();
+  }
 });
 
 Deno.test("SSE encode helpers", () => {

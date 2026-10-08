@@ -243,12 +243,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _mintConnector() async {
     if (_mintingConnector || _connectors.length >= _kMaxMcpConnectors) return;
+    final draft = await showDialog<({String label, String slug})>(
+      context: context,
+      builder: (ctx) => const _MintConnectorDialog(),
+    );
+    if (draft == null || !mounted) return;
     setState(() {
       _mintingConnector = true;
       _connectorError = null;
     });
     try {
-      final minted = await widget.daemon.createMcpConnector();
+      final minted = await widget.daemon.createMcpConnector(
+        label: draft.label,
+        slug: draft.slug,
+      );
       if (!mounted) return;
       setState(() {
         _mintingConnector = false;
@@ -726,6 +734,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 revokingId: _revokingConnectorId,
                 error: _connectorError,
                 revealed: _revealedMint,
+                mailHandle: widget.handle ?? _ours?.handle,
                 onDismissError: () => setState(() => _connectorError = null),
                 onDismissSecret: () => setState(() => _revealedMint = null),
                 onRevoke: _revokeConnector,
@@ -1318,6 +1327,117 @@ class _HostTile extends StatelessWidget {
   }
 }
 
+class _MintConnectorDialog extends StatefulWidget {
+  const _MintConnectorDialog();
+
+  @override
+  State<_MintConnectorDialog> createState() => _MintConnectorDialogState();
+}
+
+class _MintConnectorDialogState extends State<_MintConnectorDialog> {
+  final _label = TextEditingController(text: 'Grok Bot');
+  final _slug = TextEditingController(text: 'grok');
+  static final _slugPattern = RegExp(r'^[a-z0-9-]{1,32}$');
+  String? _submitError;
+
+  @override
+  void dispose() {
+    _label.dispose();
+    _slug.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final label = _label.text.trim();
+    final slug = _slug.text.trim().toLowerCase();
+    if (label.isEmpty) {
+      setState(() => _submitError = 'Label is required.');
+      return;
+    }
+    if (slug.isEmpty || !_slugPattern.hasMatch(slug)) {
+      setState(
+        () => _submitError =
+            'Agent slug must be 1–32 lowercase letters, digits, or hyphens.',
+      );
+      return;
+    }
+    if (slug == 'default' || slug == 'all') {
+      setState(() => _submitError = 'That agent slug is reserved.');
+      return;
+    }
+    Navigator.of(context).pop((label: label, slug: slug));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final slug = _slug.text.trim().toLowerCase();
+    final slugOk = slug.isNotEmpty && _slugPattern.hasMatch(slug);
+    return AlertDialog(
+      title: const Text('Mint connector key'),
+      content: SizedBox(
+        width: 360,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'Label is for this list. Agent slug becomes your sub-agent address '
+              '(e.g. alice@acme/cos).',
+              style: TextStyle(fontSize: 12, color: _kStone500, height: 1.35),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _label,
+              decoration: const InputDecoration(
+                labelText: 'Label',
+                isDense: true,
+              ),
+              maxLength: 64,
+              textInputAction: TextInputAction.next,
+              onChanged: (_) => setState(() => _submitError = null),
+            ),
+            const SizedBox(height: 4),
+            TextField(
+              controller: _slug,
+              decoration: InputDecoration(
+                labelText: 'Agent slug',
+                isDense: true,
+                errorText: slug.isEmpty || slugOk
+                    ? null
+                    : '1–32 lowercase letters, digits, or hyphens',
+              ),
+              maxLength: 32,
+              autocorrect: false,
+              enableSuggestions: false,
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => _submit(),
+              onChanged: (_) => setState(() => _submitError = null),
+            ),
+            if (_submitError != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                _submitError!,
+                style: const TextStyle(fontSize: 12, color: _kRed),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          key: const Key('mint_connector_confirm'),
+          onPressed: slugOk && _label.text.trim().isNotEmpty ? _submit : null,
+          child: const Text('Mint key'),
+        ),
+      ],
+    );
+  }
+}
+
 class _ConnectorsCard extends StatelessWidget {
   const _ConnectorsCard({
     required this.connectors,
@@ -1326,6 +1446,7 @@ class _ConnectorsCard extends StatelessWidget {
     required this.revokingId,
     required this.error,
     required this.revealed,
+    required this.mailHandle,
     required this.onDismissError,
     required this.onDismissSecret,
     required this.onRevoke,
@@ -1337,14 +1458,20 @@ class _ConnectorsCard extends StatelessWidget {
   final String? revokingId;
   final String? error;
   final MintMcpConnectorResult? revealed;
+  final String? mailHandle;
   final VoidCallback onDismissError;
   final VoidCallback onDismissSecret;
   final ValueChanged<McpConnectorView> onRevoke;
 
-  static const _setupHint =
-      'Grok Plugins URL ${AiHostCatalog.hostedMcpUrl}. '
-      'Header X-Mutande-Connector. Optional X-Mutande-Agent-Slug: grok. '
-      'Mail on this path uses app envelope (not E2E).';
+  String get _setupHint {
+    final slug = revealed?.connector.slug?.trim();
+    final slugBit = (slug != null && slug.isNotEmpty)
+        ? 'Slug $slug is stored on this key; X-Mutande-Agent-Slug overrides when set. '
+        : 'X-Mutande-Agent-Slug overrides the stored slug when set. ';
+    return 'Grok Plugins URL ${AiHostCatalog.hostedMcpUrl}. '
+        'Header X-Mutande-Connector. $slugBit'
+        'Mail on this path uses app envelope (not E2E).';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1376,6 +1503,8 @@ class _ConnectorsCard extends StatelessWidget {
             const SizedBox(height: 12),
             _MintedSecretPanel(
               token: revealed!.token,
+              agentSlug: revealed!.connector.slug,
+              mailHandle: mailHandle,
               onDismiss: onDismissSecret,
             ),
           ],
@@ -1426,9 +1555,13 @@ class _MintedSecretPanel extends StatelessWidget {
   const _MintedSecretPanel({
     required this.token,
     required this.onDismiss,
+    this.agentSlug,
+    this.mailHandle,
   });
 
   final String token;
+  final String? agentSlug;
+  final String? mailHandle;
   final VoidCallback onDismiss;
 
   Future<void> _copy(BuildContext context) async {
@@ -1460,6 +1593,21 @@ class _MintedSecretPanel extends StatelessWidget {
               height: 1.35,
             ),
           ),
+          if (mailHandle != null &&
+              mailHandle!.trim().isNotEmpty &&
+              agentSlug != null &&
+              agentSlug!.trim().isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Agent address: ${formatMailAddress('$mailHandle/${agentSlug!.trim()}', myHandle: mailHandle)}',
+              style: const TextStyle(
+                fontFamily: 'Menlo',
+                fontSize: 11,
+                color: _kStone700,
+                height: 1.35,
+              ),
+            ),
+          ],
           const SizedBox(height: 8),
           Material(
             color: _kStone800,
@@ -1534,10 +1682,12 @@ class _ConnectorRow extends StatelessWidget {
     final used = connector.lastUsedAt == null || connector.lastUsedAt!.isEmpty
         ? null
         : formatRelativeTime(connector.lastUsedAt);
+    final slug = connector.slug?.trim();
     final meta = [
       if (connector.prefix.isNotEmpty) connector.prefix,
       if (created.isNotEmpty) created,
       if (used != null && used.isNotEmpty) 'used $used',
+      if (slug != null && slug.isNotEmpty) '@$slug',
     ].join(' · ');
 
     return Row(

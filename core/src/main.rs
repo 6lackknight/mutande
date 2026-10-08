@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use mutande_core::cli_rpc::{self, RpcCommands};
 use mutande_core::daemon;
 use mutande_core::mcp;
 use tracing_subscriber::EnvFilter;
@@ -31,6 +32,11 @@ enum Commands {
     },
     /// MCP stdio server — forwards to running daemon
     Mcp,
+    /// Call local daemon HTTP JSON-RPC (Flutter bridge; token in ~/.mutande/daemon_http_token)
+    Rpc {
+        #[command(subcommand)]
+        command: RpcCommands,
+    },
 }
 
 /// Resolve GlitchTip DSN: `MUTANDE_SENTRY_DSN` → `SENTRY_DSN` → hardcoded default.
@@ -116,5 +122,6 @@ async fn main() -> Result<()> {
             daemon::run(&socket, http).await
         }
         Commands::Mcp => mcp::run_stdio().await,
+        Commands::Rpc { command } => cli_rpc::run(command).await,
     }
 }

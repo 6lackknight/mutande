@@ -251,15 +251,15 @@ export function createMcpRoutes(
   }
 
   /**
-   * Resolve transport session from Mcp-Session-Id.
+   * Resolve transport session from Mcp-Session-Id (KV-backed across isolates).
    * - missing + required → 400
    * - present but unknown / wrong user → 404
    */
-  function resolveTransportSession(
+  async function resolveTransportSession(
     sessionHeader: string | undefined,
     claims: Auth0Claims,
     opts: { required: boolean },
-  ): TransportSession | undefined | Response {
+  ): Promise<TransportSession | undefined | Response> {
     const id = sessionHeader?.trim();
     if (!id) {
       if (opts.required) {
@@ -270,7 +270,7 @@ export function createMcpRoutes(
       }
       return undefined;
     }
-    const session = sessions.getForUser(id, claims.sub);
+    const session = await sessions.getForUser(id, claims.sub);
     if (!session) {
       return jsonRpcError(404, "Session not found", -32001);
     }
@@ -333,7 +333,7 @@ export function createMcpRoutes(
     }
 
     // Session optional on GET if client has not initialized yet; when provided, must be valid.
-    const transport = resolveTransportSession(
+    const transport = await resolveTransportSession(
       c.req.header("Mcp-Session-Id"),
       auth.claims,
       { required: false },
@@ -354,7 +354,7 @@ export function createMcpRoutes(
     // If client had no session yet, mint one so DELETE/reconnect can target it.
     let sessionId = transport?.id;
     if (!sessionId) {
-      const created = sessions.create(auth.claims.sub, bound.slug);
+      const created = await sessions.create(auth.claims.sub, bound.slug);
       sessionId = created.id;
     }
 
@@ -381,7 +381,7 @@ export function createMcpRoutes(
       );
     }
 
-    const transport = resolveTransportSession(
+    const transport = await resolveTransportSession(
       c.req.header("Mcp-Session-Id"),
       auth.claims,
       { required: true },
@@ -391,7 +391,7 @@ export function createMcpRoutes(
       return jsonRpcError(400, "Bad Request: Mcp-Session-Id header is required");
     }
 
-    sessions.delete(transport.id);
+    await sessions.delete(transport.id);
     return new Response(null, { status: 200 });
   });
 
@@ -451,12 +451,12 @@ export function createMcpRoutes(
         );
       }
       // New transport session on initialize (ignore stale client session id).
-      transportSession = sessions.create(
+      transportSession = await sessions.create(
         auth.claims.sub,
         resolveSlug(c, auth.connectorSlug),
       );
     } else {
-      const resolved = resolveTransportSession(
+      const resolved = await resolveTransportSession(
         c.req.header("Mcp-Session-Id"),
         auth.claims,
         // Soft: require only when client sent one; allow legacy one-shot POSTs.

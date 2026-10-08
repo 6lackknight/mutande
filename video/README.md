@@ -4,6 +4,8 @@ Primary ship path for the marketing hero: **Address Intelligence** (hosts + thre
 
 Motion Canvas alternative lives in [`../video-mc/`](../video-mc/) — better for diagram/beam iteration; Remotion stays the host-window UI path.
 
+~60s organisational explainer (Manim, docs embed): [`../video-manim/`](../video-manim/).
+
 ## Spec
 
 - **~28s** @ **1080×1080 / 60fps** in Remotion; ship **30fps silent** web encodes

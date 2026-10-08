@@ -201,7 +201,7 @@ const SEND_TOOLS: &[(&str, &str, ValueFn)] = &[
                     "notes": { "type": "string", "description": "Optional first message body (the agent brief)." },
                     "assigned_to": {
                         "type": "string",
-                        "description": "Optional one collab participant — person (alice@org) or agent (alice@org/cursor). Sets awaiting. Mail still wraps the whole collab."
+                        "description": "Collab participant who should act — person (alice@org) or agent (alice@org/cursor). Defaults to the card audience. Sets awaiting / needs_action. Mail still wraps the whole collab. Non-participants are rejected."
                     },
                     "tags": {
                         "type": "array",

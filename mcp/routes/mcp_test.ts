@@ -154,7 +154,7 @@ Deno.test("GET /mcp with foreign session id returns 404", async () => {
   const { app, token, sessions, signToken } = await setup();
   const other = await signToken({ sub: "auth0|other" });
   // Create session owned by other user.
-  const foreign = sessions.create("auth0|other", "chatgpt");
+  const foreign = await sessions.create("auth0|other", "chatgpt");
 
   const res = await app.request("https://mcp.test/mcp", {
     method: "GET",
@@ -236,7 +236,7 @@ Deno.test("POST notification-only returns 202", async () => {
 
 Deno.test("DELETE /mcp terminates session", async () => {
   const { app, token, sessions } = await setup();
-  const created = sessions.create("auth0|u1", "chatgpt");
+  const created = await sessions.create("auth0|u1", "chatgpt");
   const res = await app.request("https://mcp.test/mcp", {
     method: "DELETE",
     headers: {
@@ -245,7 +245,7 @@ Deno.test("DELETE /mcp terminates session", async () => {
     },
   });
   assertEquals(res.status, 200);
-  assertEquals(sessions.get(created.id), undefined);
+  assertEquals(await sessions.get(created.id), undefined);
 });
 
 Deno.test("DELETE /mcp without session returns 400", async () => {

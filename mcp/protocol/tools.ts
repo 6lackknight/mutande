@@ -283,7 +283,7 @@ export function toolDefinitions(): McpToolDefinition[] {
           assigned_to: {
             type: "string",
             description:
-              "Optional one collab participant — person (alice@org) or agent (alice@org/cursor). Sets awaiting. Mail still wraps the whole collab.",
+              "Collab participant who should act — person (alice@org) or agent (alice@org/cursor). Defaults to you (card audience). Sets awaiting / needs_action. Mail still wraps the whole collab. Non-participants are rejected.",
           },
           tags: {
             type: "array",

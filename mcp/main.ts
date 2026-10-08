@@ -6,6 +6,10 @@ import { createHealthRoutes } from "./routes/health.ts";
 import { createOauthRoutes } from "./routes/oauth.ts";
 import { createMcpRoutes } from "./routes/mcp.ts";
 import {
+  initGlobalSessionStore,
+  type SessionStore,
+} from "./transport/sessions.ts";
+import {
   handleMcpError,
   initMcpSentry,
   runSentrySmoke,
@@ -16,6 +20,7 @@ export function createApp(options?: {
   config?: ReturnType<typeof loadConfig>;
   verifier?: ReturnType<typeof createAuth0Verifier>;
   hub?: HubClient;
+  sessions?: SessionStore;
 }) {
   const config = options?.config ?? loadConfig();
   requireAuth0OnDeploy(config);
@@ -38,7 +43,12 @@ export function createApp(options?: {
 
   app.route("/", createHealthRoutes(config));
   app.route("/", createOauthRoutes(config));
-  app.route("/", createMcpRoutes(config, verifier, hub));
+  app.route(
+    "/",
+    createMcpRoutes(config, verifier, hub, {
+      sessions: options?.sessions,
+    }),
+  );
 
   return { app, config };
 }
@@ -50,9 +60,11 @@ if (import.meta.main) {
   }
   // Best-effort GlitchTip — must never block Deno.serve if SDK/init fails.
   await initMcpSentry();
-  const { app, config } = createApp();
+  // Deno KV so Mcp-Session-Id survives isolate recycle on Deploy.
+  const sessions = await initGlobalSessionStore();
+  const { app, config } = createApp({ sessions });
   console.log(
-    `[mutande-mcp] listening public=${config.publicUrl} hub=${config.hubUrl} port=${config.port}`,
+    `[mutande-mcp] listening public=${config.publicUrl} hub=${config.hubUrl} port=${config.port} sessions=kv`,
   );
   Deno.serve({ port: config.port }, app.fetch);
 }

@@ -16,6 +16,16 @@ import {
 
 const initial: ActionState = {};
 
+function formatConnectorAgentAddress(
+  mailHandle: string | undefined,
+  slug: string,
+): string {
+  const s = slug.trim().toLowerCase() || "grok";
+  const h = mailHandle?.trim().toLowerCase();
+  if (h && !h.includes("/")) return `${h}/${s}`;
+  return `you@org/${s}`;
+}
+
 function formatRelative(iso: string | undefined): string {
   if (!iso) return "";
   const t = Date.parse(iso);
@@ -72,11 +82,17 @@ function CopyButton({
 
 function MintedSecretPanel({
   token,
+  agentSlug,
+  mailHandle,
   onDismiss,
 }: {
   token: string;
+  agentSlug?: string;
+  mailHandle?: string;
   onDismiss: () => void;
 }) {
+  const slug = (agentSlug?.trim() || "grok").toLowerCase();
+  const agentAddress = formatConnectorAgentAddress(mailHandle, slug);
   const [copied, setCopied] = useState(false);
 
   async function copy() {
@@ -114,11 +130,13 @@ function MintedSecretPanel({
         <p>
           Header{" "}
           <code className="font-mono text-[13px]">X-Mutande-Connector</code>{" "}
-          = this key. Optional{" "}
-          <code className="font-mono text-[13px]">
-            X-Mutande-Agent-Slug: grok
-          </code>
-          .
+          = this key. Slug{" "}
+          <code className="font-mono text-[13px]">{slug}</code> is stored on
+          this key — agent address{" "}
+          <code className="font-mono text-[13px]">{agentAddress}</code>.
+          {" "}
+          <code className="font-mono text-[13px]">X-Mutande-Agent-Slug</code>{" "}
+          overrides when set.
         </p>
       </div>
       <div className="mt-2 flex justify-end">
@@ -223,8 +241,10 @@ function ConnectorRow({
 
 export function ConnectorsPanel({
   initialConnectors,
+  mailHandle,
 }: {
   initialConnectors: McpConnector[];
+  mailHandle?: string;
 }) {
   const router = useRouter();
   const [mintState, mintAction, mintPending] = useActionState(
@@ -305,11 +325,9 @@ export function ConnectorsPanel({
             Header{" "}
             <code className="font-mono text-[12px]">X-Mutande-Connector</code>{" "}
             with the <code className="font-mono text-[12px]">mtc_…</code>{" "}
-            secret. Optional{" "}
-            <code className="font-mono text-[12px]">
-              X-Mutande-Agent-Slug: grok
-            </code>
-            .
+            secret. Each key stores an agent slug;{" "}
+            <code className="font-mono text-[12px]">X-Mutande-Agent-Slug</code>{" "}
+            overrides it when set.
           </p>
         </div>
       </section>
@@ -319,6 +337,8 @@ export function ConnectorsPanel({
       {revealed ? (
         <MintedSecretPanel
           token={revealed}
+          agentSlug={mintState.connector?.slug}
+          mailHandle={mailHandle}
           onDismiss={() => setSecretDismissed(true)}
         />
       ) : null}

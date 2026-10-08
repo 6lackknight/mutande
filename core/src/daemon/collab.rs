@@ -369,21 +369,23 @@ impl DaemonState {
         if collab.encryption_mode == "e2e" && self.agent_slug_is_mcp(from_agent.as_deref()).await? {
             bail!("Hosted agents cannot create cards on an E2E collab");
         }
-        let assigned = assigned_to
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(|s| s.to_ascii_lowercase());
-        if let Some(addr) = assigned.as_deref() {
-            if !assignee_is_participant(&collab, addr) {
-                bail!("Assignee must be a collab participant");
-            }
-        }
         let to = collab
             .steerers
             .first()
             .map(|s| s.handle.clone())
             .or_else(|| collab.roster.first().map(|r| r.address.clone()))
             .unwrap_or(self.my_bare_handle().await?);
+        // Default assignee to card audience so needs_action is never empty.
+        let assigned = assigned_to
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_ascii_lowercase())
+            .or_else(|| Some(to.to_ascii_lowercase()));
+        if let Some(addr) = assigned.as_deref() {
+            if !assignee_is_participant(&collab, addr) {
+                bail!("Assignee must be a collab participant");
+            }
+        }
         let lane = resolve_collab_lane_id(&collab.lists, lane_id)?;
         let next_turn = assigned
             .as_deref()

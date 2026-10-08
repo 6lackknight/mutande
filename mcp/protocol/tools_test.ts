@@ -1295,6 +1295,8 @@ Deno.test("create_card files a thread on collab + lane name", async () => {
   assertEquals(created?.collab_id, "c1");
   assertEquals(created?.lane_id, "Doing");
   assertEquals(created?.to, "u@acme");
+  // Omitted assigned_to defaults to card audience (creator) so needs_action fires.
+  assertEquals(created?.assigned_to, "u@acme");
 });
 
 Deno.test("create_card passes assigned_to without retargeting wrap", async () => {
@@ -1413,4 +1415,53 @@ Deno.test("create_card requires collab_id and title", async () => {
   const result = res!.result as { content: Array<{ text: string }>; isError?: boolean };
   assertEquals(result.isError, true);
   assertEquals(result.content[0].text.includes("title"), true);
+});
+
+Deno.test("set_checklist_item ticks one card item", async () => {
+  const hub = new HubClient("http://hub.test");
+  let posted: Record<string, unknown> | undefined;
+  hub.getCollab = () =>
+    Promise.resolve({
+      collab: {
+        id: "c1",
+        name: "sprint",
+        encryption_mode: "app_envelope",
+        lists: [{ id: "l-backlog", name: "Backlog", position: 0 }],
+      } as CollabView,
+    });
+  hub.setChecklistItem = (_token, collabId, input) => {
+    posted = { collabId, ...input };
+    return Promise.resolve({
+      thread: meta({
+        id: "th-1",
+        collab_id: collabId,
+        checklist: [{ id: "c1", text: "Draft", done: true }],
+      }),
+    });
+  };
+  const res = await handleMcpRequest(
+    {
+      jsonrpc: "2.0",
+      id: 31,
+      method: "tools/call",
+      params: {
+        name: "set_checklist_item",
+        arguments: {
+          collab_id: "c1",
+          thread_id: "th-1",
+          item_id: "c1",
+          done: true,
+        },
+      },
+    },
+    { session: fakeSession, serverVersion: "0.1.0", hub },
+  );
+  const result = res!.result as { content: Array<{ text: string }>; isError?: boolean };
+  assertEquals(result.isError ?? false, false);
+  assertEquals(posted?.collabId, "c1");
+  assertEquals(posted?.thread_id, "th-1");
+  assertEquals(posted?.item_id, "c1");
+  assertEquals(posted?.done, true);
+  const body = JSON.parse(result.content[0].text);
+  assertEquals(body.thread?.checklist?.[0]?.done, true);
 });

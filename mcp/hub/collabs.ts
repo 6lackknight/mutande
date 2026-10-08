@@ -277,30 +277,29 @@ export async function createCardAsUser(
   const { collab } = await hub.getCollab(accessToken, input.collab_id);
   assertNotArchived(collab);
   assertAppEnvelopeCollab(collab);
+  // Audience is the creator; assigned_to defaults to that audience so needs_action
+  // reaches someone (COS feedback). Hub also rejects non-participant assignees.
   const to = from.handle.trim().toLowerCase();
   const title = input.title.trim();
   if (!title) {
     throw new Error("title is required");
   }
   const notes = input.notes?.trim();
-  const assignedTo = input.assigned_to?.trim().toLowerCase() || undefined;
-  const turn = assignedTo
-    ? turnForAssignee(collab, assignedTo)
-    : undefined;
-  const nextTurn = assignedTo
-    ? [{
-      address: assignedTo,
-      actor: assignedTo.includes("/") ? "agent" : "human",
-      reason: { kind: "handoff" },
-    }]
-    : undefined;
+  const assignedTo = input.assigned_to?.trim().toLowerCase() || to;
+  const turn = turnForAssignee(collab, assignedTo);
+  const actor: "agent" | "human" = assignedTo.includes("/") ? "agent" : "human";
+  const nextTurn = [{
+    address: assignedTo,
+    actor,
+    reason: { kind: "handoff" as const },
+  }];
   const result = await hub.createThread(accessToken, {
     to,
     app_envelope: {
       version: 1,
       subject: title,
       ...(notes ? { notes } : {}),
-      ...(nextTurn ? { next_turn: nextTurn } : {}),
+      next_turn: nextTurn,
       ...(input.tags?.length ? { tags: input.tags } : {}),
       ...(input.due_on ? { due_on: input.due_on } : {}),
       ...(input.checklist?.length ? { checklist: input.checklist } : {}),
@@ -309,7 +308,7 @@ export async function createCardAsUser(
     from_agent_id: from.agentId,
     collab_id: input.collab_id,
     ...(input.lane ? { lane_id: input.lane } : {}),
-    ...(assignedTo ? { assigned_to: assignedTo } : {}),
+    assigned_to: assignedTo,
     ...(input.tags?.length ? { tags: input.tags } : {}),
     ...(input.due_on ? { due_on: input.due_on } : {}),
     ...(input.checklist?.length ? { checklist: input.checklist } : {}),

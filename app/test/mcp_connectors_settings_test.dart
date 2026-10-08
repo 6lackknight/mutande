@@ -36,13 +36,14 @@ DaemonClient _mockDaemon(
 Map<String, dynamic> _connector({
   String id = 'c-1',
   String label = 'Grok Bot',
+  String slug = 'grok',
   String prefix = 'mtc_abcd1234',
 }) {
   return {
     'id': id,
     'prefix': prefix,
     'label': label,
-    'slug': 'grok',
+    'slug': slug,
     'created_at': '2026-08-24T12:00:00Z',
   };
 }
@@ -110,6 +111,7 @@ void main() {
     tester,
   ) async {
     var listed = <Map<String, dynamic>>[];
+    Map<String, dynamic>? mintParams;
     final daemon = _mockDaemon((request) async {
       final body = jsonDecode(request.body) as Map<String, dynamic>;
       final method = body['method'] as String?;
@@ -117,7 +119,11 @@ void main() {
         return _rpcOk(body['id'], {'connectors': listed});
       }
       if (method == 'create_mcp_connector') {
-        final connector = _connector();
+        mintParams = body['params'] as Map<String, dynamic>?;
+        final connector = _connector(
+          label: mintParams?['label'] as String? ?? 'Grok Bot',
+          slug: mintParams?['slug'] as String? ?? 'grok',
+        );
         listed = [connector];
         return _rpcOk(body['id'], {
           'connector': connector,
@@ -146,6 +152,13 @@ void main() {
     await tester.tap(find.text('Mint key'));
     await tester.pumpAndSettle();
 
+    expect(find.text('Mint connector key'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('mint_connector_confirm')));
+    await tester.pumpAndSettle();
+
+    expect(mintParams?['label'], 'Grok Bot');
+    expect(mintParams?['slug'], 'grok');
+    expect(find.text('Agent address: @grok'), findsOneWidget);
     expect(find.text('mtc_plaintext_once'), findsOneWidget);
     expect(
       find.textContaining('mutande will not show it again'),

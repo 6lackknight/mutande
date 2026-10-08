@@ -9,7 +9,8 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Connectors" };
 
 export default async function ConnectorsPage() {
-  await requireOnboarded();
+  const me = await requireOnboarded();
+  const mailHandle = me.user?.handle;
 
   let connectors: McpConnector[] = [];
   let loadError: string | null = null;
@@ -34,7 +35,10 @@ export default async function ConnectorsPage() {
           </Alert>
         </div>
       ) : null}
-      <ConnectorsPanel initialConnectors={connectors} />
+      <ConnectorsPanel
+        initialConnectors={connectors}
+        mailHandle={mailHandle}
+      />
     </Shell>
   );
 }

@@ -199,6 +199,6 @@ Short checklist:
 - GET `/mcp` SSE, POST JSON-RPC, DELETE session, `Mcp-Session-Id` on initialize — **live**.
 - POST keeps JSON responses (clients must also Accept `text/event-stream`).
 - GET streams use SSE comment keepalives; server→client JSON-RPC on that stream reserved for future notifications (no hub mail push here).
-- Sessions are **in-memory per Deno isolate** — cold start → unknown `Mcp-Session-Id` → HTTP 404 → client re-`initialize`.
+- Transport sessions are **Deno KV–backed** (id → Auth0 sub + agent slug, 24h TTL) so isolate recycle can resume the same `Mcp-Session-Id`. SSE stream handles stay in-memory on the current isolate — clients reopen GET SSE with the same id. Expired / unknown ids still return HTTP 404 → client re-`initialize`.
 
 Local `core` stdio MCP is not modified by this package (except daemon L2 send/open for app_envelope). Layer status: `docs/DIRECTORY-IMPLEMENTATION.md`.
