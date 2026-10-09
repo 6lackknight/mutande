@@ -7,14 +7,17 @@ Living doc. Revisit after **each pilot session** and whenever **waitlist** or **
 | Source | Where | What to read |
 |--------|--------|--------------|
 | Pilot calls | `pilot/sessions/*.md` | Self-collab + ping pass/fail; **keep app open?**; blockers ≥2 people; would-use why |
+| Weekly note | `pilot/sessions/YYYY-MM-DD-weekly.md` | Waitlist + Mixpanel + asks; latest: `2026-10-09-weekly.md` |
 | Waitlist | `/admin/ops` → Waitlist | `ai_hosts`, `oses`, `share_frequency`, `share_methods` |
 | In-app feedback | `/admin/ops` → Feedback | Freeform quotes, categories, version |
+| Mixpanel | web `surface=web` · desktop `surface=desktop` | Funnel events in the weekly note — corroborate waitlist, do not replace it. Handshake events are `desktop_handoff_*` |
 | Ops rule | `pilot/README.md` | Fix blockers that hit **≥2** pilot friends before polish or promotion |
 
-**Current snapshot (2026-08-13)**
+**Current snapshot (2026-10-09)**
 
 - Pilot: **1/5** — Roy (2026-08-12): both pings pass; **keep app open = yes**; setup friction (MCP, notifications, Keychain); strong “tab loop / copy-paste” + enterprise curiosity
-- Waitlist: **9 entries** (Aug 4–8, 2026) — see breakdown below
+- Waitlist: **9 entries** (Aug 4–8, 2026) — last successful `/admin/ops` export **2026-08-13**. ISO week 41 Friday (2026-10-09): hub `/health` ok (browser + curl; Python-urllib 1010); admin waitlist/feedback/census **401** on placeholder Auth0 token; no Mixpanel Query creds. Week 41 Thursday is PR #63. PRs #7/#8/#9/#12/#14–#63 still unanswered
+- Mixpanel: instrumented on web + desktop 1.1.4; **live counts missing** — iOS / `surface=mobile` not shipped. Desktop coverage ~57 days; published cut still **2.0.15** (2.0.13–2.0.14 same day; no newer published cut through week-41 Friday). Try Alpha still goes through the waitlist form. Prod `/download` publishes Silicon + Intel + Windows (re-checked 2026-10-09). `/pitch` live (unlisted, untracked; cache HIT this run from the Oct 1 object, same deck). `main` moved Thu 8 Oct (`7496d2b` / `3d7dbe5` mint dialog + reserved slugs; still `2.0.15+35`) after Thu 24 Sep Skip/Start over — **not** in the 2.0.15 DMG. See weekly note ask
 - Gate before public LinkedIn push: finish 5 pilots + ≥2-people blocker sprint (Roy already flagged MCP/onboarding)
 
 ### Waitlist stats (from `/admin/ops`, 2026-08-13)
