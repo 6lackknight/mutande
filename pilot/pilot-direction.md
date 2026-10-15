@@ -7,14 +7,17 @@ Living doc. Revisit after **each pilot session** and whenever **waitlist** or **
 | Source | Where | What to read |
 |--------|--------|--------------|
 | Pilot calls | `pilot/sessions/*.md` | Self-collab + ping pass/fail; **keep app open?**; blockers ≥2 people; would-use why |
+| Weekly note | `pilot/sessions/YYYY-MM-DD-weekly.md` | Waitlist + Mixpanel + asks; latest: `2026-08-15-weekly.md` |
 | Waitlist | `/admin/ops` → Waitlist | `ai_hosts`, `oses`, `share_frequency`, `share_methods` |
 | In-app feedback | `/admin/ops` → Feedback | Freeform quotes, categories, version |
+| Mixpanel | web `surface=web` · desktop `surface=desktop` | Funnel events in the weekly note — corroborate waitlist, do not replace it |
 | Ops rule | `pilot/README.md` | Fix blockers that hit **≥2** pilot friends before polish or promotion |
 
-**Current snapshot (2026-08-13)**
+**Current snapshot (2026-08-15)**
 
 - Pilot: **1/5** — Roy (2026-08-12): both pings pass; **keep app open = yes**; setup friction (MCP, notifications, Keychain); strong “tab loop / copy-paste” + enterprise curiosity
-- Waitlist: **9 entries** (Aug 4–8, 2026) — see breakdown below
+- Waitlist: **9 entries** (Aug 4–8, 2026) — last successful `/admin/ops` export **2026-08-13**. 2026-08-15 weekly run: hub reachable, but placeholder Auth0 token → 401; no Mixpanel Query creds
+- Mixpanel: instrumented on web + desktop 1.1.4; **live counts missing** — iOS / `surface=mobile` not shipped. See weekly note ask
 - Gate before public LinkedIn push: finish 5 pilots + ≥2-people blocker sprint (Roy already flagged MCP/onboarding)
 
 ### Waitlist stats (from `/admin/ops`, 2026-08-13)
@@ -198,6 +201,7 @@ Score each strategy 0–3 on:
 - [ ] Complete **5/5** pilot sessions (`pilot/TEMPLATE.md`)
 - [ ] Run **≥2-people blocker** sprint
 - [x] Export waitlist summary into **Current snapshot** above (2026-08-13, n=9)
+- [ ] Refresh waitlist + Mixpanel on the next weekly note (2026-08-15 run: hub up, token 401, no Query creds)
 - [ ] Roy: landing-page workflow test → capture as short clip or quote
 - [ ] Decide: LinkedIn now vs after batch 2 (Roy/Tawanda agreed: small group before public promotion)
 - [ ] Update `web/src/lib/changelog.ts` when alpha cut fixes pilot blockers — social proof
