@@ -7,14 +7,17 @@ Living doc. Revisit after **each pilot session** and whenever **waitlist** or **
 | Source | Where | What to read |
 |--------|--------|--------------|
 | Pilot calls | `pilot/sessions/*.md` | Self-collab + ping pass/fail; **keep app open?**; blockers ≥2 people; would-use why |
+| Weekly note | `pilot/sessions/YYYY-MM-DD-weekly.md` | Waitlist + Mixpanel + asks; latest: `2026-08-25-weekly.md` |
 | Waitlist | `/admin/ops` → Waitlist | `ai_hosts`, `oses`, `share_frequency`, `share_methods` |
 | In-app feedback | `/admin/ops` → Feedback | Freeform quotes, categories, version |
+| Mixpanel | web `surface=web` · desktop `surface=desktop` | Funnel events in the weekly note — corroborate waitlist, do not replace it. Handshake events are `desktop_handoff_*` |
 | Ops rule | `pilot/README.md` | Fix blockers that hit **≥2** pilot friends before polish or promotion |
 
-**Current snapshot (2026-08-13)**
+**Current snapshot (2026-08-25)**
 
 - Pilot: **1/5** — Roy (2026-08-12): both pings pass; **keep app open = yes**; setup friction (MCP, notifications, Keychain); strong “tab loop / copy-paste” + enterprise curiosity
-- Waitlist: **9 entries** (Aug 4–8, 2026) — see breakdown below
+- Waitlist: **9 entries** (Aug 4–8, 2026) — last successful `/admin/ops` export **2026-08-13**. ISO week 35 day 2 (2026-08-25): hub `/health` ok; admin waitlist/feedback/census **401** on placeholder Auth0 token (not Cloudflare 1010); no Mixpanel Query creds. PRs #7/#8/#9/#12/#14/#15/#16/#17/#18/#19/#20 still unanswered
+- Mixpanel: instrumented on web + desktop 1.1.4; **live counts missing** — iOS / `surface=mobile` not shipped. Desktop coverage ~12 days; published cut now **2.0.12** (2.0.11 same day). Try Alpha still goes through the waitlist form. Prod `/download` publishes Silicon + Intel + Windows (re-checked 2026-08-25). See weekly note ask
 - Gate before public LinkedIn push: finish 5 pilots + ≥2-people blocker sprint (Roy already flagged MCP/onboarding)
 
 ### Waitlist stats (from `/admin/ops`, 2026-08-13)
@@ -33,7 +36,7 @@ Living doc. Revisit after **each pilot session** and whenever **waitlist** or **
 
 **Top hosts (mentions across entries):** Claude Desktop 6 · Claude Code 4 · ChatGPT desktop 4 · Gemini 4 · Cursor 2 · GitHub Copilot 1 · ChatGPT web 1
 
-**Notable rows:** Roy (`roy@berrydeep.com`) — Cursor-only, occasionally, copy/paste — matches pilot session. Lebo — heaviest multi-host (5 tools). Three Windows signups — alpha not ready for them yet.
+**Notable rows:** Roy (`roy@berrydeep.com`) — Cursor-only, occasionally, copy/paste — matches pilot session. Lebo — heaviest multi-host (5 tools). Three Windows signups — prod picker now shows Windows (unsigned 2.0.12 installer; SmartScreen may warn).
 
 **Strategy score (waitlist only):**
 
@@ -43,7 +46,7 @@ Living doc. Revisit after **each pilot session** and whenever **waitlist** or **
 | **B — Enterprise** | **Low** | Some `.co` / `.com` domains; no compliance-led answers on this form |
 | **C — Developer / MCP** | **High** | Claude Code, Cursor, Copilot; multi-tool power users |
 
-**Lead wedge (today):** **A + C** — cofounder/copy-paste story in public; dev credibility in docs and hosted-MCP setup. Batch invites: **macOS + ≥2 hosts + multiple/day** first (5–6 people). Hold Windows until published.
+**Lead wedge (today):** **A + C** — cofounder/copy-paste story in public; dev credibility in docs and hosted-MCP setup. Batch invites: **macOS + ≥2 hosts + multiple/day** first (5–6 people). Windows waitlist can be a second, warned batch now that `/download` publishes the 2.0.12 installer.
 
 ---
 
