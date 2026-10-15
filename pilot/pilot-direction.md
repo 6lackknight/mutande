@@ -7,14 +7,17 @@ Living doc. Revisit after **each pilot session** and whenever **waitlist** or **
 | Source | Where | What to read |
 |--------|--------|--------------|
 | Pilot calls | `pilot/sessions/*.md` | Self-collab + ping pass/fail; **keep app open?**; blockers ≥2 people; would-use why |
+| Weekly note | `pilot/sessions/YYYY-MM-DD-weekly.md` | Waitlist + Mixpanel + asks; latest: `2026-08-19-weekly.md` |
 | Waitlist | `/admin/ops` → Waitlist | `ai_hosts`, `oses`, `share_frequency`, `share_methods` |
 | In-app feedback | `/admin/ops` → Feedback | Freeform quotes, categories, version |
+| Mixpanel | web `surface=web` · desktop `surface=desktop` | Funnel events in the weekly note — corroborate waitlist, do not replace it |
 | Ops rule | `pilot/README.md` | Fix blockers that hit **≥2** pilot friends before polish or promotion |
 
-**Current snapshot (2026-08-13)**
+**Current snapshot (2026-08-19)**
 
 - Pilot: **1/5** — Roy (2026-08-12): both pings pass; **keep app open = yes**; setup friction (MCP, notifications, Keychain); strong “tab loop / copy-paste” + enterprise curiosity
-- Waitlist: **9 entries** (Aug 4–8, 2026) — see breakdown below
+- Waitlist: **9 entries** (Aug 4–8, 2026) — last successful `/admin/ops` export **2026-08-13**. 2026-08-19 weekly run: hub `/health` ok; admin waitlist/feedback **401** on placeholder Auth0 token (not Cloudflare 1010); no Mixpanel Query creds. PRs #7/#8/#9/#12/#14 still unanswered
+- Mixpanel: instrumented on web + desktop 1.1.4; **live counts missing** — iOS / `surface=mobile` not shipped. Desktop coverage ~6 days; published cut still **2.0.7** (no main commits after Aug 17). Try Alpha still goes through the waitlist form. Download picker is chooser-first (`platform_picker`). See weekly note ask
 - Gate before public LinkedIn push: finish 5 pilots + ≥2-people blocker sprint (Roy already flagged MCP/onboarding)
 
 ### Waitlist stats (from `/admin/ops`, 2026-08-13)
