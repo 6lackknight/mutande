@@ -7,15 +7,18 @@ Living doc. Revisit after **each pilot session** and whenever **waitlist** or **
 | Source | Where | What to read |
 |--------|--------|--------------|
 | Pilot calls | `pilot/sessions/*.md` | Self-collab + ping pass/fail; **keep app open?**; blockers ≥2 people; would-use why |
+| Weekly note | `pilot/sessions/YYYY-MM-DD-weekly.md` | Waitlist + Mixpanel + asks; latest: `2026-10-19-weekly.md` |
 | Waitlist | `/admin/ops` → Waitlist | `ai_hosts`, `oses`, `share_frequency`, `share_methods` |
 | In-app feedback | `/admin/ops` → Feedback | Freeform quotes, categories, version |
+| Mixpanel | web `surface=web` · desktop `surface=desktop` | Funnel events in the weekly note — corroborate waitlist, do not replace it. Handshake events are `desktop_handoff_*` |
 | Ops rule | `pilot/README.md` | Fix blockers that hit **≥2** pilot friends before polish or promotion |
 
-**Current snapshot (2026-08-13)**
+**Current snapshot (2026-10-19)**
 
 - Pilot: **1/5** — Roy (2026-08-12): both pings pass; **keep app open = yes**; setup friction (MCP, notifications, Keychain); strong “tab loop / copy-paste” + enterprise curiosity
-- Waitlist: **9 entries** (Aug 4–8, 2026) — see breakdown below
-- Gate before public LinkedIn push: finish 5 pilots + ≥2-people blocker sprint (Roy already flagged MCP/onboarding)
+- Waitlist: **9 entries** (Aug 4–8, 2026) — last successful `/admin/ops` export **2026-08-13**. ISO week 43 Monday open (2026-10-19): hub + hosted MCP still **503** `PAYMENT_FAILED` (Deno Deploy suspended; last health 200 was 2026-10-10; first weekly 503 was PR #66). Admin waitlist/feedback/census unreachable; public waitlist POST 503. No Mixpanel Query creds. Sun 11 / Mon 12 / Tue 13 did not file. Week 42 Sunday close is PR #70. PRs #7/#8/#9/#12/#14–#70 still unanswered
+- Mixpanel: instrumented on web + desktop 1.1.4; **live counts missing** — iOS / `surface=mobile` not shipped. Desktop coverage ~67 days; published cut still **2.0.15** (2.0.13–2.0.14 same day; no newer published cut through week-43 Monday). Try Alpha still goes through the waitlist form (submits fail while hub is down). Prod `/download` publishes Silicon + Intel + Windows (re-checked 2026-10-19). `/pitch` live (unlisted, untracked; cache HIT of 2026-10-17 MISS). `main` last moved Thu 8 Oct (`7496d2b` / `3d7dbe5` mint dialog + reserved slugs; still `2.0.15+35`) after Thu 24 Sep Skip/Start over — **not** in the 2.0.15 DMG. See weekly note ask
+- Gate before public LinkedIn push: finish 5 pilots + ≥2-people blocker sprint (Roy already flagged MCP/onboarding) — **and restore the hub first**
 
 ### Waitlist stats (from `/admin/ops`, 2026-08-13)
 
