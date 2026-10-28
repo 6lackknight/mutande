@@ -21,6 +21,8 @@ Onboarding UX spec: `ONBOARDING-DESIGN.md` (stepper, team roster, host detection
 
 Friends can also send **in-app feedback** (Settings → Feedback) — stored on the hub as Auth0-signed `POST /v1/feedback`. The marketing site **Join waitlist** survey lands in the same ops bucket via public `POST /v1/waitlist`.
 
+Weekly rollup (waitlist + Mixpanel + missing-data asks): `sessions/YYYY-MM-DD-weekly.md`. Latest: `sessions/2026-10-28-weekly.md`.
+
 ### Local ops dashboard (preferred)
 
 Charts + tables for feedback and waitlist. **Localhost only** — not part of the web deploy. Uses Auth0 login (same Native app as Mac).
